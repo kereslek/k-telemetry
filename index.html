@@ -374,10 +374,11 @@
 </main>
 
 <footer>
-  DATA: Ethereum mainnet via public JSON-RPC (no keys, no backend) · position state from NonfungiblePositionManager · prices from pool slot0 + Chainlink ETH/USD ·
-  fees via static collect() simulation · deposit history via IncreaseLiquidity logs.<br>
-  ROI method: (current value + fees earned − deposited value) / deposited value. When historical entry pricing is unavailable on the RPC, deposits are valued at current
-  prices — that variant equals PnL vs HODL and is labeled accordingly. Not financial advice; verify before acting.
+  DATA — ETHEREUM: public JSON-RPC · position state from NonfungiblePositionManager · prices from pool slot0 + Chainlink · fees via static collect() simulation ·
+  deposit history via IncreaseLiquidity logs. SOLANA: Raydium CLMM positions auto-discovered from wallet NFTs (PDA-derived, read on-chain) · prices via Jupiter ·
+  pool APR via Raydium API · open date from first transaction on the position account.<br>
+  ROI method (ETH): (current value + fees earned − deposited value) / deposited value; entry-priced when archive data is available, else vs deposit at current prices (=PnL vs HODL).
+  SOL "fees owed" are amounts accrued on the position account — Raydium's UI may show slightly more pending yield (unsettled fees + rewards). Not financial advice; verify before acting.
 </footer>
 
 <div class="scrim" id="scrim"></div>
@@ -391,6 +392,20 @@
       <button class="hbtn" id="addPosBtn">+ ADD</button>
     </div>
     <label style="margin-top:10px">Tip: the number in app.uniswap.org/positions/v3/ethereum/<b style="color:var(--accent)">1338795</b></label>
+  </div>
+  <div class="sec">
+    <h3>SOLANA WALLETS — RAYDIUM CLMM AUTO-DISCOVERY</h3>
+    <ul class="pos-list" id="solWalletList"></ul>
+    <div class="addrow">
+      <input type="text" id="addSolWallet" placeholder="Solana wallet address">
+      <button class="hbtn" id="addSolWalletBtn">+ ADD</button>
+    </div>
+    <button class="hbtn" id="btnRescanSol" style="margin-top:9px">⟳ RESCAN WALLETS NOW</button>
+    <label>Custom Solana RPC (free key at helius.dev or drpc.org — recommended, public RPC is rate-limited)</label>
+    <div class="addrow">
+      <input type="text" id="customSolRpc" placeholder="https://mainnet.helius-rpc.com/?api-key=KEY">
+      <button class="hbtn" id="customSolRpcBtn">+ USE</button>
+    </div>
   </div>
   <div class="sec">
     <h3>ALERT THRESHOLDS</h3>
@@ -812,7 +827,7 @@ async function enrichHistories(){
   enriching = true;
   let changed = false;
   for(const p of state.positions.values()){
-    if(p.hist || p.demo) continue;
+    if(p.hist || p.demo || p.chain==='sol') continue;
     try{
       p.hist = await fetchHistory(p.id);
       if(p.hist.inc.length){
@@ -857,6 +872,7 @@ function demoPositions(){
     {id:1340170, pair:['ETH','USDT'],  fee:'0.05%', price:3843, lo:3700, up:3950, dep:32000, age:21, feeRate:0.55},
     {id:1340238, pair:['wstETH','ETH'],fee:'0.01%', price:1.192, lo:1.183, up:1.201, dep:41000, age:20, feeRate:0.12},
     {id:1339457, pair:['UNI','ETH'],   fee:'0.3%',  price:0.00231, lo:0.0019, up:0.0031, dep:9500, age:27, feeRate:0.44},
+    {id:'sol:DemoCPooL111111111111111111111111111111111111', chain:'sol', pair:['SOL','CPOOL'], fee:'4%', price:3323, lo:201.1, up:6000.3, dep:2100, age:12, feeRate:0.061},
   ];
   return specs.map((s,i)=>{
     const drift = 1 + (demoRand()-0.5)*0.01;
@@ -868,15 +884,19 @@ function demoPositions(){
     const ilDrag = (demoRand()-0.55)*0.03;
     const valueUsd = s.dep*(1+ilDrag);
     const roiPct = ((valueUsd+feesEverUsd)/s.dep-1)*100;
+    const isSol = s.chain==='sol';
     return {
-      id:s.id, demo:true, pairLabel:s.pair.join(' / '), feeLabel:s.fee,
+      id:s.id, demo:true, chain:s.chain||'eth', pairLabel:s.pair.join(' / '), feeLabel:s.fee,
       m0:{symbol:s.pair[0]}, m1:{symbol:s.pair[1]},
+      nftMint: isSol ? String(s.id).slice(4) : undefined,
       price, priceLower:s.lo, priceUpper:s.up, tick:0,
       amt0:null, amt1:null, f0:null, f1:null,
-      valueUsd, feesUsd:feesEverUsd*0.35, feesEverUsd, costUsd:s.dep,
+      valueUsd, feesUsd: isSol ? 66.43 : feesEverUsd*0.35,
+      feesEverUsd: isSol ? null : feesEverUsd, costUsd: isSol ? null : s.dep,
       mintTs: now-s.age*86400000, ageDays:s.age,
-      roiPct, roiMode: i%2?'hodl':'entry',
-      feeAprPct: s.feeRate*100*(0.8+demoRand()*0.4),
+      roiPct: isSol ? null : roiPct, roiMode: isSol ? 'sol' : (i%2?'hodl':'entry'),
+      feeAprPct: isSol ? null : s.feeRate*100*(0.8+demoRand()*0.4),
+      poolAprPct: isSol ? 6.08 : null,
       inRange, rangePos, dLow, dUp,
       edgeDist: inRange?Math.min(dLow,dUp):-(price<s.lo?(s.lo-price)/price*100:(price-s.up)/price*100),
       nearestEdge: dLow<dUp?'lower':'upper',
@@ -885,12 +905,263 @@ function demoPositions(){
   });
 }
 
+/* ================================================================
+   SOLANA / RAYDIUM CLMM MODULE
+   Pure-JS: base58, SHA-256 PDA derivation (ed25519 on-curve check),
+   Raydium account parsing — validated against @solana/web3.js and
+   @raydium-io/raydium-sdk-v2 offsets.
+   ================================================================ */
+const CLMM_PROG   = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+const TOKEN_PROG  = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const TOKEN22_PROG= 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+const SOL_MINT    = 'So11111111111111111111111111111111111111112';
+const SOL_KNOWN   = {
+  [SOL_MINT]: {symbol:'SOL'},
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': {symbol:'USDC'},
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': {symbol:'USDT'},
+};
+cfg.solWallets = store.get('solWallets', [
+  '3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2',
+  '5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca',
+]);
+const SOL_RPCS = [...store.get('extraSolRpcs', []),
+  'https://api.mainnet-beta.solana.com',
+  'https://solana-rpc.publicnode.com',
+  'https://solana.drpc.org',
+];
+
+/* ---- base58 ---- */
+const B58ALPHA='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const B58MAP=Object.fromEntries([...B58ALPHA].map((c,i)=>[c,i]));
+function b58decode(s){ let n=0n; for(const c of s){ const v=B58MAP[c]; if(v==null) throw new Error('bad b58'); n=n*58n+BigInt(v);} const bytes=[]; while(n>0n){bytes.unshift(Number(n&255n));n>>=8n;} for(const c of s){ if(c==='1') bytes.unshift(0); else break; } return new Uint8Array(bytes); }
+function b58encode(bytes){ let n=0n; for(const b of bytes) n=(n<<8n)|BigInt(b); let out=''; while(n>0n){out=B58ALPHA[Number(n%58n)]+out;n/=58n;} for(const b of bytes){ if(b===0) out='1'+out; else break; } return out; }
+const sha256b = async bytes => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+/* ---- ed25519 on-curve check ---- */
+const ED_P=(1n<<255n)-19n;
+const ED_D=37095705934669439343138083508754565189542113879843219016388785533085940283555n;
+function mpow(b,e,m){ let r=1n; b%=m; while(e>0n){ if(e&1n) r=r*b%m; b=b*b%m; e>>=1n; } return r; }
+function isOnCurve(bytes){
+  let y=0n; for(let i=31;i>=0;i--) y=(y<<8n)|BigInt(i===31?(bytes[i]&0x7f):bytes[i]);
+  if(y>=ED_P) return false;
+  const sign=(bytes[31]&0x80)>>7;
+  const y2=y*y%ED_P, u=(y2-1n+ED_P)%ED_P, v=(ED_D*y2+1n)%ED_P;
+  const v3=v*v%ED_P*v%ED_P, uv7=u*(v3*v3%ED_P*v%ED_P)%ED_P;
+  let x=u*v3%ED_P*mpow(uv7,(ED_P-5n)/8n,ED_P)%ED_P;
+  const vxx=v*x%ED_P*x%ED_P;
+  if(vxx!==u){ if((vxx+u)%ED_P!==0n) return false; x=x*mpow(2n,(ED_P-1n)/4n,ED_P)%ED_P; }
+  if(x===0n&&sign===1) return false;
+  return true;
+}
+const PDA_MARKER=new TextEncoder().encode('ProgramDerivedAddress');
+async function findProgramAddress(seeds, programIdB58){
+  const program=b58decode(programIdB58);
+  for(let bump=255;bump>=0;bump--){
+    const parts=[...seeds,new Uint8Array([bump]),program,PDA_MARKER];
+    const buf=new Uint8Array(parts.reduce((s,p)=>s+p.length,0));
+    let off=0; for(const p of parts){buf.set(p,off);off+=p.length;}
+    const h=await sha256b(buf);
+    if(!isOnCurve(h)) return {pda:b58encode(h),bump};
+  }
+  throw new Error('no PDA');
+}
+/* ---- LE readers + Raydium layouts (offsets incl. 8-byte discriminator) ---- */
+const leU16=(b,o)=>b[o]|(b[o+1]<<8);
+const leU64=(b,o)=>{let n=0n;for(let i=7;i>=0;i--)n=(n<<8n)|BigInt(b[o+i]);return n;};
+const leU128=(b,o)=>{let n=0n;for(let i=15;i>=0;i--)n=(n<<8n)|BigInt(b[o+i]);return n;};
+const leI32=(b,o)=>{const u=(b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;return u>0x7fffffff?u-0x100000000:u;};
+const pkAt=(b,o)=>b58encode(b.slice(o,o+32));
+const parsePersonalPosition=b=>({ nftMint:pkAt(b,9), poolId:pkAt(b,41), tickLower:leI32(b,73), tickUpper:leI32(b,77), liquidity:leU128(b,81), feesOwed0:leU64(b,129), feesOwed1:leU64(b,137) });
+const parsePoolState=b=>({ mint0:pkAt(b,73), mint1:pkAt(b,105), dec0:b[233], dec1:b[234], tickSpacing:leU16(b,235), sqrtPriceX64:leU128(b,253), tickCurrent:leI32(b,269) });
+const b64ToBytes=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+
+/* ---- Solana RPC with failover ---- */
+let solIndex=0, solCooldownUntil=0;
+async function solRpc(method, params, timeout=15000){
+  if(Date.now()<solCooldownUntil) throw new Error('all Solana RPCs unreachable (cooldown)');
+  const order=[...SOL_RPCS.slice(solIndex),...SOL_RPCS.slice(0,solIndex)];
+  let last, nets=0;
+  for(const url of order){
+    try{
+      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method,params},timeout);
+      if(js.error) throw Object.assign(new Error(js.error.message||'rpc error'),{code:js.error.code});
+      solIndex=SOL_RPCS.indexOf(url); state.lastSolRpc=url; solCooldownUntil=0;
+      return js.result;
+    }catch(e){ last=e; if(isNetFail(e)) nets++; }
+  }
+  if(nets>=order.length) solCooldownUntil=Date.now()+20000;
+  throw last||new Error('all Solana RPCs failed');
+}
+async function solGetMultiple(pubkeys){
+  const out=[];
+  for(let i=0;i<pubkeys.length;i+=100){
+    const res=await solRpc('getMultipleAccounts',[pubkeys.slice(i,i+100),{encoding:'base64'}]);
+    out.push(...res.value);
+  }
+  return out;
+}
+async function getJson(url, timeout=10000){
+  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),timeout);
+  try{ const r=await fetch(url,{signal:ctrl.signal}); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
+  finally{ clearTimeout(t); }
+}
+
+/* ---- token meta / prices / pool info ---- */
+const solTokenMeta=new Map();
+async function solMeta(mints){
+  for(const m of mints){
+    if(solTokenMeta.has(m)) continue;
+    if(SOL_KNOWN[m]){ solTokenMeta.set(m,SOL_KNOWN[m]); continue; }
+    try{
+      const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
+      const hit=Array.isArray(js)?js.find(t=>t.id===m):null;
+      solTokenMeta.set(m,{symbol:hit?.symbol||m.slice(0,4)+'…'});
+    }catch(e){ solTokenMeta.set(m,{symbol:m.slice(0,4)+'…'}); }
+  }
+}
+async function solPrices(mints){
+  try{
+    const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+mints.join(','));
+    const out={}; let any=false;
+    for(const m of mints){ const v=js[m]; if(v&&v.usdPrice!=null){ out[m]=Number(v.usdPrice); any=true; } }
+    if(any) return out;
+    throw new Error('empty price response');
+  }catch(e){
+    try{ const cg=await getJson('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'); return {[SOL_MINT]:cg.solana.usd}; }
+    catch(e2){ return {}; }
+  }
+}
+async function raydiumPoolInfo(ids){
+  state.rayPools=state.rayPools||{};
+  const need=ids.filter(id=>!state.rayPools[id]||(Date.now()-state.rayPools[id].t)>600000);
+  if(!need.length) return;
+  try{
+    const js=await getJson('https://api-v3.raydium.io/pools/info/ids?ids='+need.join(','));
+    for(const d of (js.data||[])){ if(d&&d.id) state.rayPools[d.id]={apr:d.day?.apr??null, feeRate:d.feeRate??null, t:Date.now()}; }
+  }catch(e){}
+}
+
+/* ---- discovery: wallet NFTs -> position PDAs ---- */
+async function discoverSol(){
+  const nfts=[];
+  let okCalls=0;
+  for(const w of cfg.solWallets){
+    for(const prog of [TOKEN_PROG, TOKEN22_PROG]){
+      try{
+        const res=await solRpc('getTokenAccountsByOwner',[w,{programId:prog},{encoding:'jsonParsed'}]);
+        okCalls++;
+        for(const a of res.value){
+          const info=a.account?.data?.parsed?.info;
+          if(info?.tokenAmount?.amount==='1' && info?.tokenAmount?.decimals===0) nfts.push({wallet:w, mint:info.mint});
+        }
+      }catch(e){ log('warning','Wallet '+w.slice(0,4)+'…'+w.slice(-4)+' token scan: '+esc(e.message||'').slice(0,60)); }
+    }
+  }
+  if(!okCalls && cfg.solWallets.length) throw new Error('Solana wallet scan failed on all RPCs');
+  const out=[];
+  for(const c of nfts){
+    try{ const {pda}=await findProgramAddress([new TextEncoder().encode('position'), b58decode(c.mint)], CLMM_PROG); out.push({...c, pda}); }catch(e){}
+  }
+  return out;
+}
+
+/* ---- full Solana scan ---- */
+async function scanSol(){
+  if(!cfg.solWallets.length){ state.solPositions=[]; return true; }
+  if(!state.solCatalog || (state.scanCount%10===0)) state.solCatalog = await discoverSol();
+  const cat=state.solCatalog;
+  if(!cat.length){ state.solPositions=[]; return true; }
+  const accs=await solGetMultiple(cat.map(c=>c.pda));
+  const found=[];
+  accs.forEach((a,i)=>{
+    if(!a || a.owner!==CLMM_PROG) return;
+    const pp=parsePersonalPosition(b64ToBytes(a.data[0]));
+    if(pp.liquidity===0n) return;
+    found.push({cat:cat[i], pp});
+  });
+  if(!found.length){ state.solPositions=[]; return true; }
+  const poolIds=[...new Set(found.map(x=>x.pp.poolId))];
+  const poolAccs=await solGetMultiple(poolIds);
+  const pools=new Map();
+  poolAccs.forEach((a,i)=>{ if(a) pools.set(poolIds[i], parsePoolState(b64ToBytes(a.data[0]))); });
+  const mints=[...new Set([...pools.values()].flatMap(p=>[p.mint0,p.mint1]))];
+  await solMeta(mints);
+  const prices=await solPrices(mints);
+  await raydiumPoolInfo(poolIds);
+  const out=[];
+  for(const {cat:c, pp} of found){
+    const pool=pools.get(pp.poolId); if(!pool) continue;
+    const m0=solTokenMeta.get(pool.mint0)||{symbol:'?'}, m1=solTokenMeta.get(pool.mint1)||{symbol:'?'};
+    const d0=pool.dec0, d1=pool.dec1;
+    const sqrtP=Number(pool.sqrtPriceX64)/Math.pow(2,64);
+    const sqrtA=tickToSqrt(pp.tickLower), sqrtB=tickToSqrt(pp.tickUpper);
+    const [ra0,ra1]=amountsForLiquidity(Number(pp.liquidity), sqrtP, sqrtA, sqrtB);
+    const amt0=ra0/10**d0, amt1=ra1/10**d1;
+    const scale=10**(d0-d1);
+    const price=sqrtP*sqrtP*scale, priceLower=tickToPrice(pp.tickLower)*scale, priceUpper=tickToPrice(pp.tickUpper)*scale;
+    let usd0=prices[pool.mint0]??null, usd1=prices[pool.mint1]??null;
+    if(usd0==null && usd1!=null) usd0=price*usd1;
+    if(usd1==null && usd0!=null) usd1=usd0/price;
+    const f0=Number(pp.feesOwed0)/10**d0, f1=Number(pp.feesOwed1)/10**d1;
+    const valueUsd=(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null;
+    const feesUsd=(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null;
+    const tick=pool.tickCurrent;
+    const inRange=tick>=pp.tickLower && tick<pp.tickUpper;
+    const rangePos=(tick-pp.tickLower)/(pp.tickUpper-pp.tickLower);
+    const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
+    const prev=state.positions.get('sol:'+pp.nftMint);
+    const rinfo=state.rayPools?.[pp.poolId];
+    out.push({
+      id:'sol:'+pp.nftMint, chain:'sol', wallet:c.wallet, nftMint:pp.nftMint, poolId:pp.poolId, pda:c.pda,
+      m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
+      amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
+      feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
+      poolAprPct: rinfo?.apr ?? null,
+      mintTs: prev?.mintTs ?? null,
+      ageDays: prev?.mintTs ? (Date.now()-prev.mintTs)/86400000 : null,
+      inRange, rangePos, dLow, dUp, nearestEdge: dLow<dUp?'lower':'upper',
+      edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
+      pairLabel: m0.symbol+' / '+m1.symbol,
+      feeLabel: rinfo?.feeRate!=null ? (rinfo.feeRate*100).toFixed(rinfo.feeRate*100<1?2:0).replace(/\.00$/,'')+'%' : 'CLMM',
+    });
+  }
+  state.solPositions=out;
+  setTimeout(enrichSolAges, 80);
+  return true;
+}
+
+/* opened-date via first signature on the position PDA */
+let solAging=false;
+async function enrichSolAges(){
+  if(solAging) return; solAging=true;
+  let changed=false;
+  for(const p of (state.solPositions||[])){
+    if(p.mintTs || p.demo) continue;
+    try{
+      let before, oldest=null, pages=0;
+      while(pages<3){
+        const sigs=await solRpc('getSignaturesForAddress',[p.pda,{limit:1000,...(before?{before}:{})}]);
+        if(!sigs || !sigs.length) break;
+        oldest=sigs[sigs.length-1];
+        if(sigs.length<1000) break;
+        before=oldest.signature; pages++;
+      }
+      if(oldest?.blockTime){ p.mintTs=oldest.blockTime*1000; p.ageDays=(Date.now()-p.mintTs)/86400000; changed=true; }
+    }catch(e){}
+    await sleep(250);
+  }
+  solAging=false;
+  if(changed) renderAll();
+}
+
 /* ================= SCAN ORCHESTRATION ================= */
 let scanning = false;
 async function scan(isBoot){
   if(scanning) return; scanning = true;
+  state.scanCount = (state.scanCount||0)+1;
+  setConn('sync');
+  // ---- Ethereum ----
+  let ethPs = null;
   try{
-    setConn('sync');
     await fetchAnchors();
     const results = [];
     for(const id of cfg.ids){
@@ -901,32 +1172,39 @@ async function scan(isBoot){
       }catch(e){
         log('warning','#'+id+' fetch failed: '+esc(e.message).slice(0,80));
         const prev = state.positions.get(id);
-        if(prev) results.push(prev);
+        if(prev && !prev.demo) results.push(prev);
       }
     }
-    if(!results.length) throw new Error('no positions fetched');
-    state.positions = new Map(results.map(p=>[p.id,p]));
+    if(results.length) ethPs = results;
+  }catch(e){ if(state.mode==='live') log('warning','Ethereum scan failed: '+esc(e.message||e).slice(0,80)); }
+  // ---- Solana ----
+  let solOk = false;
+  bootMsg('SCANNING SOLANA WALLETS …');
+  try{ solOk = await scanSol(); }
+  catch(e){ log('warning','Solana scan failed: '+esc(e.message||e).slice(0,80)); }
+
+  if(ethPs || solOk){
+    const eth = ethPs ?? [...state.positions.values()].filter(p=>p.chain!=='sol' && !p.demo);
+    const sol = solOk ? (state.solPositions||[]) : [...state.positions.values()].filter(p=>p.chain==='sol' && !p.demo);
+    state.positions = new Map([...eth, ...sol].map(p=>[p.id,p]));
     if(state.mode!=='live' || state.loggedRpc!==state.lastRpc){
-      log('good','LIVE uplink via '+String(state.lastRpc||'').replace('https://','')+' · block '+state.block);
+      log('good','LIVE uplink · ETH via '+String(state.lastRpc||'—').replace('https://','')+' · SOL via '+String(state.lastSolRpc||'—').replace('https://',''));
       state.loggedRpc = state.lastRpc;
     }
     state.mode = 'live';
     setConn('live');
-    setTimeout(enrichHistories, 50);   // heavy log queries run after first paint
-  }catch(e){
-    // fall back to demo
-    if(state.mode!=='live' || isBoot){
-      state.mode = 'sim';
-      const demo = demoPositions();
-      state.positions = new Map(demo.map(p=>[p.id,p]));
-      state.ethUsd = state.ethUsd ?? 3842.55;
-      state.block = state.block ?? '—';
-      setConn('sim');
-      if(isBoot) log('warning','Live RPC unreachable — SIMULATION MODE engaged.');
-    }else{
-      setConn('err');
-      log('critical','Scan failed: '+esc(e.message||e).slice(0,90));
-    }
+    setTimeout(enrichHistories, 50);   // heavy ETH log queries run after first paint
+  } else if(state.mode==='live'){
+    setConn('err');
+    log('critical','Scan failed on both chains — keeping last data.');
+  } else {
+    state.mode = 'sim';
+    const demo = demoPositions();
+    state.positions = new Map(demo.map(p=>[p.id,p]));
+    state.ethUsd = state.ethUsd ?? 3842.55;
+    state.block = state.block ?? '—';
+    setConn('sim');
+    if(isBoot) log('warning','Live RPC unreachable — SIMULATION MODE engaged.');
   }
   // sample for session telemetry
   const total = [...state.positions.values()].reduce((s,p)=>s+(p.valueUsd||0)+(p.feesUsd||0),0);
@@ -950,6 +1228,7 @@ function severityOf(p){
 }
 const rangeFracDist = p => Math.min(p.rangePos, 1-p.rangePos)*100;
 const SEV_LABEL = {good:'IN RANGE', warning:'NEAR EDGE', serious:'EDGE CRITICAL', critical:'OUT OF RANGE'};
+const posRef = p => p.chain==='sol' ? '◎'+String(p.nftMint||'').slice(0,4)+'…' : '#'+p.id;
 const SEV_CHIP = {good:'in', warning:'near', serious:'edge', critical:'out'};
 const SEV_ICON = {good:'✓', warning:'▲', serious:'◆', critical:'✕'};
 
@@ -962,15 +1241,15 @@ function evaluateAlerts(){
       if(prev !== undefined){ // don't spam on first load
         const edge = p.nearestEdge==='lower'?'LOWER':'UPPER';
         const msg = {
-          good: p.pairLabel+' #'+p.id+' back IN RANGE.',
-          warning: p.pairLabel+' #'+p.id+' approaching '+edge+' edge — '+fmtPct(rangeFracDist(p),0)+' of range width left ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
-          serious: p.pairLabel+' #'+p.id+' CRITICAL — only '+fmtPct(rangeFracDist(p),0)+' of range width to '+edge+' edge ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
-          critical: p.pairLabel+' #'+p.id+' is OUT OF RANGE — no fees accruing.',
+          good: p.pairLabel+' '+posRef(p)+' back IN RANGE.',
+          warning: p.pairLabel+' '+posRef(p)+' approaching '+edge+' edge — '+fmtPct(rangeFracDist(p),0)+' of range width left ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
+          serious: p.pairLabel+' '+posRef(p)+' CRITICAL — only '+fmtPct(rangeFracDist(p),0)+' of range width to '+edge+' edge ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
+          critical: p.pairLabel+' '+posRef(p)+' is OUT OF RANGE — no fees accruing.',
         }[sev];
         log(sev==='good'?'good':(sev==='warning'?'warning':'critical'), msg);
         notify(sev, msg);
       } else if(sev!=='good'){
-        log(sev==='warning'?'warning':'critical', p.pairLabel+' #'+p.id+' status: '+SEV_LABEL[sev]+(p.inRange?' ('+fmtPct(rangeFracDist(p),0)+' of range width to edge)':''));
+        log(sev==='warning'?'warning':'critical', p.pairLabel+' '+posRef(p)+' status: '+SEV_LABEL[sev]+(p.inRange?' ('+fmtPct(rangeFracDist(p),0)+' of range width to edge)':''));
       }
     }
   }
@@ -995,18 +1274,20 @@ function log(kind, msg){
 
 /* ================= RENDERING ================= */
 const ordered = () => {
-  const order = store.get('cardOrder', []);
+  const order = store.get('cardOrder', []).map(String);
   const ps = [...state.positions.values()];
   ps.sort((a,b)=>{
-    const ia=order.indexOf(a.id), ib=order.indexOf(b.id);
+    const ia=order.indexOf(String(a.id)), ib=order.indexOf(String(b.id));
     return (ia<0?999:ia)-(ib<0?999:ib);
   });
   return ps;
 };
 const colorIndex = new Map();
+const cIdx = p => colorIndex.get(String(p.id)) ?? 5;
 function assignColors(){
   colorIndex.clear();
-  cfg.ids.forEach((id,i)=>colorIndex.set(id,i));
+  const solIds = [...state.positions.keys()].filter(k=>String(k).startsWith('sol:'));
+  [...cfg.ids, ...solIds].forEach((id,i)=>colorIndex.set(String(id),i));
 }
 
 function renderAll(){
@@ -1055,11 +1336,11 @@ function deltaStr(now){
 function renderRadar(){
   const body = $('#radarBody'); body.innerHTML='';
   ordered().forEach(p=>{
-    const i = colorIndex.get(p.id)??5;
+    const i = cIdx(p);
     const row = el('div','radar-row');
     const name = el('div','radar-name');
     name.style.setProperty('--pcolor', seriesColor(i));
-    name.append(el('span','cdot'), el('span',null, esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span>'));
+    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span>'));
     const bar = el('div',null); bar.append(rangeBar(p, false));
     const sev = severityOf(p);
     const distTxt = p.inRange
@@ -1133,7 +1414,7 @@ function barChart(title, ps, val, fmt, signed){
     const txt=mkel('text',{x:padL-8,y:Y(t)+3,'text-anchor':'end','font-size':9,fill:'#5d7889'}); txt.textContent=fmt(t).replace('+',''); svg.append(txt);
   });
   data.forEach((d,i)=>{
-    const idx = colorIndex.get(d.p.id)??5;
+    const idx = cIdx(d.p);
     const x = padL+step*i+(step-bw)/2;
     const y0=Y(0), y1=Y(d.v);
     const top=Math.min(y0,y1), h=Math.max(2,Math.abs(y0-y1));
@@ -1144,7 +1425,7 @@ function barChart(title, ps, val, fmt, signed){
       : 'M'+x+' '+y0+' V'+(top+h-r)+' Q'+x+' '+(top+h)+' '+(x+r)+' '+(top+h)+' H'+(x+bw-r)+' Q'+(x+bw)+' '+(top+h)+' '+(x+bw)+' '+(top+h-r)+' V'+y0+' Z';
     const bar=mkel('path',{d:path, fill:seriesHex(idx)});
     bar.style.cursor='pointer';
-    bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(d.p.pairLabel)+' #'+d.p.id+'</div><div class="tv"><b>'+fmt(d.v)+'</b>'+(d.p.ageDays?'<span style="color:var(--text-muted)"> · age '+fmtAge(d.p.ageDays)+'</span>':'')+'</div>'));
+    bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(d.p.pairLabel)+' '+esc(posRef(d.p))+'</div><div class="tv"><b>'+fmt(d.v)+'</b>'+(d.p.ageDays?'<span style="color:var(--text-muted)"> · age '+fmtAge(d.p.ageDays)+'</span>':'')+'</div>'));
     bar.addEventListener('mouseleave',hideTip);
     svg.append(bar);
     // direct value label
@@ -1152,9 +1433,9 @@ function barChart(title, ps, val, fmt, signed){
     lbl.textContent=fmt(d.v); svg.append(lbl);
     // x labels
     const xl=mkel('text',{x:padL+step*i+step/2,y:H-padB+14,'text-anchor':'middle','font-size':9,fill:'#5d7889'});
-    xl.textContent=d.p.m0.symbol+'/'+d.p.m1.symbol; svg.append(xl);
+    xl.textContent=(d.p.chain==='sol'?'◎':'')+d.p.m0.symbol+'/'+d.p.m1.symbol; svg.append(xl);
     const xl2=mkel('text',{x:padL+step*i+step/2,y:H-padB+26,'text-anchor':'middle','font-size':8,fill:'#3d5262'});
-    xl2.textContent='#'+d.p.id; svg.append(xl2);
+    xl2.textContent=d.p.chain==='sol' ? String(d.p.nftMint||'').slice(0,6)+'…' : '#'+d.p.id; svg.append(xl2);
   });
   box.append(svg);
   return box;
@@ -1220,8 +1501,9 @@ function renderMatrix(){
       if(c.key==='pair'){
         const td = el('td');
         const cell = el('div','pos-cell');
-        const dot = el('span','cdot'); dot.style.background=seriesHex(colorIndex.get(p.id)??5); dot.style.boxShadow='0 0 6px '+seriesHex(colorIndex.get(p.id)??5);
-        cell.append(dot, el('span',null, esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · #'+p.id+'</span>'));
+        const dot = el('span','cdot'); dot.style.background=seriesHex(cIdx(p)); dot.style.boxShadow='0 0 6px '+seriesHex(cIdx(p));
+        const ref = p.chain==='sol' ? '◎ '+String(p.nftMint||'').slice(0,4)+'…' : '#'+p.id;
+        cell.append(dot, el('span',null, esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+ref+'</span>'));
         td.append(cell); tr.append(td); return;
       }
       if(c.key==='status'){
@@ -1230,6 +1512,7 @@ function renderMatrix(){
       }
       const isBest = best[c.key]!=null && v!=null && Math.abs(v-best[c.key])<1e-12;
       let txt = v==null ? '<span style="color:var(--text-muted)">…</span>' : c.fmt(v);
+      if(c.key==='feeAprPct' && v==null && p.poolAprPct!=null) txt='<span style="color:var(--text-muted)" title="Raydium pool APR (24h) — position-level APR needs tx history">'+p.poolAprPct.toFixed(1)+'% ◦pool</span>';
       if(c.signed && v!=null && !isBest) txt = '<span style="color:var(--status-'+(v>=0?'good':'critical')+')">'+txt+'</span>';
       tr.append(el('td', isBest?'best':null, txt));
     });
@@ -1277,20 +1560,25 @@ function renderSpark(){
 /* ----- position cards ----- */
 function renderCards(){
   const host=$('#cards');
-  const openInv = new Set([...host.querySelectorAll('.card')].filter(c=>c.dataset.inv==='1').map(c=>+c.dataset.id));
+  const openInv = new Set([...host.querySelectorAll('.card')].filter(c=>c.dataset.inv==='1').map(c=>String(c.dataset.id)));
   host.innerHTML='';
   ordered().forEach(p=>{
-    const i=colorIndex.get(p.id)??5;
-    const inv = openInv.has(p.id);
+    const i=cIdx(p);
+    const inv = openInv.has(String(p.id));
     const card=el('article','card'); card.dataset.id=p.id; card.dataset.inv=inv?'1':'0'; card.draggable=true;
     card.style.setProperty('--pcolor', seriesColor(i));
     const sev=severityOf(p);
+    const isSol = p.chain==='sol';
     // ---- header
     const head=el('div','chead');
     head.append(el('span','cdot'));
+    if(isSol) head.append(el('span',null,'<span style="color:var(--text-muted);font-size:12px" title="Solana · Raydium CLMM">◎</span>'));
     head.append(el('span','pair',esc(p.pairLabel)));
     head.append(el('span','feet',esc(p.feeLabel)));
-    const link=el('a',null,'#'+p.id+' ↗'); link.href='https://app.uniswap.org/positions/v3/ethereum/'+p.id; link.target='_blank'; link.rel='noopener';
+    const linkTxt = isSol ? String(p.nftMint||'').slice(0,4)+'…'+String(p.nftMint||'').slice(-4)+' ↗' : '#'+p.id+' ↗';
+    const link=el('a',null,linkTxt);
+    link.href = isSol ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
+    link.target='_blank'; link.rel='noopener';
     head.append(link);
     head.append(el('span','chip '+SEV_CHIP[sev],'<span class="ic">'+SEV_ICON[sev]+'</span>'+SEV_LABEL[sev]));
     card.append(head);
@@ -1309,11 +1597,12 @@ function renderCards(){
     mkm('CURRENT PRICE', fmtPrice(showP(p.price))+' <span class="unit">'+unit+'</span>');
     mkm('RANGE', fmtPrice(lo)+' – '+fmtPrice(up),true);
     mkm('POSITION VALUE', fmtUsd(p.valueUsd,0));
-    mkm('UNCLAIMED FEES', fmtUsd(p.feesUsd));
-    mkm('DEPLOYED', (p.mintTs?new Date(p.mintTs).toISOString().slice(0,10):'—')+' <span class="unit">'+fmtAge(p.ageDays)+'</span>',true);
-    mkm('FEE APR', p.feeAprPct==null?'—':'<b>'+p.feeAprPct.toFixed(1)+'</b><span class="unit"> %</span>');
-    const roiLabel = p.roiMode==='entry'?'ROI (ENTRY-PRICED)':'P&L VS DEPOSIT';
-    mkm(roiLabel, p.roiPct==null?'—':'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
+    mkm(isSol?'FEES OWED':'UNCLAIMED FEES', fmtUsd(p.feesUsd));
+    mkm(isSol?'OPENED':'DEPLOYED', (p.mintTs?new Date(p.mintTs).toISOString().slice(0,10):'…')+' <span class="unit">'+fmtAge(p.ageDays)+'</span>',true);
+    if(isSol) mkm('POOL APR 24H', p.poolAprPct==null?'—':'<b>'+p.poolAprPct.toFixed(1)+'</b><span class="unit"> %</span>');
+    else mkm('FEE APR', p.feeAprPct==null?'…':'<b>'+p.feeAprPct.toFixed(1)+'</b><span class="unit"> %</span>');
+    const roiLabel = isSol ? 'P&L SINCE OPEN' : (p.roiMode==='entry'?'ROI (ENTRY-PRICED)':'P&L VS DEPOSIT');
+    mkm(roiLabel, p.roiPct==null?(isSol?'<span class="unit">tx-history · v2</span>':'…'):'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
     mkm('EDGE DISTANCE', p.inRange
       ? '<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">'+fmtPct(Math.min(p.dLow,p.dUp),1)+'</span> <span class="unit">to '+(p.nearestEdge==='lower'?'low':'high')+'</span>'
       : '<span style="color:var(--status-critical)">outside</span>');
@@ -1325,6 +1614,7 @@ function renderCards(){
     if(p.amt0!=null) foot.append(el('span',null,'HOLDING <b>'+fmtNum(p.amt0)+' '+esc(p.m0.symbol)+'</b> + <b>'+fmtNum(p.amt1)+' '+esc(p.m1.symbol)+'</b>'));
     if(p.feesEverUsd!=null) foot.append(el('span',null,'LIFETIME FEES <b>'+fmtUsd(p.feesEverUsd)+'</b>'));
     if(p.costUsd!=null) foot.append(el('span',null,'DEPOSITED <b>'+fmtUsd(p.costUsd,0)+'</b>'));
+    if(p.chain==='sol'&&p.wallet) foot.append(el('span',null,'WALLET <b>'+esc(p.wallet.slice(0,4)+'…'+p.wallet.slice(-4))+'</b>'));
     const ib=el('button','invbtn','⇄ '+unit.split(' per ')[0]);
     ib.title='Flip price units';
     ib.addEventListener('click',()=>{card.dataset.inv=inv?'0':'1';renderCards();});
@@ -1332,7 +1622,7 @@ function renderCards(){
     card.append(foot);
     host.append(card);
   });
-  wireDrag(host, '.card', ids=>store.set('cardOrder', ids.map(Number)));
+  wireDrag(host, '.card', ids=>store.set('cardOrder', ids.map(String)));
 }
 
 /* semicircular gauge: needle = price position in range */
@@ -1414,8 +1704,41 @@ function renderPosList(){
     li.append(rm); ul.append(li);
   });
 }
+function renderSolWalletList(){
+  const ul=$('#solWalletList'); ul.innerHTML='';
+  cfg.solWallets.forEach(w=>{
+    const li=el('li');
+    const n=[...state.positions.values()].filter(p=>p.wallet===w).length;
+    li.append(el('span',null,'<span style="color:var(--text-muted)">◎</span> '+esc(w.slice(0,6)+'…'+w.slice(-6))+(n?' <span style="color:var(--text-muted);font-size:9px">· '+n+' position(s)</span>':'')));
+    const rm=el('button','rm','✕'); rm.title='Stop tracking wallet';
+    rm.addEventListener('click',()=>{
+      cfg.solWallets=cfg.solWallets.filter(x=>x!==w); store.set('solWallets',cfg.solWallets);
+      state.solCatalog=null; renderSolWalletList();
+      log('info','Wallet '+w.slice(0,4)+'… removed — rescanning.'); scan();
+    });
+    li.append(rm); ul.append(li);
+  });
+}
 function wireSettings(){
-  $('#btnSettings').addEventListener('click',()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); renderPosList(); });
+  $('#btnSettings').addEventListener('click',()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); renderPosList(); renderSolWalletList(); });
+  $('#addSolWalletBtn').addEventListener('click',()=>{
+    const w=$('#addSolWallet').value.trim();
+    if(!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(w)){ log('warning','That does not look like a Solana address.'); return; }
+    if(!cfg.solWallets.includes(w)){ cfg.solWallets.push(w); store.set('solWallets',cfg.solWallets); state.solCatalog=null; }
+    $('#addSolWallet').value=''; renderSolWalletList();
+    log('info','Tracking wallet '+w.slice(0,4)+'…'+w.slice(-4)+' — scanning for CLMM positions.');
+    scan();
+  });
+  $('#btnRescanSol').addEventListener('click',()=>{ state.solCatalog=null; log('info','Rescanning Solana wallets…'); scan(); });
+  $('#customSolRpcBtn').addEventListener('click',()=>{
+    const u=$('#customSolRpc').value.trim();
+    if(!/^https:\/\/.+/.test(u)){ log('warning','Custom Solana RPC must be an https:// URL.'); return; }
+    if(!SOL_RPCS.includes(u)){ SOL_RPCS.unshift(u); store.set('extraSolRpcs',[u,...store.get('extraSolRpcs',[])].slice(0,5)); }
+    solIndex=SOL_RPCS.indexOf(u); solCooldownUntil=0;
+    $('#customSolRpc').value='';
+    log('good','Custom Solana RPC set as primary — rescanning.');
+    state.solCatalog=null; scan();
+  });
   const close=()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); };
   $('#btnCloseDrawer').addEventListener('click',close);
   $('#scrim').addEventListener('click',close);
