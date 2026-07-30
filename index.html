@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARC // LP COMMAND — Uniswap V3 Telemetry</title>
+<style>
+  /* ============ HUD THEME ============ */
+  :root{
+    color-scheme: dark;
+    --bg:#04070d;
+    --surface-1:#070d16;
+    --panel:#0a1322;
+    --panel-2:#0c1626;
+    --line:#13233a;
+    --line-soft:#0e1a2c;
+    --grid:#0f1e33;
+    --accent:#35d6e8;          /* HUD chrome accent — never a data series */
+    --accent-dim:#1a7f92;
+    --accent-glow:rgba(53,214,232,.25);
+    --text-primary:#eaf7fa;
+    --text-secondary:#9db8c4;
+    --text-muted:#5d7889;
+    --series-1:#0f9db3;
+    --series-2:#c9711a;
+    --series-3:#e0508f;
+    --series-4:#8f79f2;
+    --series-5:#2f9e50;
+    --series-extra:#62788c;
+    --status-good:#0ca30c;
+    --status-warning:#fab219;
+    --status-serious:#ec835a;
+    --status-critical:#d03b3b;
+    --mono:ui-monospace,'Cascadia Mono','SF Mono',Consolas,'Roboto Mono',monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--text-primary);
+    font-family:var(--mono);
+    font-size:13px;
+    overflow-x:hidden;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(23,110,130,.14), transparent),
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size:100% 100%, 44px 44px, 44px 44px;
+    background-attachment:fixed;
+  }
+  /* scanline overlay */
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:999;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.0) 0 2px, rgba(8,20,32,.12) 2px 4px);
+    mix-blend-mode:multiply;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  }
+
+  /* ============ HEADER ============ */
+  header{
+    position:sticky;top:0;z-index:50;
+    display:flex;align-items:center;gap:18px;
+    padding:10px 22px;
+    background:linear-gradient(180deg, rgba(7,13,22,.97), rgba(7,13,22,.88));
+    border-bottom:1px solid var(--line);
+    backdrop-filter:blur(6px);
+  }
+  .reactor{width:38px;height:38px;flex:none;position:relative}
+  .reactor svg{width:100%;height:100%;filter:drop-shadow(0 0 6px var(--accent-glow))}
+  .reactor .spin{transform-origin:50% 50%;animation:spin 14s linear infinite}
+  .reactor .spin2{transform-origin:50% 50%;animation:spin 8s linear infinite reverse}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .brand h1{font-size:15px;letter-spacing:.28em;font-weight:600;color:var(--accent);text-shadow:0 0 12px var(--accent-glow);white-space:nowrap}
+  .brand .sub{font-size:9px;letter-spacing:.34em;color:var(--text-muted);margin-top:2px;white-space:nowrap}
+  .hdr-stats{display:flex;gap:22px;margin-left:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .hstat{text-align:right}
+  .hstat .k{font-size:8.5px;letter-spacing:.22em;color:var(--text-muted)}
+  .hstat .v{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .hstat .v .unit{color:var(--text-muted);font-size:10px}
+  .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
+  .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
+  .led.sim{background:var(--status-warning);box-shadow:0 0 8px var(--status-warning)}
+  .led.err{background:var(--status-critical);box-shadow:0 0 8px var(--status-critical)}
+  @keyframes pulse{50%{opacity:.45}}
+  .conn .label{font-size:10px;letter-spacing:.2em;color:var(--text-secondary)}
+  .hbtn{
+    font-family:var(--mono);font-size:10px;letter-spacing:.18em;cursor:pointer;
+    color:var(--accent);background:transparent;border:1px solid var(--accent-dim);
+    padding:7px 13px;transition:all .15s;white-space:nowrap;
+  }
+  .hbtn:hover{background:rgba(53,214,232,.1);box-shadow:0 0 12px var(--accent-glow)}
+  .hbtn.armed{color:var(--status-good);border-color:var(--status-good)}
+
+  /* ============ LAYOUT ============ */
+  main{max-width:1560px;margin:0 auto;padding:18px 22px 60px}
+  .banner{
+    display:none;margin-bottom:14px;padding:9px 16px;font-size:11px;letter-spacing:.14em;
+    border:1px solid var(--status-warning);color:var(--status-warning);
+    background:rgba(250,178,25,.06);
+  }
+  .banner.show{display:flex;align-items:center;gap:10px}
+
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px}
+  .tile{
+    position:relative;background:var(--panel);border:1px solid var(--line);
+    padding:14px 16px 12px;overflow:hidden;
+  }
+  .tile::before{content:"";position:absolute;top:0;left:0;width:26px;height:2px;background:var(--accent);box-shadow:0 0 8px var(--accent-glow)}
+  .tile .k{font-size:9px;letter-spacing:.26em;color:var(--text-muted);margin-bottom:7px}
+  .tile .v{font-size:24px;color:var(--text-primary);font-weight:500}
+  .tile .v .unit{font-size:12px;color:var(--text-muted)}
+  .tile .d{font-size:10px;margin-top:5px;color:var(--text-secondary)}
+  .tile .d .up{color:var(--status-good)}
+  .tile .d .down{color:var(--status-critical)}
+
+  /* panels */
+  .panel{
+    position:relative;background:var(--panel);border:1px solid var(--line);
+    margin-bottom:14px;
+  }
+  /* corner brackets */
+  .panel::before,.panel::after,
+  .panel .cb::before,.panel .cb::after{
+    content:"";position:absolute;width:12px;height:12px;pointer-events:none;
+    border-color:var(--accent);border-style:solid;opacity:.85;
+  }
+  .panel::before{top:-1px;left:-1px;border-width:2px 0 0 2px}
+  .panel::after{top:-1px;right:-1px;border-width:2px 2px 0 0}
+  .panel .cb::before{bottom:-1px;left:-1px;border-width:0 0 2px 2px}
+  .panel .cb::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0}
+  .phead{
+    display:flex;align-items:center;gap:10px;padding:10px 16px;
+    border-bottom:1px solid var(--line-soft);cursor:grab;user-select:none;
+  }
+  .phead:active{cursor:grabbing}
+  .phead .t{font-size:11px;letter-spacing:.3em;color:var(--accent)}
+  .phead .hint{font-size:9px;letter-spacing:.14em;color:var(--text-muted);margin-left:auto}
+  .phead .drag-dots{color:var(--text-muted);font-size:12px;letter-spacing:2px}
+  .pbody{padding:14px 16px}
+  .panel.dragging{opacity:.35;border-style:dashed}
+  .panel.drag-over{border-color:var(--accent);box-shadow:0 0 16px var(--accent-glow)}
+  .collapse-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-family:var(--mono);font-size:11px}
+  .collapse-btn:hover{color:var(--accent)}
+  .panel.collapsed .pbody{display:none}
+
+  /* ============ POSITION CARDS ============ */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(430px,1fr));gap:14px}
+  .card{
+    position:relative;background:var(--panel);border:1px solid var(--line);
+    border-top:2px solid var(--pcolor,var(--accent));
+    transition:box-shadow .2s;
+  }
+  .card:hover{box-shadow:0 0 20px rgba(53,214,232,.08)}
+  .card.dragging{opacity:.35;border-style:dashed}
+  .card.drag-over{outline:1px dashed var(--accent);outline-offset:3px}
+  .chead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line-soft);cursor:grab;user-select:none}
+  .chead:active{cursor:grabbing}
+  .cdot{width:9px;height:9px;flex:none;background:var(--pcolor);box-shadow:0 0 8px var(--pcolor)}
+  .chead .pair{font-size:13px;letter-spacing:.1em;color:var(--text-primary);font-weight:600}
+  .chead .feet{font-size:9px;color:var(--bg);background:var(--pcolor);padding:2px 6px;letter-spacing:.08em;font-weight:700}
+  .chead .pid{font-size:9px;color:var(--text-muted);letter-spacing:.1em}
+  .chead a{color:var(--text-muted);text-decoration:none;font-size:10px}
+  .chead a:hover{color:var(--accent)}
+  .chip{margin-left:auto;font-size:9px;letter-spacing:.16em;padding:3px 9px;border:1px solid;display:flex;align-items:center;gap:5px}
+  .chip .ic{font-size:10px}
+  .chip.in{color:var(--status-good);border-color:var(--status-good);background:rgba(12,163,12,.07)}
+  .chip.near{color:var(--status-warning);border-color:var(--status-warning);background:rgba(250,178,25,.07)}
+  .chip.edge{color:var(--status-serious);border-color:var(--status-serious);background:rgba(236,131,90,.08)}
+  .chip.out{color:var(--status-critical);border-color:var(--status-critical);background:rgba(208,59,59,.09);animation:pulse 1.6s infinite}
+  .cbody{display:grid;grid-template-columns:150px 1fr;gap:8px 14px;padding:12px 14px}
+  .gaugebox{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .gauge-label{font-size:8.5px;letter-spacing:.2em;color:var(--text-muted)}
+  .rangebar-wrap{grid-column:1/-1}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;align-content:start}
+  .m .k{font-size:8.5px;letter-spacing:.18em;color:var(--text-muted)}
+  .m .v{font-size:13.5px;color:var(--text-primary);font-variant-numeric:tabular-nums;margin-top:2px}
+  .m .v.sm{font-size:11.5px}
+  .m .v .up{color:var(--status-good)}
+  .m .v .down{color:var(--status-critical)}
+  .m .v .unit{color:var(--text-muted);font-size:10px}
+  .cfoot{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line-soft);font-size:9.5px;color:var(--text-muted);letter-spacing:.08em;flex-wrap:wrap}
+  .cfoot b{color:var(--text-secondary);font-weight:400}
+  .invbtn{margin-left:auto;background:none;border:1px solid var(--line);color:var(--text-muted);font-family:var(--mono);font-size:9px;padding:2px 8px;cursor:pointer;letter-spacing:.1em}
+  .invbtn:hover{color:var(--accent);border-color:var(--accent-dim)}
+
+  /* range bar (in-card + radar) */
+  .rangebar{position:relative;height:34px;margin:4px 0 2px}
+  .rb-track{position:absolute;top:14px;left:0;right:0;height:6px;background:var(--panel-2);border:1px solid var(--line)}
+  .rb-range{position:absolute;top:14px;height:6px;background:linear-gradient(90deg,rgba(53,214,232,.16),rgba(53,214,232,.42),rgba(53,214,232,.16));border-top:1px solid var(--accent-dim);border-bottom:1px solid var(--accent-dim)}
+  .rb-warnzone{position:absolute;top:14px;height:6px;background:repeating-linear-gradient(45deg,rgba(250,178,25,.35) 0 3px,transparent 3px 6px)}
+  .rb-price{position:absolute;top:6px;width:2px;height:22px;background:#fff;box-shadow:0 0 8px var(--accent)}
+  .rb-price::after{content:"";position:absolute;top:-4px;left:-3px;border:4px solid transparent;border-top-color:#fff}
+  .rb-lab{position:absolute;font-size:8.5px;color:var(--text-muted);top:26px;letter-spacing:.06em}
+  .rb-cap{position:absolute;top:12px;width:2px;height:10px;background:var(--accent-dim)}
+
+  /* radar rows */
+  .radar-row{display:grid;grid-template-columns:150px 1fr 120px;gap:12px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line-soft)}
+  .radar-row:last-child{border-bottom:none}
+  .radar-name{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-secondary)}
+  .radar-name .cdot{width:7px;height:7px}
+  .radar-dist{font-size:10px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
+
+  /* charts */
+  .chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.chartgrid{grid-template-columns:1fr}}
+  .chart-title{font-size:9.5px;letter-spacing:.22em;color:var(--text-muted);margin-bottom:8px}
+  svg text{font-family:var(--mono)}
+  .tooltip{
+    position:fixed;z-index:1000;pointer-events:none;display:none;
+    background:rgba(7,13,22,.96);border:1px solid var(--accent-dim);
+    padding:8px 11px;font-size:11px;color:var(--text-primary);
+    box-shadow:0 0 16px rgba(0,0,0,.6);max-width:260px;
+  }
+  .tooltip .tk{color:var(--text-muted);font-size:9px;letter-spacing:.14em}
+  .tooltip .tv{font-variant-numeric:tabular-nums}
+
+  /* event log */
+  .log{max-height:220px;overflow-y:auto;font-size:11px}
+  .log-row{display:flex;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line-soft);align-items:baseline}
+  .log-row .ts{color:var(--text-muted);font-size:9.5px;flex:none;width:64px}
+  .log-row .sev{flex:none;width:14px;text-align:center}
+  .log-row .msg{color:var(--text-secondary)}
+  .log-row.warning .msg{color:var(--status-warning)}
+  .log-row.critical .msg{color:var(--status-critical)}
+  .log-row.good .msg{color:var(--status-good)}
+
+  /* settings drawer */
+  .drawer{
+    position:fixed;top:0;right:-420px;width:400px;height:100%;z-index:200;
+    background:var(--surface-1);border-left:1px solid var(--accent-dim);
+    transition:right .25s ease;padding:20px;overflow-y:auto;
+    box-shadow:-10px 0 40px rgba(0,0,0,.5);
+  }
+  .drawer.open{right:0}
+  .drawer h2{font-size:12px;letter-spacing:.3em;color:var(--accent);margin-bottom:18px}
+  .drawer .sec{margin-bottom:22px}
+  .drawer .sec h3{font-size:10px;letter-spacing:.22em;color:var(--text-muted);margin-bottom:9px;border-bottom:1px solid var(--line);padding-bottom:5px}
+  .drawer label{display:block;font-size:10px;color:var(--text-secondary);margin:9px 0 4px;letter-spacing:.1em}
+  .drawer input[type=text],.drawer input[type=number],.drawer select{
+    width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text-primary);
+    font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none;
+  }
+  .drawer input:focus,.drawer select:focus{border-color:var(--accent-dim)}
+  .pos-list{list-style:none}
+  .pos-list li{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line-soft);font-size:11px}
+  .pos-list .rm{margin-left:auto;background:none;border:none;color:var(--status-critical);cursor:pointer;font-family:var(--mono);font-size:12px}
+  .addrow{display:flex;gap:8px;margin-top:9px}
+  .addrow input{flex:1}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:none}
+  .scrim.show{display:block}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:var(--line);border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--accent-dim)}
+
+  .loading-overlay{
+    position:fixed;inset:0;z-index:500;background:var(--bg);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+    transition:opacity .4s;
+  }
+  .loading-overlay.hide{opacity:0;pointer-events:none}
+  .boot{font-size:11px;letter-spacing:.3em;color:var(--accent);animation:pulse 1.4s infinite}
+  .bootlog{font-size:10px;color:var(--text-muted);height:70px;text-align:center;line-height:1.9}
+  footer{max-width:1560px;margin:0 auto;padding:0 22px 30px;font-size:9px;color:var(--text-muted);letter-spacing:.1em;line-height:1.8}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="bootScreen">
+  <div class="reactor" style="width:90px;height:90px">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="#13233a" stroke-width="1"/>
+      <circle class="spin" cx="50" cy="50" r="40" fill="none" stroke="#35d6e8" stroke-width="2" stroke-dasharray="50 30 10 40" opacity=".8"/>
+      <circle class="spin2" cx="50" cy="50" r="30" fill="none" stroke="#1a7f92" stroke-width="3" stroke-dasharray="20 14"/>
+      <circle cx="50" cy="50" r="16" fill="none" stroke="#35d6e8" stroke-width="1.5"/>
+      <circle cx="50" cy="50" r="7" fill="#35d6e8" opacity=".9"/>
+    </svg>
+  </div>
+  <div class="boot">INITIALIZING LP COMMAND</div>
+  <div class="bootlog" id="bootLog"></div>
+</div>
+
+<header>
+  <div class="reactor">
+    <svg viewBox="0 0 100 100">
+      <circle class="spin" cx="50" cy="50" r="42" fill="none" stroke="#35d6e8" stroke-width="3" stroke-dasharray="55 25 12 40" opacity=".85"/>
+      <circle class="spin2" cx="50" cy="50" r="29" fill="none" stroke="#1a7f92" stroke-width="4" stroke-dasharray="22 15"/>
+      <circle cx="50" cy="50" r="12" fill="#35d6e8" opacity=".9"/>
+    </svg>
+  </div>
+  <div class="brand">
+    <h1>ARC // LP COMMAND</h1>
+    <div class="sub">UNISWAP V3 · POSITION TELEMETRY</div>
+  </div>
+  <div class="hdr-stats">
+    <div class="hstat"><div class="k">UTC</div><div class="v" id="hClock">—</div></div>
+    <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
+    <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
+    <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
+    <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
+    <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
+    <button class="hbtn" id="btnRefresh">⟳ SCAN</button>
+    <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
+  </div>
+</header>
+
+<main>
+  <div class="banner" id="simBanner">⚠ SIMULATION MODE — live RPC unreachable from this context. Data shown is synthetic. Host the file (e.g. GitHub Pages) or open it locally for live on-chain telemetry.</div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div id="panelStack">
+    <section class="panel" data-panel="radar" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE RADAR</span><span class="hint">PRICE POSITION WITHIN EACH RANGE · drag panels to reorder</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="radarBody"></div>
+    </section>
+
+    <section class="panel" data-panel="compare" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">PERFORMANCE COMPARISON</span><span class="hint" id="compareHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody"><div class="chartgrid" id="compareCharts"></div></div>
+    </section>
+
+    <section class="panel" data-panel="telemetry" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">SESSION TELEMETRY</span><span class="hint">TOTAL PORTFOLIO VALUE · sampled each scan</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="sparkBody"></div>
+    </section>
+
+    <section class="panel" data-panel="positions" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">POSITION MODULES</span><span class="hint">drag cards to rearrange · ⇄ flips price units</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody"><div class="cards" id="cards"></div></div>
+    </section>
+
+    <section class="panel" data-panel="log" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">EVENT LOG</span><span class="hint" id="alertCfgHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody"><div class="log" id="logBody"></div></div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  DATA: Ethereum mainnet via public JSON-RPC (no keys, no backend) · position state from NonfungiblePositionManager · prices from pool slot0 + Chainlink ETH/USD ·
+  fees via static collect() simulation · deposit history via IncreaseLiquidity logs.<br>
+  ROI method: (current value + fees earned − deposited value) / deposited value. When historical entry pricing is unavailable on the RPC, deposits are valued at current
+  prices — that variant equals PnL vs HODL and is labeled accordingly. Not financial advice; verify before acting.
+</footer>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <h2>⚙ CONFIGURATION</h2>
+  <div class="sec">
+    <h3>TRACKED POSITIONS</h3>
+    <ul class="pos-list" id="posList"></ul>
+    <div class="addrow">
+      <input type="text" id="addPosInput" placeholder="V3 position ID e.g. 1338795">
+      <button class="hbtn" id="addPosBtn">+ ADD</button>
+    </div>
+    <label style="margin-top:10px">Tip: the number in app.uniswap.org/positions/v3/ethereum/<b style="color:var(--accent)">1338795</b></label>
+  </div>
+  <div class="sec">
+    <h3>ALERT THRESHOLDS</h3>
+    <label>WARN when price is within this % of the RANGE WIDTH from an edge</label>
+    <input type="number" id="cfgWarnPct" min="1" max="45" step="1">
+    <label>CRITICAL when within this % of the range width from an edge</label>
+    <input type="number" id="cfgCritPct" min="0.5" max="25" step="0.5">
+  </div>
+  <div class="sec">
+    <h3>SCAN</h3>
+    <label>Auto-refresh interval (seconds)</label>
+    <input type="number" id="cfgInterval" min="15" max="600" step="5">
+  </div>
+  <div class="sec">
+    <h3>RPC ENDPOINT</h3>
+    <label>Primary endpoint (auto-fails-over to public pool)</label>
+    <select id="cfgRpc"></select>
+  </div>
+  <div class="sec">
+    <h3>LAYOUT</h3>
+    <button class="hbtn" id="btnResetLayout">RESET PANEL &amp; CARD ORDER</button>
+  </div>
+  <div class="sec">
+    <button class="hbtn" id="btnCloseDrawer" style="width:100%">CLOSE</button>
+  </div>
+</aside>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+"use strict";
+/* ================================================================
+   ARC // LP COMMAND — single-file Uniswap V3 position HUD
+   Live on-chain via public JSON-RPC; graceful demo fallback.
+   ================================================================ */
+
+/* ---------- safe storage (falls back to memory when blocked) ---------- */
+const memStore = {};
+const store = {
+  get(k, dflt){ try{ const v = window.localStorage.getItem('lphud:'+k); return v==null ? (k in memStore ? memStore[k] : dflt) : JSON.parse(v);}catch(e){ return k in memStore ? memStore[k] : dflt; } },
+  set(k, v){ memStore[k]=v; try{ window.localStorage.setItem('lphud:'+k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* ---------- config ---------- */
+const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
+const RPCS = [
+  'https://ethereum-rpc.publicnode.com',
+  'https://eth.drpc.org',
+  'https://1rpc.io/eth',
+  'https://eth.llamarpc.com',
+  'https://rpc.flashbots.net',
+  'https://cloudflare-eth.com'
+];
+const cfg = {
+  ids: store.get('ids', DEFAULT_IDS.slice()),
+  warnPct: store.get('warnPct', 20),   // % of range width remaining to an edge
+  critPct: store.get('critPct', 8),
+  interval: store.get('interval', 45),
+  rpc: store.get('rpc', RPCS[0]),
+};
+
+const NPM   = '0xc36442b4a4522e871399cd717abdd847ab11fe88';
+const FACTORY = '0x1f98431c8ad98523631ae4a59f267346ea31f984';
+const CHAINLINK_ETH = '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419';
+const CHAINLINK_BTC = '0xf4030086522a5beea4988f8ca5b36dba0d0f58a6';
+const SEL = {
+  positions:'0x99fbab88', ownerOf:'0x6352211e', getPool:'0x1698ee82', slot0:'0x3850c7bd',
+  symbol:'0x95d89b41', decimals:'0x313ce567', latestAnswer:'0x50d25bcd', collect:'0xfc6f7865'
+};
+const TOPIC_INC = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
+const TOPIC_DEC = '0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4';
+const TOPIC_COL = '0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01';
+
+const STABLES = new Set([
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
+  '0xdac17f958d2ee523a2206206994597c13d831ec7', // USDT
+  '0x6b175474e89094c44da98b954eedeac495271d0f', // DAI
+]);
+const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+const WBTC = '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599';
+
+const SERIES = ['var(--series-1)','var(--series-2)','var(--series-3)','var(--series-4)','var(--series-5)'];
+const SERIES_HEX = ['#0f9db3','#c9711a','#e0508f','#8f79f2','#2f9e50'];
+const seriesColor = i => i < 5 ? SERIES[i] : 'var(--series-extra)';
+const seriesHex  = i => i < 5 ? SERIES_HEX[i] : '#62788c';
+
+/* ---------- state ---------- */
+const state = {
+  mode: 'boot',              // boot | live | sim | error
+  positions: new Map(),      // id -> position data
+  ethUsd: null, btcUsd: null,
+  block: null,
+  samples: [],               // {t, totalUsd}
+  alertsSeen: {},            // id -> last severity notified
+  countdown: cfg.interval,
+  timer: null,
+};
+
+/* ---------- utilities ---------- */
+const $ = s => document.querySelector(s);
+const el = (tag, cls, html) => { const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; };
+const fmtUsd = (v, dp) => v==null ? '—' : '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:dp??2, maximumFractionDigits:dp??2});
+const fmtNum = (v, dp=4) => v==null ? '—' : Number(v).toLocaleString('en-US',{maximumFractionDigits:dp});
+const fmtPct = (v, dp=2, sign) => v==null ? '—' : ((sign&&v>0?'+':'')+(v).toFixed(dp)+'%');
+const fmtPrice = p => p==null ? '—' : p>=1000 ? p.toLocaleString('en-US',{maximumFractionDigits:0}) : p>=1 ? p.toFixed(2) : p.toPrecision(4);
+const fmtAge = days => days==null ? '—' : days<1 ? Math.round(days*24)+'h' : days<60 ? days.toFixed(1)+'d' : (days/30.44).toFixed(1)+'mo';
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad32 = h => h.replace(/^0x/,'').padStart(64,'0');
+const hexToBig = h => BigInt(h);
+const word = (data, i) => '0x' + data.replace(/^0x/,'').slice(i*64, (i+1)*64);
+const toSigned = (bi, bits) => { const max = 1n << BigInt(bits-1); return bi >= max ? bi - (1n<<BigInt(bits)) : bi; };
+const bigToFloat = (bi, dec) => Number(bi) / Math.pow(10, dec);
+
+/* ---------- JSON-RPC layer with failover + batching ---------- */
+let rpcIndex = Math.max(0, RPCS.indexOf(cfg.rpc));
+let rpcId = 1;
+async function rpcBatch(calls, {timeout=12000} = {}){
+  // calls: [{method, params}]  -> array of results (throws on transport failure of all endpoints)
+  const order = [...RPCS.slice(rpcIndex), ...RPCS.slice(0, rpcIndex)];
+  let lastErr;
+  for(const url of order){
+    try{
+      const body = calls.map(c => ({jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}));
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), timeout);
+      const res = await fetch(url, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body), signal:ctrl.signal});
+      clearTimeout(t);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      let js = await res.json();
+      if(!Array.isArray(js)) js = [js];
+      const byId = new Map(js.map(r=>[r.id, r]));
+      const out = body.map(b => { const r = byId.get(b.id); if(!r) throw new Error('missing result'); return r; });
+      rpcIndex = RPCS.indexOf(url);           // stick with the endpoint that worked
+      return out;                              // items may still carry .error individually
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('all RPCs failed');
+}
+async function ethCall(to, data, block='latest', from){
+  const r = await rpcBatch([{method:'eth_call', params:[{to, data, ...(from?{from}:{})}, block]}]);
+  if(r[0].error) throw new Error(r[0].error.message||'call reverted');
+  return r[0].result;
+}
+
+/* ---------- decoding helpers ---------- */
+function decodePositions(res){
+  return {
+    token0: '0x'+word(res,2).slice(-40),
+    token1: '0x'+word(res,3).slice(-40),
+    fee: Number(hexToBig(word(res,4))),
+    tickLower: Number(toSigned(hexToBig(word(res,5)), 24)),
+    tickUpper: Number(toSigned(hexToBig(word(res,6)), 24)),
+    liquidity: hexToBig(word(res,7)),
+    owed0: hexToBig(word(res,10)),
+    owed1: hexToBig(word(res,11)),
+  };
+}
+function decodeString(res){
+  try{
+    const off = Number(hexToBig(word(res,0)))/32;
+    const len = Number(hexToBig(word(res,off)));
+    const hex = res.replace(/^0x/,'').slice((off+1)*64, (off+1)*64+len*2);
+    return decodeURIComponent(hex.replace(/(..)/g,'%$1'));
+  }catch(e){ return '???'; }
+}
+
+/* ---------- Uniswap V3 math ---------- */
+const Q96 = Math.pow(2,96);
+const tickToPrice = t => Math.pow(1.0001, t);            // raw price token1/token0
+const tickToSqrt = t => Math.pow(1.0001, t/2);
+function amountsForLiquidity(L, sqrtP, sqrtA, sqrtB){
+  // L float, sqrt prices float; returns [amount0, amount1] in raw units
+  if(sqrtA > sqrtB) [sqrtA, sqrtB] = [sqrtB, sqrtA];
+  let a0=0, a1=0;
+  if(sqrtP <= sqrtA){ a0 = L * (sqrtB - sqrtA) / (sqrtA*sqrtB); }
+  else if(sqrtP >= sqrtB){ a1 = L * (sqrtB - sqrtA); }
+  else { a0 = L * (sqrtB - sqrtP) / (sqrtP*sqrtB); a1 = L * (sqrtP - sqrtA); }
+  return [a0, a1];
+}
+</script>
+<script>
+/* ================= DATA LAYER ================= */
+const tokenMeta = new Map();   // addr -> {symbol, decimals}
+async function getTokenMeta(addrs){
+  const need = addrs.filter(a=>!tokenMeta.has(a));
+  if(need.length){
+    const calls = need.flatMap(a=>[{method:'eth_call',params:[{to:a,data:SEL.symbol},'latest']},{method:'eth_call',params:[{to:a,data:SEL.decimals},'latest']}]);
+    const res = await rpcBatch(calls);
+    need.forEach((a,i)=>{
+      const symRes = res[i*2], decRes = res[i*2+1];
+      const symbol = symRes.error ? '???' : decodeString(symRes.result);
+      const decimals = decRes.error ? 18 : Number(hexToBig(decRes.result));
+      tokenMeta.set(a, {symbol: symbol==='WETH'?'ETH':symbol, decimals, raw:symbol});
+    });
+  }
+  return addrs.map(a=>tokenMeta.get(a));
+}
+
+/* USD price of one unit of token, using anchors + pool spot ratio */
+function tokenUsd(addr, pairAddr, rawPrice10 /* token1 per token0, decimal-adjusted */, isToken0){
+  const a = addr.toLowerCase();
+  if(STABLES.has(a)) return 1;
+  if(a===WETH) return state.ethUsd;
+  if(a===WBTC) return state.btcUsd;
+  // derive from counterpart if counterpart is priceable
+  const p = pairAddr.toLowerCase();
+  let counterUsd = null;
+  if(STABLES.has(p)) counterUsd = 1;
+  else if(p===WETH) counterUsd = state.ethUsd;
+  else if(p===WBTC) counterUsd = state.btcUsd;
+  if(counterUsd==null || rawPrice10==null) return null;
+  // rawPrice10 = token1 per token0
+  return isToken0 ? rawPrice10*counterUsd : counterUsd/rawPrice10;
+}
+
+/* find mint block + deposit/withdraw/collect history via logs (chunked fallback) */
+async function fetchHistory(id){
+  const topicId = '0x'+pad32(id.toString(16));
+  const filters = t => ({address:NPM, topics:[t, topicId]});
+  const tryRange = async (from, to) => {
+    const r = await rpcBatch([
+      {method:'eth_getLogs', params:[{...filters(TOPIC_INC), fromBlock:from, toBlock:to}]},
+      {method:'eth_getLogs', params:[{...filters(TOPIC_DEC), fromBlock:from, toBlock:to}]},
+      {method:'eth_getLogs', params:[{...filters(TOPIC_COL), fromBlock:from, toBlock:to}]},
+    ], {timeout:20000});
+    if(r.some(x=>x.error)) throw new Error(r.find(x=>x.error).error.message);
+    return r.map(x=>x.result);
+  };
+  let inc=[],dec=[],col=[];
+  try{
+    [inc,dec,col] = await tryRange('0x'+(12369651).toString(16), 'latest');
+  }catch(e){
+    // chunked walk backward from head (IDs ~1.3M are recent; usually found fast)
+    try{
+      const head = state.blockNum || 23500000;
+      const CHUNK = 400000;
+      for(let hi=head; hi>12369651 && inc.length===0; hi-=CHUNK){
+        const lo = Math.max(12369651, hi-CHUNK+1);
+        try{
+          const [i2,d2,c2] = await tryRange('0x'+lo.toString(16), '0x'+hi.toString(16));
+          inc=[...i2,...inc]; dec=[...d2,...dec]; col=[...c2,...col];
+        }catch(e2){ /* skip chunk errors */ }
+        if(hi < head - CHUNK*12) break; // cap effort
+      }
+    }catch(e2){}
+  }
+  // data layouts: INC = (liquidity, amount0, amount1); DEC = (liquidity, amount0, amount1); COL = (recipient, amount0, amount1)
+  const parseAmts = (lg, skip) => ({block:Number(hexToBig(lg.blockNumber)), a0:hexToBig(word(lg.data,skip)), a1:hexToBig(word(lg.data,skip+1))});
+  return {
+    inc: inc.map(l=>parseAmts(l,1)),
+    dec: dec.map(l=>parseAmts(l,1)),
+    col: col.map(l=>parseAmts(l,1)),
+  };
+}
+
+async function blockTimestamp(bn){
+  try{
+    const r = await rpcBatch([{method:'eth_getBlockByNumber', params:['0x'+bn.toString(16), false]}]);
+    if(r[0].error || !r[0].result) return null;
+    return Number(hexToBig(r[0].result.timestamp))*1000;
+  }catch(e){ return null; }
+}
+
+/* historical slot0 + chainlink at a block (archive call; may fail -> null) */
+async function historicalContext(bn){
+  try{
+    const blk = '0x'+bn.toString(16);
+    const r = await rpcBatch([{method:'eth_call', params:[{to:CHAINLINK_ETH, data:SEL.latestAnswer}, blk]}]);
+    if(r[0].error) return null;
+    return { ethUsd: bigToFloat(hexToBig(r[0].result), 8) };
+  }catch(e){ return null; }
+}
+
+/* -------- full position fetch -------- */
+async function fetchPosition(id, prev){
+  const idHex = pad32(id.toString(16));
+  // 1) core position + owner
+  const r1 = await rpcBatch([
+    {method:'eth_call', params:[{to:NPM, data:SEL.positions+idHex},'latest']},
+    {method:'eth_call', params:[{to:NPM, data:SEL.ownerOf+idHex},'latest']},
+  ]);
+  if(r1[0].error) throw new Error('position '+id+': '+(r1[0].error.message||'not found'));
+  const core = decodePositions(r1[0].result);
+  const owner = r1[1].error ? null : '0x'+r1[1].result.slice(-40);
+
+  // 2) pool address + token meta
+  const [m0, m1] = await getTokenMeta([core.token0.toLowerCase(), core.token1.toLowerCase()]);
+  const poolData = SEL.getPool + pad32(core.token0) + pad32(core.token1) + pad32(core.fee.toString(16));
+  const r2 = await rpcBatch([{method:'eth_call', params:[{to:FACTORY, data:poolData},'latest']}]);
+  if(r2[0].error) throw new Error('pool lookup failed');
+  const pool = '0x'+r2[0].result.slice(-40);
+
+  // 3) slot0 + uncollected fees (static collect as owner)
+  const MAX128 = 'f'.repeat(32);
+  const collectData = SEL.collect + idHex + pad32(owner||NPM) + MAX128.padStart(64,'0') + MAX128.padStart(64,'0');
+  const r3 = await rpcBatch([
+    {method:'eth_call', params:[{to:pool, data:SEL.slot0},'latest']},
+    {method:'eth_call', params:[{to:NPM, data:collectData, from:owner||undefined},'latest']},
+  ]);
+  if(r3[0].error) throw new Error('slot0 failed');
+  const sqrtPriceX96 = hexToBig(word(r3[0].result,0));
+  const tick = Number(toSigned(hexToBig(word(r3[0].result,1)),24));
+  let fee0 = core.owed0, fee1 = core.owed1;
+  if(!r3[1].error){ fee0 = hexToBig(word(r3[1].result,0)); fee1 = hexToBig(word(r3[1].result,1)); }
+
+  // 4) math
+  const d0=m0.decimals, d1=m1.decimals;
+  const sqrtP = Number(sqrtPriceX96)/Q96;
+  const sqrtA = tickToSqrt(core.tickLower), sqrtB = tickToSqrt(core.tickUpper);
+  const L = Number(core.liquidity);
+  const [ra0, ra1] = amountsForLiquidity(L, sqrtP, sqrtA, sqrtB);
+  const amt0 = ra0/10**d0, amt1 = ra1/10**d1;
+  const f0 = bigToFloat(fee0,d0), f1 = bigToFloat(fee1,d1);
+  const scale = 10**(d0-d1);
+  const price = sqrtP*sqrtP*scale;                     // token1 per token0, human units
+  const priceLower = tickToPrice(core.tickLower)*scale;
+  const priceUpper = tickToPrice(core.tickUpper)*scale;
+
+  const usd0 = tokenUsd(core.token0, core.token1, price, true);
+  const usd1 = tokenUsd(core.token1, core.token0, price, false);
+  const valueUsd = (usd0!=null&&usd1!=null) ? amt0*usd0 + amt1*usd1 : null;
+  const feesUsd  = (usd0!=null&&usd1!=null) ? f0*usd0 + f1*usd1 : null;
+
+  // 5) history: fetch once, reuse afterwards
+  let hist = prev?.hist;
+  let mintTs = prev?.mintTs, entryEthUsd = prev?.entryEthUsd;
+  if(!hist){
+    try{
+      hist = await fetchHistory(id);
+      if(hist.inc.length){
+        const mintBlock = Math.min(...hist.inc.map(x=>x.block));
+        mintTs = await blockTimestamp(mintBlock);
+        const hctx = await historicalContext(mintBlock);
+        entryEthUsd = hctx?.ethUsd ?? null;
+      }
+    }catch(e){ hist = {inc:[],dec:[],col:[]}; }
+  }
+  const dep0 = hist.inc.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+  const dep1 = hist.inc.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+  const wdr0 = hist.dec.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+  const wdr1 = hist.dec.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+  const col0 = hist.col.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+  const col1 = hist.col.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+  const feeCol0 = Math.max(0, col0-wdr0), feeCol1 = Math.max(0, col1-wdr1); // collected fees = collect - principal withdrawn
+
+  const ageDays = mintTs ? (Date.now()-mintTs)/86400000 : null;
+
+  // 6) ROI — entry-priced when archive data available, else "vs HODL" at current prices
+  let costUsd=null, roiPct=null, roiMode='hodl', feeAprPct=null, feesEverUsd=null;
+  const canPrice = usd0!=null && usd1!=null && (dep0>0 || dep1>0);
+  if(canPrice){
+    let e0=usd0, e1=usd1, mode='hodl';
+    if(entryEthUsd && state.ethUsd){
+      // scale ETH-linked legs by entry ETH price; stables stay 1
+      const scaleFor = (addr, cur) => {
+        const a = addr.toLowerCase();
+        if(STABLES.has(a)) return 1;
+        if(a===WETH) return entryEthUsd;
+        return cur!=null ? cur*(entryEthUsd/state.ethUsd) : null; // approx for ETH-correlated legs
+      };
+      const s0 = scaleFor(core.token0, usd0), s1 = scaleFor(core.token1, usd1);
+      if(s0!=null && s1!=null){ e0=s0; e1=s1; mode='entry'; }
+    }
+    costUsd = dep0*e0 + dep1*e1;
+    const wdrUsd = wdr0*usd0 + wdr1*usd1;
+    feesEverUsd = (feeCol0*usd0 + feeCol1*usd1) + (feesUsd??0);
+    const totalNow = (valueUsd??0) + wdrUsd + feesEverUsd;
+    if(costUsd>0){
+      roiPct = (totalNow - costUsd)/costUsd*100;
+      roiMode = mode;
+      if(ageDays>0.05) feeAprPct = (feesEverUsd/costUsd)*(365/ageDays)*100;
+    }
+  }
+
+  // 7) range position + edge distance
+  const inRange = tick>=core.tickLower && tick<core.tickUpper;
+  const rangePos = (tick-core.tickLower)/(core.tickUpper-core.tickLower); // 0..1 (may exceed)
+  // distance to nearest edge as % of current price
+  const dLow = (price-priceLower)/price*100;
+  const dUp  = (priceUpper-price)/price*100;
+  const nearestEdge = dLow<dUp ? 'lower' : 'upper';
+
+  return {
+    id, owner, pool, core, m0, m1, tick, price, priceLower, priceUpper,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
+    hist, mintTs, entryEthUsd, ageDays, dep0, dep1, feeCol0, feeCol1,
+    costUsd, roiPct, roiMode, feeAprPct, feesEverUsd,
+    inRange, rangePos, dLow, dUp, edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
+    nearestEdge,
+    pairLabel: m0.symbol+' / '+m1.symbol,
+    feeLabel: (core.fee/10000)+'%',
+  };
+}
+
+/* -------- anchors: eth price, block -------- */
+async function fetchAnchors(){
+  const r = await rpcBatch([
+    {method:'eth_blockNumber', params:[]},
+    {method:'eth_call', params:[{to:CHAINLINK_ETH, data:SEL.latestAnswer},'latest']},
+    {method:'eth_call', params:[{to:CHAINLINK_BTC, data:SEL.latestAnswer},'latest']},
+  ]);
+  if(r[0].error) throw new Error('blockNumber failed');
+  state.blockNum = Number(hexToBig(r[0].result));
+  state.block = state.blockNum.toLocaleString();
+  if(!r[1].error) state.ethUsd = bigToFloat(hexToBig(r[1].result),8);
+  if(!r[2].error) state.btcUsd = bigToFloat(hexToBig(r[2].result),8);
+}
+
+/* ================= DEMO MODE ================= */
+let demoSeed = 42;
+const demoRand = () => (demoSeed = (demoSeed*1103515245+12345)&0x7fffffff)/0x7fffffff;
+function demoPositions(){
+  const now = Date.now();
+  const specs = [
+    {id:1338795, pair:['ETH','USDC'],  fee:'0.05%', price:3841, lo:3400, up:4200, dep:25000, age:34, feeRate:0.31},
+    {id:1342410, pair:['WBTC','ETH'],  fee:'0.3%',  price:17.42, lo:15.8, up:19.5, dep:18000, age:9,  feeRate:0.22},
+    {id:1340170, pair:['ETH','USDT'],  fee:'0.05%', price:3843, lo:3700, up:3950, dep:32000, age:21, feeRate:0.55},
+    {id:1340238, pair:['wstETH','ETH'],fee:'0.01%', price:1.192, lo:1.183, up:1.201, dep:41000, age:20, feeRate:0.12},
+    {id:1339457, pair:['UNI','ETH'],   fee:'0.3%',  price:0.00231, lo:0.0019, up:0.0031, dep:9500, age:27, feeRate:0.44},
+  ];
+  return specs.map((s,i)=>{
+    const drift = 1 + (demoRand()-0.5)*0.01;
+    const price = s.price*drift;
+    const inRange = price>=s.lo && price<=s.up;
+    const rangePos = (Math.log(price)-Math.log(s.lo))/(Math.log(s.up)-Math.log(s.lo));
+    const dLow=(price-s.lo)/price*100, dUp=(s.up-price)/price*100;
+    const feesEverUsd = s.dep*s.feeRate*(s.age/365)*(0.8+demoRand()*0.4);
+    const ilDrag = (demoRand()-0.55)*0.03;
+    const valueUsd = s.dep*(1+ilDrag);
+    const roiPct = ((valueUsd+feesEverUsd)/s.dep-1)*100;
+    return {
+      id:s.id, demo:true, pairLabel:s.pair.join(' / '), feeLabel:s.fee,
+      m0:{symbol:s.pair[0]}, m1:{symbol:s.pair[1]},
+      price, priceLower:s.lo, priceUpper:s.up, tick:0,
+      amt0:null, amt1:null, f0:null, f1:null,
+      valueUsd, feesUsd:feesEverUsd*0.35, feesEverUsd, costUsd:s.dep,
+      mintTs: now-s.age*86400000, ageDays:s.age,
+      roiPct, roiMode: i%2?'hodl':'entry',
+      feeAprPct: s.feeRate*100*(0.8+demoRand()*0.4),
+      inRange, rangePos, dLow, dUp,
+      edgeDist: inRange?Math.min(dLow,dUp):-(price<s.lo?(s.lo-price)/price*100:(price-s.up)/price*100),
+      nearestEdge: dLow<dUp?'lower':'upper',
+      owner:null, dep0:null, dep1:null,
+    };
+  });
+}
+
+/* ================= SCAN ORCHESTRATION ================= */
+let scanning = false;
+async function scan(isBoot){
+  if(scanning) return; scanning = true;
+  try{
+    setConn('sync');
+    await fetchAnchors();
+    const results = [];
+    for(const id of cfg.ids){
+      try{
+        const prev = state.positions.get(id);
+        bootMsg('QUERYING POSITION #'+id+' …');
+        results.push(await fetchPosition(id, prev));
+      }catch(e){
+        log('warning','#'+id+' fetch failed: '+esc(e.message).slice(0,80));
+        const prev = state.positions.get(id);
+        if(prev) results.push(prev);
+      }
+    }
+    if(!results.length) throw new Error('no positions fetched');
+    state.positions = new Map(results.map(p=>[p.id,p]));
+    state.mode = 'live';
+    setConn('live');
+  }catch(e){
+    // fall back to demo
+    if(state.mode!=='live' || isBoot){
+      state.mode = 'sim';
+      const demo = demoPositions();
+      state.positions = new Map(demo.map(p=>[p.id,p]));
+      state.ethUsd = state.ethUsd ?? 3842.55;
+      state.block = state.block ?? '—';
+      setConn('sim');
+      if(isBoot) log('warning','Live RPC unreachable — SIMULATION MODE engaged.');
+    }else{
+      setConn('err');
+      log('critical','Scan failed: '+esc(e.message||e).slice(0,90));
+    }
+  }
+  // sample for session telemetry
+  const total = [...state.positions.values()].reduce((s,p)=>s+(p.valueUsd||0)+(p.feesUsd||0),0);
+  state.samples.push({t:Date.now(), v:total});
+  if(state.samples.length>600) state.samples.shift();
+  evaluateAlerts();
+  renderAll();
+  state.countdown = cfg.interval;
+  scanning = false;
+}
+</script>
+<script>
+/* ================= ALERTS ================= */
+function severityOf(p){
+  if(!p.inRange) return 'critical';
+  // distance to nearest edge as % of RANGE WIDTH (adapts to tight & wide ranges alike)
+  const d = Math.min(p.rangePos, 1-p.rangePos)*100;
+  if(d <= cfg.critPct) return 'serious';
+  if(d <= cfg.warnPct) return 'warning';
+  return 'good';
+}
+const rangeFracDist = p => Math.min(p.rangePos, 1-p.rangePos)*100;
+const SEV_LABEL = {good:'IN RANGE', warning:'NEAR EDGE', serious:'EDGE CRITICAL', critical:'OUT OF RANGE'};
+const SEV_CHIP = {good:'in', warning:'near', serious:'edge', critical:'out'};
+const SEV_ICON = {good:'✓', warning:'▲', serious:'◆', critical:'✕'};
+
+function evaluateAlerts(){
+  for(const p of state.positions.values()){
+    const sev = severityOf(p);
+    const prev = state.alertsSeen[p.id];
+    if(prev !== sev){
+      state.alertsSeen[p.id] = sev;
+      if(prev !== undefined){ // don't spam on first load
+        const edge = p.nearestEdge==='lower'?'LOWER':'UPPER';
+        const msg = {
+          good: p.pairLabel+' #'+p.id+' back IN RANGE.',
+          warning: p.pairLabel+' #'+p.id+' approaching '+edge+' edge — '+fmtPct(rangeFracDist(p),0)+' of range width left ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
+          serious: p.pairLabel+' #'+p.id+' CRITICAL — only '+fmtPct(rangeFracDist(p),0)+' of range width to '+edge+' edge ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
+          critical: p.pairLabel+' #'+p.id+' is OUT OF RANGE — no fees accruing.',
+        }[sev];
+        log(sev==='good'?'good':(sev==='warning'?'warning':'critical'), msg);
+        notify(sev, msg);
+      } else if(sev!=='good'){
+        log(sev==='warning'?'warning':'critical', p.pairLabel+' #'+p.id+' status: '+SEV_LABEL[sev]+(p.inRange?' ('+fmtPct(rangeFracDist(p),0)+' of range width to edge)':''));
+      }
+    }
+  }
+}
+function notify(sev, msg){
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  if(sev==='good') return;
+  try{ new Notification('ARC // LP COMMAND', {body: msg, tag:'lphud-'+msg.slice(0,40)}); }catch(e){}
+}
+function log(kind, msg){
+  const body = $('#logBody');
+  const row = el('div','log-row '+kind);
+  const t = new Date();
+  row.append(
+    el('span','ts', t.toUTCString().slice(17,25)),
+    el('span','sev', {good:'✓',warning:'▲',critical:'✕',info:'·'}[kind]||'·'),
+    el('span','msg', msg)
+  );
+  body.prepend(row);
+  while(body.children.length>80) body.lastChild.remove();
+}
+
+/* ================= RENDERING ================= */
+const ordered = () => {
+  const order = store.get('cardOrder', []);
+  const ps = [...state.positions.values()];
+  ps.sort((a,b)=>{
+    const ia=order.indexOf(a.id), ib=order.indexOf(b.id);
+    return (ia<0?999:ia)-(ib<0?999:ib);
+  });
+  return ps;
+};
+const colorIndex = new Map();
+function assignColors(){
+  colorIndex.clear();
+  cfg.ids.forEach((id,i)=>colorIndex.set(id,i));
+}
+
+function renderAll(){
+  assignColors();
+  renderHeader(); renderTiles(); renderRadar(); renderCompare(); renderSpark(); renderCards();
+  $('#simBanner').classList.toggle('show', state.mode==='sim');
+  $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% OF RANGE WIDTH FROM EDGE';
+}
+function renderHeader(){
+  $('#hBlock').textContent = state.block ?? '—';
+  $('#hEth').textContent = state.ethUsd ? fmtUsd(state.ethUsd,0) : '—';
+}
+function setConn(mode){
+  const led=$('#connLed'), lab=$('#connLabel');
+  led.className='led'+(mode==='sim'?' sim':mode==='err'?' err':'');
+  lab.textContent = {live:'LIVE · MAINNET', sim:'SIMULATION', err:'RPC ERROR', sync:'SYNCING…'}[mode]||'…';
+}
+
+function renderTiles(){
+  const ps = ordered();
+  const totalVal = ps.reduce((s,p)=>s+(p.valueUsd||0),0);
+  const totalFees = ps.reduce((s,p)=>s+(p.feesUsd||0),0);
+  const totalEver = ps.reduce((s,p)=>s+(p.feesEverUsd||0),0);
+  const aprs = ps.filter(p=>p.feeAprPct!=null);
+  const wApr = aprs.length ? aprs.reduce((s,p)=>s+p.feeAprPct*(p.costUsd||1),0)/aprs.reduce((s,p)=>s+(p.costUsd||1),0) : null;
+  const inR = ps.filter(p=>p.inRange).length;
+  const cost = ps.reduce((s,p)=>s+(p.costUsd||0),0);
+  const pnl = cost>0 ? ps.reduce((s,p)=>s+((p.roiPct||0)/100)*(p.costUsd||0),0)/cost*100 : null;
+  const t = $('#tiles'); t.innerHTML='';
+  const mk = (k,v,d)=>{const x=el('div','tile');x.append(el('div','k',k),el('div','v',v),el('div','d',d??''));t.append(x);};
+  mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed');
+  mk('UNCLAIMED FEES', fmtUsd(totalFees), 'lifetime fees: <b>'+fmtUsd(totalEver,0)+'</b>');
+  mk('PORTFOLIO FEE APR', wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
+  mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
+  mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
+     ps.length-inR>0 ? '<span class="down">'+(ps.length-inR)+' position(s) idle</span>' : '<span class="up">all earning</span>');
+}
+function deltaStr(now){
+  const first = state.samples[0]?.v;
+  if(!first) return '';
+  const d = (now-first)/first*100;
+  return 'session: <span class="'+(d>=0?'up':'down')+'">'+fmtPct(d,2,true)+'</span>';
+}
+
+/* ----- radar ----- */
+function renderRadar(){
+  const body = $('#radarBody'); body.innerHTML='';
+  ordered().forEach(p=>{
+    const i = colorIndex.get(p.id)??5;
+    const row = el('div','radar-row');
+    const name = el('div','radar-name');
+    name.style.setProperty('--pcolor', seriesColor(i));
+    name.append(el('span','cdot'), el('span',null, esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span>'));
+    const bar = el('div',null); bar.append(rangeBar(p, false));
+    const sev = severityOf(p);
+    const distTxt = p.inRange
+      ? fmtPct(Math.min(p.dLow,p.dUp),1)+' to '+(p.nearestEdge==='lower'?'LO':'HI')
+      : 'OUT '+fmtPct(Math.abs(p.edgeDist),1);
+    const dist = el('div','radar-dist','<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">'+SEV_ICON[sev]+'</span> '+distTxt);
+    row.append(name,bar,dist);
+    body.append(row);
+  });
+}
+/* shared range bar: log-scaled price position */
+function rangeBar(p, withLabels){
+  const wrap = el('div','rangebar');
+  const lo=Math.log(p.priceLower), hi=Math.log(p.priceUpper), pr=Math.log(p.price);
+  const span = hi-lo;
+  const viewLo = lo-span*0.35, viewHi = hi+span*0.35;
+  const X = v => Math.max(0,Math.min(100,(v-viewLo)/(viewHi-viewLo)*100));
+  const track = el('div','rb-track');
+  const range = el('div','rb-range');
+  range.style.left = X(lo)+'%'; range.style.width = (X(hi)-X(lo))+'%';
+  wrap.append(track, range);
+  // warn zones: inner warnPct% of range width at each edge
+  const wz = Math.min(0.45, cfg.warnPct/100);
+  const warnLo = lo + span*wz, warnHi = hi - span*wz;
+  { const z=el('div','rb-warnzone'); z.style.left=X(lo)+'%'; z.style.width=(X(warnLo)-X(lo))+'%'; wrap.append(z); }
+  { const z=el('div','rb-warnzone'); z.style.left=X(warnHi)+'%'; z.style.width=(X(hi)-X(warnHi))+'%'; wrap.append(z); }
+  [lo,hi].forEach(v=>{const c=el('div','rb-cap');c.style.left='calc('+X(v)+'% - 1px)';wrap.append(c);});
+  const cursor = el('div','rb-price'); cursor.style.left='calc('+X(pr)+'% - 1px)'; wrap.append(cursor);
+  if(withLabels){
+    const l1=el('div','rb-lab',fmtPrice(p.priceLower)); l1.style.left=X(lo)+'%'; l1.style.transform='translateX(-50%)';
+    const l2=el('div','rb-lab',fmtPrice(p.priceUpper)); l2.style.left=X(hi)+'%'; l2.style.transform='translateX(-50%)';
+    wrap.append(l1,l2);
+  }
+  wrap.addEventListener('mousemove', ev=>showTip(ev,
+    '<div class="tk">'+esc(p.pairLabel)+' · RANGE</div>'+
+    '<div class="tv">low '+fmtPrice(p.priceLower)+' · now <b>'+fmtPrice(p.price)+'</b> · high '+fmtPrice(p.priceUpper)+'</div>'+
+    '<div class="tv" style="color:var(--text-secondary)">'+(p.inRange?('edge distance '+fmtPct(Math.min(p.dLow,p.dUp),2)):'OUT OF RANGE')+'</div>'));
+  wrap.addEventListener('mouseleave', hideTip);
+  return wrap;
+}
+
+/* ----- comparison charts (SVG bars) ----- */
+function renderCompare(){
+  const host = $('#compareCharts'); host.innerHTML='';
+  const ps = ordered();
+  $('#compareHint').textContent = ps.some(p=>p.roiMode==='hodl') ? 'P&L = VS DEPOSIT AT CURRENT PRICES (INCL. FEES)' : 'ROI = ENTRY-PRICED · FEES INCLUDED';
+  host.append(
+    barChart('FEE APR — ANNUALIZED %', ps, p=>p.feeAprPct, v=>v.toFixed(1)+'%'),
+    barChart('NET P&L SINCE DEPLOY — %', ps, p=>p.roiPct, v=>fmtPct(v,2,true), true)
+  );
+}
+function barChart(title, ps, val, fmt, signed){
+  const box = el('div');
+  box.append(el('div','chart-title',title));
+  const W=560,H=230,padL=52,padR=14,padT=14,padB=42;
+  const data = ps.map(p=>({p, v:val(p)})).filter(d=>d.v!=null && isFinite(d.v));
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.style.width='100%';
+  if(!data.length){ box.append(el('div',null,'<span style="color:var(--text-muted);font-size:11px">no data yet</span>')); return box; }
+  let mn = Math.min(0,...data.map(d=>d.v)), mx = Math.max(0,...data.map(d=>d.v));
+  if(mx===mn) mx=mn+1;
+  const pad=(mx-mn)*0.12; mx+=pad; if(mn<0)mn-=pad;
+  const Y = v => padT + (mx-v)/(mx-mn)*(H-padT-padB);
+  const n=data.length, bw=Math.min(46,(W-padL-padR)/n*0.55), step=(W-padL-padR)/n;
+  const NS='http://www.w3.org/2000/svg';
+  const mkel=(t,attrs)=>{const e=document.createElementNS(NS,t);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;};
+  // hairline grid: ~4 ticks
+  const ticks = niceTicks(mn,mx,4);
+  ticks.forEach(t=>{
+    svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Y(t),y2:Y(t),stroke: t===0?'#383835':'#13233a','stroke-width':1}));
+    const txt=mkel('text',{x:padL-8,y:Y(t)+3,'text-anchor':'end','font-size':9,fill:'#5d7889'}); txt.textContent=fmt(t).replace('+',''); svg.append(txt);
+  });
+  data.forEach((d,i)=>{
+    const idx = colorIndex.get(d.p.id)??5;
+    const x = padL+step*i+(step-bw)/2;
+    const y0=Y(0), y1=Y(d.v);
+    const top=Math.min(y0,y1), h=Math.max(2,Math.abs(y0-y1));
+    // rounded data-end (4px) at value end, flat at baseline
+    const r=4;
+    const path = d.v>=0
+      ? 'M'+x+' '+y0+' V'+(top+r)+' Q'+x+' '+top+' '+(x+r)+' '+top+' H'+(x+bw-r)+' Q'+(x+bw)+' '+top+' '+(x+bw)+' '+(top+r)+' V'+y0+' Z'
+      : 'M'+x+' '+y0+' V'+(top+h-r)+' Q'+x+' '+(top+h)+' '+(x+r)+' '+(top+h)+' H'+(x+bw-r)+' Q'+(x+bw)+' '+(top+h)+' '+(x+bw)+' '+(top+h-r)+' V'+y0+' Z';
+    const bar=mkel('path',{d:path, fill:seriesHex(idx)});
+    bar.style.cursor='pointer';
+    bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(d.p.pairLabel)+' #'+d.p.id+'</div><div class="tv"><b>'+fmt(d.v)+'</b>'+(d.p.ageDays?'<span style="color:var(--text-muted)"> · age '+fmtAge(d.p.ageDays)+'</span>':'')+'</div>'));
+    bar.addEventListener('mouseleave',hideTip);
+    svg.append(bar);
+    // direct value label
+    const lbl=mkel('text',{x:x+bw/2,y:d.v>=0?top-5:top+h+11,'text-anchor':'middle','font-size':9.5,fill:'#9db8c4'});
+    lbl.textContent=fmt(d.v); svg.append(lbl);
+    // x labels
+    const xl=mkel('text',{x:padL+step*i+step/2,y:H-padB+14,'text-anchor':'middle','font-size':9,fill:'#5d7889'});
+    xl.textContent=d.p.m0.symbol+'/'+d.p.m1.symbol; svg.append(xl);
+    const xl2=mkel('text',{x:padL+step*i+step/2,y:H-padB+26,'text-anchor':'middle','font-size':8,fill:'#3d5262'});
+    xl2.textContent='#'+d.p.id; svg.append(xl2);
+  });
+  box.append(svg);
+  return box;
+}
+function niceTicks(mn,mx,n){
+  const span=mx-mn, step0=span/n, mag=Math.pow(10,Math.floor(Math.log10(step0)));
+  const step=[1,2,2.5,5,10].map(m=>m*mag).find(s=>span/s<=n+1)||mag*10;
+  const out=[]; for(let v=Math.ceil(mn/step)*step; v<=mx+1e-9; v+=step) out.push(Math.abs(v)<1e-9?0:v);
+  if(!out.includes(0)&&mn<=0&&mx>=0) out.push(0);
+  return out;
+}
+
+/* ----- session sparkline ----- */
+function renderSpark(){
+  const host=$('#sparkBody'); host.innerHTML='';
+  const s=state.samples;
+  if(s.length<2){ host.append(el('div',null,'<span style="color:var(--text-muted);font-size:11px">Collecting samples… value is recorded on every scan ('+cfg.interval+'s). Leave the tab open to build the curve.</span>')); return; }
+  const W=1200,H=150,padL=64,padR=10,padT=10,padB=22;
+  const NS='http://www.w3.org/2000/svg';
+  const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%';
+  let mn=Math.min(...s.map(x=>x.v)), mx=Math.max(...s.map(x=>x.v));
+  if(mx===mn){mx+=1;mn-=1;} const p=(mx-mn)*0.15; mn-=p; mx+=p;
+  const X=i=>padL+i/(s.length-1)*(W-padL-padR);
+  const Y=v=>padT+(mx-v)/(mx-mn)*(H-padT-padB);
+  niceTicks(mn,mx,3).forEach(t=>{
+    svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Y(t),y2:Y(t),stroke:'#13233a','stroke-width':1}));
+    const tx=mkel('text',{x:padL-8,y:Y(t)+3,'text-anchor':'end','font-size':9,fill:'#5d7889'}); tx.textContent=fmtUsd(t,0); svg.append(tx);
+  });
+  const pts=s.map((x,i)=>X(i)+','+Y(x.v)).join(' ');
+  const area=mkel('polygon',{points:X(0)+','+Y(mn)+' '+pts+' '+X(s.length-1)+','+Y(mn), fill:'rgba(53,214,232,.08)'});
+  const line=mkel('polyline',{points:pts, fill:'none', stroke:'#35d6e8','stroke-width':2,'stroke-linejoin':'round'});
+  svg.append(area,line);
+  // hover crosshair
+  const cross=mkel('line',{y1:padT,y2:H-padB,stroke:'#35d6e8','stroke-width':1,'stroke-dasharray':'3 3',opacity:0});
+  const dot=mkel('circle',{r:4,fill:'#35d6e8',opacity:0});
+  svg.append(cross,dot);
+  svg.addEventListener('mousemove',ev=>{
+    const r=svg.getBoundingClientRect();
+    const fx=(ev.clientX-r.left)/r.width*W;
+    const i=Math.max(0,Math.min(s.length-1,Math.round((fx-padL)/(W-padL-padR)*(s.length-1))));
+    cross.setAttribute('x1',X(i)); cross.setAttribute('x2',X(i)); cross.setAttribute('opacity',1);
+    dot.setAttribute('cx',X(i)); dot.setAttribute('cy',Y(s[i].v)); dot.setAttribute('opacity',1);
+    showTip(ev,'<div class="tk">'+new Date(s[i].t).toUTCString().slice(17,25)+' UTC</div><div class="tv"><b>'+fmtUsd(s[i].v,0)+'</b> total value + unclaimed fees</div>');
+  });
+  svg.addEventListener('mouseleave',()=>{cross.setAttribute('opacity',0);dot.setAttribute('opacity',0);hideTip();});
+  host.append(svg);
+}
+
+/* ----- position cards ----- */
+function renderCards(){
+  const host=$('#cards');
+  const openInv = new Set([...host.querySelectorAll('.card')].filter(c=>c.dataset.inv==='1').map(c=>+c.dataset.id));
+  host.innerHTML='';
+  ordered().forEach(p=>{
+    const i=colorIndex.get(p.id)??5;
+    const inv = openInv.has(p.id);
+    const card=el('article','card'); card.dataset.id=p.id; card.dataset.inv=inv?'1':'0'; card.draggable=true;
+    card.style.setProperty('--pcolor', seriesColor(i));
+    const sev=severityOf(p);
+    // ---- header
+    const head=el('div','chead');
+    head.append(el('span','cdot'));
+    head.append(el('span','pair',esc(p.pairLabel)));
+    head.append(el('span','feet',esc(p.feeLabel)));
+    const link=el('a',null,'#'+p.id+' ↗'); link.href='https://app.uniswap.org/positions/v3/ethereum/'+p.id; link.target='_blank'; link.rel='noopener';
+    head.append(link);
+    head.append(el('span','chip '+SEV_CHIP[sev],'<span class="ic">'+SEV_ICON[sev]+'</span>'+SEV_LABEL[sev]));
+    card.append(head);
+    // ---- body
+    const body=el('div','cbody');
+    const g=el('div','gaugebox');
+    g.append(gauge(p, seriesHex(i)));
+    g.append(el('div','gauge-label','RANGE POSITION'));
+    body.append(g);
+    // metrics grid
+    const showP = v => inv ? 1/v : v;
+    const unit = inv ? esc(p.m0.symbol)+' per '+esc(p.m1.symbol) : esc(p.m1.symbol)+' per '+esc(p.m0.symbol);
+    const lo = inv ? 1/p.priceUpper : p.priceLower, up = inv ? 1/p.priceLower : p.priceUpper;
+    const m=el('div','metrics');
+    const mkm=(k,v,sm)=>{const x=el('div','m');x.append(el('div','k',k),el('div','v'+(sm?' sm':''),v));m.append(x);};
+    mkm('CURRENT PRICE', fmtPrice(showP(p.price))+' <span class="unit">'+unit+'</span>');
+    mkm('RANGE', fmtPrice(lo)+' – '+fmtPrice(up),true);
+    mkm('POSITION VALUE', fmtUsd(p.valueUsd,0));
+    mkm('UNCLAIMED FEES', fmtUsd(p.feesUsd));
+    mkm('DEPLOYED', (p.mintTs?new Date(p.mintTs).toISOString().slice(0,10):'—')+' <span class="unit">'+fmtAge(p.ageDays)+'</span>',true);
+    mkm('FEE APR', p.feeAprPct==null?'—':'<b>'+p.feeAprPct.toFixed(1)+'</b><span class="unit"> %</span>');
+    const roiLabel = p.roiMode==='entry'?'ROI (ENTRY-PRICED)':'P&L VS DEPOSIT';
+    mkm(roiLabel, p.roiPct==null?'—':'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
+    mkm('EDGE DISTANCE', p.inRange
+      ? '<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">'+fmtPct(Math.min(p.dLow,p.dUp),1)+'</span> <span class="unit">to '+(p.nearestEdge==='lower'?'low':'high')+'</span>'
+      : '<span style="color:var(--status-critical)">outside</span>');
+    body.append(m);
+    const rw=el('div','rangebar-wrap'); rw.append(rangeBar(p,true)); body.append(rw);
+    card.append(body);
+    // ---- footer
+    const foot=el('div','cfoot');
+    if(p.amt0!=null) foot.append(el('span',null,'HOLDING <b>'+fmtNum(p.amt0)+' '+esc(p.m0.symbol)+'</b> + <b>'+fmtNum(p.amt1)+' '+esc(p.m1.symbol)+'</b>'));
+    if(p.feesEverUsd!=null) foot.append(el('span',null,'LIFETIME FEES <b>'+fmtUsd(p.feesEverUsd)+'</b>'));
+    if(p.costUsd!=null) foot.append(el('span',null,'DEPOSITED <b>'+fmtUsd(p.costUsd,0)+'</b>'));
+    const ib=el('button','invbtn','⇄ '+unit.split(' per ')[0]);
+    ib.title='Flip price units';
+    ib.addEventListener('click',()=>{card.dataset.inv=inv?'0':'1';renderCards();});
+    foot.append(ib);
+    card.append(foot);
+    host.append(card);
+  });
+  wireDrag(host, '.card', ids=>store.set('cardOrder', ids.map(Number)));
+}
+
+/* semicircular gauge: needle = price position in range */
+function gauge(p, hex){
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const svg=mk('svg',{viewBox:'0 0 140 86',width:140,height:86});
+  const cx=70,cy=76,R=56;
+  const arc=(r,f0,f1)=>{ // fraction 0..1 across 180°
+    const a0=Math.PI*(1-f0), a1=Math.PI*(1-f1);
+    const x0=cx+r*Math.cos(a0),y0=cy-r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy-r*Math.sin(a1);
+    return 'M'+x0+' '+y0+' A'+r+' '+r+' 0 0 1 '+x1+' '+y1;
+  };
+  svg.append(mk('path',{d:arc(R,0,1),stroke:'#13233a','stroke-width':8,fill:'none'}));
+  // warn zones at both ends: warnPct% of range width
+  const wz=Math.min(0.45, cfg.warnPct/100);
+  svg.append(mk('path',{d:arc(R,0,wz),stroke:'#fab219','stroke-width':8,fill:'none',opacity:.55}));
+  svg.append(mk('path',{d:arc(R,1-wz,1),stroke:'#fab219','stroke-width':8,fill:'none',opacity:.55}));
+  // active fill up to needle
+  const f=Math.max(0,Math.min(1,p.rangePos));
+  svg.append(mk('path',{d:arc(R,0,f),stroke:hex,'stroke-width':4,fill:'none',opacity:.9}));
+  // ticks
+  for(let k=0;k<=4;k++){
+    const a=Math.PI*(1-k/4), x0=cx+(R-9)*Math.cos(a),y0=cy-(R-9)*Math.sin(a),x1=cx+(R+9)*Math.cos(a),y1=cy-(R+9)*Math.sin(a);
+    svg.append(mk('line',{x1:x0,y1:y0,x2:x1,y2:y1,stroke:'#1c2f47','stroke-width':1}));
+  }
+  // needle
+  const na=Math.PI*(1-f);
+  svg.append(mk('line',{x1:cx,y1:cy,x2:cx+(R-13)*Math.cos(na),y2:cy-(R-13)*Math.sin(na),stroke:'#eaf7fa','stroke-width':2}));
+  svg.append(mk('circle',{cx,cy,r:4,fill:hex}));
+  const pct=mk('text',{x:cx,y:cy-14,'text-anchor':'middle','font-size':13,fill:'#eaf7fa','font-weight':600});
+  pct.textContent = p.inRange ? Math.round(p.rangePos*100)+'%' : (p.rangePos<0?'◀ OUT':'OUT ▶');
+  svg.append(pct);
+  const lo=mk('text',{x:cx-R,y:cy+8,'text-anchor':'middle','font-size':7.5,fill:'#5d7889'}); lo.textContent='LOW';
+  const hi=mk('text',{x:cx+R,y:cy+8,'text-anchor':'middle','font-size':7.5,fill:'#5d7889'}); hi.textContent='HIGH';
+  svg.append(lo,hi);
+  return svg;
+}
+
+/* ================= TOOLTIP ================= */
+const tip=$('#tooltip');
+function showTip(ev,html){ tip.innerHTML=html; tip.style.display='block';
+  const x=Math.min(window.innerWidth-280, ev.clientX+14), y=Math.min(window.innerHeight-90, ev.clientY+14);
+  tip.style.left=x+'px'; tip.style.top=y+'px'; }
+function hideTip(){ tip.style.display='none'; }
+
+/* ================= DRAG & DROP (generic) ================= */
+function wireDrag(container, selector, onOrder){
+  let dragEl=null;
+  container.querySelectorAll(selector).forEach(item=>{
+    item.addEventListener('dragstart',e=>{ dragEl=item; item.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    item.addEventListener('dragend',()=>{ dragEl?.classList.remove('dragging'); container.querySelectorAll(selector).forEach(x=>x.classList.remove('drag-over')); dragEl=null;
+      if(onOrder) onOrder([...container.querySelectorAll(selector)].map(x=>x.dataset.id||x.dataset.panel)); });
+    item.addEventListener('dragover',e=>{ if(!dragEl||dragEl===item) return; e.preventDefault();
+      item.classList.add('drag-over');
+      const r=item.getBoundingClientRect();
+      const before=(e.clientY-r.top)/r.height<0.5 || ((e.clientX-r.left)/r.width<0.5 && r.height<300);
+      container.insertBefore(dragEl, before?item:item.nextSibling); });
+    item.addEventListener('dragleave',()=>item.classList.remove('drag-over'));
+    item.addEventListener('drop',e=>e.preventDefault());
+  });
+}
+function applyStoredOrders(){
+  const po=store.get('panelOrder',null);
+  if(po){ const stack=$('#panelStack');
+    po.forEach(k=>{const p=stack.querySelector('[data-panel="'+k+'"]'); if(p)stack.append(p);}); }
+}
+
+/* ================= SETTINGS DRAWER ================= */
+function renderPosList(){
+  const ul=$('#posList'); ul.innerHTML='';
+  cfg.ids.forEach((id,i)=>{
+    const li=el('li');
+    const dot=el('span','cdot'); dot.style.background=seriesHex(i); dot.style.boxShadow='0 0 6px '+seriesHex(i); dot.style.width='8px'; dot.style.height='8px'; dot.style.display='inline-block';
+    const p=state.positions.get(id);
+    li.append(dot, el('span',null,'#'+id+(p?' · '+esc(p.pairLabel):'')));
+    const rm=el('button','rm','✕'); rm.title='Stop tracking';
+    rm.addEventListener('click',()=>{ cfg.ids=cfg.ids.filter(x=>x!==id); store.set('ids',cfg.ids); state.positions.delete(id); renderPosList(); renderAll(); log('info','Position #'+id+' removed from tracking.'); });
+    li.append(rm); ul.append(li);
+  });
+}
+function wireSettings(){
+  $('#btnSettings').addEventListener('click',()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); renderPosList(); });
+  const close=()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); };
+  $('#btnCloseDrawer').addEventListener('click',close);
+  $('#scrim').addEventListener('click',close);
+  $('#addPosBtn').addEventListener('click',addPos);
+  $('#addPosInput').addEventListener('keydown',e=>{if(e.key==='Enter')addPos();});
+  function addPos(){
+    const raw=$('#addPosInput').value.trim().match(/\d+/);
+    if(!raw) return;
+    const id=Number(raw[0]);
+    if(cfg.ids.includes(id)) return;
+    cfg.ids.push(id); store.set('ids',cfg.ids);
+    $('#addPosInput').value='';
+    renderPosList(); log('info','Tracking position #'+id+' — scanning…');
+    scan();
+  }
+  const wp=$('#cfgWarnPct'), cp=$('#cfgCritPct'), iv=$('#cfgInterval'), rp=$('#cfgRpc');
+  wp.value=cfg.warnPct; cp.value=cfg.critPct; iv.value=cfg.interval;
+  RPCS.forEach(u=>{const o=el('option');o.value=u;o.textContent=u.replace('https://','');rp.append(o);});
+  rp.value=cfg.rpc;
+  wp.addEventListener('change',()=>{cfg.warnPct=Math.max(1,+wp.value||10);store.set('warnPct',cfg.warnPct);renderAll();});
+  cp.addEventListener('change',()=>{cfg.critPct=Math.max(.5,+cp.value||3);store.set('critPct',cfg.critPct);renderAll();});
+  iv.addEventListener('change',()=>{cfg.interval=Math.max(15,+iv.value||45);store.set('interval',cfg.interval);state.countdown=cfg.interval;});
+  rp.addEventListener('change',()=>{cfg.rpc=rp.value;store.set('rpc',cfg.rpc);rpcIndex=Math.max(0,RPCS.indexOf(cfg.rpc));log('info','Primary RPC → '+rp.value);});
+  $('#btnResetLayout').addEventListener('click',()=>{store.set('panelOrder',null);store.set('cardOrder',[]);location.reload();});
+}
+
+/* ================= BOOT / CLOCK / LOOP ================= */
+function bootMsg(m){ const b=$('#bootLog'); if(b) b.innerHTML = esc(m)+'<br>'+b.innerHTML.split('<br>').slice(0,2).join('<br>'); }
+function tickClock(){
+  const d=new Date();
+  $('#hClock').textContent = d.toUTCString().slice(17,25);
+  if(!scanning && state.mode!=='boot'){
+    state.countdown--;
+    if(state.countdown<=0){ scan(); }
+    $('#hCountdown').innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
+  }
+}
+async function init(){
+  wireSettings();
+  applyStoredOrders();
+  wireDrag($('#panelStack'), '.panel', ids=>store.set('panelOrder', ids));
+  document.querySelectorAll('.collapse-btn').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); b.closest('.panel').classList.toggle('collapsed');
+    b.textContent = b.closest('.panel').classList.contains('collapsed')?'▸':'▾';
+  }));
+  $('#btnRefresh').addEventListener('click',()=>scan());
+  $('#btnNotify').addEventListener('click',async()=>{
+    if(!('Notification' in window)){ log('warning','This browser does not support notifications.'); return; }
+    const perm = await Notification.requestPermission();
+    if(perm==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').textContent='◉ ARMED'; log('good','Browser notifications armed — you will be pinged near range edges.'); }
+    else log('warning','Notification permission denied.');
+  });
+  if(('Notification' in window) && Notification.permission==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').textContent='◉ ARMED'; }
+  setInterval(tickClock,1000);
+  bootMsg('ESTABLISHING RPC UPLINK…');
+  log('info','ARC // LP COMMAND online. Tracking '+cfg.ids.length+' positions.');
+  await scan(true);
+  $('#bootScreen').classList.add('hide');
+  setTimeout(()=>$('#bootScreen').remove(), 600);
+}
+init();
+</script>
+</body>
+</html>
