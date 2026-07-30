@@ -217,6 +217,27 @@
   .tooltip .tk{color:var(--text-muted);font-size:9px;letter-spacing:.14em}
   .tooltip .tv{font-variant-numeric:tabular-nums}
 
+  /* comparison matrix */
+  .matrix{width:100%;border-collapse:collapse;font-size:11.5px;min-width:900px}
+  .matrix th{
+    font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);text-align:right;
+    padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap;
+  }
+  .matrix th:first-child{text-align:left}
+  .matrix th:hover{color:var(--accent)}
+  .matrix th.sorted{color:var(--accent)}
+  .matrix td{
+    padding:8px 10px;text-align:right;border-bottom:1px dashed var(--line-soft);
+    font-variant-numeric:tabular-nums;color:var(--text-secondary);white-space:nowrap;
+  }
+  .matrix td:first-child{text-align:left;color:var(--text-primary)}
+  .matrix td.best{color:var(--accent);text-shadow:0 0 8px var(--accent-glow);font-weight:600}
+  .matrix td.best::before{content:"◆ ";font-size:8px;vertical-align:1px}
+  .matrix .pos-cell{display:flex;align-items:center;gap:8px}
+  .matrix .pos-cell .cdot{width:8px;height:8px;flex:none}
+  .matrix .sub{color:var(--text-muted);font-size:9px}
+  .matrix tr:hover td{background:rgba(53,214,232,.03)}
+
   /* event log */
   .log{max-height:220px;overflow-y:auto;font-size:11px}
   .log-row{display:flex;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line-soft);align-items:baseline}
@@ -309,7 +330,7 @@
 </header>
 
 <main>
-  <div class="banner" id="simBanner">⚠ SIMULATION MODE — live RPC unreachable from this context. Data shown is synthetic. Host the file (e.g. GitHub Pages) or open it locally for live on-chain telemetry.</div>
+  <div class="banner" id="simBanner">⚠ SIMULATION MODE — no RPC endpoint reachable; data shown is synthetic. Common causes: antivirus or ad-blocker blocking RPC domains (allow-list them), or a sandboxed preview. Fastest fix: add a free personal endpoint (Alchemy/Infura/dRPC) in ⚙ CONFIG → RPC — then hit ⟳ SCAN.</div>
 
   <div class="tiles" id="tiles"></div>
 
@@ -324,6 +345,12 @@
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">PERFORMANCE COMPARISON</span><span class="hint" id="compareHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody"><div class="chartgrid" id="compareCharts"></div></div>
+    </section>
+
+    <section class="panel" data-panel="matrix" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">HEAD-TO-HEAD MATRIX</span><span class="hint">click a column to rank · ◆ = best in class</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" style="overflow-x:auto"><table class="matrix" id="matrixBody"></table></div>
     </section>
 
     <section class="panel" data-panel="telemetry" draggable="true">
@@ -381,6 +408,12 @@
     <h3>RPC ENDPOINT</h3>
     <label>Primary endpoint (auto-fails-over to public pool)</label>
     <select id="cfgRpc"></select>
+    <label>Add your own endpoint (e.g. Alchemy/Infura URL — fastest &amp; most reliable). It becomes primary.</label>
+    <div class="addrow">
+      <input type="text" id="customRpcInput" placeholder="https://eth-mainnet.g.alchemy.com/v2/KEY">
+      <button class="hbtn" id="customRpcBtn">+ USE</button>
+    </div>
+    <label style="color:var(--text-muted)">Tip: if your antivirus (e.g. Malwarebytes) blocks a public RPC, the HUD rotates to the next one automatically — or allow-list the domain.</label>
   </div>
   <div class="sec">
     <h3>LAYOUT</h3>
@@ -409,14 +442,16 @@ const store = {
 
 /* ---------- config ---------- */
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
-const RPCS = [
-  'https://ethereum-rpc.publicnode.com',
+const BASE_RPCS = [
   'https://eth.drpc.org',
-  'https://1rpc.io/eth',
+  'https://ethereum-rpc.publicnode.com',
   'https://eth.llamarpc.com',
+  'https://1rpc.io/eth',
   'https://rpc.flashbots.net',
+  'https://eth.meowrpc.com',
   'https://cloudflare-eth.com'
 ];
+const RPCS = [...store.get('extraRpcs', []), ...BASE_RPCS];
 const cfg = {
   ids: store.get('ids', DEFAULT_IDS.slice()),
   warnPct: store.get('warnPct', 20),   // % of range width remaining to an edge
@@ -480,26 +515,54 @@ const bigToFloat = (bi, dec) => Number(bi) / Math.pow(10, dec);
 /* ---------- JSON-RPC layer with failover + batching ---------- */
 let rpcIndex = Math.max(0, RPCS.indexOf(cfg.rpc));
 let rpcId = 1;
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+async function postJson(url, payload, timeout){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), timeout);
+  try{
+    const res = await fetch(url, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload), signal:ctrl.signal});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return await res.json();
+  } finally { clearTimeout(t); }
+}
+const isRateLimit = e => e && (e.code===-32005 || e.code===-32097 || /rate|limit|exceed|too many|busy/i.test(e.message||''));
+const isNetFail = e => e && (e.name==='AbortError' || e.name==='TypeError' || /fetch|network|tunnel|dns|refused/i.test(e.message||''));
+let rpcCooldownUntil = 0;   // set when EVERY endpoint is unreachable, so later calls fail fast
 async function rpcBatch(calls, {timeout=12000} = {}){
-  // calls: [{method, params}]  -> array of results (throws on transport failure of all endpoints)
+  // calls: [{method, params}] -> array of results. Tries batch POST per endpoint,
+  // falls back to sequential single calls (some public RPCs reject batches),
+  // rotates endpoints on transport failure or blanket rate-limiting.
+  if(Date.now() < rpcCooldownUntil) throw new Error('all RPCs unreachable (cooldown)');
   const order = [...RPCS.slice(rpcIndex), ...RPCS.slice(0, rpcIndex)];
-  let lastErr;
+  let lastErr, netFails = 0;
   for(const url of order){
+    // attempt 1: batch
+    let netFail = false;
     try{
       const body = calls.map(c => ({jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}));
-      const ctrl = new AbortController();
-      const t = setTimeout(()=>ctrl.abort(), timeout);
-      const res = await fetch(url, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body), signal:ctrl.signal});
-      clearTimeout(t);
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      let js = await res.json();
+      let js = await postJson(url, body, timeout);
       if(!Array.isArray(js)) js = [js];
       const byId = new Map(js.map(r=>[r.id, r]));
-      const out = body.map(b => { const r = byId.get(b.id); if(!r) throw new Error('missing result'); return r; });
-      rpcIndex = RPCS.indexOf(url);           // stick with the endpoint that worked
-      return out;                              // items may still carry .error individually
+      const out = body.map(b => { const r = byId.get(b.id); if(!r) throw new Error('batch item missing'); return r; });
+      if(out.length && out.every(r=>r.error && isRateLimit(r.error))) throw new Error('rate limited');
+      rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
+      return out;
+    }catch(e){ lastErr = e; netFail = isNetFail(e); }
+    if(netFail){ netFails++; continue; }   // endpoint unreachable — singles won't help
+    // attempt 2: sequential singles (handles batch-hostile endpoints)
+    try{
+      const out = [];
+      for(const c of calls){
+        const js = await postJson(url, {jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}, timeout);
+        if(js.error && isRateLimit(js.error)) throw new Error('rate limited');
+        out.push(js);
+        if(calls.length>3) await sleep(60);
+      }
+      rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
+      return out;
     }catch(e){ lastErr = e; }
   }
+  if(netFails >= order.length) rpcCooldownUntil = Date.now() + 20000;
   throw lastErr || new Error('all RPCs failed');
 }
 async function ethCall(to, data, block='latest', from){
@@ -582,40 +645,36 @@ function tokenUsd(addr, pairAddr, rawPrice10 /* token1 per token0, decimal-adjus
 /* find mint block + deposit/withdraw/collect history via logs (chunked fallback) */
 async function fetchHistory(id){
   const topicId = '0x'+pad32(id.toString(16));
-  const filters = t => ({address:NPM, topics:[t, topicId]});
+  // one getLogs with OR'd topic0 — a third of the load of three separate queries
   const tryRange = async (from, to) => {
-    const r = await rpcBatch([
-      {method:'eth_getLogs', params:[{...filters(TOPIC_INC), fromBlock:from, toBlock:to}]},
-      {method:'eth_getLogs', params:[{...filters(TOPIC_DEC), fromBlock:from, toBlock:to}]},
-      {method:'eth_getLogs', params:[{...filters(TOPIC_COL), fromBlock:from, toBlock:to}]},
-    ], {timeout:20000});
-    if(r.some(x=>x.error)) throw new Error(r.find(x=>x.error).error.message);
-    return r.map(x=>x.result);
+    const r = await rpcBatch([{method:'eth_getLogs', params:[{address:NPM, topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL], topicId], fromBlock:from, toBlock:to}]}], {timeout:25000});
+    if(r[0].error) throw new Error(r[0].error.message);
+    return r[0].result;
   };
-  let inc=[],dec=[],col=[];
+  let logs=[];
   try{
-    [inc,dec,col] = await tryRange('0x'+(12369651).toString(16), 'latest');
+    logs = await tryRange('0x'+(12369651).toString(16), 'latest');
   }catch(e){
     // chunked walk backward from head (IDs ~1.3M are recent; usually found fast)
-    try{
-      const head = state.blockNum || 23500000;
-      const CHUNK = 400000;
-      for(let hi=head; hi>12369651 && inc.length===0; hi-=CHUNK){
-        const lo = Math.max(12369651, hi-CHUNK+1);
-        try{
-          const [i2,d2,c2] = await tryRange('0x'+lo.toString(16), '0x'+hi.toString(16));
-          inc=[...i2,...inc]; dec=[...d2,...dec]; col=[...c2,...col];
-        }catch(e2){ /* skip chunk errors */ }
-        if(hi < head - CHUNK*12) break; // cap effort
-      }
-    }catch(e2){}
+    const head = state.blockNum || 23500000;
+    const CHUNK = 400000;
+    let found=false;
+    for(let hi=head; hi>12369651; hi-=CHUNK){
+      const lo = Math.max(12369651, hi-CHUNK+1);
+      try{
+        const part = await tryRange('0x'+lo.toString(16), '0x'+hi.toString(16));
+        logs = [...part, ...logs];
+        if(part.some(l=>l.topics[0]===TOPIC_INC)) found=true;
+      }catch(e2){ /* skip chunk errors */ }
+      if(found || hi < head - CHUNK*15) break;
+    }
   }
-  // data layouts: INC = (liquidity, amount0, amount1); DEC = (liquidity, amount0, amount1); COL = (recipient, amount0, amount1)
-  const parseAmts = (lg, skip) => ({block:Number(hexToBig(lg.blockNumber)), a0:hexToBig(word(lg.data,skip)), a1:hexToBig(word(lg.data,skip+1))});
+  // data layouts: INC/DEC = (liquidity, amount0, amount1); COL = (recipient, amount0, amount1)
+  const parseAmts = lg => ({block:Number(hexToBig(lg.blockNumber)), a0:hexToBig(word(lg.data,1)), a1:hexToBig(word(lg.data,2))});
   return {
-    inc: inc.map(l=>parseAmts(l,1)),
-    dec: dec.map(l=>parseAmts(l,1)),
-    col: col.map(l=>parseAmts(l,1)),
+    inc: logs.filter(l=>l.topics[0]===TOPIC_INC).map(parseAmts),
+    dec: logs.filter(l=>l.topics[0]===TOPIC_DEC).map(parseAmts),
+    col: logs.filter(l=>l.topics[0]===TOPIC_COL).map(parseAmts),
   };
 }
 
@@ -687,58 +746,7 @@ async function fetchPosition(id, prev){
   const valueUsd = (usd0!=null&&usd1!=null) ? amt0*usd0 + amt1*usd1 : null;
   const feesUsd  = (usd0!=null&&usd1!=null) ? f0*usd0 + f1*usd1 : null;
 
-  // 5) history: fetch once, reuse afterwards
-  let hist = prev?.hist;
-  let mintTs = prev?.mintTs, entryEthUsd = prev?.entryEthUsd;
-  if(!hist){
-    try{
-      hist = await fetchHistory(id);
-      if(hist.inc.length){
-        const mintBlock = Math.min(...hist.inc.map(x=>x.block));
-        mintTs = await blockTimestamp(mintBlock);
-        const hctx = await historicalContext(mintBlock);
-        entryEthUsd = hctx?.ethUsd ?? null;
-      }
-    }catch(e){ hist = {inc:[],dec:[],col:[]}; }
-  }
-  const dep0 = hist.inc.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
-  const dep1 = hist.inc.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
-  const wdr0 = hist.dec.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
-  const wdr1 = hist.dec.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
-  const col0 = hist.col.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
-  const col1 = hist.col.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
-  const feeCol0 = Math.max(0, col0-wdr0), feeCol1 = Math.max(0, col1-wdr1); // collected fees = collect - principal withdrawn
-
-  const ageDays = mintTs ? (Date.now()-mintTs)/86400000 : null;
-
-  // 6) ROI — entry-priced when archive data available, else "vs HODL" at current prices
-  let costUsd=null, roiPct=null, roiMode='hodl', feeAprPct=null, feesEverUsd=null;
-  const canPrice = usd0!=null && usd1!=null && (dep0>0 || dep1>0);
-  if(canPrice){
-    let e0=usd0, e1=usd1, mode='hodl';
-    if(entryEthUsd && state.ethUsd){
-      // scale ETH-linked legs by entry ETH price; stables stay 1
-      const scaleFor = (addr, cur) => {
-        const a = addr.toLowerCase();
-        if(STABLES.has(a)) return 1;
-        if(a===WETH) return entryEthUsd;
-        return cur!=null ? cur*(entryEthUsd/state.ethUsd) : null; // approx for ETH-correlated legs
-      };
-      const s0 = scaleFor(core.token0, usd0), s1 = scaleFor(core.token1, usd1);
-      if(s0!=null && s1!=null){ e0=s0; e1=s1; mode='entry'; }
-    }
-    costUsd = dep0*e0 + dep1*e1;
-    const wdrUsd = wdr0*usd0 + wdr1*usd1;
-    feesEverUsd = (feeCol0*usd0 + feeCol1*usd1) + (feesUsd??0);
-    const totalNow = (valueUsd??0) + wdrUsd + feesEverUsd;
-    if(costUsd>0){
-      roiPct = (totalNow - costUsd)/costUsd*100;
-      roiMode = mode;
-      if(ageDays>0.05) feeAprPct = (feesEverUsd/costUsd)*(365/ageDays)*100;
-    }
-  }
-
-  // 7) range position + edge distance
+  // 5) range position + edge distance
   const inRange = tick>=core.tickLower && tick<core.tickUpper;
   const rangePos = (tick-core.tickLower)/(core.tickUpper-core.tickLower); // 0..1 (may exceed)
   // distance to nearest edge as % of current price
@@ -746,16 +754,82 @@ async function fetchPosition(id, prev){
   const dUp  = (priceUpper-price)/price*100;
   const nearestEdge = dLow<dUp ? 'lower' : 'upper';
 
-  return {
-    id, owner, pool, core, m0, m1, tick, price, priceLower, priceUpper,
+  const p = {
+    id, owner, pool, core, m0, m1, d0, d1, tick, price, priceLower, priceUpper,
     amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
-    hist, mintTs, entryEthUsd, ageDays, dep0, dep1, feeCol0, feeCol1,
-    costUsd, roiPct, roiMode, feeAprPct, feesEverUsd,
+    hist: prev?.hist, mintTs: prev?.mintTs, entryEthUsd: prev?.entryEthUsd,
+    ageDays:null, costUsd:null, roiPct:null, roiMode:'hodl', feeAprPct:null, feesEverUsd:null,
     inRange, rangePos, dLow, dUp, edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
     nearestEdge,
     pairLabel: m0.symbol+' / '+m1.symbol,
     feeLabel: (core.fee/10000)+'%',
   };
+  if(p.hist) deriveEconomics(p);
+  return p;
+}
+
+/* economics from deposit history — callable whenever p.hist arrives */
+function deriveEconomics(p){
+  const {hist, d0, d1, usd0, usd1, valueUsd, feesUsd, core} = p;
+  if(!hist) return;
+  const dep0 = hist.inc.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+  const dep1 = hist.inc.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+  const wdr0 = hist.dec.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+  const wdr1 = hist.dec.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+  const col0 = hist.col.reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+  const col1 = hist.col.reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+  const feeCol0 = Math.max(0, col0-wdr0), feeCol1 = Math.max(0, col1-wdr1);
+  p.dep0=dep0; p.dep1=dep1; p.feeCol0=feeCol0; p.feeCol1=feeCol1;
+  p.ageDays = p.mintTs ? (Date.now()-p.mintTs)/86400000 : null;
+  const canPrice = usd0!=null && usd1!=null && (dep0>0 || dep1>0);
+  if(!canPrice) return;
+  let e0=usd0, e1=usd1, mode='hodl';
+  if(p.entryEthUsd && state.ethUsd){
+    const scaleFor = (addr, cur) => {
+      const a = addr.toLowerCase();
+      if(STABLES.has(a)) return 1;
+      if(a===WETH) return p.entryEthUsd;
+      return cur!=null ? cur*(p.entryEthUsd/state.ethUsd) : null; // approx for ETH-correlated legs
+    };
+    const s0 = scaleFor(core.token0, usd0), s1 = scaleFor(core.token1, usd1);
+    if(s0!=null && s1!=null){ e0=s0; e1=s1; mode='entry'; }
+  }
+  p.costUsd = dep0*e0 + dep1*e1;
+  const wdrUsd = wdr0*usd0 + wdr1*usd1;
+  p.feesEverUsd = (feeCol0*usd0 + feeCol1*usd1) + (feesUsd??0);
+  const totalNow = (valueUsd??0) + wdrUsd + p.feesEverUsd;
+  if(p.costUsd>0){
+    p.roiPct = (totalNow - p.costUsd)/p.costUsd*100;
+    p.roiMode = mode;
+    if(p.ageDays>0.05) p.feeAprPct = (p.feesEverUsd/p.costUsd)*(365/p.ageDays)*100;
+  }
+}
+
+/* lazy background enrichment: deposit history, mint date, entry pricing */
+let enriching = false;
+async function enrichHistories(){
+  if(enriching || state.mode!=='live') return;
+  enriching = true;
+  let changed = false;
+  for(const p of state.positions.values()){
+    if(p.hist || p.demo) continue;
+    try{
+      p.hist = await fetchHistory(p.id);
+      if(p.hist.inc.length){
+        const mintBlock = Math.min(...p.hist.inc.map(x=>x.block));
+        p.mintTs = await blockTimestamp(mintBlock);
+        const hctx = await historicalContext(mintBlock);
+        p.entryEthUsd = hctx?.ethUsd ?? null;
+      }
+      deriveEconomics(p);
+      changed = true;
+    }catch(e){
+      log('warning','#'+p.id+' history unavailable ('+esc((e.message||'')+'').slice(0,60)+') — ROI shown when it loads.');
+    }
+    await sleep(150);
+  }
+  enriching = false;
+  if(changed) renderAll();
 }
 
 /* -------- anchors: eth price, block -------- */
@@ -832,8 +906,13 @@ async function scan(isBoot){
     }
     if(!results.length) throw new Error('no positions fetched');
     state.positions = new Map(results.map(p=>[p.id,p]));
+    if(state.mode!=='live' || state.loggedRpc!==state.lastRpc){
+      log('good','LIVE uplink via '+String(state.lastRpc||'').replace('https://','')+' · block '+state.block);
+      state.loggedRpc = state.lastRpc;
+    }
     state.mode = 'live';
     setConn('live');
+    setTimeout(enrichHistories, 50);   // heavy log queries run after first paint
   }catch(e){
     // fall back to demo
     if(state.mode!=='live' || isBoot){
@@ -932,7 +1011,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors();
-  renderHeader(); renderTiles(); renderRadar(); renderCompare(); renderSpark(); renderCards();
+  renderHeader(); renderTiles(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   $('#simBanner').classList.toggle('show', state.mode==='sim');
   $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% OF RANGE WIDTH FROM EDGE';
 }
@@ -1086,6 +1165,76 @@ function niceTicks(mn,mx,n){
   const out=[]; for(let v=Math.ceil(mn/step)*step; v<=mx+1e-9; v+=step) out.push(Math.abs(v)<1e-9?0:v);
   if(!out.includes(0)&&mn<=0&&mx>=0) out.push(0);
   return out;
+}
+
+/* ----- head-to-head matrix ----- */
+let matrixSort = store.get('matrixSort', {key:'fees1k', dir:-1});
+const MATRIX_COLS = [
+  {key:'pair',   label:'POSITION',            fmt:null},
+  {key:'valueUsd',   label:'VALUE',           fmt:v=>fmtUsd(v,0), best:'max'},
+  {key:'costUsd',    label:'DEPOSITED',       fmt:v=>fmtUsd(v,0)},
+  {key:'feesUsd',    label:'UNCLAIMED',       fmt:v=>fmtUsd(v), best:'max'},
+  {key:'feesEverUsd',label:'LIFETIME FEES',   fmt:v=>fmtUsd(v), best:'max'},
+  {key:'fees1k',     label:'FEES / $1K / DAY',fmt:v=>'$'+v.toFixed(2), best:'max'},
+  {key:'feeAprPct',  label:'FEE APR',         fmt:v=>v.toFixed(1)+'%', best:'max'},
+  {key:'roiPct',     label:'P&L',             fmt:v=>fmtPct(v,2,true), best:'max', signed:true},
+  {key:'roiDay',     label:'P&L / DAY',       fmt:v=>fmtPct(v,3,true), best:'max', signed:true},
+  {key:'ageDays',    label:'AGE',             fmt:v=>fmtAge(v)},
+  {key:'status',     label:'STATUS',          fmt:null},
+];
+function matrixVal(p, key){
+  if(key==='fees1k') return (p.feesEverUsd!=null && p.costUsd>0 && p.ageDays>0.05) ? p.feesEverUsd/p.costUsd*1000/p.ageDays : null;
+  if(key==='roiDay') return (p.roiPct!=null && p.ageDays>0.05) ? p.roiPct/p.ageDays : null;
+  if(key==='pair') return p.pairLabel;
+  if(key==='status') return severityOf(p);
+  return p[key] ?? null;
+}
+function renderMatrix(){
+  const tbl = $('#matrixBody'); tbl.innerHTML='';
+  const ps = ordered();
+  if(!ps.length) return;
+  const rows = ps.map(p=>({p, vals:Object.fromEntries(MATRIX_COLS.map(c=>[c.key, matrixVal(p,c.key)]))}));
+  // sort
+  const sc = MATRIX_COLS.find(c=>c.key===matrixSort.key);
+  if(sc && sc.fmt) rows.sort((a,b)=>((b.vals[sc.key]??-1e18)-(a.vals[sc.key]??-1e18))*(-matrixSort.dir));
+  // best per numeric col
+  const best = {};
+  MATRIX_COLS.filter(c=>c.best).forEach(c=>{
+    const vs = rows.map(r=>r.vals[c.key]).filter(v=>v!=null&&isFinite(v));
+    if(vs.length>1) best[c.key] = Math.max(...vs);
+  });
+  const thead = el('tr');
+  MATRIX_COLS.forEach(c=>{
+    const th = el('th', matrixSort.key===c.key?'sorted':null, c.label + (matrixSort.key===c.key ? (matrixSort.dir<0?' ▾':' ▴') : ''));
+    if(c.fmt) th.addEventListener('click',()=>{
+      matrixSort = matrixSort.key===c.key ? {key:c.key, dir:-matrixSort.dir} : {key:c.key, dir:-1};
+      store.set('matrixSort', matrixSort); renderMatrix();
+    });
+    thead.append(th);
+  });
+  tbl.append(thead);
+  rows.forEach(({p,vals})=>{
+    const tr = el('tr');
+    MATRIX_COLS.forEach(c=>{
+      const v = vals[c.key];
+      if(c.key==='pair'){
+        const td = el('td');
+        const cell = el('div','pos-cell');
+        const dot = el('span','cdot'); dot.style.background=seriesHex(colorIndex.get(p.id)??5); dot.style.boxShadow='0 0 6px '+seriesHex(colorIndex.get(p.id)??5);
+        cell.append(dot, el('span',null, esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · #'+p.id+'</span>'));
+        td.append(cell); tr.append(td); return;
+      }
+      if(c.key==='status'){
+        const sev = v;
+        tr.append(el('td',null,'<span style="color:var(--status-'+sev.replace('serious','serious')+')">'+SEV_ICON[sev]+' '+SEV_LABEL[sev]+'</span>')); return;
+      }
+      const isBest = best[c.key]!=null && v!=null && Math.abs(v-best[c.key])<1e-12;
+      let txt = v==null ? '<span style="color:var(--text-muted)">…</span>' : c.fmt(v);
+      if(c.signed && v!=null && !isBest) txt = '<span style="color:var(--status-'+(v>=0?'good':'critical')+')">'+txt+'</span>';
+      tr.append(el('td', isBest?'best':null, txt));
+    });
+    tbl.append(tr);
+  });
 }
 
 /* ----- session sparkline ----- */
@@ -1290,6 +1439,19 @@ function wireSettings(){
   cp.addEventListener('change',()=>{cfg.critPct=Math.max(.5,+cp.value||3);store.set('critPct',cfg.critPct);renderAll();});
   iv.addEventListener('change',()=>{cfg.interval=Math.max(15,+iv.value||45);store.set('interval',cfg.interval);state.countdown=cfg.interval;});
   rp.addEventListener('change',()=>{cfg.rpc=rp.value;store.set('rpc',cfg.rpc);rpcIndex=Math.max(0,RPCS.indexOf(cfg.rpc));log('info','Primary RPC → '+rp.value);});
+  $('#customRpcBtn').addEventListener('click',()=>{
+    const u=$('#customRpcInput').value.trim();
+    if(!/^https:\/\/.+/.test(u)){ log('warning','Custom RPC must be an https:// URL.'); return; }
+    if(!RPCS.includes(u)){
+      RPCS.unshift(u);
+      store.set('extraRpcs',[u, ...store.get('extraRpcs',[])].slice(0,5));
+      const o=el('option');o.value=u;o.textContent=u.replace('https://','').slice(0,40);rp.prepend(o);
+    }
+    rp.value=u; cfg.rpc=u; store.set('rpc',u); rpcIndex=RPCS.indexOf(u);
+    $('#customRpcInput').value='';
+    log('good','Custom RPC set as primary — rescanning.');
+    scan();
+  });
   $('#btnResetLayout').addEventListener('click',()=>{store.set('panelOrder',null);store.set('cardOrder',[]);location.reload();});
 }
 
