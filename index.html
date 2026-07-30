@@ -315,7 +315,7 @@
   </div>
   <div class="brand">
     <h1>ARC // LP COMMAND</h1>
-    <div class="sub">UNISWAP V3 · POSITION TELEMETRY</div>
+    <div class="sub">UNISWAP V3 + RAYDIUM · <span id="buildTag"></span></div>
   </div>
   <div class="hdr-stats">
     <div class="hstat"><div class="k">UTC</div><div class="v" id="hClock">—</div></div>
@@ -330,7 +330,7 @@
 </header>
 
 <main>
-  <div class="banner" id="simBanner">⚠ SIMULATION MODE — no RPC endpoint reachable; data shown is synthetic. Common causes: antivirus or ad-blocker blocking RPC domains (allow-list them), or a sandboxed preview. Fastest fix: add a free personal endpoint (Alchemy/Infura/dRPC) in ⚙ CONFIG → RPC — then hit ⟳ SCAN.</div>
+  <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN.</div>
 
   <div class="tiles" id="tiles"></div>
 
@@ -431,6 +431,11 @@
     <label style="color:var(--text-muted)">Tip: if your antivirus (e.g. Malwarebytes) blocks a public RPC, the HUD rotates to the next one automatically — or allow-list the domain.</label>
   </div>
   <div class="sec">
+    <h3>CONNECTIVITY</h3>
+    <button class="hbtn" id="btnDiag" style="width:100%">⚕ RUN DIAGNOSTICS — test all endpoints</button>
+    <label>Results appear in the EVENT LOG. Red = blocked from this browser (antivirus / ad-blocker / network).</label>
+  </div>
+  <div class="sec">
     <h3>LAYOUT</h3>
     <button class="hbtn" id="btnResetLayout">RESET PANEL &amp; CARD ORDER</button>
   </div>
@@ -456,10 +461,12 @@ const store = {
 };
 
 /* ---------- config ---------- */
+const BUILD = 'v4';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
   'https://ethereum-rpc.publicnode.com',
+  'https://rpc.mevblocker.io',
   'https://eth.llamarpc.com',
   'https://1rpc.io/eth',
   'https://rpc.flashbots.net',
@@ -1129,6 +1136,34 @@ async function scanSol(){
   return true;
 }
 
+/* ---- connectivity diagnostics: tests every endpoint from THIS browser ---- */
+const hostOf = u => u.replace('https://','').split('/')[0];
+let diagRunning=false, diagAutoRan=false;
+async function runDiagnostics(){
+  if(diagRunning) return; diagRunning=true;
+  log('info','— DIAGNOSTICS (build '+BUILD+') — testing every endpoint from this browser…');
+  for(const url of RPCS){
+    try{
+      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method:'eth_blockNumber',params:[]},8000);
+      if(js.result) log('good','ETH '+hostOf(url)+' — OK · block '+parseInt(js.result,16).toLocaleString());
+      else log('warning','ETH '+hostOf(url)+' — responded with error: '+esc(JSON.stringify(js.error)).slice(0,60));
+    }catch(e){ log('critical','ETH '+hostOf(url)+' — '+(e.name==='AbortError'?'TIMEOUT':'BLOCKED ('+esc(e.message||'network').slice(0,40)+')')); }
+  }
+  for(const url of SOL_RPCS){
+    try{
+      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method:'getSlot',params:[]},8000);
+      if(js.result!=null) log('good','SOL '+hostOf(url)+' — OK · slot '+Number(js.result).toLocaleString());
+      else log('warning','SOL '+hostOf(url)+' — responded with error: '+esc(JSON.stringify(js.error)).slice(0,60));
+    }catch(e){ log('critical','SOL '+hostOf(url)+' — '+(e.name==='AbortError'?'TIMEOUT':'BLOCKED ('+esc(e.message||'network').slice(0,40)+')')); }
+  }
+  try{ await getJson('https://lite-api.jup.ag/price/v3?ids='+SOL_MINT,8000); log('good','Jupiter price API — OK'); }
+  catch(e){ log('critical','Jupiter price API — BLOCKED ('+esc(e.message||'network').slice(0,40)+')'); }
+  try{ await getJson('https://api-v3.raydium.io/pools/info/ids?ids=x',8000); log('good','Raydium API — OK'); }
+  catch(e){ log('warning','Raydium API — '+esc(e.message||'blocked').slice(0,40)); }
+  log('info','— END — red rows are blocked by your network/antivirus/ad-blocker: allow-list those domains (they are standard public blockchain gateways), or add personal endpoints (Alchemy/Helius) in CONFIG. Then hit ⟳ SCAN.');
+  diagRunning=false;
+}
+
 /* opened-date via first signature on the position PDA */
 let solAging=false;
 async function enrichSolAges(){
@@ -1204,7 +1239,8 @@ async function scan(isBoot){
     state.ethUsd = state.ethUsd ?? 3842.55;
     state.block = state.block ?? '—';
     setConn('sim');
-    if(isBoot) log('warning','Live RPC unreachable — SIMULATION MODE engaged.');
+    if(isBoot) log('warning','Live RPC unreachable — SIMULATION MODE engaged. All figures below are SYNTHETIC.');
+    if(!diagAutoRan){ diagAutoRan=true; setTimeout(runDiagnostics, 400); }
   }
   // sample for session telemetry
   const total = [...state.positions.values()].reduce((s,p)=>s+(p.valueUsd||0)+(p.feesUsd||0),0);
@@ -1318,7 +1354,9 @@ function renderTiles(){
   const pnl = cost>0 ? ps.reduce((s,p)=>s+((p.roiPct||0)/100)*(p.costUsd||0),0)/cost*100 : null;
   const t = $('#tiles'); t.innerHTML='';
   const mk = (k,v,d)=>{const x=el('div','tile');x.append(el('div','k',k),el('div','v',v),el('div','d',d??''));t.append(x);};
-  mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed');
+  mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
+     ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
+     : (state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed'));
   mk('UNCLAIMED FEES', fmtUsd(totalFees), 'lifetime fees: <b>'+fmtUsd(totalEver,0)+'</b>');
   mk('PORTFOLIO FEE APR', wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
@@ -1776,6 +1814,7 @@ function wireSettings(){
     scan();
   });
   $('#btnResetLayout').addEventListener('click',()=>{store.set('panelOrder',null);store.set('cardOrder',[]);location.reload();});
+  $('#btnDiag').addEventListener('click',()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); runDiagnostics(); });
 }
 
 /* ================= BOOT / CLOCK / LOOP ================= */
@@ -1806,8 +1845,9 @@ async function init(){
   });
   if(('Notification' in window) && Notification.permission==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').textContent='◉ ARMED'; }
   setInterval(tickClock,1000);
+  $('#buildTag').textContent = 'BUILD '+BUILD;
   bootMsg('ESTABLISHING RPC UPLINK…');
-  log('info','ARC // LP COMMAND online. Tracking '+cfg.ids.length+' positions.');
+  log('info','ARC // LP COMMAND '+BUILD+' online. Tracking '+cfg.ids.length+' ETH positions + '+cfg.solWallets.length+' SOL wallets.');
   await scan(true);
   $('#bootScreen').classList.add('hide');
   setTimeout(()=>$('#bootScreen').remove(), 600);
