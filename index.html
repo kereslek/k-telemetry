@@ -250,11 +250,11 @@
   .matrix tr:hover td{background:rgba(53,214,232,.03)}
 
   /* leaderboard */
-  .rank-row{display:grid;grid-template-columns:52px 230px 1fr 130px 120px 120px;gap:14px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line-soft)}
+  .rank-row{display:grid;grid-template-columns:52px 300px 1fr 130px 130px 120px;gap:14px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line-soft)}
   .rank-row:last-child{border-bottom:none}
   .rank-badge{font-size:15px;font-weight:700;text-align:center;color:var(--text-muted)}
   .rank-row.first .rank-badge{color:var(--status-warning);text-shadow:0 0 12px rgba(250,178,25,.5)}
-  .rank-name{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-primary)}
+  .rank-name{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-primary);flex-wrap:wrap;min-width:0}
   .rank-name .sub{color:var(--text-muted);font-size:10px}
   .rank-track{position:relative;height:14px;background:var(--panel-2);border:1px solid var(--line)}
   .rank-bar{position:absolute;top:0;bottom:0;left:0;background:var(--pcolor);opacity:.85;box-shadow:0 0 12px var(--pcolor)}
@@ -285,6 +285,66 @@
   /* night sky layering */
   #sky{position:fixed;inset:0;z-index:0;pointer-events:none}
   header,main,footer{position:relative;z-index:1}
+
+  /* capital flow */
+  .flow-title{font-size:10.5px;letter-spacing:.2em;color:var(--text-muted);margin:10px 0 6px}
+  .flow-bar{display:flex;height:30px;border:1px solid var(--line);background:var(--panel-2);overflow:hidden}
+  .flow-seg{height:100%;display:flex;align-items:center;justify-content:center;min-width:2px;border-right:2px solid var(--surface-1);transition:width .4s}
+  .flow-seg:last-child{border-right:none}
+  .flow-seg span{font-size:10px;color:#04070d;font-weight:700;letter-spacing:.04em;white-space:nowrap;overflow:hidden}
+  .flow-directive{margin-top:16px;padding:16px 18px;border:1px solid var(--accent-dim);background:rgba(53,214,232,.05);position:relative;animation:dirPulse 3s ease-in-out infinite}
+  @keyframes dirPulse{0%,100%{box-shadow:0 0 12px rgba(53,214,232,.12), inset 0 0 24px rgba(53,214,232,.04)}50%{box-shadow:0 0 26px rgba(53,214,232,.3), inset 0 0 30px rgba(53,214,232,.08)}}
+  .fd-k{font-size:10px;letter-spacing:.3em;color:var(--status-warning);margin-bottom:8px}
+  .fd-main{font-size:15px;color:var(--text-secondary);line-height:1.6}
+  .fd-main b{color:var(--accent);font-weight:700;text-shadow:0 0 10px var(--accent-glow)}
+  .fd-sub{font-size:12.5px;color:var(--text-secondary);margin-top:8px;line-height:1.55}
+  .fd-sub b{color:var(--text-primary)}
+  .fd-note{font-size:9.5px;color:var(--text-muted);margin-top:10px;letter-spacing:.08em}
+
+  /* ============ RESPONSIVE ============ */
+  @media(max-width:1000px){
+    .rank-row{grid-template-columns:40px minmax(0,1fr) 110px;gap:6px 10px}
+    .rank-track{grid-column:1/-1}
+    .rank-sub{text-align:left;grid-column:2/-1;padding-left:2px}
+    .cbody{grid-template-columns:1fr}
+    .gaugebox{flex-direction:row;justify-content:center;gap:14px}
+  }
+  @media(max-width:760px){
+    body{font-size:13px}
+    header{flex-wrap:wrap;gap:8px 14px;padding:9px 12px}
+    .brand h1{font-size:13px;letter-spacing:.2em}
+    .brand .sub{font-size:8px;letter-spacing:.22em}
+    .reactor{width:30px;height:30px}
+    .hdr-stats{margin-left:0;width:100%;gap:10px 14px;justify-content:flex-start}
+    .hstat{text-align:left}
+    .hstat .v{font-size:12px}
+    .hbtn{padding:6px 10px;font-size:9px}
+    .seg button{padding:4px 7px;font-size:8.5px}
+    .conn{padding:4px 9px}
+    main{padding:12px 10px 50px}
+    .tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+    .tile{padding:11px 12px 10px}
+    .tile .v{font-size:22px}
+    .cards{grid-template-columns:1fr}
+    .radar-row{grid-template-columns:1fr;gap:2px;padding:10px 0}
+    .radar-dist{text-align:left;order:3}
+    .rank-row{grid-template-columns:34px minmax(0,1fr) 96px}
+    .rank-val{font-size:12.5px}
+    .metrics{grid-template-columns:1fr 1fr;gap:8px 10px}
+    .phead{flex-wrap:wrap;row-gap:6px}
+    .phead .hint{display:none}
+    .drawer{width:100%;right:-100%}
+    .matrix{min-width:760px}
+    footer{font-size:8px}
+    .fd-main{font-size:13.5px}
+    .chip{margin-left:0}
+    .chead{flex-wrap:wrap;row-gap:6px}
+  }
+  @media(max-width:430px){
+    .hstat:nth-child(4){display:none}   /* hide NEXT SCAN on tiny screens */
+    .brand h1{font-size:12px}
+    .seg{margin-left:0}
+  }
 
   /* event log */
   .log{max-height:260px;overflow-y:auto;font-size:12px}
@@ -370,7 +430,7 @@
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
     <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
-    <span class="seg" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
+    <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
     <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
     <button class="hbtn" id="btnRefresh">⟳ SCAN</button>
@@ -386,8 +446,14 @@
   <div id="panelStack">
     <section class="panel" data-panel="rank" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="rankBody"></div>
+    </section>
+
+    <section class="panel" data-panel="flow" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CAPITAL FLOW — WHERE TO DEPLOY</span><span class="hint">capital share vs fee output · mismatches = opportunity</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="flowBody"></div>
     </section>
 
     <section class="panel" data-panel="ops" draggable="true">
@@ -538,7 +604,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v10';
+const BUILD = 'v11';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1235,7 +1301,7 @@ async function feesOwedAt(p, blockNum){
   if(r[0].error) throw new Error(r[0].error.message||'archive call failed');
   return { f0: Number(hexToBig(word(r[0].result,0)))/10**p.d0, f1: Number(hexToBig(word(r[0].result,1)))/10**p.d1 };
 }
-const APR_WINDOWS = [['d1',1],['d7',7],['d30',30]];
+const APR_WINDOWS = [['d1',1],['d7',7],['d30',30],['d365',365]];
 let aprEnriching=false;
 async function enrichAprWindows(){
   if(aprEnriching || state.mode!=='live' || !state.blockNum) return;
@@ -1268,13 +1334,13 @@ async function enrichAprWindows(){
   if(changed) renderAll();
 }
 /* which APR the UI shows, per the global window selector */
-const WIN_LABEL = {d1:'24H', d7:'7D', d30:'30D', incept:'SINCE OPEN'};
+const WIN_LABEL = {d1:'24H', d7:'7D', d30:'30D', d365:'1Y', incept:'SINCE OPEN'};
 cfg.aprWin = store.get('aprWin','d1');
 function aprOf(p){
   const w = cfg.aprWin;
   if(w==='incept') return {v: p.feeAprPct ?? null, pool:false};
   if(p.chain==='sol'){
-    const v = {d1:p.poolAprDay, d7:p.poolAprWeek, d30:p.poolAprMonth}[w];
+    const v = {d1:p.poolAprDay, d7:p.poolAprWeek, d30:p.poolAprMonth, d365:null}[w];
     return {v: v ?? null, pool:true};
   }
   return {v: p.aprW ? (p.aprW[w] ?? null) : null, pool:false};
@@ -1512,7 +1578,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors();
-  renderHeader(); renderTiles(); renderRank(); renderOps(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  renderHeader(); renderTiles(); renderRank(); renderFlow(); renderOps(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
   if(state.mode==='offline'){
@@ -1550,7 +1616,9 @@ function renderTiles(){
   mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
      ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
      : (state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed'));
-  mk('UNCLAIMED FEES', fmtUsd(totalFees), 'lifetime fees: <b>'+fmtUsd(totalEver,0)+'</b>');
+  { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
+    mk('UNCLAIMED FEES', fmtUsd(totalFees),
+       (topFee&&topFee.feesUsd>0 ? 'top: <b>'+esc(topFee.pairLabel)+' '+esc(posRef(topFee))+' · '+fmtUsd(topFee.feesUsd)+'</b> · ' : '')+'lifetime: <b>'+fmtUsd(totalEver,0)+'</b>'); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
   mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
@@ -1784,6 +1852,57 @@ function renderRank(){
   });
   const skipped=ordered().length-rows.length;
   if(skipped>0) host.append(el('div',null,'<div style="color:var(--text-muted);font-size:10.5px;padding-top:8px">'+skipped+' position(s) not ranked — no APR for this window yet (too young, or data loading).</div>'));
+}
+
+/* ----- capital flow ----- */
+function renderFlow(){
+  const host=$('#flowBody'); host.innerHTML='';
+  const ps=ordered().filter(p=>p.valueUsd!=null&&p.valueUsd>0);
+  if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No live position values yet.</div>'; return; }
+  const winDays={d1:1,d7:7,d30:30,d365:365}[cfg.aprWin];
+  const earn=p=>{ if(cfg.aprWin==='incept') return p.feesEverUsd||0;
+    const a=aprOf(p).v, base=p.valueUsd||p.costUsd||0;
+    return (a!=null&&base)? a/100*base*(winDays||1)/365 : 0; };
+  const totV=ps.reduce((s,p)=>s+p.valueUsd,0);
+  const totE=ps.reduce((s,p)=>s+earn(p),0);
+  const mkBar=(title,valFn,tot,fmt)=>{
+    const wrap=el('div','flow-wrap');
+    wrap.append(el('div','flow-title',title));
+    const bar=el('div','flow-bar');
+    ps.forEach(p=>{
+      const v=valFn(p), share=tot>0?v/tot*100:0;
+      const segEl=el('div','flow-seg');
+      segEl.style.width=share+'%';
+      segEl.style.background=seriesHex(cIdx(p));
+      if(share>9) segEl.innerHTML='<span>'+esc(p.m0.symbol)+'·'+Math.round(share)+'%</span>';
+      segEl.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(p.pairLabel)+' '+esc(posRef(p))+'</div><div class="tv"><b>'+share.toFixed(1)+'%</b> of '+title.toLowerCase()+' ('+fmt(v)+')</div>'));
+      segEl.addEventListener('mouseleave',hideTip);
+      bar.append(segEl);
+    });
+    wrap.append(bar);
+    return wrap;
+  };
+  host.append(mkBar('CAPITAL SHARE — where your money sits', p=>p.valueUsd, totV, v=>fmtUsd(v,0)));
+  host.append(mkBar('FEE OUTPUT SHARE · '+WIN_LABEL[cfg.aprWin]+' — where the money is made', earn, totE, v=>fmtUsd(v)));
+  // mismatch callout
+  let star=null, lag=null;
+  if(totE>0){
+    const gaps=ps.map(p=>({p, gap: earn(p)/totE - p.valueUsd/totV})).sort((a,b)=>b.gap-a.gap);
+    star=gaps[0]; lag=gaps[gaps.length-1];
+  }
+  // deploy directive: best APR among healthy in-range positions
+  const healthy=ps.filter(p=>p.inRange&&severityOf(p)!=='serious').map(p=>({p,a:aprOf(p).v})).filter(x=>x.a!=null).sort((x,y)=>y.a-x.a);
+  const d=el('div','flow-directive');
+  if(healthy.length){
+    const b=healthy[0].p, ba=healthy[0].a;
+    d.innerHTML='<div class="fd-k">★ DEPLOY DIRECTIVE · '+WIN_LABEL[cfg.aprWin]+'</div>'
+      +'<div class="fd-main">Next capital → <b>'+esc(b.pairLabel)+' '+esc(posRef(b))+'</b> — earning <b>'+ba.toFixed(1)+'% APR</b>'
+      +(b.inRange?' with a healthy buffer (−'+b.dLow.toFixed(1)+'% / +'+b.dUp.toFixed(1)+'%)':'')+'.</div>'
+      +(star&&star.gap>0.05 ? '<div class="fd-sub">⚡ <b>'+esc(star.p.pairLabel)+' '+esc(posRef(star.p))+'</b> punches above its weight: '+(star.p.valueUsd/totV*100).toFixed(0)+'% of capital → '+(earn(star.p)/totE*100).toFixed(0)+'% of fees.</div>':'')
+      +(lag&&lag.gap<-0.05 ? '<div class="fd-sub">▽ <b>'+esc(lag.p.pairLabel)+' '+esc(posRef(lag.p))+'</b> drags: '+(lag.p.valueUsd/totV*100).toFixed(0)+'% of capital → only '+(earn(lag.p)/totE*100).toFixed(0)+'% of fees. Candidate to shrink or re-range.</div>':'')
+      +'<div class="fd-note">Rule-based signal from live yields · ranges can break · not financial advice.</div>';
+  } else d.innerHTML='<div class="fd-main">No healthy in-range position with APR data for this timeframe yet.</div>';
+  host.append(d);
 }
 
 /* ----- tactical directives ----- */
@@ -2110,17 +2229,22 @@ function tickClock(){
     $('#hCountdown').innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
   }
 }
+const SEG_SHORT={d1:'24H',d7:'7D',d30:'30D',d365:'1Y',incept:'OPEN'};
 function renderAprSeg(){
-  const seg=$('#aprSeg'); seg.innerHTML='';
-  for(const k of ['d1','d7','d30','incept']){
-    const b=el('button', cfg.aprWin===k?'on':null, WIN_LABEL[k]);
-    b.addEventListener('click',()=>{
-      cfg.aprWin=k; store.set('aprWin',k);
-      renderAprSeg(); renderAll();
-      if(k!=='incept') enrichAprWindows();   // compute windows on demand if missing
-    });
-    seg.append(b);
-  }
+  document.querySelectorAll('.aprSegHost').forEach(seg=>{
+    seg.innerHTML='';
+    for(const k of ['d1','d7','d30','d365','incept']){
+      const b=el('button', cfg.aprWin===k?'on':null, SEG_SHORT[k]);
+      b.title={d1:'Last 24 hours, annualized',d7:'Last 7 days, annualized',d30:'Last 30 days, annualized',d365:'Last year, annualized (only for positions older than 1y)',incept:'Since the position was opened, annualized'}[k];
+      b.addEventListener('click',e=>{
+        e.stopPropagation();
+        cfg.aprWin=k; store.set('aprWin',k);
+        renderAprSeg(); renderAll();
+        if(k!=='incept') enrichAprWindows();
+      });
+      seg.append(b);
+    }
+  });
 }
 /* ---------- night sky: starfield, Andromeda nebulae, shooting stars ---------- */
 function initSky(){

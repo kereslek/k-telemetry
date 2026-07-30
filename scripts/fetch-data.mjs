@@ -161,7 +161,7 @@ async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
   }
   // windowed APRs
   const aprW={t:Date.now()};
-  for(const [key,days] of [['d1',1],['d7',7],['d30',30]]){
+  for(const [key,days] of [['d1',1],['d7',7],['d30',30],['d365',365]]){
     aprW[key]=null;
     if(ageDays!=null&&ageDays<days) continue;
     try{
