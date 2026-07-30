@@ -476,7 +476,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v6';
+const BUILD = 'v7';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -489,6 +489,7 @@ const BASE_RPCS = [
   'https://cloudflare-eth.com'
 ];
 const RPCS = [...store.get('extraRpcs', []), ...BASE_RPCS];
+const DEMO_MODE = /[?&]demo/.test(location.search);
 const cfg = {
   ids: store.get('ids', DEFAULT_IDS.slice()),
   warnPct: store.get('warnPct', 20),   // % of range width remaining to an edge
@@ -565,7 +566,7 @@ async function postJson(url, payload, timeout){
 const isRateLimit = e => e && (e.code===-32005 || e.code===-32097 || /rate|limit|exceed|too many|busy/i.test(e.message||''));
 const isNetFail = e => e && (e.name==='AbortError' || e.name==='TypeError' || /fetch|network|tunnel|dns|refused/i.test(e.message||''));
 let rpcCooldownUntil = 0;   // set when EVERY endpoint is unreachable, so later calls fail fast
-async function rpcBatch(calls, {timeout=12000} = {}){
+async function rpcBatch(calls, {timeout=12000, strict=false} = {}){
   // calls: [{method, params}] -> array of results. Tries batch POST per endpoint,
   // falls back to sequential single calls (some public RPCs reject batches),
   // rotates endpoints on transport failure or blanket rate-limiting.
@@ -583,6 +584,7 @@ async function rpcBatch(calls, {timeout=12000} = {}){
         const byId = new Map(js.map(r=>[r.id, r]));
         const out = body.map(b => { const r = byId.get(b.id); if(!r) throw new Error('batch item missing'); return r; });
         if(out.length && out.every(r=>r.error && isRateLimit(r.error))) throw new Error('rate limited');
+        if(strict && out.some(r=>r.error)) throw new Error(out.find(r=>r.error).error.message||'rpc item error');
         rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
         return out;
       }catch(e){ lastErr = e; netFail = isNetFail(e); }
@@ -593,6 +595,7 @@ async function rpcBatch(calls, {timeout=12000} = {}){
         for(const c of calls){
           const js = await postJson(url, {jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}, timeout);
           if(js.error && isRateLimit(js.error)) throw new Error('rate limited');
+          if(strict && js.error) throw new Error(js.error.message||'rpc item error');
           out.push(js);
           if(calls.length>3) await sleep(60);
         }
@@ -658,7 +661,7 @@ async function getTokenMeta(addrs){
   const need = addrs.filter(a=>!tokenMeta.has(a));
   if(need.length){
     const calls = need.flatMap(a=>[{method:'eth_call',params:[{to:a,data:SEL.symbol},'latest']},{method:'eth_call',params:[{to:a,data:SEL.decimals},'latest']}]);
-    const res = await rpcBatch(calls);
+    const res = await rpcBatch(calls, {strict:true});
     need.forEach((a,i)=>{
       const symRes = res[i*2], decRes = res[i*2+1];
       const symbol = symRes.error ? '???' : decodeString(symRes.result);
@@ -691,7 +694,7 @@ async function fetchHistory(id){
   const topicId = '0x'+pad32(id.toString(16));
   // one getLogs with OR'd topic0 — a third of the load of three separate queries
   const tryRange = async (from, to) => {
-    const r = await rpcBatch([{method:'eth_getLogs', params:[{address:NPM, topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL], topicId], fromBlock:from, toBlock:to}]}], {timeout:25000});
+    const r = await rpcBatch([{method:'eth_getLogs', params:[{address:NPM, topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL], topicId], fromBlock:from, toBlock:to}]}], {timeout:25000, strict:true});
     if(r[0].error) throw new Error(r[0].error.message);
     return r[0].result;
   };
@@ -724,7 +727,7 @@ async function fetchHistory(id){
 
 async function blockTimestamp(bn){
   try{
-    const r = await rpcBatch([{method:'eth_getBlockByNumber', params:['0x'+bn.toString(16), false]}]);
+    const r = await rpcBatch([{method:'eth_getBlockByNumber', params:['0x'+bn.toString(16), false]}], {strict:true});
     if(r[0].error || !r[0].result) return null;
     return Number(hexToBig(r[0].result.timestamp))*1000;
   }catch(e){ return null; }
@@ -734,7 +737,7 @@ async function blockTimestamp(bn){
 async function historicalContext(bn){
   try{
     const blk = '0x'+bn.toString(16);
-    const r = await rpcBatch([{method:'eth_call', params:[{to:CHAINLINK_ETH, data:SEL.latestAnswer}, blk]}]);
+    const r = await rpcBatch([{method:'eth_call', params:[{to:CHAINLINK_ETH, data:SEL.latestAnswer}, blk]}], {strict:true});
     if(r[0].error) return null;
     return { ethUsd: bigToFloat(hexToBig(r[0].result), 8) };
   }catch(e){ return null; }
@@ -747,7 +750,7 @@ async function fetchPosition(id, prev){
   const r1 = await rpcBatch([
     {method:'eth_call', params:[{to:NPM, data:SEL.positions+idHex},'latest']},
     {method:'eth_call', params:[{to:NPM, data:SEL.ownerOf+idHex},'latest']},
-  ]);
+  ], {strict:true});
   if(r1[0].error) throw new Error('position '+id+': '+(r1[0].error.message||'not found'));
   const core = decodePositions(r1[0].result);
   const owner = r1[1].error ? null : '0x'+r1[1].result.slice(-40);
@@ -755,22 +758,21 @@ async function fetchPosition(id, prev){
   // 2) pool address + token meta
   const [m0, m1] = await getTokenMeta([core.token0.toLowerCase(), core.token1.toLowerCase()]);
   const poolData = SEL.getPool + pad32(core.token0) + pad32(core.token1) + pad32(core.fee.toString(16));
-  const r2 = await rpcBatch([{method:'eth_call', params:[{to:FACTORY, data:poolData},'latest']}]);
+  const r2 = await rpcBatch([{method:'eth_call', params:[{to:FACTORY, data:poolData},'latest']}], {strict:true});
   if(r2[0].error) throw new Error('pool lookup failed');
   const pool = '0x'+r2[0].result.slice(-40);
 
   // 3) slot0 + uncollected fees (static collect as owner)
   const MAX128 = 'f'.repeat(32);
   const collectData = SEL.collect + idHex + pad32(owner||NPM) + MAX128.padStart(64,'0') + MAX128.padStart(64,'0');
-  const r3 = await rpcBatch([
-    {method:'eth_call', params:[{to:pool, data:SEL.slot0},'latest']},
-    {method:'eth_call', params:[{to:NPM, data:collectData, from:owner||undefined},'latest']},
-  ]);
-  if(r3[0].error) throw new Error('slot0 failed');
+  const r3 = await rpcBatch([{method:'eth_call', params:[{to:pool, data:SEL.slot0},'latest']}], {strict:true});
   const sqrtPriceX96 = hexToBig(word(r3[0].result,0));
   const tick = Number(toSigned(hexToBig(word(r3[0].result,1)),24));
   let fee0 = core.owed0, fee1 = core.owed1;
-  if(!r3[1].error){ fee0 = hexToBig(word(r3[1].result,0)); fee1 = hexToBig(word(r3[1].result,1)); }
+  try{
+    const rc = await rpcBatch([{method:'eth_call', params:[{to:NPM, data:collectData, ...(owner?{from:owner}:{})},'latest']}], {strict:true});
+    fee0 = hexToBig(word(rc[0].result,0)); fee1 = hexToBig(word(rc[0].result,1));
+  }catch(e){ /* keep owed amounts */ }
 
   // 4) math
   const d0=m0.decimals, d1=m1.decimals;
@@ -883,7 +885,7 @@ async function fetchAnchors(){
     {method:'eth_blockNumber', params:[]},
     {method:'eth_call', params:[{to:CHAINLINK_ETH, data:SEL.latestAnswer},'latest']},
     {method:'eth_call', params:[{to:CHAINLINK_BTC, data:SEL.latestAnswer},'latest']},
-  ]);
+  ], {strict:true});
   if(r[0].error) throw new Error('blockNumber failed');
   state.blockNum = Number(hexToBig(r[0].result));
   state.block = state.blockNum.toLocaleString();
@@ -1167,7 +1169,7 @@ async function feesOwedAt(p, blockNum){
   const idHex = pad32(p.id.toString(16));
   const MAX128 = 'f'.repeat(32).padStart(64,'0');
   const data = SEL.collect + idHex + pad32(p.owner||NPM) + MAX128 + MAX128;
-  const r = await rpcBatch([{method:'eth_call', params:[{to:NPM, data, ...(p.owner?{from:p.owner}:{})}, '0x'+blockNum.toString(16)]}]);
+  const r = await rpcBatch([{method:'eth_call', params:[{to:NPM, data, ...(p.owner?{from:p.owner}:{})}, '0x'+blockNum.toString(16)]}], {strict:true});
   if(r[0].error) throw new Error(r[0].error.message||'archive call failed');
   return { f0: Number(hexToBig(word(r[0].result,0)))/10**p.d0, f1: Number(hexToBig(word(r[0].result,1)))/10**p.d1 };
 }
@@ -1244,7 +1246,7 @@ async function runDiagnostics(){
   }
   try{ await getJson('https://lite-api.jup.ag/price/v3?ids='+SOL_MINT,8000); log('good','Jupiter price API — OK'); }
   catch(e){ log('critical','Jupiter price API — BLOCKED ('+esc(e.message||'network').slice(0,40)+')'); }
-  try{ await getJson('https://api-v3.raydium.io/pools/info/ids?ids=x',8000); log('good','Raydium API — OK'); }
+  try{ await getJson('https://api-v3.raydium.io/main/version',8000); log('good','Raydium API — OK'); }
   catch(e){ log('warning','Raydium API — '+esc(e.message||'blocked').slice(0,40)); }
   log('info','— END — red rows are blocked by your network/antivirus/ad-blocker: allow-list those domains (they are standard public blockchain gateways), or add personal endpoints (Alchemy/Helius) in CONFIG. Then hit ⟳ SCAN.');
   diagRunning=false;
@@ -1320,14 +1322,19 @@ async function scan(isBoot){
   } else if(state.mode==='live'){
     setConn('err');
     log('critical','Scan failed on both chains — keeping last data.');
-  } else {
+  } else if(DEMO_MODE){
     state.mode = 'sim';
     const demo = demoPositions();
     state.positions = new Map(demo.map(p=>[p.id,p]));
     state.ethUsd = state.ethUsd ?? 3842.55;
     state.block = state.block ?? '—';
     setConn('sim');
-    if(isBoot) log('warning','Live RPC unreachable — SIMULATION MODE engaged. All figures below are SYNTHETIC.');
+    if(isBoot) log('warning','DEMO MODE (?demo in URL) — all figures are SYNTHETIC.');
+  } else {
+    state.mode = 'offline';
+    state.positions = new Map();     // NO fake data — empty until live data arrives
+    setConn('err');
+    if(isBoot) log('critical','OFFLINE — no live data could be read. Diagnostics running…');
     if(!diagAutoRan){ diagAutoRan=true; setTimeout(runDiagnostics, 400); }
   }
   // sample for session telemetry
@@ -1417,8 +1424,16 @@ function assignColors(){
 function renderAll(){
   assignColors();
   renderHeader(); renderTiles(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
-  $('#simBanner').classList.toggle('show', state.mode==='sim');
-  $('#simErr').textContent = state.lastScanErr ? 'LAST ERROR → '+state.lastScanErr : '';
+  const banner=$('#simBanner');
+  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
+  if(state.mode==='offline'){
+    banner.style.borderColor='var(--status-critical)'; banner.style.color='var(--status-critical)';
+    banner.innerHTML='✕ OFFLINE — could not read live data, so NOTHING is shown (this dashboard never shows fake numbers). The EVENT LOG below lists every endpoint tested from this browser: green = works, red = blocked. Use ⎘ COPY REPORT and paste it to Claude, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG → hit ⟳ SCAN. '
+      +(state.lastScanErr?'<span style="color:var(--status-critical)">LAST ERROR → '+esc(state.lastScanErr)+'</span>':'');
+  } else if(state.mode==='sim'){
+    banner.style.borderColor=''; banner.style.color='';
+    banner.innerHTML='⚠ DEMO MODE — synthetic showcase data (URL contains ?demo). Remove ?demo from the URL for live mode.';
+  }
   $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% OF RANGE WIDTH FROM EDGE';
 }
 function renderHeader(){
@@ -1428,7 +1443,7 @@ function renderHeader(){
 function setConn(mode){
   const led=$('#connLed'), lab=$('#connLabel');
   led.className='led'+(mode==='sim'?' sim':mode==='err'?' err':'');
-  lab.textContent = {live:'LIVE · MAINNET', sim:'SIMULATION', err:'RPC ERROR', sync:'SYNCING…'}[mode]||'…';
+  lab.textContent = {live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…';
 }
 
 function renderTiles(){
@@ -1752,6 +1767,10 @@ function renderCards(){
     card.append(foot);
     host.append(card);
   });
+  if(!host.children.length){
+    host.append(el('div',null,'<div style="grid-column:1/-1;padding:30px;text-align:center;color:var(--text-muted);font-size:11px;letter-spacing:.1em">'
+      +(state.mode==='offline' ? 'NO LIVE DATA — see the offline banner and EVENT LOG diagnostics.' : 'NO POSITIONS TRACKED — add some in ⚙ CONFIG.')+'</div>'));
+  }
   wireDrag(host, '.card', ids=>store.set('cardOrder', ids.map(String)));
 }
 
