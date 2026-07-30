@@ -341,7 +341,7 @@
 </header>
 
 <main>
-  <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN.</div>
+  <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN. <span id="simErr" style="color:var(--status-critical)"></span></div>
 
   <div class="tiles" id="tiles"></div>
 
@@ -380,7 +380,9 @@
 
     <section class="panel" data-panel="log" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">EVENT LOG</span><span class="hint" id="alertCfgHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">EVENT LOG</span>
+        <button class="hbtn" id="btnCopyLog" style="padding:3px 9px;font-size:9px;margin-left:12px">⎘ COPY REPORT</button>
+        <span class="hint" id="alertCfgHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody"><div class="log" id="logBody"></div></div>
     </section>
   </div>
@@ -474,7 +476,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v5';
+const BUILD = 'v6';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -568,37 +570,44 @@ async function rpcBatch(calls, {timeout=12000} = {}){
   // falls back to sequential single calls (some public RPCs reject batches),
   // rotates endpoints on transport failure or blanket rate-limiting.
   if(Date.now() < rpcCooldownUntil) throw new Error('all RPCs unreachable (cooldown)');
-  const order = [...RPCS.slice(rpcIndex), ...RPCS.slice(0, rpcIndex)];
-  let lastErr, netFails = 0;
-  for(const url of order){
-    // attempt 1: batch
-    let netFail = false;
-    try{
-      const body = calls.map(c => ({jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}));
-      let js = await postJson(url, body, timeout);
-      if(!Array.isArray(js)) js = [js];
-      const byId = new Map(js.map(r=>[r.id, r]));
-      const out = body.map(b => { const r = byId.get(b.id); if(!r) throw new Error('batch item missing'); return r; });
-      if(out.length && out.every(r=>r.error && isRateLimit(r.error))) throw new Error('rate limited');
-      rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
-      return out;
-    }catch(e){ lastErr = e; netFail = isNetFail(e); }
-    if(netFail){ netFails++; continue; }   // endpoint unreachable — singles won't help
-    // attempt 2: sequential singles (handles batch-hostile endpoints)
-    try{
-      const out = [];
-      for(const c of calls){
-        const js = await postJson(url, {jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}, timeout);
-        if(js.error && isRateLimit(js.error)) throw new Error('rate limited');
-        out.push(js);
-        if(calls.length>3) await sleep(60);
-      }
-      rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
-      return out;
-    }catch(e){ lastErr = e; }
+  const tryAll = async () => {
+    const order = [...RPCS.slice(rpcIndex), ...RPCS.slice(0, rpcIndex)];
+    let lastErr, netFails = 0;
+    for(const url of order){
+      // attempt 1: batch
+      let netFail = false;
+      try{
+        const body = calls.map(c => ({jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}));
+        let js = await postJson(url, body, timeout);
+        if(!Array.isArray(js)) js = [js];
+        const byId = new Map(js.map(r=>[r.id, r]));
+        const out = body.map(b => { const r = byId.get(b.id); if(!r) throw new Error('batch item missing'); return r; });
+        if(out.length && out.every(r=>r.error && isRateLimit(r.error))) throw new Error('rate limited');
+        rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
+        return out;
+      }catch(e){ lastErr = e; netFail = isNetFail(e); }
+      if(netFail){ netFails++; continue; }   // endpoint unreachable — singles won't help
+      // attempt 2: sequential singles (handles batch-hostile endpoints)
+      try{
+        const out = [];
+        for(const c of calls){
+          const js = await postJson(url, {jsonrpc:'2.0', id:rpcId++, method:c.method, params:c.params}, timeout);
+          if(js.error && isRateLimit(js.error)) throw new Error('rate limited');
+          out.push(js);
+          if(calls.length>3) await sleep(60);
+        }
+        rpcIndex = RPCS.indexOf(url); state.lastRpc = url; rpcCooldownUntil = 0;
+        return out;
+      }catch(e){ lastErr = e; }
+    }
+    if(netFails >= order.length) rpcCooldownUntil = Date.now() + 20000;
+    throw lastErr || new Error('all RPCs failed');
+  };
+  try{ return await tryAll(); }
+  catch(e){
+    if(isRateLimit(e)){ await sleep(1500); return await tryAll(); }   // one patient retry when everything is just throttled
+    throw e;
   }
-  if(netFails >= order.length) rpcCooldownUntil = Date.now() + 20000;
-  throw lastErr || new Error('all RPCs failed');
 }
 async function ethCall(to, data, block='latest', from){
   const r = await rpcBatch([{method:'eth_call', params:[{to, data, ...(from?{from}:{})}, block]}]);
@@ -1212,19 +1221,25 @@ const hostOf = u => u.replace('https://','').split('/')[0];
 let diagRunning=false, diagAutoRan=false;
 async function runDiagnostics(){
   if(diagRunning) return; diagRunning=true;
-  log('info','— DIAGNOSTICS (build '+BUILD+') — testing every endpoint from this browser…');
+  log('info','— DIAGNOSTICS (build '+BUILD+') — testing a REAL position read on every endpoint…');
+  const testId = pad32((cfg.ids[0]||1338795).toString(16));
   for(const url of RPCS){
     try{
-      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method:'eth_blockNumber',params:[]},8000);
-      if(js.result) log('good','ETH '+hostOf(url)+' — OK · block '+parseInt(js.result,16).toLocaleString());
-      else log('warning','ETH '+hostOf(url)+' — responded with error: '+esc(JSON.stringify(js.error)).slice(0,60));
+      const t0=Date.now();
+      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method:'eth_call',params:[{to:NPM,data:SEL.positions+testId},'latest']},8000);
+      const ms=Date.now()-t0;
+      if(js.result && js.result.length>66) log('good','ETH '+hostOf(url)+' — OK · position #'+(cfg.ids[0]||1338795)+' read in '+ms+'ms');
+      else log('warning','ETH '+hostOf(url)+' — call error: '+esc(JSON.stringify(js.error||js.result)).slice(0,70));
     }catch(e){ log('critical','ETH '+hostOf(url)+' — '+(e.name==='AbortError'?'TIMEOUT':'BLOCKED ('+esc(e.message||'network').slice(0,40)+')')); }
   }
+  const testWallet = cfg.solWallets[0];
   for(const url of SOL_RPCS){
     try{
-      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method:'getSlot',params:[]},8000);
-      if(js.result!=null) log('good','SOL '+hostOf(url)+' — OK · slot '+Number(js.result).toLocaleString());
-      else log('warning','SOL '+hostOf(url)+' — responded with error: '+esc(JSON.stringify(js.error)).slice(0,60));
+      const t0=Date.now();
+      const js=await postJson(url,{jsonrpc:'2.0',id:rpcId++,method: testWallet?'getTokenAccountsByOwner':'getSlot', params: testWallet?[testWallet,{programId:TOKEN_PROG},{encoding:'jsonParsed'}]:[]},9000);
+      const ms=Date.now()-t0;
+      if(js.result!=null) log('good','SOL '+hostOf(url)+' — OK · wallet token scan in '+ms+'ms');
+      else log('warning','SOL '+hostOf(url)+' — call error: '+esc(JSON.stringify(js.error)).slice(0,70));
     }catch(e){ log('critical','SOL '+hostOf(url)+' — '+(e.name==='AbortError'?'TIMEOUT':'BLOCKED ('+esc(e.message||'network').slice(0,40)+')')); }
   }
   try{ await getJson('https://lite-api.jup.ag/price/v3?ids='+SOL_MINT,8000); log('good','Jupiter price API — OK'); }
@@ -1277,9 +1292,11 @@ async function scan(isBoot){
         results.push(await fetchPosition(id, prev));
       }catch(e){
         log('warning','#'+id+' fetch failed: '+esc(e.message).slice(0,80));
+        state.lastScanErr = '#'+id+': '+String(e.message||e).slice(0,70);
         const prev = state.positions.get(id);
         if(prev && !prev.demo) results.push(prev);
       }
+      await sleep(200);   // pace bursts for rate-limited public endpoints
     }
     if(results.length) ethPs = results;
   }catch(e){ if(state.mode==='live') log('warning','Ethereum scan failed: '+esc(e.message||e).slice(0,80)); }
@@ -1287,7 +1304,7 @@ async function scan(isBoot){
   let solOk = false;
   bootMsg('SCANNING SOLANA WALLETS …');
   try{ solOk = await scanSol(); }
-  catch(e){ log('warning','Solana scan failed: '+esc(e.message||e).slice(0,80)); }
+  catch(e){ log('warning','Solana scan failed: '+esc(e.message||e).slice(0,80)); state.lastScanErr='SOL: '+String(e.message||e).slice(0,70); }
 
   if(ethPs || solOk){
     const eth = ethPs ?? [...state.positions.values()].filter(p=>p.chain!=='sol' && !p.demo);
@@ -1401,6 +1418,7 @@ function renderAll(){
   assignColors();
   renderHeader(); renderTiles(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   $('#simBanner').classList.toggle('show', state.mode==='sim');
+  $('#simErr').textContent = state.lastScanErr ? 'LAST ERROR → '+state.lastScanErr : '';
   $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% OF RANGE WIDTH FROM EDGE';
 }
 function renderHeader(){
@@ -1889,6 +1907,17 @@ function wireSettings(){
   });
   $('#btnResetLayout').addEventListener('click',()=>{store.set('panelOrder',null);store.set('cardOrder',[]);location.reload();});
   $('#btnDiag').addEventListener('click',()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); runDiagnostics(); });
+  $('#btnCopyLog').addEventListener('click', async e=>{
+    e.stopPropagation();
+    const lines=[...document.querySelectorAll('.log-row')].map(r=>{
+      const [ts,,msg]=r.children; return (ts?.textContent||'')+' '+(r.className.replace('log-row','').trim()||'info').toUpperCase().padEnd(9)+(msg?.textContent||'');
+    });
+    const report=['ARC//LP COMMAND '+BUILD+' diagnostic report','mode: '+state.mode+' · block: '+(state.block||'—')+' · ethUsd: '+(state.ethUsd||'—'),
+      'lastEthRpc: '+(state.lastRpc||'—')+' · lastSolRpc: '+(state.lastSolRpc||'—'),
+      'tracking: '+cfg.ids.join(',')+' + '+cfg.solWallets.length+' SOL wallets','UA: '+navigator.userAgent,'---',...lines].join('\n');
+    try{ await navigator.clipboard.writeText(report); log('good','Report copied to clipboard — paste it in the chat.'); }
+    catch(err){ log('warning','Clipboard blocked — select the log text manually.'); }
+  });
 }
 
 /* ================= BOOT / CLOCK / LOOP ================= */
