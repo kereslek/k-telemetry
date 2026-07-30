@@ -471,6 +471,12 @@
       <div class="pbody" id="flowBody"></div>
     </section>
 
+    <section class="panel" data-panel="outlook" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">OUTLOOK — PROJECTED EARNINGS</span><span class="hint" id="outlookHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="outlookBody"></div>
+    </section>
+
     <section class="panel" data-panel="arch" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE ARCHITECT — TIGHTEN OR LOOSEN?</span><span class="hint">30-day realized volatility → statistically sized ranges</span><button class="collapse-btn">▾</button></div>
@@ -480,7 +486,7 @@
     <section class="panel" data-panel="cosmos" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">CONSTELLATION — YOUR CAPITAL AS A GALAXY</span><span class="hint">size = value · halo = APR · ring = position in range · CLICK a body to open its module</span><button class="collapse-btn">▾</button></div>
-      <div class="pbody" style="padding:0"><canvas id="cosmos" style="width:100%;height:360px;display:block;cursor:pointer"></canvas></div>
+      <div class="pbody" style="padding:0"><canvas id="cosmos" style="width:100%;height:400px;display:block;cursor:pointer"></canvas></div>
     </section>
 
     <section class="panel" data-panel="ops" draggable="true">
@@ -518,6 +524,12 @@
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">POSITION MODULES</span><span class="hint">drag cards to rearrange · ⇄ flips price units</span><button class="collapse-btn">▾</button></div>
       <div class="pbody"><div class="cards" id="cards"></div></div>
+    </section>
+
+    <section class="panel" data-panel="global" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">GLOBAL SCOPE — TOP REALISTIC POOLS RIGHT NOW</span><span class="hint">DefiLlama · TVL ≥ $3M · CLMM venues on ETH & SOL · orientation only</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="globalBody"></div>
     </section>
 
     <section class="panel" data-panel="intel" draggable="true">
@@ -631,7 +643,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v12';
+const BUILD = 'v13';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1478,6 +1490,7 @@ async function scan(isBoot){
           if(!solOk && Array.isArray(d.sol)){ state.solPositions = d.sol; solOk = true; state.relayUsed = true; }
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
+          if(d.topPools) state.topPools = d.topPools;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
           if(state.relayUsed) log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
@@ -1598,24 +1611,33 @@ const ordered = () => {
   });
   return ps;
 };
-const poolBadge = new Map();   // id -> 'A'/'B'… when the same pair exists in multiple pool contracts
+const poolBadge = new Map();   // id -> 'OLD ’19 ·fe41' style label when a pair spans multiple token contracts
 function assignPools(){
   poolBadge.clear();
   const byPair = {};
   for(const p of state.positions.values()){
-    const key = p.pool || p.poolId; if(!key) continue;
-    (byPair[p.pairLabel] = byPair[p.pairLabel] || []);
-    if(!byPair[p.pairLabel].includes(key)) byPair[p.pairLabel].push(key);
+    const tk = p.token0 || p.pool || p.poolId; if(!tk) continue;
+    (byPair[p.pairLabel] = byPair[p.pairLabel] || new Map());
+    if(!byPair[p.pairLabel].has(tk)) byPair[p.pairLabel].set(tk, p.token0DeployTs ?? null);
   }
   for(const p of state.positions.values()){
-    const key = p.pool || p.poolId; if(!key) continue;
-    const list = byPair[p.pairLabel];
-    if(list.length > 1) poolBadge.set(String(p.id), String.fromCharCode(65 + list.indexOf(key)));
+    const tk = p.token0 || p.pool || p.poolId; if(!tk) continue;
+    const variants = [...byPair[p.pairLabel].entries()];
+    if(variants.length < 2) continue;
+    variants.sort((a,b)=>{
+      if(a[1]!=null && b[1]!=null) return a[1]-b[1];        // by deployment date when known
+      return String(a[0]).localeCompare(String(b[0]));      // stable fallback
+    });
+    const idx = variants.findIndex(v=>v[0]===tk);
+    const ts = p.token0DeployTs;
+    const era = idx===0 ? 'OLD' : (variants.length>2 ? 'NEW'+idx : 'NEW');
+    const yr = ts ? ' ’'+String(new Date(ts).getUTCFullYear()).slice(2) : '';
+    poolBadge.set(String(p.id), era+yr+' ·'+String(tk).slice(-4));
   }
 }
 const badgeOf = p => poolBadge.get(String(p.id)) || null;
 const posLink = p => p.chain==='sol' ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
-const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+(badgeOf(p)?' ·'+badgeOf(p):'')+' ↗</a>';
+const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+(badgeOf(p)?' · '+esc(badgeOf(p)):'')+' ↗</a>';
 const colorIndex = new Map();
 const cIdx = p => colorIndex.get(String(p.id)) ?? 5;
 function assignColors(){
@@ -1626,7 +1648,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderRank(); renderFlow(); renderArch(); renderCosmos(); renderOps(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  renderHeader(); renderTiles(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
   if(state.mode==='offline'){
@@ -1687,7 +1709,7 @@ function renderRadar(){
     const row = el('div','radar-row');
     const name = el('div','radar-name');
     name.style.setProperty('--pcolor', seriesColor(i));
-    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+(badgeOf(p)?' · CT-'+badgeOf(p):'')+'</span> <span style="font-size:9px">'+linkRef(p)+'</span>'));
+    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span> <span style="font-size:9px">'+linkRef(p)+'</span>'));
     const bar = el('div',null); bar.append(rangeBar(p, false));
     const sev = severityOf(p);
     const distTxt = p.inRange
@@ -1960,6 +1982,92 @@ function renderFlow(){
   host.append(strip);
 }
 
+/* ----- outlook: projected earnings ----- */
+function renderOutlook(){
+  const host=$('#outlookBody'); host.innerHTML='';
+  const ps=ordered().map(p=>({p,a:aprOf(p).v,base:p.valueUsd||p.costUsd||0})).filter(x=>x.a!=null&&x.base>0);
+  $('#outlookHint').textContent='AT CURRENT '+WIN_LABEL[cfg.aprWin]+' RATES · fees only, price assumed flat · not a promise';
+  if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Waiting for APR data for this timeframe…</div>'; return; }
+  const wapr=ps.reduce((s,x)=>s+x.a*x.base,0)/ps.reduce((s,x)=>s+x.base,0);
+  const totBase=ps.reduce((s,x)=>s+x.base,0);
+  const monthly=totBase*wapr/100/12, yearly=totBase*wapr/100;
+  const compounded=totBase*(Math.pow(1+wapr/100/12,12)-1);
+  // headline tiles
+  const strip=el('div','econ-strip');
+  strip.innerHTML='<span>≈ <b>'+fmtUsd(monthly,0)+'</b> / month</span><span>≈ <b>'+fmtUsd(yearly,0)+'</b> / year (simple)</span><span>≈ <b>'+fmtUsd(compounded,0)+'</b> / year if fees are compounded monthly</span><span>blended <b>'+wapr.toFixed(1)+'% APR</b> on '+fmtUsd(totBase,0)+'</span>';
+  host.append(strip);
+  // projection chart: cumulative fees over 12 months, per position + portfolio band
+  const W=1200,H=300,padL=70,padR=20,padT=16,padB=30;
+  const NS='http://www.w3.org/2000/svg';
+  const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='14px';
+  const maxY=Math.max(compounded, yearly)*1.12;
+  const X=m=>padL+m/12*(W-padL-padR);
+  const Y=v=>padT+(1-v/maxY)*(H-padT-padB);
+  niceTicks(0,maxY,4).forEach(t=>{
+    svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Y(t),y2:Y(t),stroke:'#13233a'}));
+    const tx=mkel('text',{x:padL-8,y:Y(t)+3,'text-anchor':'end','font-size':10,fill:'#7e97a8'}); tx.textContent=fmtUsd(t,0); svg.append(tx);
+  });
+  for(let m=0;m<=12;m+=3){ const tx=mkel('text',{x:X(m),y:H-8,'text-anchor':'middle','font-size':10,fill:'#7e97a8'}); tx.textContent=m===0?'now':m+'mo'; svg.append(tx); }
+  // uncertainty band from the spread of available windows (portfolio level)
+  const winAprs=['d1','d7','d30'].map(w=>{ const rows=ordered().map(p=>({v:(w==='d1'?p.aprW?.d1??p.poolAprDay: w==='d7'?p.aprW?.d7??p.poolAprWeek: p.aprW?.d30??p.poolAprMonth), b:p.valueUsd||p.costUsd||0})).filter(x=>x.v!=null&&x.b>0);
+    return rows.length? rows.reduce((s,x)=>s+x.v*x.b,0)/rows.reduce((s,x)=>s+x.b,0) : null; }).filter(v=>v!=null);
+  if(winAprs.length>=2){
+    const lo=Math.min(...winAprs), hi=Math.max(...winAprs);
+    let dPath='M'+X(0)+' '+Y(0);
+    for(let m=1;m<=12;m++) dPath+=' L'+X(m)+' '+Y(totBase*(Math.pow(1+hi/100/12,m)-1));
+    for(let m=12;m>=0;m--) dPath+=' L'+X(m)+' '+Y(totBase*(Math.pow(1+lo/100/12,m)-1));
+    svg.append(mkel('path',{d:dPath+' Z',fill:'rgba(53,214,232,.08)'}));
+  }
+  // per-position lines
+  const endLabels=[];
+  ps.forEach(x=>{
+    let d='M'+X(0)+' '+Y(0);
+    for(let m=1;m<=12;m++) d+=' L'+X(m)+' '+Y(x.base*(Math.pow(1+x.a/100/12,m)-1));
+    const path=mkel('path',{d,fill:'none',stroke:seriesHex(cIdx(x.p)),'stroke-width':1.6,opacity:.85});
+    path.style.cursor='pointer';
+    path.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(x.p.pairLabel)+' '+esc(posRef(x.p))+'</div><div class="tv">'+x.a.toFixed(1)+'% → ≈ <b>'+fmtUsd(x.base*(Math.pow(1+x.a/100/12,12)-1),0)+'</b> fees / year</div>'));
+    path.addEventListener('mouseleave',hideTip);
+    svg.append(path);
+    const endV=x.base*(Math.pow(1+x.a/100/12,12)-1);
+    endLabels.push({y:Y(endV)-4, text:x.p.m0.symbol+'/'+x.p.m1.symbol+(badgeOf(x.p)?'·'+badgeOf(x.p).split(' ')[0]:''), fill:seriesHex(cIdx(x.p))});
+  });
+  endLabels.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<endLabels.length;i++) if(endLabels[i].y-endLabels[i-1].y<12) endLabels[i].y=endLabels[i-1].y+12;
+  endLabels.forEach(l=>{ const lb=mkel('text',{x:W-padR-4,y:l.y,'text-anchor':'end','font-size':9.5,fill:l.fill}); lb.textContent=l.text; svg.append(lb); });
+  // portfolio line
+  let dp='M'+X(0)+' '+Y(0);
+  for(let m=1;m<=12;m++) dp+=' L'+X(m)+' '+Y(totBase*(Math.pow(1+wapr/100/12,m)-1));
+  svg.append(mkel('path',{d:dp,fill:'none',stroke:'#35d6e8','stroke-width':3}));
+  const pl=mkel('text',{x:X(11.6),y:Y(compounded)-12,'text-anchor':'end','font-size':11,fill:'#35d6e8','font-weight':'700'});
+  pl.textContent='PORTFOLIO ≈ '+fmtUsd(compounded,0)+'/yr'; svg.append(pl);
+  host.append(svg);
+  host.append(el('div','arch-note','Curves compound monthly at each LP\'s current '+WIN_LABEL[cfg.aprWin]+' rate. Shaded band = portfolio range across 24H/7D/30D observed rates. Real results move with volume, price drift, and range exits — treat as a trajectory, not a target.'));
+}
+
+/* ----- global scope ----- */
+function renderGlobal(){
+  const host=$('#globalBody'); if(!host) return; host.innerHTML='';
+  const tp=state.topPools||[];
+  if(!tp.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Global pool scan arrives with the next server refresh (source: DefiLlama).</div>'; return; }
+  const maxApy=Math.max(...tp.map(x=>x.apy));
+  tp.forEach((x,i)=>{
+    const row=el('div','rank-row'+(i===0?' first':''));
+    row.style.setProperty('--pcolor', i<3?'var(--accent)':'var(--series-extra)');
+    row.append(el('div','rank-badge','#'+(i+1)));
+    const nm=el('div','rank-name');
+    nm.innerHTML=(x.chain==='Solana'?'◎':'⟠')+' <b>'+esc(x.symbol)+'</b> <span class="sub">'+esc(x.project.replace('-',' '))+'</span>';
+    row.append(nm);
+    const track=el('div','rank-track'); const bar=el('div','rank-bar');
+    bar.style.width=Math.max(2,x.apy/maxApy*100)+'%'; bar.style.background=i<3?'#35d6e8':'#62788c'; track.append(bar); row.append(track);
+    row.append(el('div','rank-val',x.apy.toFixed(1)+'<span class="unit"> % APY</span>'));
+    row.append(el('div','rank-sub','TVL '+fmtUsd(x.tvl/1e6,1).replace('$','$')+'M'));
+    row.append(el('div','rank-sub',(x.reward?'incl. rewards':'fees only')+(x.il==='yes'?' · IL risk':'')));
+    host.append(row);
+  });
+  host.append(el('div','arch-note','Concentrated-liquidity venues (Uniswap V3/V4, Raydium CLMM, Orca) on Ethereum & Solana with ≥$3M TVL and APY ≤400% (filters out one-day mirages). APYs are pool-wide — a well-ranged position can beat them; an out-of-range one earns zero. Ideas radar, not advice.'));
+}
+
 /* ----- range architect ----- */
 function renderArch(){
   const host=$('#archBody'); host.innerHTML='';
@@ -2011,69 +2119,84 @@ function initCosmos(){
   const c=$('#cosmos'); if(!c) return;
   const ctx=c.getContext('2d');
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let W,H;
-  const layout=()=>{ W=c.width=c.clientWidth; H=c.height=360;
-    const n=cosmosNodes.length||1;
-    cosmosNodes.forEach((nd,i)=>{
-      const a=(i/n)*Math.PI*2 - Math.PI/2 + 0.35;
-      const rad=Math.min(W,760)/2*0.62*(0.75+0.25*((i%2)?1:0.72));
-      nd.x=W/2+Math.cos(a)*rad*1.35; nd.y=H/2+Math.sin(a)*rad*0.62;
-    });
-  };
-  layout(); addEventListener('resize',layout);
-  new ResizeObserver(layout).observe(c);
+  let W=0,H=0;
+  const layout=()=>{ W=c.width=c.clientWidth||800; H=c.height=400; };
+  layout(); new ResizeObserver(layout).observe(c);
   function draw(){
-    if(!W || cosmosNodes.some(n=>n.x==null)) layout();
+    if(!W) layout();
     ctx.clearRect(0,0,W,H);
-    // deep glaze
-    const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,W/1.5);
-    bg.addColorStop(0,'rgba(20,60,90,.12)'); bg.addColorStop(.6,'rgba(80,40,140,.05)'); bg.addColorStop(1,'transparent');
+    const cx=W/2, cy=H/2;
+    const totV=cosmosNodes.reduce((s,n)=>s+n.val,0);
+    // deep space glaze
+    const bg=ctx.createRadialGradient(cx,cy,0,cx,cy,W*.7);
+    bg.addColorStop(0,'rgba(22,70,100,.14)'); bg.addColorStop(.55,'rgba(90,50,150,.05)'); bg.addColorStop(1,'transparent');
     ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-    // connections: shared token symbols
-    ctx.lineWidth=1;
-    for(let i=0;i<cosmosNodes.length;i++) for(let j=i+1;j<cosmosNodes.length;j++){
-      const a=cosmosNodes[i],b=cosmosNodes[j];
-      const shared=[a.sym0,a.sym1].filter(sx=>[b.sym0,b.sym1].includes(sx));
-      if(!shared.length) continue;
-      const pulse=.25+.2*Math.sin(cosmosT*1.4+i+j);
-      ctx.strokeStyle='rgba(53,214,232,'+pulse.toFixed(3)+')';
-      ctx.setLineDash([2,7]); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.setLineDash([]);
+    // orbits — one per position, sorted by value (biggest closest to the sun)
+    const sorted=[...cosmosNodes].sort((a,b)=>b.val-a.val);
+    const rMin=64, rMax=Math.min(W*.46,H*1.05);
+    sorted.forEach((nd,i)=>{
+      nd.orbA=rMin+(rMax-rMin)*(i/(Math.max(1,sorted.length-1)||1));
+      nd.orbB=nd.orbA*0.42;
+      if(nd.ang==null) nd.ang=nd.phase*1.7;
+      nd.speed=0.0035/(0.6+i*0.35);
+    });
+    for(const nd of sorted){
+      ctx.strokeStyle='rgba(53,214,232,.10)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.ellipse(cx,cy,nd.orbA,nd.orbB,0,0,6.2832); ctx.stroke();
     }
-    for(const nd of cosmosNodes){
-      const bob=Math.sin(cosmosT*.8+nd.phase)*4;
-      const y=nd.y+bob;
-      // APR halo
-      const halo=Math.min(60,10+nd.apr/4);
-      const g=ctx.createRadialGradient(nd.x,y,nd.r*.4,nd.x,y,nd.r+halo);
-      g.addColorStop(0,nd.hex+'cc'); g.addColorStop(.55,nd.hex+'33'); g.addColorStop(1,'transparent');
-      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(nd.x,y,nd.r+halo,0,6.2832); ctx.fill();
-      // planet
-      const body=ctx.createRadialGradient(nd.x-nd.r*.35,y-nd.r*.35,1,nd.x,y,nd.r);
-      body.addColorStop(0,'#eaf7fa'); body.addColorStop(.25,nd.hex); body.addColorStop(1,'#0a1322');
-      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(nd.x,y,nd.r,0,6.2832); ctx.fill();
-      // range ring: arc from 0..rangePos
-      ctx.lineWidth=3;
-      ctx.strokeStyle='rgba(255,255,255,.18)';
-      ctx.beginPath(); ctx.arc(nd.x,y,nd.r+7,0,6.2832); ctx.stroke();
+    // sun = portfolio
+    const sunR=17+Math.min(9,totV/4000);
+    const cor=ctx.createRadialGradient(cx,cy,sunR*.3,cx,cy,sunR*3.3);
+    cor.addColorStop(0,'rgba(53,214,232,.9)'); cor.addColorStop(.35,'rgba(53,214,232,.25)'); cor.addColorStop(1,'transparent');
+    ctx.fillStyle=cor; ctx.beginPath(); ctx.arc(cx,cy,sunR*3.3,0,6.2832); ctx.fill();
+    const sb=ctx.createRadialGradient(cx-sunR*.3,cy-sunR*.3,1,cx,cy,sunR);
+    sb.addColorStop(0,'#eaffff'); sb.addColorStop(.6,'#35d6e8'); sb.addColorStop(1,'#0f4a58');
+    ctx.fillStyle=sb; ctx.beginPath(); ctx.arc(cx,cy,sunR,0,6.2832); ctx.fill();
+    ctx.textAlign='center'; ctx.fillStyle='#eaf7fa'; ctx.font='700 11px ui-monospace,monospace';
+    ctx.fillText(fmtUsd(totV,0), cx, cy+sunR+18);
+    ctx.fillStyle='#7e97a8'; ctx.font='9px ui-monospace,monospace';
+    ctx.fillText('PORTFOLIO CORE', cx, cy+sunR+31);
+    // planets
+    const maxV=Math.max(...sorted.map(n=>n.val),1);
+    for(const nd of sorted){
+      nd.ang+=reduced?0:nd.speed;
+      nd.x=cx+Math.cos(nd.ang)*nd.orbA;
+      nd.y=cy+Math.sin(nd.ang)*nd.orbB;
+      const pr=5+Math.sqrt(nd.val/maxV)*9;
+      nd.hitR=pr;
+      // small halo scaled by APR (subtle)
+      const halo=6+Math.min(18,(nd.apr||0)/8);
+      const g=ctx.createRadialGradient(nd.x,nd.y,pr*.3,nd.x,nd.y,pr+halo);
+      g.addColorStop(0,nd.hex+'aa'); g.addColorStop(.6,nd.hex+'22'); g.addColorStop(1,'transparent');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(nd.x,nd.y,pr+halo,0,6.2832); ctx.fill();
+      const body=ctx.createRadialGradient(nd.x-pr*.35,nd.y-pr*.35,.5,nd.x,nd.y,pr);
+      body.addColorStop(0,'#f4feff'); body.addColorStop(.35,nd.hex); body.addColorStop(1,'#0a1322');
+      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(nd.x,nd.y,pr,0,6.2832); ctx.fill();
+      // status ring (thin)
+      ctx.lineWidth=2;
+      ctx.strokeStyle='rgba(255,255,255,.14)';
+      ctx.beginPath(); ctx.arc(nd.x,nd.y,pr+3.5,0,6.2832); ctx.stroke();
       ctx.strokeStyle={good:'#0ca30c',warning:'#fab219',serious:'#ec835a',critical:'#d03b3b'}[nd.sev];
-      ctx.beginPath(); ctx.arc(nd.x,y,nd.r+7,-Math.PI/2,-Math.PI/2+nd.rangePos*6.2832); ctx.stroke();
-      // labels
-      ctx.textAlign='center';
-      ctx.fillStyle='#eaf7fa'; ctx.font='600 12px ui-monospace,monospace';
-      ctx.fillText(nd.pair, nd.x, y+nd.r+26);
-      ctx.fillStyle='#7e97a8'; ctx.font='10px ui-monospace,monospace';
-      ctx.fillText((nd.apr?nd.apr.toFixed(0)+'% APR · ':'')+fmtUsd(nd.val,0), nd.x, y+nd.r+40);
+      ctx.beginPath(); ctx.arc(nd.x,nd.y,pr+3.5,-Math.PI/2,-Math.PI/2+nd.rangePos*6.2832); ctx.stroke();
+      // label: name above/below depending on hemisphere to avoid orbit clutter
+      const below=nd.y>cy;
+      ctx.fillStyle='#dcedf3'; ctx.font='600 10.5px ui-monospace,monospace';
+      ctx.fillText(nd.pair, nd.x, nd.y+(below?pr+18:-pr-12));
+      ctx.fillStyle='#7e97a8'; ctx.font='9px ui-monospace,monospace';
+      ctx.fillText((nd.apr?nd.apr.toFixed(0)+'% · ':'')+fmtUsd(nd.val,0), nd.x, nd.y+(below?pr+30:-pr-24));
     }
-    cosmosT+=.02;
   }
-  function loop(){ if(!document.hidden && c.closest('.panel') && !c.closest('.panel').classList.contains('collapsed')) draw();
-    if(!reduced) requestAnimationFrame(loop); }
-  if(reduced) draw(); else requestAnimationFrame(loop);
+  function loop(){
+    const panel=c.closest('.panel');
+    if(!document.hidden && panel && !panel.classList.contains('collapsed')) draw();
+    if(!reduced) requestAnimationFrame(loop);
+  }
+  if(reduced){ draw(); } else requestAnimationFrame(loop);
   c.addEventListener('click',ev=>{
     const rect=c.getBoundingClientRect();
     const x=ev.clientX-rect.left, y=ev.clientY-rect.top;
     for(const nd of cosmosNodes){
-      if(Math.hypot(nd.x-x,nd.y-y)<nd.r+14){
+      if(nd.x!=null && Math.hypot(nd.x-x,nd.y-y)<(nd.hitR||10)+12){
         const card=document.querySelector('.card[data-id="'+nd.id+'"]');
         if(card){ card.scrollIntoView({behavior:'smooth',block:'center'});
           card.style.transition='box-shadow .3s'; card.style.boxShadow='0 0 40px '+nd.hex;
@@ -2085,7 +2208,7 @@ function initCosmos(){
   c.addEventListener('mousemove',ev=>{
     const rect=c.getBoundingClientRect();
     const x=ev.clientX-rect.left, y=ev.clientY-rect.top;
-    const hit=cosmosNodes.find(nd=>Math.hypot(nd.x-x,nd.y-y)<nd.r+14);
+    const hit=cosmosNodes.find(nd=>nd.x!=null && Math.hypot(nd.x-x,nd.y-y)<(nd.hitR||10)+12);
     if(hit) showTip(ev,'<div class="tk">'+esc(hit.pair)+' '+esc(hit.ref)+'</div><div class="tv"><b>'+fmtUsd(hit.val,0)+'</b> · '+(hit.apr?hit.apr.toFixed(1)+'% APR · ':'')+'unclaimed '+fmtUsd(hit.fees)+'</div><div class="tv" style="color:var(--text-muted)">click to open module</div>');
     else hideTip();
   });
@@ -2198,7 +2321,7 @@ function renderCards(){
     if(isSol) head.append(el('span',null,'<span style="color:var(--text-muted);font-size:12px" title="Solana · Raydium CLMM">◎</span>'));
     head.append(el('span','pair',esc(p.pairLabel)));
     head.append(el('span','feet',esc(p.feeLabel)));
-    if(badgeOf(p)) head.append(el('span','feet','CONTRACT '+badgeOf(p)));
+    if(badgeOf(p)){ const bd=el('span','feet',esc(badgeOf(p))); bd.title='Token contract era — see footer for the full address'; bd.style.background=badgeOf(p).startsWith('OLD')?'var(--text-muted)':'var(--status-warning)'; head.append(bd); }
     const linkTxt = isSol ? String(p.nftMint||'').slice(0,4)+'…'+String(p.nftMint||'').slice(-4)+' ↗' : '#'+p.id+' ↗';
     const link=el('a',null,linkTxt);
     link.href = isSol ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
@@ -2558,6 +2681,7 @@ async function init(){
       if(!merged.length) return;
       state.positions=new Map(merged.map(p=>[p.id,p]));
       state.ethUsd=state.ethUsd??d.ethUsd; state.gasGwei=state.gasGwei??d.gasGwei;
+      if(d.topPools) state.topPools=d.topPools;
       state.block=state.block??Number(d.block).toLocaleString();
       state.relayUsed=true; state.relayAt=d.t; state.mode='live';
       setConn('live'); renderAll(); hideBoot();

@@ -405,6 +405,31 @@ const main=async()=>{
     catch(e){ logErr('eth#'+id,e); }
     await sleep(300);
   }
+  // token deployment dating for pairs that exist with multiple token contracts (e.g. old vs new LCX)
+  async function tokenDeployTs(addr){
+    try{
+      if((await eth('eth_getCode',[addr,'latest']))==='0x') return null;
+      let lo=100000, hi=blockNum;
+      for(let i=0;i<19;i++){
+        const mid=Math.floor((lo+hi)/2);
+        try{
+          const code=await eth('eth_getCode',[addr,'0x'+mid.toString(16)]);
+          if(code && code!=='0x') hi=mid; else lo=mid+1;
+        }catch(e){ lo=mid+1; }
+      }
+      const blk=await eth('eth_getBlockByNumber',['0x'+hi.toString(16),false]);
+      return Number(BigInt(blk.timestamp))*1000;
+    }catch(e){ return null; }
+  }
+  {
+    const byPair={};
+    for(const p of ethPositions){ (byPair[p.pairLabel]=byPair[p.pairLabel]||new Set()).add(p.token0); }
+    const dupTokens=new Set();
+    for(const k in byPair) if(byPair[k].size>1) byPair[k].forEach(t=>dupTokens.add(t));
+    const deployTs={};
+    for(const t of dupTokens){ deployTs[t]=await tokenDeployTs(t); console.log('deploy',t.slice(0,10),deployTs[t]?new Date(deployTs[t]).toISOString().slice(0,10):'?'); }
+    for(const p of ethPositions) if(p.token0 in deployTs) p.token0DeployTs=deployTs[p.token0];
+  }
   // range analytics per unique pool
   const volCache={};
   for(const p of ethPositions){
@@ -416,7 +441,18 @@ const main=async()=>{
   let solPositions=[];
   try{ solPositions=await fetchSolana(); console.log('sol positions:',solPositions.length); }
   catch(e){ logErr('sol',e); }
-  const data={ v:2, t:Date.now(), block:blockNum, ethUsd, btcUsd, gasGwei, eth:ethPositions, sol:solPositions, errors };
+  let topPools=[];
+  try{
+    const js=await getJson('https://yields.llama.fi/pools',45000);
+    topPools=(js.data||[])
+      .filter(x=>['Ethereum','Solana'].includes(x.chain)
+        && ['uniswap-v3','raydium-clmm','orca-dex','uniswap-v4'].includes(x.project)
+        && x.tvlUsd>=3e6 && x.apy>0 && x.apy<=400)
+      .sort((a,b)=>b.apy-a.apy).slice(0,12)
+      .map(x=>({chain:x.chain,project:x.project,symbol:x.symbol,tvl:x.tvlUsd,apy:x.apy,base:x.apyBase??null,reward:x.apyReward??null,il:x.ilRisk??null,id:x.pool}));
+    console.log('topPools:',topPools.length);
+  }catch(e){ logErr('llama',e); }
+  const data={ v:3, t:Date.now(), block:blockNum, ethUsd, btcUsd, gasGwei, eth:ethPositions, sol:solPositions, topPools, errors };
   const fs=await import('fs');
   fs.writeFileSync('data.json', JSON.stringify(data));
   console.log('data.json written:', ethPositions.length,'eth +',solPositions.length,'sol · errors:',errors.length);
