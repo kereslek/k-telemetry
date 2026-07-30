@@ -19,8 +19,8 @@
     --accent-dim:#1a7f92;
     --accent-glow:rgba(53,214,232,.25);
     --text-primary:#eaf7fa;
-    --text-secondary:#9db8c4;
-    --text-muted:#5d7889;
+    --text-secondary:#b9cdd8;
+    --text-muted:#7e97a8;
     --series-1:#0f9db3;
     --series-2:#c9711a;
     --series-3:#e0508f;
@@ -40,7 +40,7 @@
     background:var(--bg);
     color:var(--text-primary);
     font-family:var(--mono);
-    font-size:13px;
+    font-size:14px;
     overflow-x:hidden;
     background-image:
       radial-gradient(ellipse 80% 50% at 50% -10%, rgba(23,110,130,.14), transparent),
@@ -109,10 +109,10 @@
     padding:14px 16px 12px;overflow:hidden;
   }
   .tile::before{content:"";position:absolute;top:0;left:0;width:26px;height:2px;background:var(--accent);box-shadow:0 0 8px var(--accent-glow)}
-  .tile .k{font-size:9px;letter-spacing:.26em;color:var(--text-muted);margin-bottom:7px}
-  .tile .v{font-size:24px;color:var(--text-primary);font-weight:500}
+  .tile .k{font-size:10px;letter-spacing:.26em;color:var(--text-muted);margin-bottom:7px}
+  .tile .v{font-size:28px;color:var(--text-primary);font-weight:500}
   .tile .v .unit{font-size:12px;color:var(--text-muted)}
-  .tile .d{font-size:10px;margin-top:5px;color:var(--text-secondary)}
+  .tile .d{font-size:11px;margin-top:5px;color:var(--text-secondary)}
   .tile .d .up{color:var(--status-good)}
   .tile .d .down{color:var(--status-critical)}
 
@@ -136,8 +136,8 @@
     border-bottom:1px solid var(--line-soft);cursor:grab;user-select:none;
   }
   .phead:active{cursor:grabbing}
-  .phead .t{font-size:11px;letter-spacing:.3em;color:var(--accent)}
-  .phead .hint{font-size:9px;letter-spacing:.14em;color:var(--text-muted);margin-left:auto}
+  .phead .t{font-size:12px;letter-spacing:.3em;color:var(--accent)}
+  .phead .hint{font-size:10px;letter-spacing:.14em;color:var(--text-muted);margin-left:auto}
   .phead .drag-dots{color:var(--text-muted);font-size:12px;letter-spacing:2px}
   .pbody{padding:14px 16px}
   .panel.dragging{opacity:.35;border-style:dashed}
@@ -159,12 +159,12 @@
   .chead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line-soft);cursor:grab;user-select:none}
   .chead:active{cursor:grabbing}
   .cdot{width:9px;height:9px;flex:none;background:var(--pcolor);box-shadow:0 0 8px var(--pcolor)}
-  .chead .pair{font-size:13px;letter-spacing:.1em;color:var(--text-primary);font-weight:600}
+  .chead .pair{font-size:14.5px;letter-spacing:.1em;color:var(--text-primary);font-weight:600}
   .chead .feet{font-size:9px;color:var(--bg);background:var(--pcolor);padding:2px 6px;letter-spacing:.08em;font-weight:700}
   .chead .pid{font-size:9px;color:var(--text-muted);letter-spacing:.1em}
   .chead a{color:var(--text-muted);text-decoration:none;font-size:10px}
   .chead a:hover{color:var(--accent)}
-  .chip{margin-left:auto;font-size:9px;letter-spacing:.16em;padding:3px 9px;border:1px solid;display:flex;align-items:center;gap:5px}
+  .chip{margin-left:auto;font-size:10px;letter-spacing:.16em;padding:3px 9px;border:1px solid;display:flex;align-items:center;gap:5px}
   .chip .ic{font-size:10px}
   .chip.in{color:var(--status-good);border-color:var(--status-good);background:rgba(12,163,12,.07)}
   .chip.near{color:var(--status-warning);border-color:var(--status-warning);background:rgba(250,178,25,.07)}
@@ -175,33 +175,33 @@
   .gauge-label{font-size:8.5px;letter-spacing:.2em;color:var(--text-muted)}
   .rangebar-wrap{grid-column:1/-1}
   .metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;align-content:start}
-  .m .k{font-size:8.5px;letter-spacing:.18em;color:var(--text-muted)}
-  .m .v{font-size:13.5px;color:var(--text-primary);font-variant-numeric:tabular-nums;margin-top:2px}
-  .m .v.sm{font-size:11.5px}
+  .m .k{font-size:9.5px;letter-spacing:.18em;color:var(--text-muted)}
+  .m .v{font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;margin-top:2px}
+  .m .v.sm{font-size:12.5px}
   .m .v .up{color:var(--status-good)}
   .m .v .down{color:var(--status-critical)}
   .m .v .unit{color:var(--text-muted);font-size:10px}
-  .cfoot{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line-soft);font-size:9.5px;color:var(--text-muted);letter-spacing:.08em;flex-wrap:wrap}
+  .cfoot{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line-soft);font-size:10.5px;color:var(--text-muted);letter-spacing:.08em;flex-wrap:wrap}
   .cfoot b{color:var(--text-secondary);font-weight:400}
   .invbtn{margin-left:auto;background:none;border:1px solid var(--line);color:var(--text-muted);font-family:var(--mono);font-size:9px;padding:2px 8px;cursor:pointer;letter-spacing:.1em}
   .invbtn:hover{color:var(--accent);border-color:var(--accent-dim)}
 
   /* range bar (in-card + radar) */
-  .rangebar{position:relative;height:34px;margin:4px 0 2px}
-  .rb-track{position:absolute;top:14px;left:0;right:0;height:6px;background:var(--panel-2);border:1px solid var(--line)}
-  .rb-range{position:absolute;top:14px;height:6px;background:linear-gradient(90deg,rgba(53,214,232,.16),rgba(53,214,232,.42),rgba(53,214,232,.16));border-top:1px solid var(--accent-dim);border-bottom:1px solid var(--accent-dim)}
-  .rb-warnzone{position:absolute;top:14px;height:6px;background:repeating-linear-gradient(45deg,rgba(250,178,25,.35) 0 3px,transparent 3px 6px)}
-  .rb-price{position:absolute;top:6px;width:2px;height:22px;background:#fff;box-shadow:0 0 8px var(--accent)}
+  .rangebar{position:relative;height:40px;margin:4px 0 2px}
+  .rb-track{position:absolute;top:12px;left:0;right:0;height:10px;background:var(--panel-2);border:1px solid var(--line)}
+  .rb-range{position:absolute;top:12px;height:10px;background:linear-gradient(90deg,rgba(53,214,232,.22),rgba(53,214,232,.55),rgba(53,214,232,.22));border-top:1px solid var(--accent-dim);border-bottom:1px solid var(--accent-dim)}
+  .rb-warnzone{position:absolute;top:12px;height:10px;background:repeating-linear-gradient(45deg,rgba(250,178,25,.35) 0 3px,transparent 3px 6px)}
+  .rb-price{position:absolute;top:4px;width:3px;height:26px;background:#fff;box-shadow:0 0 8px var(--accent)}
   .rb-price::after{content:"";position:absolute;top:-4px;left:-3px;border:4px solid transparent;border-top-color:#fff}
-  .rb-lab{position:absolute;font-size:8.5px;color:var(--text-muted);top:26px;letter-spacing:.06em}
-  .rb-cap{position:absolute;top:12px;width:2px;height:10px;background:var(--accent-dim)}
+  .rb-lab{position:absolute;font-size:10px;color:var(--text-muted);top:28px;letter-spacing:.06em}
+  .rb-cap{position:absolute;top:10px;width:2px;height:14px;background:var(--accent-dim)}
 
   /* radar rows */
   .radar-row{display:grid;grid-template-columns:150px 1fr 120px;gap:12px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line-soft)}
   .radar-row:last-child{border-bottom:none}
-  .radar-name{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-secondary)}
+  .radar-name{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-secondary)}
   .radar-name .cdot{width:7px;height:7px}
-  .radar-dist{font-size:10px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
+  .radar-dist{font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
 
   /* charts */
   .chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -229,9 +229,9 @@
   .seg button.on{background:rgba(53,214,232,.12);color:var(--accent);text-shadow:0 0 8px var(--accent-glow)}
 
   /* comparison matrix */
-  .matrix{width:100%;border-collapse:collapse;font-size:11.5px;min-width:900px}
+  .matrix{width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px}
   .matrix th{
-    font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);text-align:right;
+    font-size:9.5px;letter-spacing:.16em;color:var(--text-muted);text-align:right;
     padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap;
   }
   .matrix th:first-child{text-align:left}
@@ -249,8 +249,45 @@
   .matrix .sub{color:var(--text-muted);font-size:9px}
   .matrix tr:hover td{background:rgba(53,214,232,.03)}
 
+  /* leaderboard */
+  .rank-row{display:grid;grid-template-columns:52px 230px 1fr 130px 120px 120px;gap:14px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line-soft)}
+  .rank-row:last-child{border-bottom:none}
+  .rank-badge{font-size:15px;font-weight:700;text-align:center;color:var(--text-muted)}
+  .rank-row.first .rank-badge{color:var(--status-warning);text-shadow:0 0 12px rgba(250,178,25,.5)}
+  .rank-name{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-primary)}
+  .rank-name .sub{color:var(--text-muted);font-size:10px}
+  .rank-track{position:relative;height:14px;background:var(--panel-2);border:1px solid var(--line)}
+  .rank-bar{position:absolute;top:0;bottom:0;left:0;background:var(--pcolor);opacity:.85;box-shadow:0 0 12px var(--pcolor)}
+  .rank-val{font-size:14px;font-variant-numeric:tabular-nums;text-align:right;color:var(--text-primary)}
+  .rank-val .unit{font-size:10px;color:var(--text-muted)}
+  .rank-sub{font-size:11px;color:var(--text-secondary);text-align:right;font-variant-numeric:tabular-nums}
+  .rank-top-chip{font-size:9px;letter-spacing:.18em;color:var(--bg);background:var(--status-warning);padding:2px 7px;font-weight:700;margin-left:8px}
+  /* tactical directives */
+  .ops-row{display:flex;gap:13px;padding:10px 0;border-bottom:1px dashed var(--line-soft);align-items:flex-start;font-size:12.5px;line-height:1.55}
+  .ops-row:last-child{border-bottom:none}
+  .ops-ic{flex:none;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid;font-size:13px}
+  .ops-row.critical .ops-ic{color:var(--status-critical);border-color:var(--status-critical);box-shadow:0 0 10px rgba(208,59,59,.4)}
+  .ops-row.serious .ops-ic{color:var(--status-serious);border-color:var(--status-serious)}
+  .ops-row.warning .ops-ic{color:var(--status-warning);border-color:var(--status-warning)}
+  .ops-row.info .ops-ic{color:var(--accent);border-color:var(--accent-dim)}
+  .ops-row.good .ops-ic{color:var(--status-good);border-color:var(--status-good)}
+  .ops-msg{color:var(--text-secondary)}
+  .ops-msg b{color:var(--text-primary);font-weight:600}
+  .ops-tag{font-size:9.5px;letter-spacing:.14em;color:var(--text-muted)}
+  /* log day divider */
+  .log-day{padding:5px 0;color:var(--accent);font-size:10px;letter-spacing:.34em;text-align:center;border-bottom:1px solid var(--line-soft);opacity:.85}
+  /* intel explainer */
+  .intel{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;font-size:12px;line-height:1.6}
+  .intel .card-x{border:1px solid var(--line-soft);padding:12px 14px;background:var(--panel-2)}
+  .intel h4{font-size:10.5px;letter-spacing:.22em;color:var(--accent);margin-bottom:6px}
+  .intel p{color:var(--text-secondary)}
+  .intel b{color:var(--text-primary);font-weight:600}
+  /* night sky layering */
+  #sky{position:fixed;inset:0;z-index:0;pointer-events:none}
+  header,main,footer{position:relative;z-index:1}
+
   /* event log */
-  .log{max-height:220px;overflow-y:auto;font-size:11px}
+  .log{max-height:260px;overflow-y:auto;font-size:12px}
   .log-row{display:flex;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line-soft);align-items:baseline}
   .log-row .ts{color:var(--text-muted);font-size:9.5px;flex:none;width:64px}
   .log-row .sev{flex:none;width:14px;text-align:center}
@@ -333,6 +370,7 @@
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
     <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
+    <span class="seg" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
     <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
     <button class="hbtn" id="btnRefresh">⟳ SCAN</button>
@@ -346,16 +384,27 @@
   <div class="tiles" id="tiles"></div>
 
   <div id="panelStack">
+    <section class="panel" data-panel="rank" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="rankBody"></div>
+    </section>
+
+    <section class="panel" data-panel="ops" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">TACTICAL DIRECTIVES</span><span class="hint">rule-based suggestions from live data · not financial advice</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="opsBody"></div>
+    </section>
+
     <section class="panel" data-panel="radar" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE RADAR</span><span class="hint">PRICE POSITION WITHIN EACH RANGE · drag panels to reorder</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE RADAR</span><span class="hint">HOW FAR PRICE CAN MOVE BEFORE EACH LP STOPS EARNING · "OUT at −9.4%" = a 9.4% price drop exits the range</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="radarBody"></div>
     </section>
 
     <section class="panel" data-panel="compare" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">PERFORMANCE COMPARISON</span>
-        <span class="seg" id="aprSeg" title="APR window — applies to cards, chart and matrix"></span>
         <span class="hint" id="compareHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody"><div class="chartgrid" id="compareCharts"></div></div>
     </section>
@@ -376,6 +425,19 @@
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">POSITION MODULES</span><span class="hint">drag cards to rearrange · ⇄ flips price units</span><button class="collapse-btn">▾</button></div>
       <div class="pbody"><div class="cards" id="cards"></div></div>
+    </section>
+
+    <section class="panel" data-panel="intel" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">INTEL — HOW TO READ THIS HUD</span><span class="hint">every metric explained</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody"><div class="intel">
+        <div class="card-x"><h4>RANGE &amp; EDGE BUFFER</h4><p>A V3 LP only earns fees while price sits <b>inside your chosen range</b>. "<b>OUT at −9.4%</b>" means: if the price falls 9.4%, that position exits its range and earns <b>nothing</b> until price returns or you rebalance. The hatched zones on each bar are your warning margins.</p></div>
+        <div class="card-x"><h4>APR TIMEFRAMES (24H / 7D / 30D / SINCE OPEN)</h4><p>The header switch standardizes <b>every</b> APR on the page to one window so LPs are directly comparable. All values are annualized: "24H · 96%" = yesterday's fee rate would compound to ~96%/yr. On Solana, ◎ marks pool-level APR (position-level needs tx history).</p></div>
+        <div class="card-x"><h4>ROI vs FEE APR vs PRICE DRIFT (IL)</h4><p><b>ROI</b> = everything (value change + fees) vs what you deposited. <b>Fee APR</b> = fees only. <b>Price drift (IL)</b> ≈ ROI − fees: what price movement alone did to you. Fees high but ROI low → the range is earning hard while price drifts against you.</p></div>
+        <div class="card-x"><h4>FEES / $1K / DAY</h4><p>The fairest cross-LP metric: dollars earned per day per $1,000 deposited — strips out position size and age. The matrix column ◆ marks best-in-class.</p></div>
+        <div class="card-x"><h4>LIVE vs RELAY</h4><p><b>LIVE · MAINNET</b> = your browser reads the chains directly. <b>LIVE · RELAY</b> = your GitHub repo fetched the data server-side (refreshed ~15 min) — used when your network/antivirus blocks RPC traffic. Both are real on-chain data.</p></div>
+        <div class="card-x"><h4>ALERTS</h4><p>Thresholds are % of <b>range width</b>: WARN inside 20% of an edge, CRITICAL inside 8% (tunable in CONFIG). Arm ◉ ALERTS for browser pings even when the tab is in background.</p></div>
+      </div></div>
     </section>
 
     <section class="panel" data-panel="log" draggable="true">
@@ -476,7 +538,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v9';
+const BUILD = 'v10';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1414,13 +1476,20 @@ function log(kind, msg){
   const body = $('#logBody');
   const row = el('div','log-row '+kind);
   const t = new Date();
+  const dateStr = t.toISOString().slice(0,10);
+  row.dataset.date = dateStr;
   row.append(
     el('span','ts', t.toUTCString().slice(17,25)),
     el('span','sev', {good:'✓',warning:'▲',critical:'✕',info:'·'}[kind]||'·'),
     el('span','msg', msg)
   );
+  const top = body.firstElementChild;
+  if(top && top.dataset && top.dataset.date && top.dataset.date !== dateStr){
+    const D = new Date(top.dataset.date);
+    body.prepend(el('div','log-day','— '+D.getUTCDate()+' '+['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][D.getUTCMonth()]+' '+D.getUTCFullYear()+' —'));
+  }
   body.prepend(row);
-  while(body.children.length>80) body.lastChild.remove();
+  while(body.children.length>110) body.lastChild.remove();
 }
 
 /* ================= RENDERING ================= */
@@ -1443,7 +1512,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors();
-  renderHeader(); renderTiles(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  renderHeader(); renderTiles(); renderRank(); renderOps(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
   if(state.mode==='offline'){
@@ -1506,8 +1575,8 @@ function renderRadar(){
     const bar = el('div',null); bar.append(rangeBar(p, false));
     const sev = severityOf(p);
     const distTxt = p.inRange
-      ? fmtPct(Math.min(p.dLow,p.dUp),1)+' to '+(p.nearestEdge==='lower'?'LO':'HI')
-      : 'OUT '+fmtPct(Math.abs(p.edgeDist),1);
+      ? 'OUT at '+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'%'
+      : 'OUT NOW · '+fmtPct(Math.abs(p.edgeDist),1)+' to re-enter';
     const dist = el('div','radar-dist','<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">'+SEV_ICON[sev]+'</span> '+distTxt);
     row.append(name,bar,dist);
     body.append(row);
@@ -1622,6 +1691,7 @@ const MATRIX_COLS = [
   {key:'aprWin',     label:'FEE APR',         fmt:v=>v.toFixed(1)+'%', best:'max'},
   {key:'roiPct',     label:'P&L',             fmt:v=>fmtPct(v,2,true), best:'max', signed:true},
   {key:'roiDay',     label:'P&L / DAY',       fmt:v=>fmtPct(v,3,true), best:'max', signed:true},
+  {key:'ilPct',      label:'PRICE DRIFT',     fmt:v=>fmtPct(v,2,true), signed:true},
   {key:'ageDays',    label:'AGE',             fmt:v=>fmtAge(v)},
   {key:'status',     label:'STATUS',          fmt:null},
 ];
@@ -1629,6 +1699,7 @@ function matrixVal(p, key){
   if(key==='fees1k') return (p.feesEverUsd!=null && p.costUsd>0 && p.ageDays>0.05) ? p.feesEverUsd/p.costUsd*1000/p.ageDays : null;
   if(key==='roiDay') return (p.roiPct!=null && p.ageDays>0.05) ? p.roiPct/p.ageDays : null;
   if(key==='aprWin') return aprOf(p).v;
+  if(key==='ilPct') return (p.roiPct!=null&&p.costUsd>0&&p.feesEverUsd!=null)?p.roiPct-(p.feesEverUsd/p.costUsd*100):null;
   if(key==='pair') return p.pairLabel;
   if(key==='status') return severityOf(p);
   return p[key] ?? null;
@@ -1681,6 +1752,71 @@ function renderMatrix(){
       tr.append(el('td', isBest?'best':null, txt));
     });
     tbl.append(tr);
+  });
+}
+
+/* ----- leaderboard ----- */
+function renderRank(){
+  const host=$('#rankBody'); host.innerHTML='';
+  $('#rankHint').textContent='RANKED BY '+WIN_LABEL[cfg.aprWin]+' APR · one timeframe across every LP · switch in the header';
+  const winDays={d1:1,d7:7,d30:30}[cfg.aprWin];
+  const rows=ordered().map(p=>({p,a:aprOf(p)})).filter(x=>x.a.v!=null).sort((x,y)=>y.a.v-x.a.v);
+  if(!rows.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px;padding:10px 0">APR data for this timeframe is still loading (or positions are younger than the window). Try 24H or SINCE OPEN.</div>'; return; }
+  const max=Math.max(...rows.map(x=>x.a.v), 0.0001);
+  rows.forEach((x,i)=>{
+    const {p,a}=x;
+    const base=p.valueUsd||p.costUsd||0;
+    const earned = cfg.aprWin==='incept' ? p.feesEverUsd : (winDays&&base? a.v/100*base*winDays/365 : null);
+    const row=el('div','rank-row'+(i===0?' first':''));
+    row.style.setProperty('--pcolor', seriesColor(cIdx(p)));
+    row.append(el('div','rank-badge', i===0?'★1':'#'+(i+1)));
+    const nm=el('div','rank-name');
+    const dot=el('span','cdot'); nm.append(dot);
+    nm.append(el('span',null,(p.chain==='sol'?'◎ ':'')+esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+esc(posRef(p))+'</span>'+(i===0?'<span class="rank-top-chip">TOP PERFORMER</span>':'')));
+    row.append(nm);
+    const track=el('div','rank-track');
+    const bar=el('div','rank-bar'); bar.style.width=Math.max(2,a.v/max*100)+'%'; track.append(bar);
+    row.append(track);
+    row.append(el('div','rank-val', a.v.toFixed(1)+'<span class="unit"> % APR'+(a.pool?' ◎pool':'')+'</span>'));
+    row.append(el('div','rank-sub', earned!=null?('≈ '+fmtUsd(earned)+' fees'+(cfg.aprWin==='incept'?' total':' / '+WIN_LABEL[cfg.aprWin].toLowerCase())):'—'));
+    row.append(el('div','rank-sub', p.valueUsd!=null?fmtUsd(p.valueUsd,0)+' deployed':'—'));
+    host.append(row);
+  });
+  const skipped=ordered().length-rows.length;
+  if(skipped>0) host.append(el('div',null,'<div style="color:var(--text-muted);font-size:10.5px;padding-top:8px">'+skipped+' position(s) not ranked — no APR for this window yet (too young, or data loading).</div>'));
+}
+
+/* ----- tactical directives ----- */
+function renderOps(){
+  const host=$('#opsBody'); host.innerHTML='';
+  const ps=ordered(); if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No positions.</div>'; return; }
+  const out=[];
+  const aprs=ps.map(p=>aprOf(p).v).filter(v=>v!=null);
+  const best=aprs.length?Math.max(...aprs):null;
+  for(const p of ps){
+    const sev=severityOf(p), ref='<b>'+esc(p.pairLabel)+' '+esc(posRef(p))+'</b>';
+    if(!p.inRange) out.push({pri:'critical',ic:'⟳',msg:ref+' is <b>OUT OF RANGE — earning $0</b>. Rebalance the range around the current price, or withdraw and redeploy the capital where it earns.'});
+    else if(sev==='serious') out.push({pri:'serious',ic:'◆',msg:ref+' is <b>'+Math.round(rangeFracDist(p))+'% of range width</b> from its '+(p.nearestEdge==='lower'?'lower':'upper')+' edge ('+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'% in price). Decide your rebalance trigger NOW, before it exits.'});
+    else if(sev==='warning') out.push({pri:'warning',ic:'▲',msg:ref+' is drifting toward its '+(p.nearestEdge==='lower'?'lower':'upper')+' edge — goes idle after a '+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'% move. Watch it this session.'});
+    if(p.feesUsd!=null && p.valueUsd && p.feesUsd>25 && p.feesUsd/p.valueUsd>0.01)
+      out.push({pri:'info',ic:'✦',msg:ref+' has <b>'+fmtUsd(p.feesUsd)+' unclaimed fees</b> ('+(p.feesUsd/p.valueUsd*100).toFixed(1)+'% of the position) sitting idle — harvest and redeploy or compound.'});
+    const a=aprOf(p).v;
+    if(a!=null && best!=null && best>0 && a<best*0.25 && (p.ageDays||0)>3)
+      out.push({pri:'info',ic:'≡',msg:ref+' earns <b>'+a.toFixed(1)+'% ('+WIN_LABEL[cfg.aprWin]+')</b> — under a quarter of your top performer ('+best.toFixed(1)+'%). Consider tightening its range or consolidating into the leader.'});
+  }
+  if(('Notification' in window) && Notification.permission!=='granted')
+    out.push({pri:'info',ic:'◉',msg:'Browser alerts are <b>not armed</b> — click ◉ ALERTS in the header to get pinged before any range breaks, even with the tab in background.'});
+  if(!out.some(o=>o.pri!=='info')) out.unshift({pri:'good',ic:'✓',msg:'<b>All ranges healthy and earning.</b> Fees are compounding; no urgent action. Next automatic review on the coming scan.'});
+  const order={critical:0,serious:1,warning:2,info:3,good:4};
+  out.sort((a,b)=>order[a.pri]-order[b.pri]);
+  out.forEach(o=>{
+    const row=el('div','ops-row '+o.pri);
+    row.append(el('div','ops-ic',o.ic));
+    const body=el('div');
+    body.append(el('div','ops-tag',{critical:'PRIORITY · CRITICAL',serious:'PRIORITY · HIGH',warning:'WATCH',info:'OPTIMIZE',good:'STATUS'}[o.pri]));
+    body.append(el('div','ops-msg',o.msg));
+    row.append(body);
+    host.append(row);
   });
 }
 
@@ -1768,9 +1904,13 @@ function renderCards(){
           a.v==null?'…':'<b>'+a.v.toFixed(1)+'</b><span class="unit"> %'+(a.pool?' ◎pool':'')+'</span>'); }
     const roiLabel = isSol ? 'P&L SINCE OPEN' : (p.roiMode==='entry'?'ROI (ENTRY-PRICED)':'P&L VS DEPOSIT');
     mkm(roiLabel, p.roiPct==null?(isSol?'<span class="unit">tx-history · v2</span>':'…'):'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
-    mkm('EDGE DISTANCE', p.inRange
-      ? '<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">'+fmtPct(Math.min(p.dLow,p.dUp),1)+'</span> <span class="unit">to '+(p.nearestEdge==='lower'?'low':'high')+'</span>'
-      : '<span style="color:var(--status-critical)">outside</span>');
+    mkm('RANGE BUFFER ↓ / ↑', p.inRange
+      ? '<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">−'+p.dLow.toFixed(1)+'%</span> <span class="unit">/</span> +'+p.dUp.toFixed(1)+'%'
+      : '<span style="color:var(--status-critical)">OUT OF RANGE</span>');
+    if(p.roiPct!=null && p.costUsd>0 && p.feesEverUsd!=null){
+      const il=p.roiPct-(p.feesEverUsd/p.costUsd*100);
+      mkm('PRICE DRIFT (IL)','<span class="'+(il>=0?'up':'down')+'">'+fmtPct(il,2,true)+'</span> <span class="unit">ROI − fees</span>');
+    }
     body.append(m);
     const rw=el('div','rangebar-wrap'); rw.append(rangeBar(p,true)); body.append(rw);
     card.append(body);
@@ -1982,7 +2122,72 @@ function renderAprSeg(){
     seg.append(b);
   }
 }
+/* ---------- night sky: starfield, Andromeda nebulae, shooting stars ---------- */
+function initSky(){
+  const c=document.createElement('canvas'); c.id='sky';
+  document.body.prepend(c);
+  const ctx=c.getContext('2d');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let stars=[], shoots=[], W=0, H=0, t=0;
+  const resize=()=>{
+    W=c.width=innerWidth; H=c.height=innerHeight;
+    stars=Array.from({length:Math.min(320,Math.round(W*H/6500))},()=>({
+      x:Math.random()*W, y:Math.random()*H,
+      r:Math.random()<.9?Math.random()*1.1+.3:Math.random()*1.8+1,
+      tw:Math.random()*6.28, sp:.15+Math.random()*.8,
+      hue:Math.random()<.78?'cyan':(Math.random()<.5?'violet':'warm')
+    }));
+  };
+  resize(); addEventListener('resize',resize);
+  const STAR_COL={cyan:[168,224,240], violet:[190,172,255], warm:[240,214,180]};
+  function nebula(x,y,r,rgb,a){
+    const g=ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0,'rgba('+rgb+','+a+')'); g.addColorStop(1,'rgba('+rgb+',0)');
+    ctx.fillStyle=g; ctx.fillRect(x-r,y-r,r*2,r*2);
+  }
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    // Andromeda band: a tilted elongated glow across the sky
+    ctx.save();
+    ctx.translate(W*.72,H*.22); ctx.rotate(-.5); ctx.scale(2.6,1);
+    nebula(0,0,W*.16,'56,140,170',.10);
+    nebula(W*.02,0,W*.06,'120,190,215',.10);
+    ctx.restore();
+    nebula(W*.12,H*.78,W*.30,'110,70,190',.07);
+    nebula(W*.45,H*.45,W*.22,'20,90,120',.05);
+    for(const s of stars){
+      const a=.30+.70*Math.abs(Math.sin(s.tw+t*s.sp));
+      const [r,g,b]=STAR_COL[s.hue];
+      ctx.fillStyle='rgba('+r+','+g+','+b+','+(a*.85).toFixed(3)+')';
+      ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.2832); ctx.fill();
+      if(s.r>1.3){ ctx.fillStyle='rgba('+r+','+g+','+b+','+(a*.16).toFixed(3)+')'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r*3,0,6.2832); ctx.fill(); }
+    }
+    for(let i=shoots.length-1;i>=0;i--){
+      const sh=shoots[i];
+      const grad=ctx.createLinearGradient(sh.x,sh.y,sh.x-sh.vx*10,sh.y-sh.vy*10);
+      grad.addColorStop(0,'rgba(200,245,255,'+(sh.life*.9)+')'); grad.addColorStop(1,'transparent');
+      ctx.strokeStyle=grad; ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.moveTo(sh.x,sh.y); ctx.lineTo(sh.x-sh.vx*10,sh.y-sh.vy*10); ctx.stroke();
+      sh.x+=sh.vx; sh.y+=sh.vy; sh.life-=.022;
+      if(sh.life<=0||sh.x>W+150||sh.y>H+150) shoots.splice(i,1);
+    }
+  }
+  if(reduced){ draw(); return; }
+  let last=0;
+  function frame(ts){
+    if(ts-last>33){ // ~30fps is plenty for ambience
+      t+=.033; last=ts;
+      if(Math.random()<.006 && shoots.length<2)
+        shoots.push({x:Math.random()*W*.7+W*.15, y:Math.random()*H*.35, vx:5+Math.random()*6, vy:1.5+Math.random()*2.5, life:1});
+      draw();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
 async function init(){
+  initSky();
   renderAprSeg();
   wireSettings();
   applyStoredOrders();
