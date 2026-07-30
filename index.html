@@ -476,7 +476,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v8';
+const BUILD = 'v9';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -547,7 +547,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 const pad32 = h => h.replace(/^0x/,'').padStart(64,'0');
 const hexToBig = h => BigInt(h);
 const word = (data, i) => '0x' + data.replace(/^0x/,'').slice(i*64, (i+1)*64);
-const toSigned = (bi, bits) => { const max = 1n << BigInt(bits-1); return bi >= max ? bi - (1n<<BigInt(bits)) : bi; };
+const toSigned = (bi, bits) => { const mask=(1n<<BigInt(bits))-1n; const m=bi&mask; const max=1n<<BigInt(bits-1); return m>=max ? m-(1n<<BigInt(bits)) : m; };
 const bigToFloat = (bi, dec) => Number(bi) / Math.pow(10, dec);
 
 /* ---------- JSON-RPC layer with failover + batching ---------- */

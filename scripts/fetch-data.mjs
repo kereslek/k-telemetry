@@ -26,7 +26,7 @@ const errors=[];
 const logErr=(tag,e)=>{ errors.push(tag+': '+String(e&&e.message||e).slice(0,140)); console.error(tag, e&&e.message||e); };
 const pad32=h=>h.replace(/^0x/,'').padStart(64,'0');
 const word=(d,i)=>'0x'+d.replace(/^0x/,'').slice(i*64,(i+1)*64);
-const toSigned=(bi,bits)=>{const m=1n<<BigInt(bits-1);return bi>=m?bi-(1n<<BigInt(bits)):bi;};
+const toSigned=(bi,bits)=>{const mask=(1n<<BigInt(bits))-1n;const m=bi&mask;const max=1n<<BigInt(bits-1);return m>=max?m-(1n<<BigInt(bits)):m;};
 const bigToFloat=(bi,dec)=>Number(bi)/Math.pow(10,dec);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
