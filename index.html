@@ -217,6 +217,17 @@
   .tooltip .tk{color:var(--text-muted);font-size:9px;letter-spacing:.14em}
   .tooltip .tv{font-variant-numeric:tabular-nums}
 
+  /* APR window segmented control */
+  .seg{display:inline-flex;border:1px solid var(--line);margin-left:14px}
+  .seg button{
+    font-family:var(--mono);font-size:9px;letter-spacing:.14em;cursor:pointer;
+    background:transparent;border:none;border-right:1px solid var(--line);
+    color:var(--text-muted);padding:4px 10px;
+  }
+  .seg button:last-child{border-right:none}
+  .seg button:hover{color:var(--accent)}
+  .seg button.on{background:rgba(53,214,232,.12);color:var(--accent);text-shadow:0 0 8px var(--accent-glow)}
+
   /* comparison matrix */
   .matrix{width:100%;border-collapse:collapse;font-size:11.5px;min-width:900px}
   .matrix th{
@@ -343,7 +354,9 @@
 
     <section class="panel" data-panel="compare" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">PERFORMANCE COMPARISON</span><span class="hint" id="compareHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">PERFORMANCE COMPARISON</span>
+        <span class="seg" id="aprSeg" title="APR window — applies to cards, chart and matrix"></span>
+        <span class="hint" id="compareHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody"><div class="chartgrid" id="compareCharts"></div></div>
     </section>
 
@@ -461,7 +474,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v4';
+const BUILD = 'v5';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -852,6 +865,7 @@ async function enrichHistories(){
   }
   enriching = false;
   if(changed) renderAll();
+  setTimeout(enrichAprWindows, 100);   // windowed APRs need history — chain after it
 }
 
 /* -------- anchors: eth price, block -------- */
@@ -903,7 +917,9 @@ function demoPositions(){
       mintTs: now-s.age*86400000, ageDays:s.age,
       roiPct: isSol ? null : roiPct, roiMode: isSol ? 'sol' : (i%2?'hodl':'entry'),
       feeAprPct: isSol ? null : s.feeRate*100*(0.8+demoRand()*0.4),
+      aprW: isSol ? null : {t:now, d1:s.feeRate*100*(0.7+demoRand()*0.7), d7:s.feeRate*100*(0.85+demoRand()*0.3), d30:s.feeRate*100*(0.9+demoRand()*0.2)},
       poolAprPct: isSol ? 6.08 : null,
+      poolAprDay: isSol ? 6.08 : null, poolAprWeek: isSol ? 5.4 : null, poolAprMonth: isSol ? 7.9 : null,
       inRange, rangePos, dLow, dUp,
       edgeDist: inRange?Math.min(dLow,dUp):-(price<s.lo?(s.lo-price)/price*100:(price-s.up)/price*100),
       nearestEdge: dLow<dUp?'lower':'upper',
@@ -1043,7 +1059,7 @@ async function raydiumPoolInfo(ids){
   if(!need.length) return;
   try{
     const js=await getJson('https://api-v3.raydium.io/pools/info/ids?ids='+need.join(','));
-    for(const d of (js.data||[])){ if(d&&d.id) state.rayPools[d.id]={apr:d.day?.apr??null, feeRate:d.feeRate??null, t:Date.now()}; }
+    for(const d of (js.data||[])){ if(d&&d.id) state.rayPools[d.id]={apr:d.day?.apr??null, aprDay:d.day?.apr??null, aprWeek:d.week?.apr??null, aprMonth:d.month?.apr??null, feeRate:d.feeRate??null, t:Date.now()}; }
   }catch(e){}
 }
 
@@ -1123,6 +1139,7 @@ async function scanSol(){
       amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
       feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
       poolAprPct: rinfo?.apr ?? null,
+      poolAprDay: rinfo?.aprDay ?? null, poolAprWeek: rinfo?.aprWeek ?? null, poolAprMonth: rinfo?.aprMonth ?? null,
       mintTs: prev?.mintTs ?? null,
       ageDays: prev?.mintTs ? (Date.now()-prev.mintTs)/86400000 : null,
       inRange, rangePos, dLow, dUp, nearestEdge: dLow<dUp?'lower':'upper',
@@ -1134,6 +1151,60 @@ async function scanSol(){
   state.solPositions=out;
   setTimeout(enrichSolAges, 80);
   return true;
+}
+
+/* ---- windowed position fee APR (ETH): archive snapshot of collectable fees ---- */
+async function feesOwedAt(p, blockNum){
+  const idHex = pad32(p.id.toString(16));
+  const MAX128 = 'f'.repeat(32).padStart(64,'0');
+  const data = SEL.collect + idHex + pad32(p.owner||NPM) + MAX128 + MAX128;
+  const r = await rpcBatch([{method:'eth_call', params:[{to:NPM, data, ...(p.owner?{from:p.owner}:{})}, '0x'+blockNum.toString(16)]}]);
+  if(r[0].error) throw new Error(r[0].error.message||'archive call failed');
+  return { f0: Number(hexToBig(word(r[0].result,0)))/10**p.d0, f1: Number(hexToBig(word(r[0].result,1)))/10**p.d1 };
+}
+const APR_WINDOWS = [['d1',1],['d7',7],['d30',30]];
+let aprEnriching=false;
+async function enrichAprWindows(){
+  if(aprEnriching || state.mode!=='live' || !state.blockNum) return;
+  aprEnriching=true;
+  let changed=false;
+  for(const p of state.positions.values()){
+    if(p.demo || p.chain==='sol') continue;
+    if(p.aprW && Date.now()-p.aprW.t < 600000) continue;   // refresh every 10 min
+    const aprW={t:Date.now()};
+    for(const [key,days] of APR_WINDOWS){
+      if(p.ageDays!=null && p.ageDays<days){ aprW[key]=null; continue; }
+      try{
+        const blk = state.blockNum - Math.round(days*86400/12);
+        const old = await feesOwedAt(p, blk);
+        // fees earned in window = Δcollectable + collections − principal withdrawn (decreases land in "owed" before collect)
+        const colW0=(p.hist?.col||[]).filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a0,p.d0),0);
+        const colW1=(p.hist?.col||[]).filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a1,p.d1),0);
+        const decW0=(p.hist?.dec||[]).filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a0,p.d0),0);
+        const decW1=(p.hist?.dec||[]).filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a1,p.d1),0);
+        const e0=Math.max(0, (p.f0??0)-old.f0+colW0-decW0), e1=Math.max(0, (p.f1??0)-old.f1+colW1-decW1);
+        const earnedUsd = e0*(p.usd0??0) + e1*(p.usd1??0);
+        const base = p.valueUsd || p.costUsd;
+        aprW[key] = base>0 ? earnedUsd/base*(365/days)*100 : null;
+      }catch(e){ aprW[key]=null; }
+      await sleep(120);
+    }
+    p.aprW=aprW; changed=true;
+  }
+  aprEnriching=false;
+  if(changed) renderAll();
+}
+/* which APR the UI shows, per the global window selector */
+const WIN_LABEL = {d1:'24H', d7:'7D', d30:'30D', incept:'SINCE OPEN'};
+cfg.aprWin = store.get('aprWin','d1');
+function aprOf(p){
+  const w = cfg.aprWin;
+  if(w==='incept') return {v: p.feeAprPct ?? null, pool:false};
+  if(p.chain==='sol'){
+    const v = {d1:p.poolAprDay, d7:p.poolAprWeek, d30:p.poolAprMonth}[w];
+    return {v: v ?? null, pool:true};
+  }
+  return {v: p.aprW ? (p.aprW[w] ?? null) : null, pool:false};
 }
 
 /* ---- connectivity diagnostics: tests every endpoint from THIS browser ---- */
@@ -1347,8 +1418,8 @@ function renderTiles(){
   const totalVal = ps.reduce((s,p)=>s+(p.valueUsd||0),0);
   const totalFees = ps.reduce((s,p)=>s+(p.feesUsd||0),0);
   const totalEver = ps.reduce((s,p)=>s+(p.feesEverUsd||0),0);
-  const aprs = ps.filter(p=>p.feeAprPct!=null);
-  const wApr = aprs.length ? aprs.reduce((s,p)=>s+p.feeAprPct*(p.costUsd||1),0)/aprs.reduce((s,p)=>s+(p.costUsd||1),0) : null;
+  const aprs = ps.map(p=>({p, v:aprOf(p).v, w:p.valueUsd||p.costUsd||1})).filter(x=>x.v!=null);
+  const wApr = aprs.length ? aprs.reduce((s,x)=>s+x.v*x.w,0)/aprs.reduce((s,x)=>s+x.w,0) : null;
   const inR = ps.filter(p=>p.inRange).length;
   const cost = ps.reduce((s,p)=>s+(p.costUsd||0),0);
   const pnl = cost>0 ? ps.reduce((s,p)=>s+((p.roiPct||0)/100)*(p.costUsd||0),0)/cost*100 : null;
@@ -1358,7 +1429,7 @@ function renderTiles(){
      ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
      : (state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed'));
   mk('UNCLAIMED FEES', fmtUsd(totalFees), 'lifetime fees: <b>'+fmtUsd(totalEver,0)+'</b>');
-  mk('PORTFOLIO FEE APR', wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
+  mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
   mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
      ps.length-inR>0 ? '<span class="down">'+(ps.length-inR)+' position(s) idle</span>' : '<span class="up">all earning</span>');
@@ -1426,7 +1497,7 @@ function renderCompare(){
   const ps = ordered();
   $('#compareHint').textContent = ps.some(p=>p.roiMode==='hodl') ? 'P&L = VS DEPOSIT AT CURRENT PRICES (INCL. FEES)' : 'ROI = ENTRY-PRICED · FEES INCLUDED';
   host.append(
-    barChart('FEE APR — ANNUALIZED %', ps, p=>p.feeAprPct, v=>v.toFixed(1)+'%'),
+    barChart('FEE APR · '+WIN_LABEL[cfg.aprWin]+' — ANNUALIZED %'+(ps.some(p=>aprOf(p).pool&&aprOf(p).v!=null)?' · ◎ = POOL-LEVEL':''), ps, p=>aprOf(p).v, v=>v.toFixed(1)+'%'),
     barChart('NET P&L SINCE DEPLOY — %', ps, p=>p.roiPct, v=>fmtPct(v,2,true), true)
   );
 }
@@ -1495,7 +1566,7 @@ const MATRIX_COLS = [
   {key:'feesUsd',    label:'UNCLAIMED',       fmt:v=>fmtUsd(v), best:'max'},
   {key:'feesEverUsd',label:'LIFETIME FEES',   fmt:v=>fmtUsd(v), best:'max'},
   {key:'fees1k',     label:'FEES / $1K / DAY',fmt:v=>'$'+v.toFixed(2), best:'max'},
-  {key:'feeAprPct',  label:'FEE APR',         fmt:v=>v.toFixed(1)+'%', best:'max'},
+  {key:'aprWin',     label:'FEE APR',         fmt:v=>v.toFixed(1)+'%', best:'max'},
   {key:'roiPct',     label:'P&L',             fmt:v=>fmtPct(v,2,true), best:'max', signed:true},
   {key:'roiDay',     label:'P&L / DAY',       fmt:v=>fmtPct(v,3,true), best:'max', signed:true},
   {key:'ageDays',    label:'AGE',             fmt:v=>fmtAge(v)},
@@ -1504,6 +1575,7 @@ const MATRIX_COLS = [
 function matrixVal(p, key){
   if(key==='fees1k') return (p.feesEverUsd!=null && p.costUsd>0 && p.ageDays>0.05) ? p.feesEverUsd/p.costUsd*1000/p.ageDays : null;
   if(key==='roiDay') return (p.roiPct!=null && p.ageDays>0.05) ? p.roiPct/p.ageDays : null;
+  if(key==='aprWin') return aprOf(p).v;
   if(key==='pair') return p.pairLabel;
   if(key==='status') return severityOf(p);
   return p[key] ?? null;
@@ -1524,7 +1596,8 @@ function renderMatrix(){
   });
   const thead = el('tr');
   MATRIX_COLS.forEach(c=>{
-    const th = el('th', matrixSort.key===c.key?'sorted':null, c.label + (matrixSort.key===c.key ? (matrixSort.dir<0?' ▾':' ▴') : ''));
+    const label = c.key==='aprWin' ? 'FEE APR '+WIN_LABEL[cfg.aprWin] : c.label;
+    const th = el('th', matrixSort.key===c.key?'sorted':null, label + (matrixSort.key===c.key ? (matrixSort.dir<0?' ▾':' ▴') : ''));
     if(c.fmt) th.addEventListener('click',()=>{
       matrixSort = matrixSort.key===c.key ? {key:c.key, dir:-matrixSort.dir} : {key:c.key, dir:-1};
       store.set('matrixSort', matrixSort); renderMatrix();
@@ -1550,7 +1623,7 @@ function renderMatrix(){
       }
       const isBest = best[c.key]!=null && v!=null && Math.abs(v-best[c.key])<1e-12;
       let txt = v==null ? '<span style="color:var(--text-muted)">…</span>' : c.fmt(v);
-      if(c.key==='feeAprPct' && v==null && p.poolAprPct!=null) txt='<span style="color:var(--text-muted)" title="Raydium pool APR (24h) — position-level APR needs tx history">'+p.poolAprPct.toFixed(1)+'% ◦pool</span>';
+      if(c.key==='aprWin' && v!=null && aprOf(p).pool) txt='<span style="color:var(--text-muted)" title="Raydium pool-level APR — position-level windows need tx history (v2)">'+v.toFixed(1)+'% ◎</span>';
       if(c.signed && v!=null && !isBest) txt = '<span style="color:var(--status-'+(v>=0?'good':'critical')+')">'+txt+'</span>';
       tr.append(el('td', isBest?'best':null, txt));
     });
@@ -1637,8 +1710,9 @@ function renderCards(){
     mkm('POSITION VALUE', fmtUsd(p.valueUsd,0));
     mkm(isSol?'FEES OWED':'UNCLAIMED FEES', fmtUsd(p.feesUsd));
     mkm(isSol?'OPENED':'DEPLOYED', (p.mintTs?new Date(p.mintTs).toISOString().slice(0,10):'…')+' <span class="unit">'+fmtAge(p.ageDays)+'</span>',true);
-    if(isSol) mkm('POOL APR 24H', p.poolAprPct==null?'—':'<b>'+p.poolAprPct.toFixed(1)+'</b><span class="unit"> %</span>');
-    else mkm('FEE APR', p.feeAprPct==null?'…':'<b>'+p.feeAprPct.toFixed(1)+'</b><span class="unit"> %</span>');
+    { const a=aprOf(p);
+      mkm((a.pool?'POOL':'FEE')+' APR · '+WIN_LABEL[cfg.aprWin],
+          a.v==null?'…':'<b>'+a.v.toFixed(1)+'</b><span class="unit"> %'+(a.pool?' ◎pool':'')+'</span>'); }
     const roiLabel = isSol ? 'P&L SINCE OPEN' : (p.roiMode==='entry'?'ROI (ENTRY-PRICED)':'P&L VS DEPOSIT');
     mkm(roiLabel, p.roiPct==null?(isSol?'<span class="unit">tx-history · v2</span>':'…'):'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
     mkm('EDGE DISTANCE', p.inRange
@@ -1828,7 +1902,20 @@ function tickClock(){
     $('#hCountdown').innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
   }
 }
+function renderAprSeg(){
+  const seg=$('#aprSeg'); seg.innerHTML='';
+  for(const k of ['d1','d7','d30','incept']){
+    const b=el('button', cfg.aprWin===k?'on':null, WIN_LABEL[k]);
+    b.addEventListener('click',()=>{
+      cfg.aprWin=k; store.set('aprWin',k);
+      renderAprSeg(); renderAll();
+      if(k!=='incept') enrichAprWindows();   // compute windows on demand if missing
+    });
+    seg.append(b);
+  }
+}
 async function init(){
+  renderAprSeg();
   wireSettings();
   applyStoredOrders();
   wireDrag($('#panelStack'), '.panel', ids=>store.set('panelOrder', ids));
