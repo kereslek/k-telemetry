@@ -346,6 +346,21 @@
     .seg{margin-left:0}
   }
 
+  /* range architect */
+  .arch-row{display:grid;grid-template-columns:220px repeat(4,minmax(90px,1fr)) 1.6fr;gap:12px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
+  .arch-row.hdr{font-size:9.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line)}
+  .arch-row .num{font-variant-numeric:tabular-nums;text-align:right}
+  .verdict{font-size:10px;letter-spacing:.14em;padding:3px 8px;border:1px solid;display:inline-block;margin-right:8px}
+  .verdict.tighten{color:var(--status-warning);border-color:var(--status-warning)}
+  .verdict.loosen{color:var(--status-serious);border-color:var(--status-serious)}
+  .verdict.hold{color:var(--status-good);border-color:var(--status-good)}
+  .arch-note{font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6}
+  .plink{color:inherit;text-decoration:none;border-bottom:1px dotted var(--text-muted)}
+  .plink:hover{color:var(--accent);border-color:var(--accent)}
+  .econ-strip{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border:1px dashed var(--line);font-size:11.5px;color:var(--text-secondary)}
+  .econ-strip b{color:var(--text-primary)}
+  @media(max-width:900px){.arch-row{grid-template-columns:1fr 1fr;row-gap:4px}.arch-row.hdr{display:none}.arch-row .num{text-align:left}}
+
   /* event log */
   .log{max-height:260px;overflow-y:auto;font-size:12px}
   .log-row{display:flex;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line-soft);align-items:baseline}
@@ -454,6 +469,18 @@
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">CAPITAL FLOW — WHERE TO DEPLOY</span><span class="hint">capital share vs fee output · mismatches = opportunity</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="flowBody"></div>
+    </section>
+
+    <section class="panel" data-panel="arch" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE ARCHITECT — TIGHTEN OR LOOSEN?</span><span class="hint">30-day realized volatility → statistically sized ranges</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="archBody"></div>
+    </section>
+
+    <section class="panel" data-panel="cosmos" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CONSTELLATION — YOUR CAPITAL AS A GALAXY</span><span class="hint">size = value · halo = APR · ring = position in range · CLICK a body to open its module</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" style="padding:0"><canvas id="cosmos" style="width:100%;height:360px;display:block;cursor:pointer"></canvas></div>
     </section>
 
     <section class="panel" data-panel="ops" draggable="true">
@@ -604,7 +631,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v11';
+const BUILD = 'v12';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -929,7 +956,7 @@ async function fetchPosition(id, prev){
   const nearestEdge = dLow<dUp ? 'lower' : 'upper';
 
   const p = {
-    id, owner, pool, core, m0, m1, d0, d1, tick, price, priceLower, priceUpper,
+    id, owner, pool, core, token0: core.token0, token1: core.token1, m0, m1, d0, d1, tick, price, priceLower, priceUpper,
     amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
     hist: prev?.hist, mintTs: prev?.mintTs, entryEthUsd: prev?.entryEthUsd,
     ageDays:null, costUsd:null, roiPct:null, roiMode:'hodl', feeAprPct:null, feesEverUsd:null,
@@ -1013,12 +1040,14 @@ async function fetchAnchors(){
     {method:'eth_blockNumber', params:[]},
     {method:'eth_call', params:[{to:CHAINLINK_ETH, data:SEL.latestAnswer},'latest']},
     {method:'eth_call', params:[{to:CHAINLINK_BTC, data:SEL.latestAnswer},'latest']},
+    {method:'eth_gasPrice', params:[]},
   ], {strict:true});
   if(r[0].error) throw new Error('blockNumber failed');
   state.blockNum = Number(hexToBig(r[0].result));
   state.block = state.blockNum.toLocaleString();
   if(!r[1].error) state.ethUsd = bigToFloat(hexToBig(r[1].result),8);
   if(!r[2].error) state.btcUsd = bigToFloat(hexToBig(r[2].result),8);
+  if(!r[3].error) state.gasGwei = Number(hexToBig(r[3].result))/1e9;
 }
 
 /* ================= DEMO MODE ================= */
@@ -1448,6 +1477,7 @@ async function scan(isBoot){
           if(!ethPs && d.eth && d.eth.length){ ethPs = d.eth; state.relayUsed = true; }
           if(!solOk && Array.isArray(d.sol)){ state.solPositions = d.sol; solOk = true; state.relayUsed = true; }
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
+          if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
           if(state.relayUsed) log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
@@ -1568,6 +1598,24 @@ const ordered = () => {
   });
   return ps;
 };
+const poolBadge = new Map();   // id -> 'A'/'B'… when the same pair exists in multiple pool contracts
+function assignPools(){
+  poolBadge.clear();
+  const byPair = {};
+  for(const p of state.positions.values()){
+    const key = p.pool || p.poolId; if(!key) continue;
+    (byPair[p.pairLabel] = byPair[p.pairLabel] || []);
+    if(!byPair[p.pairLabel].includes(key)) byPair[p.pairLabel].push(key);
+  }
+  for(const p of state.positions.values()){
+    const key = p.pool || p.poolId; if(!key) continue;
+    const list = byPair[p.pairLabel];
+    if(list.length > 1) poolBadge.set(String(p.id), String.fromCharCode(65 + list.indexOf(key)));
+  }
+}
+const badgeOf = p => poolBadge.get(String(p.id)) || null;
+const posLink = p => p.chain==='sol' ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
+const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+(badgeOf(p)?' ·'+badgeOf(p):'')+' ↗</a>';
 const colorIndex = new Map();
 const cIdx = p => colorIndex.get(String(p.id)) ?? 5;
 function assignColors(){
@@ -1577,8 +1625,8 @@ function assignColors(){
 }
 
 function renderAll(){
-  assignColors();
-  renderHeader(); renderTiles(); renderRank(); renderFlow(); renderOps(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  assignColors(); assignPools();
+  renderHeader(); renderTiles(); renderRank(); renderFlow(); renderArch(); renderCosmos(); renderOps(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
   if(state.mode==='offline'){
@@ -1639,7 +1687,7 @@ function renderRadar(){
     const row = el('div','radar-row');
     const name = el('div','radar-name');
     name.style.setProperty('--pcolor', seriesColor(i));
-    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span>'));
+    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+(badgeOf(p)?' · CT-'+badgeOf(p):'')+'</span> <span style="font-size:9px">'+linkRef(p)+'</span>'));
     const bar = el('div',null); bar.append(rangeBar(p, false));
     const sev = severityOf(p);
     const distTxt = p.inRange
@@ -1805,8 +1853,7 @@ function renderMatrix(){
         const td = el('td');
         const cell = el('div','pos-cell');
         const dot = el('span','cdot'); dot.style.background=seriesHex(cIdx(p)); dot.style.boxShadow='0 0 6px '+seriesHex(cIdx(p));
-        const ref = p.chain==='sol' ? '◎ '+String(p.nftMint||'').slice(0,4)+'…' : '#'+p.id;
-        cell.append(dot, el('span',null, esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+ref+'</span>'));
+        cell.append(dot, el('span',null, esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+linkRef(p)+'</span>'));
         td.append(cell); tr.append(td); return;
       }
       if(c.key==='status'){
@@ -1840,7 +1887,7 @@ function renderRank(){
     row.append(el('div','rank-badge', i===0?'★1':'#'+(i+1)));
     const nm=el('div','rank-name');
     const dot=el('span','cdot'); nm.append(dot);
-    nm.append(el('span',null,(p.chain==='sol'?'◎ ':'')+esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+esc(posRef(p))+'</span>'+(i===0?'<span class="rank-top-chip">TOP PERFORMER</span>':'')));
+    nm.append(el('span',null,(p.chain==='sol'?'◎ ':'')+esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+linkRef(p)+'</span>'+(i===0?'<span class="rank-top-chip">TOP</span>':'')));
     row.append(nm);
     const track=el('div','rank-track');
     const bar=el('div','rank-bar'); bar.style.width=Math.max(2,a.v/max*100)+'%'; track.append(bar);
@@ -1903,7 +1950,152 @@ function renderFlow(){
       +'<div class="fd-note">Rule-based signal from live yields · ranges can break · not financial advice.</div>';
   } else d.innerHTML='<div class="fd-main">No healthy in-range position with APR data for this timeframe yet.</div>';
   host.append(d);
+  const hc=gasCostUsd(HARVEST_GAS), rcst=gasCostUsd(REBALANCE_GAS);
+  const strip=el('div','econ-strip');
+  strip.innerHTML='<span>⛽ ETH GAS <b>'+(state.gasGwei!=null?state.gasGwei.toFixed(2)+' gwei':'—')+'</b></span>'
+    +'<span>HARVEST TX ≈ <b>'+(hc!=null?fmtUsd(hc):'—')+'</b></span>'
+    +'<span>FULL RE-RANGE ≈ <b>'+(rcst!=null?fmtUsd(rcst):'—')+'</b></span>'
+    +'<span>SOLANA TX ≈ <b>$0.02</b></span>'
+    +'<span style="color:var(--text-muted)">estimates at current gas · 130k / 520k gas profiles</span>';
+  host.append(strip);
 }
+
+/* ----- range architect ----- */
+function renderArch(){
+  const host=$('#archBody'); host.innerHTML='';
+  const ps=ordered().filter(p=>p.chain!=='sol');
+  const withR=ps.filter(p=>p.range);
+  if(!withR.length){
+    host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Volatility analytics are computed server-side on each 15-min refresh — available on the next relay update. (Solana pools excluded: no free archive history.)</div>';
+  } else {
+    const hdr=el('div','arch-row hdr');
+    ['POSITION','σ DAILY (30D)','P(IN RANGE 7D)','WIDTH','CONC ×','RECOMMENDATION'].forEach(h=>hdr.append(el('div',null,h)));
+    host.append(hdr);
+    withR.forEach(p=>{
+      const r=p.range;
+      const row=el('div','arch-row');
+      row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(p.pairLabel)+' '+linkRef(p)));
+      row.append(el('div','num',(r.sigmaDaily*100).toFixed(2)+'%'));
+      const stay=r.stay7dPct;
+      row.append(el('div','num','<span style="color:var(--status-'+(stay<50?'critical':stay<75?'warning':'good')+')">'+stay.toFixed(0)+'%</span>'));
+      row.append(el('div','num','±'+(r.widthPct/2).toFixed(1)+'%'));
+      row.append(el('div','num',r.concVsBalanced.toFixed(2)+'×'));
+      let verdict,why;
+      if(stay<50){ verdict='<span class="verdict loosen">LOOSEN</span>';
+        why='Current range has &lt;50% odds of containing price for 7 days at 30-day realized vol — expect frequent idle periods + rebalance costs. Balanced (80%-confidence) range: <b>'+fmtPrice(r.suggested.balanced.lo)+' – '+fmtPrice(r.suggested.balanced.up)+'</b>.'; }
+      else if(stay>92){ verdict='<span class="verdict tighten">TIGHTEN</span>';
+        why='Range is statistically over-wide — capital is under-concentrated ('+r.concVsBalanced.toFixed(2)+'× vs balanced). Tightening toward <b>'+fmtPrice(r.suggested.balanced.lo)+' – '+fmtPrice(r.suggested.balanced.up)+'</b> multiplies fee density ~'+(1/Math.max(r.concVsBalanced,0.05)).toFixed(1)+'× while keeping ~80% 7-day containment.'; }
+      else { verdict='<span class="verdict hold">HOLD</span>';
+        why='Width is proportionate to realized volatility ('+stay.toFixed(0)+'% 7-day containment). Aggressive alt: <b>'+fmtPrice(r.suggested.tight.lo)+' – '+fmtPrice(r.suggested.tight.up)+'</b> (~50% containment, ~'+(r.concVsBalanced>0?( (Math.log(r.suggested.balanced.up/r.suggested.balanced.lo)/Math.log(r.suggested.tight.up/r.suggested.tight.lo)).toFixed(1)):'2')+'× denser fees, more rebalancing).'; }
+      row.append(el('div',null,verdict+'<span style="font-size:11.5px;color:var(--text-secondary)">'+why+'</span>'));
+      host.append(row);
+    });
+  }
+  host.append(el('div','arch-note',
+    'METHOD — σ from 15 archive price samples over 28 days; containment via lognormal end-point probability (barrier-touch odds are higher — treat as optimistic). Suggested ranges: tight ±0.68σ√7 · balanced ±1.28σ√7 · wide ±2σ√7 around spot. CONC× = balanced width ÷ your width (>1 = tighter than the statistical balance = denser fees while in range; <1 = wider = safer but diluted).<br><br>'
+    +'<b style="color:var(--accent)">V3 vs V4?</b> Your positions sit on V3, the deepest liquidity for these pairs. V4 (hooks, singleton, gas-cheaper mints/rebalances ~40-60%) rewards <b>frequent re-rangers</b>: if the Architect keeps telling you to re-range weekly, migrating the strategy to a V4 pool with comparable volume cuts rebalance drag; if you re-range monthly, V3 depth usually beats V4 gas savings. Check the same pair volume on V4 before moving — thin V4 volume beats nothing.'));
+}
+
+/* ----- constellation ----- */
+let cosmosNodes=[], cosmosInit=false, cosmosT=0;
+function renderCosmos(){
+  const ps=ordered().filter(p=>p.valueUsd!=null);
+  const maxV=Math.max(...ps.map(p=>p.valueUsd),1);
+  cosmosNodes=ps.map((p,i)=>({id:String(p.id), pair:p.pairLabel, ref:posRef(p), chain:p.chain,
+    r:14+Math.sqrt(p.valueUsd/maxV)*30, apr:aprOf(p).v??0, rangePos:Math.max(0,Math.min(1,p.rangePos)),
+    sev:severityOf(p), hex:seriesHex(cIdx(p)), val:p.valueUsd, fees:p.feesUsd,
+    sym0:p.m0.symbol, sym1:p.m1.symbol, phase:i*1.1}));
+  if(!cosmosInit){ cosmosInit=true; initCosmos(); }
+}
+function initCosmos(){
+  const c=$('#cosmos'); if(!c) return;
+  const ctx=c.getContext('2d');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W,H;
+  const layout=()=>{ W=c.width=c.clientWidth; H=c.height=360;
+    const n=cosmosNodes.length||1;
+    cosmosNodes.forEach((nd,i)=>{
+      const a=(i/n)*Math.PI*2 - Math.PI/2 + 0.35;
+      const rad=Math.min(W,760)/2*0.62*(0.75+0.25*((i%2)?1:0.72));
+      nd.x=W/2+Math.cos(a)*rad*1.35; nd.y=H/2+Math.sin(a)*rad*0.62;
+    });
+  };
+  layout(); addEventListener('resize',layout);
+  new ResizeObserver(layout).observe(c);
+  function draw(){
+    if(!W || cosmosNodes.some(n=>n.x==null)) layout();
+    ctx.clearRect(0,0,W,H);
+    // deep glaze
+    const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,W/1.5);
+    bg.addColorStop(0,'rgba(20,60,90,.12)'); bg.addColorStop(.6,'rgba(80,40,140,.05)'); bg.addColorStop(1,'transparent');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+    // connections: shared token symbols
+    ctx.lineWidth=1;
+    for(let i=0;i<cosmosNodes.length;i++) for(let j=i+1;j<cosmosNodes.length;j++){
+      const a=cosmosNodes[i],b=cosmosNodes[j];
+      const shared=[a.sym0,a.sym1].filter(sx=>[b.sym0,b.sym1].includes(sx));
+      if(!shared.length) continue;
+      const pulse=.25+.2*Math.sin(cosmosT*1.4+i+j);
+      ctx.strokeStyle='rgba(53,214,232,'+pulse.toFixed(3)+')';
+      ctx.setLineDash([2,7]); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.setLineDash([]);
+    }
+    for(const nd of cosmosNodes){
+      const bob=Math.sin(cosmosT*.8+nd.phase)*4;
+      const y=nd.y+bob;
+      // APR halo
+      const halo=Math.min(60,10+nd.apr/4);
+      const g=ctx.createRadialGradient(nd.x,y,nd.r*.4,nd.x,y,nd.r+halo);
+      g.addColorStop(0,nd.hex+'cc'); g.addColorStop(.55,nd.hex+'33'); g.addColorStop(1,'transparent');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(nd.x,y,nd.r+halo,0,6.2832); ctx.fill();
+      // planet
+      const body=ctx.createRadialGradient(nd.x-nd.r*.35,y-nd.r*.35,1,nd.x,y,nd.r);
+      body.addColorStop(0,'#eaf7fa'); body.addColorStop(.25,nd.hex); body.addColorStop(1,'#0a1322');
+      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(nd.x,y,nd.r,0,6.2832); ctx.fill();
+      // range ring: arc from 0..rangePos
+      ctx.lineWidth=3;
+      ctx.strokeStyle='rgba(255,255,255,.18)';
+      ctx.beginPath(); ctx.arc(nd.x,y,nd.r+7,0,6.2832); ctx.stroke();
+      ctx.strokeStyle={good:'#0ca30c',warning:'#fab219',serious:'#ec835a',critical:'#d03b3b'}[nd.sev];
+      ctx.beginPath(); ctx.arc(nd.x,y,nd.r+7,-Math.PI/2,-Math.PI/2+nd.rangePos*6.2832); ctx.stroke();
+      // labels
+      ctx.textAlign='center';
+      ctx.fillStyle='#eaf7fa'; ctx.font='600 12px ui-monospace,monospace';
+      ctx.fillText(nd.pair, nd.x, y+nd.r+26);
+      ctx.fillStyle='#7e97a8'; ctx.font='10px ui-monospace,monospace';
+      ctx.fillText((nd.apr?nd.apr.toFixed(0)+'% APR · ':'')+fmtUsd(nd.val,0), nd.x, y+nd.r+40);
+    }
+    cosmosT+=.02;
+  }
+  function loop(){ if(!document.hidden && c.closest('.panel') && !c.closest('.panel').classList.contains('collapsed')) draw();
+    if(!reduced) requestAnimationFrame(loop); }
+  if(reduced) draw(); else requestAnimationFrame(loop);
+  c.addEventListener('click',ev=>{
+    const rect=c.getBoundingClientRect();
+    const x=ev.clientX-rect.left, y=ev.clientY-rect.top;
+    for(const nd of cosmosNodes){
+      if(Math.hypot(nd.x-x,nd.y-y)<nd.r+14){
+        const card=document.querySelector('.card[data-id="'+nd.id+'"]');
+        if(card){ card.scrollIntoView({behavior:'smooth',block:'center'});
+          card.style.transition='box-shadow .3s'; card.style.boxShadow='0 0 40px '+nd.hex;
+          setTimeout(()=>card.style.boxShadow='',1600); }
+        break;
+      }
+    }
+  });
+  c.addEventListener('mousemove',ev=>{
+    const rect=c.getBoundingClientRect();
+    const x=ev.clientX-rect.left, y=ev.clientY-rect.top;
+    const hit=cosmosNodes.find(nd=>Math.hypot(nd.x-x,nd.y-y)<nd.r+14);
+    if(hit) showTip(ev,'<div class="tk">'+esc(hit.pair)+' '+esc(hit.ref)+'</div><div class="tv"><b>'+fmtUsd(hit.val,0)+'</b> · '+(hit.apr?hit.apr.toFixed(1)+'% APR · ':'')+'unclaimed '+fmtUsd(hit.fees)+'</div><div class="tv" style="color:var(--text-muted)">click to open module</div>');
+    else hideTip();
+  });
+  c.addEventListener('mouseleave',hideTip);
+}
+
+/* ----- gas economics ----- */
+const HARVEST_GAS=130000, REBALANCE_GAS=520000;
+function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
+function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 
 /* ----- tactical directives ----- */
 function renderOps(){
@@ -1914,11 +2106,23 @@ function renderOps(){
   const best=aprs.length?Math.max(...aprs):null;
   for(const p of ps){
     const sev=severityOf(p), ref='<b>'+esc(p.pairLabel)+' '+esc(posRef(p))+'</b>';
-    if(!p.inRange) out.push({pri:'critical',ic:'⟳',msg:ref+' is <b>OUT OF RANGE — earning $0</b>. Rebalance the range around the current price, or withdraw and redeploy the capital where it earns.'});
+    if(!p.inRange){
+      const rc = p.chain==='sol' ? 0.05 : gasCostUsd(REBALANCE_GAS);
+      const df = dailyFeeUsd(p);
+      out.push({pri:'critical',ic:'⟳',msg:ref+' is <b>OUT OF RANGE — earning $0</b>. Full re-range costs ≈ <b>'+(rc!=null?fmtUsd(rc):'—')+'</b> (withdraw+collect+mint)'+(df!=null&&rc!=null&&df>0?' → paid back by fees in ≈ <b>'+Math.ceil(rc/df)+' days</b> at its recent rate':'')+'.'});
+    }
     else if(sev==='serious') out.push({pri:'serious',ic:'◆',msg:ref+' is <b>'+Math.round(rangeFracDist(p))+'% of range width</b> from its '+(p.nearestEdge==='lower'?'lower':'upper')+' edge ('+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'% in price). Decide your rebalance trigger NOW, before it exits.'});
     else if(sev==='warning') out.push({pri:'warning',ic:'▲',msg:ref+' is drifting toward its '+(p.nearestEdge==='lower'?'lower':'upper')+' edge — goes idle after a '+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'% move. Watch it this session.'});
-    if(p.feesUsd!=null && p.valueUsd && p.feesUsd>25 && p.feesUsd/p.valueUsd>0.01)
-      out.push({pri:'info',ic:'✦',msg:ref+' has <b>'+fmtUsd(p.feesUsd)+' unclaimed fees</b> ('+(p.feesUsd/p.valueUsd*100).toFixed(1)+'% of the position) sitting idle — harvest and redeploy or compound.'});
+    if(p.feesUsd!=null && p.feesUsd>0.5){
+      const cost = p.chain==='sol' ? 0.02 : gasCostUsd(HARVEST_GAS);
+      const df = dailyFeeUsd(p);
+      if(cost!=null){
+        if(p.feesUsd >= 3*cost)
+          out.push({pri:'info',ic:'✦',msg:ref+': harvest <b>'+fmtUsd(p.feesUsd)+'</b> — tx cost ≈ <b>'+fmtUsd(cost)+'</b> ('+(cost/p.feesUsd*100).toFixed(1)+'% of the claim) → net <b>'+fmtUsd(p.feesUsd-cost)+'</b>. Economically clean.'});
+        else if(df!=null && df>0)
+          out.push({pri:'info',ic:'⏳',msg:ref+': <b>hold the harvest</b> — '+fmtUsd(p.feesUsd)+' claimable vs ≈'+fmtUsd(cost)+' gas ('+(cost/p.feesUsd*100).toFixed(0)+'% drag). At ~'+fmtUsd(df)+'/day it reaches the 3× cost threshold in ≈ <b>'+Math.max(0,Math.ceil((3*cost-p.feesUsd)/df))+' days</b>.'});
+      }
+    }
     const a=aprOf(p).v;
     if(a!=null && best!=null && best>0 && a<best*0.25 && (p.ageDays||0)>3)
       out.push({pri:'info',ic:'≡',msg:ref+' earns <b>'+a.toFixed(1)+'% ('+WIN_LABEL[cfg.aprWin]+')</b> — under a quarter of your top performer ('+best.toFixed(1)+'%). Consider tightening its range or consolidating into the leader.'});
@@ -1994,6 +2198,7 @@ function renderCards(){
     if(isSol) head.append(el('span',null,'<span style="color:var(--text-muted);font-size:12px" title="Solana · Raydium CLMM">◎</span>'));
     head.append(el('span','pair',esc(p.pairLabel)));
     head.append(el('span','feet',esc(p.feeLabel)));
+    if(badgeOf(p)) head.append(el('span','feet','CONTRACT '+badgeOf(p)));
     const linkTxt = isSol ? String(p.nftMint||'').slice(0,4)+'…'+String(p.nftMint||'').slice(-4)+' ↗' : '#'+p.id+' ↗';
     const link=el('a',null,linkTxt);
     link.href = isSol ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
@@ -2039,6 +2244,14 @@ function renderCards(){
     if(p.feesEverUsd!=null) foot.append(el('span',null,'LIFETIME FEES <b>'+fmtUsd(p.feesEverUsd)+'</b>'));
     if(p.costUsd!=null) foot.append(el('span',null,'DEPOSITED <b>'+fmtUsd(p.costUsd,0)+'</b>'));
     if(p.chain==='sol'&&p.wallet) foot.append(el('span',null,'WALLET <b>'+esc(p.wallet.slice(0,4)+'…'+p.wallet.slice(-4))+'</b>'));
+    const poolAddr=p.pool||p.poolId;
+    if(poolAddr){
+      const url=p.chain==='sol'?'https://solscan.io/account/'+poolAddr:'https://etherscan.io/address/'+poolAddr;
+      foot.append(el('span',null,'POOL <a class="plink" href="'+url+'" target="_blank" rel="noopener"><b>'+esc(String(poolAddr).slice(0,6)+'…'+String(poolAddr).slice(-4))+'</b> ↗</a>'));
+    }
+    if(p.chain!=='sol'&&p.token0){
+      foot.append(el('span',null,esc(p.m0.symbol)+' <a class="plink" href="https://etherscan.io/token/'+p.token0+'" target="_blank" rel="noopener"><b>'+esc(p.token0.slice(0,6)+'…'+p.token0.slice(-4))+'</b> ↗</a>'));
+    }
     const ib=el('button','invbtn','⇄ '+unit.split(' per ')[0]);
     ib.title='Flip price units';
     ib.addEventListener('click',()=>{card.dataset.inv=inv?'0':'1';renderCards();});
@@ -2299,6 +2512,7 @@ function initSky(){
   if(reduced){ draw(); return; }
   let last=0;
   function frame(ts){
+    if(document.hidden){ requestAnimationFrame(frame); return; }
     if(ts-last>33){ // ~30fps is plenty for ambience
       t+=.033; last=ts;
       if(Math.random()<.006 && shoots.length<2)
@@ -2332,9 +2546,26 @@ async function init(){
   $('#buildTag').textContent = 'BUILD '+BUILD;
   bootMsg('ESTABLISHING RPC UPLINK…');
   log('info','ARC // LP COMMAND '+BUILD+' online. Tracking '+cfg.ids.length+' ETH positions + '+cfg.solWallets.length+' SOL wallets.');
+  const hideBoot=()=>{ const bs=$('#bootScreen'); if(bs){ bs.classList.add('hide'); setTimeout(()=>bs.remove(),600); } };
+  // INSTANT FIRST PAINT: relay snapshot renders in <1s while the live scan runs in parallel
+  (async()=>{
+    try{
+      const r=await fetch('data.json?boot=1&nc='+Date.now(),{cache:'no-store'});
+      if(!r.ok) return;
+      const d=await r.json();
+      if(state.mode!=='boot' || (Date.now()-d.t)>7200000) return;
+      const merged=[...(d.eth||[]),...(d.sol||[])];
+      if(!merged.length) return;
+      state.positions=new Map(merged.map(p=>[p.id,p]));
+      state.ethUsd=state.ethUsd??d.ethUsd; state.gasGwei=state.gasGwei??d.gasGwei;
+      state.block=state.block??Number(d.block).toLocaleString();
+      state.relayUsed=true; state.relayAt=d.t; state.mode='live';
+      setConn('live'); renderAll(); hideBoot();
+      log('good','Instant paint from relay snapshot ('+((Date.now()-d.t)/60000).toFixed(0)+' min old) — live scan continuing in background.');
+    }catch(e){}
+  })();
   await scan(true);
-  $('#bootScreen').classList.add('hide');
-  setTimeout(()=>$('#bootScreen').remove(), 600);
+  hideBoot();
 }
 init();
 </script>

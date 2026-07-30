@@ -179,13 +179,47 @@ async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
   const inRange=tick>=tickLower&&tick<tickUpper;
   const rangePos=(tick-tickLower)/(tickUpper-tickLower);
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
-  return { id, chain:'eth', owner, relay:true,
+  return { id, chain:'eth', owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
     amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
     nearestEdge: dLow<dUp?'lower':'upper',
     edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
     pairLabel:m0.symbol+' / '+m1.symbol, feeLabel:(fee/10000)+'%' };
+}
+
+/* ---------- 30d volatility per pool (archive slot0 samples) ---------- */
+async function poolVolatility(pool, scale, blockNum){
+  const samples=[];
+  for(let i=14;i>=0;i--){
+    const blk=blockNum-Math.round(i*2*7200);           // 2-day steps over 28 days
+    try{
+      const r=await ethCall(pool,SEL.slot0,'0x'+blk.toString(16));
+      const sp=Number(BigInt(word(r,0)))/Q96;
+      samples.push(sp*sp*scale);
+    }catch(e){ samples.push(null); }
+  }
+  const rets=[];
+  for(let i=1;i<samples.length;i++){
+    if(samples[i]!=null&&samples[i-1]!=null&&samples[i]>0&&samples[i-1]>0) rets.push(Math.log(samples[i]/samples[i-1]));
+  }
+  if(rets.length<5) return null;
+  const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
+  const varr=rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1);
+  return Math.sqrt(varr)/Math.sqrt(2);                 // daily sigma (2-day gaps)
+}
+const erf=x=>{const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;};
+const Phi=z=>0.5*(1+erf(z/Math.SQRT2));
+function rangeAnalytics(price, lo, up, sigma){
+  if(!sigma||!(price>0&&lo>0&&up>0)) return null;
+  const s7=sigma*Math.sqrt(7);
+  const zLo=Math.log(price/lo)/s7, zUp=Math.log(up/price)/s7;
+  const stay7=Math.max(0,Math.min(1,Phi(zUp)-Phi(-zLo)));
+  const widthLog=Math.log(up/lo);
+  const sug=k=>({lo:price*Math.exp(-k*s7), up:price*Math.exp(k*s7)});
+  return { sigmaDaily:sigma, stay7dPct:stay7*100, widthPct:(Math.exp(widthLog)-1)*100,
+    suggested:{ tight:sug(0.68), balanced:sug(1.282), wide:sug(2.0) },
+    concVsBalanced: (2*1.282*s7)/widthLog };
 }
 
 /* ---------- Solana (validated against official SDKs) ---------- */
@@ -245,7 +279,7 @@ async function fetchSolana(){
     res.value.forEach((a,j)=>{
       if(!a||a.owner!==CLMM) return;
       const b=b64(a.data[0]);
-      const pp={nftMint:pk(b,9),poolId:pk(b,41),tickLower:leI32(b,73),tickUpper:leI32(b,77),liquidity:leU128(b,81),feesOwed0:leU64(b,129),feesOwed1:leU64(b,137)};
+      const pp={nftMint:pk(b,9),poolId:pk(b,41),tickLower:leI32(b,73),tickUpper:leI32(b,77),liquidity:leU128(b,81),fgInsideLast0:leU128(b,97),fgInsideLast1:leU128(b,113),feesOwed0:leU64(b,129),feesOwed1:leU64(b,137)};
       if(pp.liquidity>0n) found.push({cat:cat[i+j],pda:pdas[i+j],pp});
     });
   }
@@ -254,7 +288,48 @@ async function fetchSolana(){
   const pools=new Map();
   const pr=await sol('getMultipleAccounts',[poolIds,{encoding:'base64'}]);
   pr.value.forEach((a,i)=>{ if(!a) return; const b=b64(a.data[0]);
-    pools.set(poolIds[i],{mint0:pk(b,73),mint1:pk(b,105),dec0:b[233],dec1:b[234],sqrtPriceX64:leU128(b,253),tickCurrent:leI32(b,269)}); });
+    pools.set(poolIds[i],{mint0:pk(b,73),mint1:pk(b,105),dec0:b[233],dec1:b[234],tickSpacing:leU16(b,235),sqrtPriceX64:leU128(b,253),tickCurrent:leI32(b,269),fgGlobal0:leU128(b,277),fgGlobal1:leU128(b,293)}); });
+  // ---- precise pending fees: tick-array fee growth (offsets validated vs Raydium SDK) ----
+  const MASK128=(1n<<128n)-1n;
+  const i32be=v=>{const bb=new Uint8Array(4);new DataView(bb.buffer).setInt32(0,v,false);return bb;};
+  const taStart=(tick,spacing)=>{const per=spacing*60;return Math.floor(tick/per)*per;};
+  const taCache=new Map();
+  async function tickFeeGrowth(poolId, spacing, tick){
+    const start=taStart(tick,spacing);
+    const key=poolId+':'+start;
+    if(!taCache.has(key)){
+      const addr=await pda([new TextEncoder().encode('tick_array'), b58d(poolId), i32be(start)], CLMM);
+      const res=await sol('getMultipleAccounts',[[addr],{encoding:'base64'}]);
+      taCache.set(key, res.value[0]?b64(res.value[0].data[0]):null);
+    }
+    const b=taCache.get(key);
+    if(!b) return null;
+    const idx=Math.round((tick-start)/spacing);
+    if(idx<0||idx>=60) return null;
+    const base=44+idx*168;
+    return { fg0:leU128(b,base+36), fg1:leU128(b,base+52), gross:leU128(b,base+20) };
+  }
+  function fgInside(global, lowerOut, upperOut, cur, lo, up){
+    const below = cur>=lo ? lowerOut : (global-lowerOut)&MASK128;
+    const above = cur<up ? upperOut : (global-upperOut)&MASK128;
+    return (global-below-above)&MASK128;
+  }
+  for(const x of found){
+    const pool=pools.get(x.pp.poolId); if(!pool) continue;
+    try{
+      const loT=await tickFeeGrowth(x.pp.poolId,pool.tickSpacing,x.pp.tickLower);
+      const upT=await tickFeeGrowth(x.pp.poolId,pool.tickSpacing,x.pp.tickUpper);
+      if(loT&&upT){
+        const in0=fgInside(pool.fgGlobal0,loT.fg0,upT.fg0,pool.tickCurrent,x.pp.tickLower,x.pp.tickUpper);
+        const in1=fgInside(pool.fgGlobal1,loT.fg1,upT.fg1,pool.tickCurrent,x.pp.tickLower,x.pp.tickUpper);
+        let d0=(in0-x.pp.fgInsideLast0)&MASK128, d1=(in1-x.pp.fgInsideLast1)&MASK128;
+        if(d0>(1n<<127n)) d0=0n;               // wrap guard
+        if(d1>(1n<<127n)) d1=0n;
+        x.pending0=x.pp.feesOwed0+((d0*x.pp.liquidity)>>64n);
+        x.pending1=x.pp.feesOwed1+((d1*x.pp.liquidity)>>64n);
+      }
+    }catch(e){ logErr('solFees '+x.pp.nftMint.slice(0,6),e); }
+  }
   const mints=[...new Set([...pools.values()].flatMap(p=>[p.mint0,p.mint1]))];
   let prices={}; try{
     const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+mints.join(','));
@@ -281,7 +356,9 @@ async function fetchSolana(){
     let usd0=prices[pool.mint0]??null, usd1=prices[pool.mint1]??null;
     if(usd0==null&&usd1!=null) usd0=price*usd1;
     if(usd1==null&&usd0!=null) usd1=usd0/price;
-    const f0=Number(pp.feesOwed0)/10**d0, f1=Number(pp.feesOwed1)/10**d1;
+    const fRaw0=(found.find(z=>z.pp===pp)?.pending0) ?? pp.feesOwed0;
+    const fRaw1=(found.find(z=>z.pp===pp)?.pending1) ?? pp.feesOwed1;
+    const f0=Number(fRaw0)/10**d0, f1=Number(fRaw1)/10**d1;
     const tick=pool.tickCurrent;
     const inRange=tick>=pp.tickLower&&tick<pp.tickUpper;
     const rangePos=(tick-pp.tickLower)/(pp.tickUpper-pp.tickLower);
@@ -318,6 +395,7 @@ async function fetchSolana(){
 /* ---------- main ---------- */
 const main=async()=>{
   const blockNum=Number(BigInt(await eth('eth_blockNumber',[])));
+  let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
   let ethUsd=null,btcUsd=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
   try{ btcUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_BTC,SEL.latestAnswer)),8); }catch(e){}
@@ -327,10 +405,18 @@ const main=async()=>{
     catch(e){ logErr('eth#'+id,e); }
     await sleep(300);
   }
+  // range analytics per unique pool
+  const volCache={};
+  for(const p of ethPositions){
+    try{
+      if(!(p.pool in volCache)) volCache[p.pool]=await poolVolatility(p.pool, 10**(p.d0-p.d1), blockNum);
+      p.range = rangeAnalytics(p.price, p.priceLower, p.priceUpper, volCache[p.pool]);
+    }catch(e){ p.range=null; }
+  }
   let solPositions=[];
   try{ solPositions=await fetchSolana(); console.log('sol positions:',solPositions.length); }
   catch(e){ logErr('sol',e); }
-  const data={ v:1, t:Date.now(), block:blockNum, ethUsd, btcUsd, eth:ethPositions, sol:solPositions, errors };
+  const data={ v:2, t:Date.now(), block:blockNum, ethUsd, btcUsd, gasGwei, eth:ethPositions, sol:solPositions, errors };
   const fs=await import('fs');
   fs.writeFileSync('data.json', JSON.stringify(data));
   console.log('data.json written:', ethPositions.length,'eth +',solPositions.length,'sol · errors:',errors.length);
