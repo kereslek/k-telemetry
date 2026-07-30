@@ -476,7 +476,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v7';
+const BUILD = 'v8';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -858,7 +858,7 @@ async function enrichHistories(){
   enriching = true;
   let changed = false;
   for(const p of state.positions.values()){
-    if(p.hist || p.demo || p.chain==='sol') continue;
+    if(p.hist || p.demo || p.relay || p.chain==='sol') continue;
     try{
       p.hist = await fetchHistory(p.id);
       if(p.hist.inc.length){
@@ -1180,7 +1180,7 @@ async function enrichAprWindows(){
   aprEnriching=true;
   let changed=false;
   for(const p of state.positions.values()){
-    if(p.demo || p.chain==='sol') continue;
+    if(p.demo || p.relay || p.chain==='sol') continue;
     if(p.aprW && Date.now()-p.aprW.t < 600000) continue;   // refresh every 10 min
     const aprW={t:Date.now()};
     for(const [key,days] of APR_WINDOWS){
@@ -1258,7 +1258,7 @@ async function enrichSolAges(){
   if(solAging) return; solAging=true;
   let changed=false;
   for(const p of (state.solPositions||[])){
-    if(p.mintTs || p.demo) continue;
+    if(p.mintTs || p.demo || p.relay) continue;
     try{
       let before, oldest=null, pages=0;
       while(pages<3){
@@ -1301,12 +1301,32 @@ async function scan(isBoot){
       await sleep(200);   // pace bursts for rate-limited public endpoints
     }
     if(results.length) ethPs = results;
-  }catch(e){ if(state.mode==='live') log('warning','Ethereum scan failed: '+esc(e.message||e).slice(0,80)); }
+  }catch(e){ log('warning','Ethereum scan failed: '+esc(e.message||e).slice(0,80)); state.lastScanErr='ETH: '+String(e.message||e).slice(0,70); }
   // ---- Solana ----
   let solOk = false;
   bootMsg('SCANNING SOLANA WALLETS …');
   try{ solOk = await scanSol(); }
   catch(e){ log('warning','Solana scan failed: '+esc(e.message||e).slice(0,80)); state.lastScanErr='SOL: '+String(e.message||e).slice(0,70); }
+
+  // ---- Relay fallback: data.json generated server-side by GitHub Actions ----
+  state.relayUsed = false;
+  if(!ethPs || !solOk){
+    try{
+      const rr = await fetch('data.json?nc='+Date.now(), {cache:'no-store'});
+      if(rr.ok){
+        const d = await rr.json();
+        const ageMin = (Date.now()-d.t)/60000;
+        if(ageMin < 120){         // ignore ancient snapshots
+          if(!ethPs && d.eth && d.eth.length){ ethPs = d.eth; state.relayUsed = true; }
+          if(!solOk && Array.isArray(d.sol)){ state.solPositions = d.sol; solOk = true; state.relayUsed = true; }
+          if(state.ethUsd==null) state.ethUsd = d.ethUsd;
+          if(!state.block) state.block = Number(d.block).toLocaleString();
+          state.relayAt = d.t;
+          if(state.relayUsed) log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
+        }
+      }
+    }catch(e){}
+  }
 
   if(ethPs || solOk){
     const eth = ethPs ?? [...state.positions.values()].filter(p=>p.chain!=='sol' && !p.demo);
@@ -1443,7 +1463,7 @@ function renderHeader(){
 function setConn(mode){
   const led=$('#connLed'), lab=$('#connLabel');
   led.className='led'+(mode==='sim'?' sim':mode==='err'?' err':'');
-  lab.textContent = {live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…';
+  lab.textContent = mode==='live' && state.relayUsed ? 'LIVE · RELAY' : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…');
 }
 
 function renderTiles(){
