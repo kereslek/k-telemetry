@@ -130,13 +130,33 @@ async function evmHistory(ck,id){
 }
 async function walletPositionIds(ck,wallet){
   const C=CHAINS[ck];
-  const bal=Number(BigInt(await evmCall(ck,C.npm,SEL2.balanceOf+pad32(wallet))));
-  const ids=[];
+  const wp=pad32(wallet);
+  let bal=0;
+  try{ bal=Number(BigInt(await evmCall(ck,C.npm,SEL2.balanceOf+wp))); }
+  catch(e){ logErr('balanceOf '+ck+' '+wallet.slice(0,8),e); }
+  const ids=new Set();
   for(let i=0;i<bal && i<80;i++){
-    try{ ids.push(Number(BigInt(await evmCall(ck,C.npm,SEL2.tokenOfOwnerByIndex+pad32(wallet)+pad32(i.toString(16)))))); }
-    catch(e){ break; }
+    try{ ids.add(Number(BigInt(await evmCall(ck,C.npm,SEL2.tokenOfOwnerByIndex+wp+pad32(i.toString(16)))))); }
+    catch(e){ logErr('enum '+ck+' '+wallet.slice(0,8)+'['+i+']',e); }
+    await sleep(100);
   }
-  return ids;
+  if(ids.size<bal){
+    // fallback: NFT Transfer logs into this wallet, then verify current ownership
+    try{
+      const TT='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const logs=await evm(ck,'eth_getLogs',[{address:C.npm,topics:[TT,null,'0x'+wp],fromBlock:'0x'+C.startBlock.toString(16),toBlock:'latest'}]);
+      for(const lg of logs){
+        const id=Number(BigInt(lg.topics[3]));
+        if(ids.has(id)) continue;
+        try{
+          const o=('0x'+(await evmCall(ck,C.npm,SEL.ownerOf+pad32(id.toString(16)))).slice(-40)).toLowerCase();
+          if(o==='0x'+wallet.toLowerCase()) ids.add(id);
+        }catch(e){}
+        await sleep(80);
+      }
+    }catch(e){ logErr('transferScan '+ck+' '+wallet.slice(0,8),e); }
+  }
+  return [...ids];
 }
 async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const C=CHAINS[ck];
