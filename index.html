@@ -701,7 +701,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v16';
+const BUILD = 'v17';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1753,10 +1753,13 @@ function assignPools(){
   }
 }
 const badgeOf = p => poolBadge.get(String(p.id)) || null;
+const eraOf = p => { const b=badgeOf(p); return b ? b.split(' ')[0] : null; };            // 'OLD' / 'NEW'
+const pairName = p => p.pairLabel + (badgeOf(p) ? ' ('+badgeOf(p)+')' : '');             // 'LCX / ETH (OLD ’19 ·fe41)'
+const pairShort = p => p.pairLabel + (eraOf(p) ? ' · '+eraOf(p) : '');                   // 'LCX / ETH · OLD'
 const posLink = p => p.chain==='sol' ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/'+((EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).uni)+'/'+p.id;
 const scanBase = p => (EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).scan;
 const chainTag = p => p.chain==='sol' ? '◎SOL' : (p.chainTag||(EVM_CHAINS[p.chain]||{}).tag||'ETH');
-const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+(badgeOf(p)?' · '+esc(badgeOf(p)):'')+' ↗</a>';
+const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+' ↗</a>';
 const colorIndex = new Map();
 const cIdx = p => colorIndex.get(String(p.id)) ?? 5;
 function assignColors(){
@@ -1848,7 +1851,7 @@ function renderRadar(){
     const row = el('div','radar-row');
     const name = el('div','radar-name');
     name.style.setProperty('--pcolor', seriesColor(i));
-    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(p.pairLabel)+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span> <span style="font-size:9px">'+linkRef(p)+'</span>'));
+    name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(pairName(p))+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span> <span style="font-size:9px">'+linkRef(p)+'</span>'));
     const bar = el('div',null); bar.append(rangeBar(p, false));
     const sev = severityOf(p);
     const distTxt = p.inRange
@@ -1883,7 +1886,7 @@ function rangeBar(p, withLabels){
     wrap.append(l1,l2);
   }
   wrap.addEventListener('mousemove', ev=>showTip(ev,
-    '<div class="tk">'+esc(p.pairLabel)+' · RANGE</div>'+
+    '<div class="tk">'+esc(pairName(p))+' · RANGE</div>'+
     '<div class="tv">low '+fmtPrice(p.priceLower)+' · now <b>'+fmtPrice(p.price)+'</b> · high '+fmtPrice(p.priceUpper)+'</div>'+
     '<div class="tv" style="color:var(--text-secondary)">'+(p.inRange?('edge distance '+fmtPct(Math.min(p.dLow,p.dUp),2)):'OUT OF RANGE')+'</div>'));
   wrap.addEventListener('mouseleave', hideTip);
@@ -1933,7 +1936,7 @@ function barChart(title, ps, val, fmt, signed){
       : 'M'+x+' '+y0+' V'+(top+h-r)+' Q'+x+' '+(top+h)+' '+(x+r)+' '+(top+h)+' H'+(x+bw-r)+' Q'+(x+bw)+' '+(top+h)+' '+(x+bw)+' '+(top+h-r)+' V'+y0+' Z';
     const bar=mkel('path',{d:path, fill:seriesHex(idx)});
     bar.style.cursor='pointer';
-    bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(d.p.pairLabel)+' '+esc(posRef(d.p))+'</div><div class="tv"><b>'+fmt(d.v)+'</b>'+(d.p.ageDays?'<span style="color:var(--text-muted)"> · age '+fmtAge(d.p.ageDays)+'</span>':'')+'</div>'));
+    bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(pairName(d.p))+' '+esc(posRef(d.p))+'</div><div class="tv"><b>'+fmt(d.v)+'</b>'+(d.p.ageDays?'<span style="color:var(--text-muted)"> · age '+fmtAge(d.p.ageDays)+'</span>':'')+'</div>'));
     bar.addEventListener('mouseleave',hideTip);
     svg.append(bar);
     // direct value label
@@ -1941,7 +1944,7 @@ function barChart(title, ps, val, fmt, signed){
     lbl.textContent=fmt(d.v); svg.append(lbl);
     // x labels
     const xl=mkel('text',{x:padL+step*i+step/2,y:H-padB+14,'text-anchor':'middle','font-size':9,fill:'#5d7889'});
-    xl.textContent=(d.p.chain==='sol'?'◎':'')+d.p.m0.symbol+'/'+d.p.m1.symbol; svg.append(xl);
+    xl.textContent=(d.p.chain==='sol'?'◎':'')+d.p.m0.symbol+'/'+d.p.m1.symbol+(eraOf(d.p)?'·'+eraOf(d.p):''); svg.append(xl);
     const xl2=mkel('text',{x:padL+step*i+step/2,y:H-padB+26,'text-anchor':'middle','font-size':8,fill:'#3d5262'});
     xl2.textContent=d.p.chain==='sol' ? String(d.p.nftMint||'').slice(0,6)+'…' : '#'+d.p.id; svg.append(xl2);
   });
@@ -2014,7 +2017,7 @@ function renderMatrix(){
         const td = el('td');
         const cell = el('div','pos-cell');
         const dot = el('span','cdot'); dot.style.background=seriesHex(cIdx(p)); dot.style.boxShadow='0 0 6px '+seriesHex(cIdx(p));
-        cell.append(dot, el('span',null, esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+linkRef(p)+'</span>'));
+        cell.append(dot, el('span',null, esc(pairName(p))+' <span class="sub">'+esc(p.feeLabel)+' · '+linkRef(p)+'</span>'));
         td.append(cell); tr.append(td); return;
       }
       if(c.key==='status'){
@@ -2058,7 +2061,7 @@ function renderSeismo(){
     if(ratio!=null && (worstRatio==null||ratio>worstRatio)) worstRatio=ratio;
     if(x.s24!=null) worstS24=Math.max(worstS24,x.s24);
     const chip=el('div','vol-chip '+reg.key);
-    chip.innerHTML='<span>'+esc(x.p.pairLabel)+(badgeOf(x.p)?' <span class="sub">'+esc(badgeOf(x.p).split(' ')[0])+'</span>':'')+'</span>'
+    chip.innerHTML='<span>'+esc(pairShort(x.p))+'</span>'
       +'<span class="big">'+(x.s24!=null?'±'+(x.s24*100).toFixed(1)+'%/day':'…')+'</span>'
       +'<span>'+reg.label+(ratio!=null?' <span class="sub">'+ratio.toFixed(1)+'× vs 30d</span>':'')+'</span>';
     chips.append(chip);
@@ -2107,7 +2110,7 @@ function renderSeismo(){
       svg.append(mkel('line',{x1:padL,x2:W-14,y1:Y(med),y2:Y(med),stroke:'#7e97a8','stroke-dasharray':'4 4','stroke-width':1}));
       const ml=mkel('text',{x:padL-6,y:Y(med)+3,'text-anchor':'end','font-size':9,fill:'#7e97a8'}); ml.textContent='norm '+med.toFixed(1)+'%'; svg.append(ml);
       const tl=mkel('text',{x:padL-6,y:padT+4,'text-anchor':'end','font-size':9,fill:'#5d7889'}); tl.textContent=maxV.toFixed(0)+'%'; svg.append(tl);
-      histHost.append(el('div','flow-title','MOVEMENT HISTORY — '+esc(hp.pairLabel)+' · each bar = how much price moved in a 2-day segment (last 28 days) · dashed line = normal'));
+      histHost.append(el('div','flow-title','MOVEMENT HISTORY — '+esc(pairName(hp))+' · each bar = how much price moved in a 2-day segment (last 28 days) · dashed line = normal'));
       histHost.append(svg);
     }
   }
@@ -2126,7 +2129,7 @@ function renderSeismo(){
     const days=bufLog/s;
     const col=days<1?'var(--status-critical)':days<3?'var(--status-warning)':'var(--status-good)';
     const row=el('div','press-row');
-    row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(p.pairLabel)+' '+linkRef(p)));
+    row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(pairName(p))+' '+linkRef(p)));
     const track=el('div','press-track');
     const fill=el('div','press-fill');
     fill.style.width=Math.min(100,days/7*100)+'%';
@@ -2191,7 +2194,7 @@ function renderRank(){
     row.append(el('div','rank-badge', i===0?'★1':'#'+(i+1)));
     const nm=el('div','rank-name');
     const dot=el('span','cdot'); nm.append(dot);
-    nm.append(el('span',null,(p.chain==='sol'?'◎ ':'')+esc(p.pairLabel)+' <span class="sub">'+esc(p.feeLabel)+' · '+linkRef(p)+'</span>'+(i===0?'<span class="rank-top-chip">TOP</span>':'')));
+    nm.append(el('span',null,(p.chain==='sol'?'◎ ':'')+esc(pairName(p))+' <span class="sub">'+esc(p.feeLabel)+' · '+linkRef(p)+'</span>'+(i===0?'<span class="rank-top-chip">TOP</span>':'')));
     row.append(nm);
     const track=el('div','rank-track');
     const bar=el('div','rank-bar'); bar.style.width=Math.max(2,a.v/max*100)+'%'; track.append(bar);
@@ -2225,8 +2228,8 @@ function renderFlow(){
       const segEl=el('div','flow-seg');
       segEl.style.width=share+'%';
       segEl.style.background=seriesHex(cIdx(p));
-      if(share>9) segEl.innerHTML='<span>'+esc(p.m0.symbol)+'·'+Math.round(share)+'%</span>';
-      segEl.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(p.pairLabel)+' '+esc(posRef(p))+'</div><div class="tv"><b>'+share.toFixed(1)+'%</b> of '+title.toLowerCase()+' ('+fmt(v)+')</div>'));
+      if(share>9) segEl.innerHTML='<span>'+esc(p.m0.symbol)+(eraOf(p)?'·'+eraOf(p):'')+'·'+Math.round(share)+'%</span>';
+      segEl.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(pairName(p))+' '+esc(posRef(p))+'</div><div class="tv"><b>'+share.toFixed(1)+'%</b> of '+title.toLowerCase()+' ('+fmt(v)+')</div>'));
       segEl.addEventListener('mouseleave',hideTip);
       bar.append(segEl);
     });
@@ -2247,10 +2250,10 @@ function renderFlow(){
   if(healthy.length){
     const b=healthy[0].p, ba=healthy[0].a;
     d.innerHTML='<div class="fd-k">★ DEPLOY DIRECTIVE · '+WIN_LABEL[cfg.aprWin]+'</div>'
-      +'<div class="fd-main">Next capital → <b>'+esc(b.pairLabel)+' '+esc(posRef(b))+'</b> — earning <b>'+ba.toFixed(1)+'% APR</b>'
+      +'<div class="fd-main">Next capital → <b>'+esc(pairName(b))+' '+esc(posRef(b))+'</b> — earning <b>'+ba.toFixed(1)+'% APR</b>'
       +(b.inRange?' with a healthy buffer (−'+b.dLow.toFixed(1)+'% / +'+b.dUp.toFixed(1)+'%)':'')+'.</div>'
-      +(star&&star.gap>0.05 ? '<div class="fd-sub">⚡ <b>'+esc(star.p.pairLabel)+' '+esc(posRef(star.p))+'</b> punches above its weight: '+(star.p.valueUsd/totV*100).toFixed(0)+'% of capital → '+(earn(star.p)/totE*100).toFixed(0)+'% of fees.</div>':'')
-      +(lag&&lag.gap<-0.05 ? '<div class="fd-sub">▽ <b>'+esc(lag.p.pairLabel)+' '+esc(posRef(lag.p))+'</b> drags: '+(lag.p.valueUsd/totV*100).toFixed(0)+'% of capital → only '+(earn(lag.p)/totE*100).toFixed(0)+'% of fees. Candidate to shrink or re-range.</div>':'')
+      +(star&&star.gap>0.05 ? '<div class="fd-sub">⚡ <b>'+esc(pairName(star.p))+' '+esc(posRef(star.p))+'</b> punches above its weight: '+(star.p.valueUsd/totV*100).toFixed(0)+'% of capital → '+(earn(star.p)/totE*100).toFixed(0)+'% of fees.</div>':'')
+      +(lag&&lag.gap<-0.05 ? '<div class="fd-sub">▽ <b>'+esc(pairName(lag.p))+' '+esc(posRef(lag.p))+'</b> drags: '+(lag.p.valueUsd/totV*100).toFixed(0)+'% of capital → only '+(earn(lag.p)/totE*100).toFixed(0)+'% of fees. Candidate to shrink or re-range.</div>':'')
       +'<div class="fd-note">Rule-based signal from live yields · ranges can break · not financial advice.</div>';
   } else d.innerHTML='<div class="fd-main">No healthy in-range position with APR data for this timeframe yet.</div>';
   host.append(d);
@@ -2308,7 +2311,7 @@ function renderOutlook(){
     for(let m=1;m<=12;m++) d+=' L'+X(m)+' '+Y(x.base*(Math.pow(1+x.a/100/12,m)-1));
     const path=mkel('path',{d,fill:'none',stroke:seriesHex(cIdx(x.p)),'stroke-width':1.6,opacity:.85});
     path.style.cursor='pointer';
-    path.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(x.p.pairLabel)+' '+esc(posRef(x.p))+'</div><div class="tv">'+x.a.toFixed(1)+'% → ≈ <b>'+fmtUsd(x.base*(Math.pow(1+x.a/100/12,12)-1),0)+'</b> fees / year</div>'));
+    path.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(pairName(x.p))+' '+esc(posRef(x.p))+'</div><div class="tv">'+x.a.toFixed(1)+'% → ≈ <b>'+fmtUsd(x.base*(Math.pow(1+x.a/100/12,12)-1),0)+'</b> fees / year</div>'));
     path.addEventListener('mouseleave',hideTip);
     svg.append(path);
     const endV=x.base*(Math.pow(1+x.a/100/12,12)-1);
@@ -2364,7 +2367,7 @@ function renderArch(){
     withR.forEach(p=>{
       const r=p.range;
       const row=el('div','arch-row');
-      row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(p.pairLabel)+' '+linkRef(p)));
+      row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(pairName(p))+' '+linkRef(p)));
       row.append(el('div','num',(r.sigmaDaily*100).toFixed(2)+'%'));
       const stay=r.stay7dPct;
       row.append(el('div','num','<span style="color:var(--status-'+(stay<50?'critical':stay<75?'warning':'good')+')">'+stay.toFixed(0)+'%</span>'));
@@ -2391,7 +2394,7 @@ let cosmosNodes=[], cosmosInit=false, cosmosT=0;
 function renderCosmos(){
   const ps=ordered().filter(p=>p.valueUsd!=null);
   const maxV=Math.max(...ps.map(p=>p.valueUsd),1);
-  cosmosNodes=ps.map((p,i)=>({id:String(p.id), pair:p.pairLabel, ref:posRef(p), chain:p.chain,
+  cosmosNodes=ps.map((p,i)=>({id:String(p.id), pair:pairShort(p), ref:posRef(p), chain:p.chain,
     r:14+Math.sqrt(p.valueUsd/maxV)*30, apr:aprOf(p).v??0, rangePos:Math.max(0,Math.min(1,p.rangePos)),
     sev:severityOf(p), hex:seriesHex(cIdx(p)), val:p.valueUsd, fees:p.feesUsd,
     sym0:p.m0.symbol, sym1:p.m1.symbol, phase:i*1.1}));
@@ -2568,7 +2571,7 @@ function renderOps(){
   const aprs=ps.map(p=>aprOf(p).v).filter(v=>v!=null);
   const best=aprs.length?Math.max(...aprs):null;
   for(const p of ps){
-    const sev=severityOf(p), ref='<b>'+esc(p.pairLabel)+' '+esc(posRef(p))+'</b>';
+    const sev=severityOf(p), ref='<b>'+esc(pairName(p))+' '+esc(posRef(p))+'</b>';
     if(!p.inRange){
       const rc = p.chain==='sol' ? 0.05 : gasCostUsd(REBALANCE_GAS);
       const df = dailyFeeUsd(p);
@@ -2803,7 +2806,7 @@ function renderPosList(){
     const li=el('li');
     const dot=el('span','cdot'); dot.style.background=seriesHex(i); dot.style.boxShadow='0 0 6px '+seriesHex(i); dot.style.width='8px'; dot.style.height='8px'; dot.style.display='inline-block';
     const p=state.positions.get(id);
-    li.append(dot, el('span',null,'#'+id+(p?' · '+esc(p.pairLabel):'')));
+    li.append(dot, el('span',null,'#'+id+(p?' · '+esc(pairName(p)):'')));
     const rm=el('button','rm','✕'); rm.title='Stop tracking';
     rm.addEventListener('click',()=>{ cfg.ids=cfg.ids.filter(x=>x!==id); store.set('ids',cfg.ids); state.positions.delete(id); renderPosList(); renderAll(); log('info','Position #'+id+' removed from tracking.'); });
     li.append(rm); ul.append(li);
