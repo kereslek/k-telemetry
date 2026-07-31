@@ -706,7 +706,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v18';
+const BUILD = 'v18.2';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -724,7 +724,7 @@ const cfg = {
   ids: store.get('ids', DEFAULT_IDS.slice()),
   warnPct: store.get('warnPct', 20),   // % of range width remaining to an edge
   critPct: store.get('critPct', 8),
-  interval: store.get('interval', 45),
+  interval: (v=>v===45?300:v)(store.get('interval', 300)),   // default 5 min; migrates the old 45s default
   rpc: store.get('rpc', RPCS[0]),
 };
 
