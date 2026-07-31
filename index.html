@@ -461,6 +461,7 @@
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
     <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
+    <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
     <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
     <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
@@ -594,7 +595,35 @@
 <aside class="drawer" id="drawer">
   <h2>⚙ CONFIGURATION</h2>
   <div class="sec">
-    <h3>TRACKED POSITIONS</h3>
+    <h3>PROFILES</h3>
+    <ul class="pos-list" id="profileList"></ul>
+    <div class="addrow">
+      <input type="text" id="addProfileInput" placeholder="new profile name">
+      <button class="hbtn" id="addProfileBtn">+ ADD</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>WALLETS — ACTIVE PROFILE (auto-discovers all LP positions)</h3>
+    <ul class="pos-list" id="walletList"></ul>
+    <div class="addrow">
+      <select id="addWalletChain" style="max-width:110px">
+        <option value="ethereum">ETH</option><option value="arbitrum">ARB</option><option value="base">BASE</option>
+        <option value="optimism">OP</option><option value="polygon">POLY</option><option value="solana">◎SOL</option>
+      </select>
+      <input type="text" id="addWalletInput" placeholder="wallet address">
+      <button class="hbtn" id="addWalletBtn">+ ADD</button>
+    </div>
+    <label>L2 positions (ARB/BASE/OP/POLY) load via the server relay — allow ~15 min after saving.</label>
+  </div>
+  <div class="sec">
+    <h3>SYNC TO GITHUB — makes profiles permanent + server-tracked</h3>
+    <label>Fine-grained token (github.com/settings/personal-access-tokens → this repo only → Contents: Read&Write). Stored ONLY in this browser.</label>
+    <input type="text" id="ghTokenInput" placeholder="github_pat_…">
+    <button class="hbtn" id="btnSaveConfig" style="width:100%;margin-top:9px">⇪ SAVE PROFILES TO GITHUB</button>
+    <label id="syncStatus" style="color:var(--text-muted)">Unsynced changes live only in this browser.</label>
+  </div>
+  <div class="sec">
+    <h3>PINNED POSITIONS (extra Ethereum IDs beyond wallet discovery)</h3>
     <ul class="pos-list" id="posList"></ul>
     <div class="addrow">
       <input type="text" id="addPosInput" placeholder="V3 position ID e.g. 1338795">
@@ -602,7 +631,7 @@
     </div>
     <label style="margin-top:10px">Tip: the number in app.uniswap.org/positions/v3/ethereum/<b style="color:var(--accent)">1338795</b></label>
   </div>
-  <div class="sec">
+  <div class="sec" style="display:none">
     <h3>SOLANA WALLETS — RAYDIUM CLMM AUTO-DISCOVERY</h3>
     <ul class="pos-list" id="solWalletList"></ul>
     <div class="addrow">
@@ -670,7 +699,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v14';
+const BUILD = 'v15';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -712,6 +741,37 @@ const STABLES = new Set([
 const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
 const WBTC = '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599';
 
+const EVM_CHAINS={
+  ethereum:{tag:'ETH', uni:'ethereum', scan:'https://etherscan.io'},
+  arbitrum:{tag:'ARB', uni:'arbitrum', scan:'https://arbiscan.io'},
+  base:{tag:'BASE', uni:'base', scan:'https://basescan.org'},
+  optimism:{tag:'OP', uni:'optimism', scan:'https://optimistic.etherscan.io'},
+  polygon:{tag:'POLY', uni:'polygon', scan:'https://polygonscan.com'},
+};
+const SEL2={balanceOf:'0x70a08231', tokenOfOwnerByIndex:'0x2f745c59'};
+let CONFIG_DATA=null;
+function activeProfile(){
+  if(!CONFIG_DATA||!CONFIG_DATA.profiles||!CONFIG_DATA.profiles.length) return null;
+  const slug=store.get('profile',null);
+  return CONFIG_DATA.profiles.find(p=>p.slug===slug) || CONFIG_DATA.profiles[0];
+}
+function profileWallets(chain){
+  const pr=activeProfile();
+  if(!pr) return [];
+  return (pr.wallets||[]).filter(w=>w.chain===chain).map(w=>w.address);
+}
+function saveProfilesLocal(){ store.set('profilesOverride', CONFIG_DATA); }
+async function loadConfig(){
+  try{
+    const r=await fetch('config.json?nc='+Date.now(),{cache:'no-store'});
+    if(r.ok) CONFIG_DATA=await r.json();
+  }catch(e){}
+  const override=store.get('profilesOverride',null);
+  if(override && override.profiles) CONFIG_DATA=override;
+  if(!CONFIG_DATA||!CONFIG_DATA.profiles) CONFIG_DATA={v:1,profiles:[{name:'MAIN',slug:'main',wallets:[
+    {chain:'solana',address:'3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2'},
+    {chain:'solana',address:'5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca'}],pinned:[],excluded:[]}]};
+}
 const SERIES = ['var(--series-1)','var(--series-2)','var(--series-3)','var(--series-4)','var(--series-5)'];
 const SERIES_HEX = ['#0f9db3','#c9711a','#e0508f','#8f79f2','#2f9e50'];
 const seriesColor = i => i < 5 ? SERIES[i] : 'var(--series-extra)';
@@ -995,7 +1055,7 @@ async function fetchPosition(id, prev){
   const nearestEdge = dLow<dUp ? 'lower' : 'upper';
 
   const p = {
-    id, owner, pool, core, token0: core.token0, token1: core.token1, m0, m1, d0, d1, tick, price, priceLower, priceUpper,
+    id, owner, pool, core, chain:'ethereum', chainTag:'ETH', token0: core.token0, token1: core.token1, m0, m1, d0, d1, tick, price, priceLower, priceUpper,
     amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
     hist: prev?.hist, mintTs: prev?.mintTs, entryEthUsd: prev?.entryEthUsd,
     ageDays:null, costUsd:null, roiPct:null, roiMode:'hodl', feeAprPct:null, feesEverUsd:null,
@@ -1296,6 +1356,8 @@ async function discoverSol(){
 
 /* ---- full Solana scan ---- */
 async function scanSol(){
+  const pw=profileWallets('solana');
+  if(pw.length) cfg.solWallets=pw;
   if(!cfg.solWallets.length){ state.solPositions=[]; return true; }
   if(!state.solCatalog || (state.scanCount%10===0)) state.solCatalog = await discoverSol();
   const cat=state.solCatalog;
@@ -1472,6 +1534,26 @@ async function enrichSolAges(){
   if(changed) renderAll();
 }
 
+/* ---- mainnet wallet discovery (browser live path; L2s arrive via relay) ---- */
+async function discoverEthIds(){
+  const ids=new Set(cfg.ids.map(Number));
+  const excluded=new Set((activeProfile()?.excluded||[]).map(String));
+  for(const w of profileWallets('ethereum')){
+    const wp=pad32(w.toLowerCase().replace(/^0x/,''));
+    try{
+      const r=await rpcBatch([{method:'eth_call',params:[{to:NPM,data:SEL2.balanceOf+wp},'latest']}],{strict:true});
+      const n=Math.min(80,Number(hexToBig(r[0].result)));
+      for(let i=0;i<n;i++){
+        const t=await rpcBatch([{method:'eth_call',params:[{to:NPM,data:SEL2.tokenOfOwnerByIndex+wp+pad32(i.toString(16))},'latest']}],{strict:true});
+        const id=Number(hexToBig(t[0].result));
+        if(!excluded.has('ethereum:'+id)&&!excluded.has(String(id))) ids.add(id);
+        await sleep(60);
+      }
+    }catch(e){ log('warning','ETH wallet '+w.slice(0,6)+'… discovery: '+esc(e.message||'').slice(0,60)); }
+  }
+  return [...ids];
+}
+
 /* ================= SCAN ORCHESTRATION ================= */
 let scanning = false;
 async function scan(isBoot){
@@ -1482,8 +1564,9 @@ async function scan(isBoot){
   let ethPs = null;
   try{
     await fetchAnchors();
+    if(!state.ethCatalog || state.scanCount%10===0) state.ethCatalog = await discoverEthIds();
     const results = [];
-    for(const id of cfg.ids){
+    for(const id of state.ethCatalog){
       try{
         const prev = state.positions.get(id);
         bootMsg('QUERYING POSITION #'+id+' …');
@@ -1508,7 +1591,9 @@ async function scan(isBoot){
   state.relayUsed = false;
   if(!ethPs || !solOk){
     try{
-      const rr = await fetch('data.json?nc='+Date.now(), {cache:'no-store'});
+      const slug=activeProfile()?.slug||'main';
+      let rr = await fetch('data-'+slug+'.json?nc='+Date.now(), {cache:'no-store'});
+      if(!rr.ok) rr = await fetch('data.json?nc='+Date.now(), {cache:'no-store'});
       if(rr.ok){
         const d = await rr.json();
         const ageMin = (Date.now()-d.t)/60000;
@@ -1663,7 +1748,9 @@ function assignPools(){
   }
 }
 const badgeOf = p => poolBadge.get(String(p.id)) || null;
-const posLink = p => p.chain==='sol' ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
+const posLink = p => p.chain==='sol' ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/'+((EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).uni)+'/'+p.id;
+const scanBase = p => (EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).scan;
+const chainTag = p => p.chain==='sol' ? '◎SOL' : (p.chainTag||(EVM_CHAINS[p.chain]||{}).tag||'ETH');
 const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+(badgeOf(p)?' · '+esc(badgeOf(p)):'')+' ↗</a>';
 const colorIndex = new Map();
 const cIdx = p => colorIndex.get(String(p.id)) ?? 5;
@@ -2446,6 +2533,7 @@ function renderCards(){
     const head=el('div','chead');
     head.append(el('span','cdot'));
     if(isSol) head.append(el('span',null,'<span style="color:var(--text-muted);font-size:12px" title="Solana · Raydium CLMM">◎</span>'));
+    else if(p.chain && p.chain!=='ethereum') head.append(el('span','feet',esc(chainTag(p))));
     head.append(el('span','pair',esc(p.pairLabel)));
     head.append(el('span','feet',esc(p.feeLabel)));
     if(badgeOf(p)){ const bd=el('span','feet',esc(badgeOf(p))); bd.title='Token contract era — see footer for the full address'; bd.style.background=badgeOf(p).startsWith('OLD')?'var(--text-muted)':'var(--status-warning)'; head.append(bd); }
@@ -2496,11 +2584,11 @@ function renderCards(){
     if(p.chain==='sol'&&p.wallet) foot.append(el('span',null,'WALLET <b>'+esc(p.wallet.slice(0,4)+'…'+p.wallet.slice(-4))+'</b>'));
     const poolAddr=p.pool||p.poolId;
     if(poolAddr){
-      const url=p.chain==='sol'?'https://solscan.io/account/'+poolAddr:'https://etherscan.io/address/'+poolAddr;
+      const url=p.chain==='sol'?'https://solscan.io/account/'+poolAddr:scanBase(p)+'/address/'+poolAddr;
       foot.append(el('span',null,'POOL <a class="plink" href="'+url+'" target="_blank" rel="noopener"><b>'+esc(String(poolAddr).slice(0,6)+'…'+String(poolAddr).slice(-4))+'</b> ↗</a>'));
     }
     if(p.chain!=='sol'&&p.token0){
-      foot.append(el('span',null,esc(p.m0.symbol)+' <a class="plink" href="https://etherscan.io/token/'+p.token0+'" target="_blank" rel="noopener"><b>'+esc(p.token0.slice(0,6)+'…'+p.token0.slice(-4))+'</b> ↗</a>'));
+      foot.append(el('span',null,esc(p.m0.symbol)+' <a class="plink" href="'+scanBase(p)+'/token/'+p.token0+'" target="_blank" rel="noopener"><b>'+esc(p.token0.slice(0,6)+'…'+p.token0.slice(-4))+'</b> ↗</a>'));
     }
     const ib=el('button','invbtn','⇄ '+unit.split(' per ')[0]);
     ib.title='Flip price units';
@@ -2595,6 +2683,90 @@ function renderPosList(){
     li.append(rm); ul.append(li);
   });
 }
+function renderProfileSeg(){
+  const seg=$('#profileSeg'); if(!seg) return;
+  seg.innerHTML='';
+  const prs=CONFIG_DATA?.profiles||[];
+  if(prs.length<2 && prs.length){ const b=el('button','on',esc(prs[0].name)); seg.append(b); return; }
+  for(const pr of prs){
+    const b=el('button', activeProfile()?.slug===pr.slug?'on':null, esc(pr.name));
+    b.addEventListener('click',()=>{ switchProfile(pr.slug); });
+    seg.append(b);
+  }
+}
+function switchProfile(slug){
+  store.set('profile',slug);
+  state.positions=new Map(); state.solCatalog=null; state.ethCatalog=null; state.solPositions=[];
+  state.samples=[]; state.alertsSeen={};
+  renderProfileSeg(); renderAll();
+  log('info','Profile → '+esc(activeProfile()?.name||slug)+' — loading…');
+  scan();
+}
+function renderProfileList(){
+  const ul=$('#profileList'); if(!ul) return; ul.innerHTML='';
+  for(const pr of (CONFIG_DATA?.profiles||[])){
+    const li=el('li');
+    const active=activeProfile()?.slug===pr.slug;
+    li.append(el('span',null,(active?'<b style="color:var(--accent)">● ':'<span style="color:var(--text-muted)">○ </span>')+esc(pr.name)+(active?'</b>':'')+' <span style="color:var(--text-muted);font-size:10px">· '+(pr.wallets||[]).length+' wallets</span>'));
+    if(!active){
+      const act=el('button','rm','▶'); act.title='Activate'; act.style.color='var(--accent)';
+      act.addEventListener('click',()=>{ switchProfile(pr.slug); renderProfileList(); renderWalletList(); });
+      li.append(act);
+    }
+    if((CONFIG_DATA.profiles||[]).length>1){
+      const rm=el('button','rm','✕'); rm.title='Delete profile';
+      rm.addEventListener('click',()=>{
+        CONFIG_DATA.profiles=CONFIG_DATA.profiles.filter(x=>x!==pr);
+        saveProfilesLocal(); renderProfileList(); renderProfileSeg();
+        log('info','Profile "'+esc(pr.name)+'" deleted (local — SAVE TO GITHUB to make permanent).');
+      });
+      li.append(rm);
+    }
+    ul.append(li);
+  }
+}
+function renderWalletList(){
+  const ul=$('#walletList'); if(!ul) return; ul.innerHTML='';
+  const pr=activeProfile(); if(!pr) return;
+  (pr.wallets||[]).forEach(w=>{
+    const li=el('li');
+    const tag=w.chain==='solana'?'◎SOL':(EVM_CHAINS[w.chain]?.tag||'ETH');
+    const n=[...state.positions.values()].filter(p=>String(p.wallet||'').toLowerCase()===String(w.address).toLowerCase()).length;
+    li.append(el('span',null,'<span class="feet" style="background:var(--text-muted);margin-right:8px">'+tag+'</span>'+esc(w.address.slice(0,6)+'…'+w.address.slice(-5))+(n?' <span style="color:var(--text-muted);font-size:10px">· '+n+' pos</span>':'')));
+    const rm=el('button','rm','✕'); rm.title='Remove wallet';
+    rm.addEventListener('click',()=>{
+      pr.wallets=pr.wallets.filter(x=>x!==w);
+      saveProfilesLocal(); renderWalletList();
+      state.solCatalog=null; state.ethCatalog=null;
+      log('info','Wallet removed (local — SAVE TO GITHUB to make permanent). Rescanning…');
+      scan();
+    });
+    li.append(rm); ul.append(li);
+  });
+}
+async function saveConfigToGitHub(){
+  const tok=store.get('ghToken','');
+  const st=$('#syncStatus');
+  if(!tok){ st.textContent='No token set — paste a fine-grained token above first.'; st.style.color='var(--status-warning)'; return; }
+  st.textContent='Saving…'; st.style.color='var(--text-muted)';
+  try{
+    const api='https://api.github.com/repos/kereslek/arc-lp-command/contents/config.json';
+    const headers={authorization:'Bearer '+tok, accept:'application/vnd.github+json'};
+    let sha=null;
+    const g=await fetch(api+'?ref=gh-pages',{headers});
+    if(g.ok) sha=(await g.json()).sha;
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify(CONFIG_DATA,null,2))));
+    const res=await fetch(api,{method:'PUT',headers,body:JSON.stringify({message:'Update profiles from dashboard',content,branch:'gh-pages',...(sha?{sha}:{})})});
+    if(res.ok){
+      st.textContent='✓ Saved to GitHub — server data regenerates in ~2–5 min.'; st.style.color='var(--status-good)';
+      log('good','Profiles saved to GitHub — the relay will track the new configuration.');
+      store.set('profilesOverride',null);
+    } else {
+      const j=await res.json().catch(()=>({}));
+      st.textContent='✕ GitHub said: '+(j.message||res.status)+' — check token permissions (Contents R/W on this repo).'; st.style.color='var(--status-critical)';
+    }
+  }catch(e){ st.textContent='✕ '+(e.message||'network error'); st.style.color='var(--status-critical)'; }
+}
 function renderSolWalletList(){
   const ul=$('#solWalletList'); ul.innerHTML='';
   cfg.solWallets.forEach(w=>{
@@ -2611,7 +2783,34 @@ function renderSolWalletList(){
   });
 }
 function wireSettings(){
-  $('#btnSettings').addEventListener('click',()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); renderPosList(); renderSolWalletList(); });
+  $('#btnSettings').addEventListener('click',()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); renderPosList(); renderSolWalletList(); renderProfileList(); renderWalletList(); $('#ghTokenInput').value=store.get('ghToken','')?'••••••••':''; });
+  $('#addProfileBtn').addEventListener('click',()=>{
+    const name=$('#addProfileInput').value.trim(); if(!name) return;
+    const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||('p'+(CONFIG_DATA.profiles.length+1));
+    if(CONFIG_DATA.profiles.some(p=>p.slug===slug)) { log('warning','Profile name already exists.'); return; }
+    CONFIG_DATA.profiles.push({name,slug,wallets:[],pinned:[],excluded:[]});
+    saveProfilesLocal(); $('#addProfileInput').value='';
+    renderProfileList(); renderProfileSeg();
+    log('info','Profile "'+esc(name)+'" created — add wallets, then SAVE TO GITHUB.');
+  });
+  $('#addWalletBtn').addEventListener('click',()=>{
+    const addr=$('#addWalletInput').value.trim();
+    const chain=$('#addWalletChain').value;
+    const pr=activeProfile(); if(!pr) return;
+    const okEvm=/^0x[0-9a-fA-F]{40}$/.test(addr), okSol=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
+    if(chain==='solana'?!okSol:!okEvm){ log('warning','That does not look like a valid '+chain+' address.'); return; }
+    if(pr.wallets.some(w=>w.chain===chain&&w.address.toLowerCase()===addr.toLowerCase())) return;
+    pr.wallets.push({chain,address:chain==='solana'?addr:addr.toLowerCase()});
+    saveProfilesLocal(); $('#addWalletInput').value='';
+    renderWalletList(); state.solCatalog=null; state.ethCatalog=null;
+    log('info','Wallet added to '+esc(pr.name)+' (local — SAVE TO GITHUB to make it permanent & relay-tracked). Scanning…');
+    scan();
+  });
+  $('#ghTokenInput').addEventListener('change',()=>{
+    const v=$('#ghTokenInput').value.trim();
+    if(v && v!=='••••••••'){ store.set('ghToken',v); $('#ghTokenInput').value='••••••••'; $('#syncStatus').textContent='Token stored in this browser only.'; }
+  });
+  $('#btnSaveConfig').addEventListener('click',saveConfigToGitHub);
   $('#addSolWalletBtn').addEventListener('click',()=>{
     const w=$('#addSolWallet').value.trim();
     if(!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(w)){ log('warning','That does not look like a Solana address.'); return; }
@@ -2776,6 +2975,8 @@ function initSky(){
 
 async function init(){
   initSky();
+  await loadConfig();
+  renderProfileSeg();
   renderAprSeg();
   wireSettings();
   applyStoredOrders();
@@ -2800,7 +3001,9 @@ async function init(){
   // INSTANT FIRST PAINT: relay snapshot renders in <1s while the live scan runs in parallel
   (async()=>{
     try{
-      const r=await fetch('data.json?boot=1&nc='+Date.now(),{cache:'no-store'});
+      const slug=activeProfile()?.slug||'main';
+      let r=await fetch('data-'+slug+'.json?boot=1&nc='+Date.now(),{cache:'no-store'});
+      if(!r.ok) r=await fetch('data.json?boot=1&nc='+Date.now(),{cache:'no-store'});
       if(!r.ok) return;
       const d=await r.json();
       if(state.mode!=='boot' || (Date.now()-d.t)>7200000) return;

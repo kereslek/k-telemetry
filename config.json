@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "profiles": [
+    {
+      "name": "MAIN",
+      "slug": "main",
+      "wallets": [
+        { "chain": "ethereum", "address": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e" },
+        { "chain": "ethereum", "address": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d" },
+        { "chain": "ethereum", "address": "0x9e9a57a538093c800e821f9a47b850dadca4c728" },
+        { "chain": "solana",   "address": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2" },
+        { "chain": "solana",   "address": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca" }
+      ],
+      "pinned": [],
+      "excluded": []
+    }
+  ]
+}

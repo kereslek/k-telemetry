@@ -2,25 +2,41 @@
    Runs in GitHub Actions (Node 20, no deps). Fetches Uniswap V3 + Raydium CLMM
    position data and writes data.json for the static dashboard to consume. */
 
-const ETH_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
-const SOL_WALLETS = [
-  '3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2',
-  '5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca',
-];
-const ETH_RPCS = ['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'];
+import fs from 'fs';
+const CONFIG = JSON.parse(fs.readFileSync('config.json','utf8'));
 const SOL_RPCS = ['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com','https://solana.drpc.org'];
+const NPM_STD='0xc36442b4a4522e871399cd717abdd847ab11fe88', FACT_STD='0x1f98431c8ad98523631ae4a59f267346ea31f984';
+const CHAINS = {
+  ethereum:{ tag:'ETH', rpcs:['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'],
+    npm:NPM_STD, factory:FACT_STD, bph:300, startBlock:12369651, llama:'ethereum',
+    weth:'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+    stables:['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','0xdac17f958d2ee523a2206206994597c13d831ec7','0x6b175474e89094c44da98b954eedeac495271d0f'] },
+  arbitrum:{ tag:'ARB', rpcs:['https://arbitrum-one-rpc.publicnode.com','https://arb1.arbitrum.io/rpc','https://arbitrum.drpc.org'],
+    npm:NPM_STD, factory:FACT_STD, bph:14400, startBlock:100000, llama:'arbitrum',
+    weth:'0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+    stables:['0xaf88d065e77c8cc2239327c5edb3a432268e5831','0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9','0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'] },
+  base:{ tag:'BASE', rpcs:['https://base-rpc.publicnode.com','https://mainnet.base.org','https://base.drpc.org'],
+    npm:'0x03a520b32c04bf3beef7beb72e919cf822ed34f1', factory:'0x33128a8fc17869897dce68ed026d694621f6fdfd', bph:1800, startBlock:1371680, llama:'base',
+    weth:'0x4200000000000000000000000000000000000006',
+    stables:['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'] },
+  optimism:{ tag:'OP', rpcs:['https://optimism-rpc.publicnode.com','https://mainnet.optimism.io','https://optimism.drpc.org'],
+    npm:NPM_STD, factory:FACT_STD, bph:1800, startBlock:1000000, llama:'optimism',
+    weth:'0x4200000000000000000000000000000000000006',
+    stables:['0x0b2c639c533813f4aa9d7837caf62653d097ff85','0x94b008aa00579c1307b0ef2c499ad98a8ce58e58','0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'] },
+  polygon:{ tag:'POLY', rpcs:['https://polygon-bor-rpc.publicnode.com','https://polygon-rpc.com','https://polygon.drpc.org'],
+    npm:NPM_STD, factory:FACT_STD, bph:1700, startBlock:22757547, llama:'polygon',
+    weth:'0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
+    stables:['0x3c499c542cef5e3811e1192ce70d8cc03d5c3359','0xc2132d05d31c914a87c6611c10748aeb04b58e8f','0x8f3cf7ad23cd3cadbd9735aff958023239c6a063'] },
+};
 
-const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
-const FACTORY='0x1f98431c8ad98523631ae4a59f267346ea31f984';
+
 const CHAINLINK_ETH='0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419';
 const CHAINLINK_BTC='0xf4030086522a5beea4988f8ca5b36dba0d0f58a6';
 const SEL={positions:'0x99fbab88',ownerOf:'0x6352211e',getPool:'0x1698ee82',slot0:'0x3850c7bd',symbol:'0x95d89b41',decimals:'0x313ce567',latestAnswer:'0x50d25bcd',collect:'0xfc6f7865'};
 const TOPIC_INC='0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
 const TOPIC_DEC='0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4';
 const TOPIC_COL='0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01';
-const STABLES=new Set(['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','0xdac17f958d2ee523a2206206994597c13d831ec7','0x6b175474e89094c44da98b954eedeac495271d0f']);
-const WETH='0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
-const WBTC='0x2260fac5e5542a773aa44fbcfedf7c193bc2c599';
+const SEL2={balanceOf:'0x70a08231', tokenOfOwnerByIndex:'0x2f745c59'};
 
 const errors=[];
 const logErr=(tag,e)=>{ errors.push(tag+': '+String(e&&e.message||e).slice(0,140)); console.error(tag, e&&e.message||e); };
@@ -42,9 +58,9 @@ async function getJson(url,timeout=15000){
   finally{ clearTimeout(t); }
 }
 let rpcId=1;
-async function eth(method,params,{block}={}){
+async function evm(chainKey,method,params){
   let last;
-  for(const url of ETH_RPCS){
+  for(const url of CHAINS[chainKey].rpcs){
     try{
       const js=await post(url,{jsonrpc:'2.0',id:rpcId++,method,params});
       if(js.error) throw new Error(js.error.message||JSON.stringify(js.error));
@@ -53,7 +69,9 @@ async function eth(method,params,{block}={}){
   }
   throw last;
 }
-const ethCall=(to,data,block='latest',from)=>eth('eth_call',[{to,data,...(from?{from}:{})},block]);
+const evmCall=(ck,to,data,block='latest',from)=>evm(ck,'eth_call',[{to,data,...(from?{from}:{})},block]);
+const eth=(method,params)=>evm('ethereum',method,params);
+const ethCall=(to,data,block='latest',from)=>evmCall('ethereum',to,data,block,from);
 async function sol(method,params){
   let last;
   for(const url of SOL_RPCS){
@@ -77,68 +95,91 @@ function decodeString(res){ try{ const off=Number(BigInt(word(res,0)))/32; const
   const hex=res.replace(/^0x/,'').slice((off+1)*64,(off+1)*64+len*2);
   return decodeURIComponent(hex.replace(/(..)/g,'%$1')); }catch(e){ return '???'; } }
 
-/* ---------- ETH pipeline ---------- */
+
+/* ---------- EVM pipeline (chain-generic) ---------- */
 const tokenMeta=new Map();
-async function meta(addr){
-  addr=addr.toLowerCase();
-  if(tokenMeta.has(addr)) return tokenMeta.get(addr);
+async function meta(ck,addr){
+  addr=addr.toLowerCase(); const key=ck+':'+addr;
+  if(tokenMeta.has(key)) return tokenMeta.get(key);
   let symbol='???',decimals=18;
-  try{ symbol=decodeString(await ethCall(addr,SEL.symbol)); }catch(e){}
-  try{ decimals=Number(BigInt(await ethCall(addr,SEL.decimals))); }catch(e){}
+  try{ symbol=decodeString(await evmCall(ck,addr,SEL.symbol)); }catch(e){}
+  try{ decimals=Number(BigInt(await evmCall(ck,addr,SEL.decimals))); }catch(e){}
   const m={symbol:symbol==='WETH'?'ETH':symbol,decimals};
-  tokenMeta.set(addr,m); return m;
+  tokenMeta.set(key,m); return m;
 }
-function tokenUsd(addr,counter,price,isT0,ethUsd,btcUsd){
-  const a=addr.toLowerCase(),c=counter.toLowerCase();
-  if(STABLES.has(a)) return 1; if(a===WETH) return ethUsd; if(a===WBTC) return btcUsd;
-  let cu=null; if(STABLES.has(c)) cu=1; else if(c===WETH) cu=ethUsd; else if(c===WBTC) cu=btcUsd;
-  if(cu==null||price==null) return null;
-  return isT0?price*cu:cu/price;
+/* universal pricing: DefiLlama coins API, pool-derived fallback */
+const priceCache={};
+async function llamaPrices(keys){
+  const need=keys.filter(k=>!(k in priceCache));
+  for(let i=0;i<need.length;i+=40){
+    const batch=need.slice(i,i+40);
+    try{
+      const js=await getJson('https://coins.llama.fi/prices/current/'+batch.join(','),20000);
+      for(const k of batch){ const c=js.coins&&js.coins[k]; priceCache[k]=c?c.price:null; }
+    }catch(e){ for(const k of batch) priceCache[k]=null; }
+  }
 }
-async function ethHistory(id){
+async function evmHistory(ck,id){
+  const C=CHAINS[ck];
   const topicId='0x'+pad32(id.toString(16));
-  const logs=await eth('eth_getLogs',[{address:NPM,topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL],topicId],fromBlock:'0x'+(12369651).toString(16),toBlock:'latest'}]);
+  const logs=await evm(ck,'eth_getLogs',[{address:C.npm,topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL],topicId],fromBlock:'0x'+C.startBlock.toString(16),toBlock:'latest'}]);
   const parse=lg=>({block:Number(BigInt(lg.blockNumber)),a0:BigInt(word(lg.data,1)),a1:BigInt(word(lg.data,2))});
   return { inc:logs.filter(l=>l.topics[0]===TOPIC_INC).map(parse),
            dec:logs.filter(l=>l.topics[0]===TOPIC_DEC).map(parse),
            col:logs.filter(l=>l.topics[0]===TOPIC_COL).map(parse) };
 }
-async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
+async function walletPositionIds(ck,wallet){
+  const C=CHAINS[ck];
+  const bal=Number(BigInt(await evmCall(ck,C.npm,SEL2.balanceOf+pad32(wallet))));
+  const ids=[];
+  for(let i=0;i<bal && i<80;i++){
+    try{ ids.push(Number(BigInt(await evmCall(ck,C.npm,SEL2.tokenOfOwnerByIndex+pad32(wallet)+pad32(i.toString(16)))))); }
+    catch(e){ break; }
+  }
+  return ids;
+}
+async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
+  const C=CHAINS[ck];
   const idHex=pad32(id.toString(16));
-  const pos=await ethCall(NPM,SEL.positions+idHex);
+  const pos=await evmCall(ck,C.npm,SEL.positions+idHex);
   const token0='0x'+word(pos,2).slice(-40), token1='0x'+word(pos,3).slice(-40);
   const fee=Number(BigInt(word(pos,4)));
   const tickLower=Number(toSigned(BigInt(word(pos,5)),24)), tickUpper=Number(toSigned(BigInt(word(pos,6)),24));
   const liquidity=BigInt(word(pos,7));
-  let owner=null; try{ owner='0x'+(await ethCall(NPM,SEL.ownerOf+idHex)).slice(-40); }catch(e){}
-  const [m0,m1]=[await meta(token0),await meta(token1)];
-  const pool='0x'+(await ethCall(FACTORY,SEL.getPool+pad32(token0)+pad32(token1)+pad32(fee.toString(16)))).slice(-40);
-  const slot0=await ethCall(pool,SEL.slot0);
+  let owner=null; try{ owner='0x'+(await evmCall(ck,C.npm,SEL.ownerOf+idHex)).slice(-40); }catch(e){}
+  const [m0,m1]=[await meta(ck,token0),await meta(ck,token1)];
+  const pool='0x'+(await evmCall(ck,C.factory,SEL.getPool+pad32(token0)+pad32(token1)+pad32(fee.toString(16)))).slice(-40);
+  const slot0=await evmCall(ck,pool,SEL.slot0);
   const sqrtPriceX96=BigInt(word(slot0,0));
   const tick=Number(toSigned(BigInt(word(slot0,1)),24));
   const MAX='f'.repeat(32).padStart(64,'0');
-  const collectData=SEL.collect+idHex+pad32(owner||NPM)+MAX+MAX;
+  const collectData=SEL.collect+idHex+pad32(owner||C.npm)+MAX+MAX;
   let f0=bigToFloat(BigInt(word(pos,10)),m0.decimals), f1=bigToFloat(BigInt(word(pos,11)),m1.decimals);
   const feesOwedAt=async blk=>{
-    const r=await ethCall(NPM,collectData,blk,owner||undefined);
+    const r=await evmCall(ck,C.npm,collectData,blk,owner||undefined);
     return { f0:bigToFloat(BigInt(word(r,0)),m0.decimals), f1:bigToFloat(BigInt(word(r,1)),m1.decimals) };
   };
   try{ const now=await feesOwedAt('latest'); f0=now.f0; f1=now.f1; }catch(e){}
+  if(liquidity===0n && f0===0 && f1===0) return null;    // closed & empty — skip
   const d0=m0.decimals,d1=m1.decimals, scale=10**(d0-d1);
   const sp=Number(sqrtPriceX96)/Q96, sa=tickToSqrt(tickLower), sb=tickToSqrt(tickUpper);
   const [ra0,ra1]=amounts(Number(liquidity),sp,sa,sb);
   const amt0=ra0/10**d0, amt1=ra1/10**d1;
   const price=sp*sp*scale, priceLower=tickToPrice(tickLower)*scale, priceUpper=tickToPrice(tickUpper)*scale;
-  const usd0=tokenUsd(token0,token1,price,true,ethUsd,btcUsd), usd1=tokenUsd(token1,token0,price,false,ethUsd,btcUsd);
+  await llamaPrices([C.llama+':'+token0, C.llama+':'+token1]);
+  let usd0=priceCache[C.llama+':'+token0]??null, usd1=priceCache[C.llama+':'+token1]??null;
+  if(usd0==null&&usd1!=null) usd0=price*usd1;
+  if(usd1==null&&usd0!=null) usd1=usd0/price;
   const valueUsd=(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null;
   const feesUsd=(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null;
-  // history + economics
   let hist={inc:[],dec:[],col:[]}, mintTs=null, entryEthUsd=null;
-  try{ hist=await ethHistory(id); }catch(e){ logErr('hist#'+id,e); }
+  try{ hist=await evmHistory(ck,id); }catch(e){ logErr(ck+' hist#'+id,e); }
   if(hist.inc.length){
     const mintBlock=Math.min(...hist.inc.map(x=>x.block));
-    try{ const blk=await eth('eth_getBlockByNumber',['0x'+mintBlock.toString(16),false]); mintTs=Number(BigInt(blk.timestamp))*1000; }catch(e){}
-    try{ const r=await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+mintBlock.toString(16)); entryEthUsd=bigToFloat(BigInt(r),8); }catch(e){}
+    try{ const blk=await evm(ck,'eth_getBlockByNumber',['0x'+mintBlock.toString(16),false]); mintTs=Number(BigInt(blk.timestamp))*1000; }catch(e){}
+    if(ck==='ethereum'){
+      try{ const r=await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+mintBlock.toString(16)); entryEthUsd=bigToFloat(BigInt(r),8); }catch(e){}
+    }
   }
   const sum=(arr,k,dec)=>arr.reduce((s,x)=>s+bigToFloat(x[k],dec),0);
   const dep0=sum(hist.inc,'a0',d0), dep1=sum(hist.inc,'a1',d1);
@@ -149,8 +190,9 @@ async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
   let costUsd=null,roiPct=null,roiMode='hodl',feeAprPct=null,feesEverUsd=null;
   if(usd0!=null&&usd1!=null&&(dep0>0||dep1>0)){
     let e0=usd0,e1=usd1;
-    if(entryEthUsd&&ethUsd){
-      const sc=(addr,cur)=>{const a=addr.toLowerCase(); if(STABLES.has(a))return 1; if(a===WETH)return entryEthUsd; return cur!=null?cur*(entryEthUsd/ethUsd):null;};
+    if(ck==='ethereum'&&entryEthUsd&&ethUsd){
+      const st=new Set(C.stables);
+      const sc=(addr,cur)=>{const a=addr.toLowerCase(); if(st.has(a))return 1; if(a===C.weth)return entryEthUsd; return cur!=null?cur*(entryEthUsd/ethUsd):null;};
       const s0=sc(token0,usd0),s1=sc(token1,usd1);
       if(s0!=null&&s1!=null){e0=s0;e1=s1;roiMode='entry';}
     }
@@ -159,13 +201,14 @@ async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
     const totalNow=(valueUsd??0)+(wdr0*usd0+wdr1*usd1)+feesEverUsd;
     if(costUsd>0){ roiPct=(totalNow-costUsd)/costUsd*100; if(ageDays>0.05) feeAprPct=(feesEverUsd/costUsd)*(365/ageDays)*100; }
   }
-  // windowed APRs
+  const bpd=C.bph*24;
   const aprW={t:Date.now()};
   for(const [key,days] of [['d1',1],['d7',7],['d30',30],['d365',365]]){
     aprW[key]=null;
     if(ageDays!=null&&ageDays<days) continue;
     try{
-      const blk=blockNum-Math.round(days*86400/12);
+      const blk=blockNum-Math.round(days*bpd);
+      if(blk<=C.startBlock) continue;
       const old=await feesOwedAt('0x'+blk.toString(16));
       const cw0=hist.col.filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
       const cw1=hist.col.filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
@@ -179,7 +222,7 @@ async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
   const inRange=tick>=tickLower&&tick<tickUpper;
   const rangePos=(tick-tickLower)/(tickUpper-tickLower);
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
-  return { id, chain:'eth', owner, relay:true, pool, token0, token1,
+  return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
     amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
@@ -188,32 +231,31 @@ async function fetchEthPosition(id, blockNum, ethUsd, btcUsd){
     pairLabel:m0.symbol+' / '+m1.symbol, feeLabel:(fee/10000)+'%' };
 }
 
-/* ---------- 30d volatility per pool (archive slot0 samples) ---------- */
-async function poolVolatility(pool, scale, blockNum){
+/* ---------- volatility (chain-generic) ---------- */
+async function poolVolatility(ck,pool,scale,blockNum){
+  const bpd=CHAINS[ck].bph*24;
   const samples=[];
   for(let i=14;i>=0;i--){
-    const blk=blockNum-Math.round(i*2*7200);           // 2-day steps over 28 days
+    const blk=blockNum-Math.round(i*2*bpd);
     try{
-      const r=await ethCall(pool,SEL.slot0,'0x'+blk.toString(16));
+      const r=await evmCall(ck,pool,SEL.slot0,'0x'+blk.toString(16));
       const sp=Number(BigInt(word(r,0)))/Q96;
       samples.push(sp*sp*scale);
     }catch(e){ samples.push(null); }
   }
   const rets=[];
-  for(let i=1;i<samples.length;i++){
-    if(samples[i]!=null&&samples[i-1]!=null&&samples[i]>0&&samples[i-1]>0) rets.push(Math.log(samples[i]/samples[i-1]));
-  }
+  for(let i=1;i<samples.length;i++) if(samples[i]!=null&&samples[i-1]!=null&&samples[i]>0&&samples[i-1]>0) rets.push(Math.log(samples[i]/samples[i-1]));
   if(rets.length<5) return null;
   const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
-  const varr=rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1);
-  return Math.sqrt(varr)/Math.sqrt(2);                 // daily sigma (2-day gaps)
+  return Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))/Math.sqrt(2);
 }
-async function poolVol24(pool, scale, blockNum){
+async function poolVol24(ck,pool,scale,blockNum){
+  const bph=CHAINS[ck].bph;
   const pts=[];
   for(let i=12;i>=0;i--){
-    const blk=blockNum-Math.round(i*600);            // 600 blocks ≈ 2h
+    const blk=blockNum-Math.round(i*2*bph);
     try{
-      const r=await ethCall(pool,SEL.slot0,'0x'+blk.toString(16));
+      const r=await evmCall(ck,pool,SEL.slot0,'0x'+blk.toString(16));
       const sp=Number(BigInt(word(r,0)))/Q96;
       pts.push(sp*sp*scale);
     }catch(e){ pts.push(null); }
@@ -222,8 +264,7 @@ async function poolVol24(pool, scale, blockNum){
   for(let i=1;i<pts.length;i++) if(pts[i]!=null&&pts[i-1]!=null&&pts[i]>0&&pts[i-1]>0) rets.push(Math.log(pts[i]/pts[i-1]));
   if(rets.length<6) return null;
   const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
-  const varr=rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1);
-  return Math.sqrt(varr)*Math.sqrt(12);              // scale 2h → daily
+  return Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))*Math.sqrt(12);
 }
 const erf=x=>{const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;};
 const Phi=z=>0.5*(1+erf(z/Math.SQRT2));
@@ -274,7 +315,7 @@ const leI32=(b,o)=>{const u=(b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;ret
 const pk=(b,o)=>b58e(b.slice(o,o+32));
 const b64=s=>Uint8Array.from(Buffer.from(s,'base64'));
 
-async function fetchSolana(){
+async function fetchSolana(SOL_WALLETS){
   const out=[];
   const cat=[];
   for(const w of SOL_WALLETS){
@@ -411,71 +452,103 @@ async function fetchSolana(){
 
 /* ---------- main ---------- */
 const main=async()=>{
-  const blockNum=Number(BigInt(await eth('eth_blockNumber',[])));
+  const blockNums={};
+  for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
+  const blockNum=blockNums.ethereum;
   let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
   let ethUsd=null,btcUsd=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
   try{ btcUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_BTC,SEL.latestAnswer)),8); }catch(e){}
-  const ethPositions=[];
-  for(const id of ETH_IDS){
-    try{ ethPositions.push(await fetchEthPosition(id,blockNum,ethUsd,btcUsd)); console.log('eth #'+id+' OK'); }
-    catch(e){ logErr('eth#'+id,e); }
-    await sleep(300);
-  }
-  // token deployment dating for pairs that exist with multiple token contracts (e.g. old vs new LCX)
-  async function tokenDeployTs(addr){
-    try{
-      if((await eth('eth_getCode',[addr,'latest']))==='0x') return null;
-      let lo=100000, hi=blockNum;
-      for(let i=0;i<19;i++){
-        const mid=Math.floor((lo+hi)/2);
-        try{
-          const code=await eth('eth_getCode',[addr,'0x'+mid.toString(16)]);
-          if(code && code!=='0x') hi=mid; else lo=mid+1;
-        }catch(e){ lo=mid+1; }
-      }
-      const blk=await eth('eth_getBlockByNumber',['0x'+hi.toString(16),false]);
-      return Number(BigInt(blk.timestamp))*1000;
-    }catch(e){ return null; }
-  }
-  {
-    const byPair={};
-    for(const p of ethPositions){ (byPair[p.pairLabel]=byPair[p.pairLabel]||new Set()).add(p.token0); }
-    const dupTokens=new Set();
-    for(const k in byPair) if(byPair[k].size>1) byPair[k].forEach(t=>dupTokens.add(t));
-    const deployTs={};
-    for(const t of dupTokens){ deployTs[t]=await tokenDeployTs(t); console.log('deploy',t.slice(0,10),deployTs[t]?new Date(deployTs[t]).toISOString().slice(0,10):'?'); }
-    for(const p of ethPositions) if(p.token0 in deployTs) p.token0DeployTs=deployTs[p.token0];
-  }
-  // range analytics per unique pool
-  const volCache={}, vol24Cache={};
-  for(const p of ethPositions){
-    try{
-      if(!(p.pool in volCache)) volCache[p.pool]=await poolVolatility(p.pool, 10**(p.d0-p.d1), blockNum);
-      if(!(p.pool in vol24Cache)) vol24Cache[p.pool]=await poolVol24(p.pool, 10**(p.d0-p.d1), blockNum);
-      p.range = rangeAnalytics(p.price, p.priceLower, p.priceUpper, volCache[p.pool]);
-      p.sigma30 = volCache[p.pool];
-      p.vol24 = vol24Cache[p.pool];
-    }catch(e){ p.range=null; }
-  }
-  let solPositions=[];
-  try{ solPositions=await fetchSolana(); console.log('sol positions:',solPositions.length); }
-  catch(e){ logErr('sol',e); }
   let topPools=[];
   try{
     const js=await getJson('https://yields.llama.fi/pools',45000);
     topPools=(js.data||[])
-      .filter(x=>['Ethereum','Solana'].includes(x.chain)
+      .filter(x=>['Ethereum','Solana','Arbitrum','Base','Optimism','Polygon'].includes(x.chain)
         && ['uniswap-v3','raydium-clmm','orca-dex','uniswap-v4'].includes(x.project)
         && x.tvlUsd>=3e6 && x.apy>0 && x.apy<=400)
       .sort((a,b)=>b.apy-a.apy).slice(0,12)
       .map(x=>({chain:x.chain,project:x.project,symbol:x.symbol,tvl:x.tvlUsd,apy:x.apy,base:x.apyBase??null,reward:x.apyReward??null,il:x.ilRisk??null,id:x.pool}));
-    console.log('topPools:',topPools.length);
-  }catch(e){ logErr('llama',e); }
-  const data={ v:3, t:Date.now(), block:blockNum, ethUsd, btcUsd, gasGwei, eth:ethPositions, sol:solPositions, topPools, errors };
-  const fs=await import('fs');
-  fs.writeFileSync('data.json', JSON.stringify(data));
-  console.log('data.json written:', ethPositions.length,'eth +',solPositions.length,'sol · errors:',errors.length);
-  if(!ethPositions.length && !solPositions.length){ process.exitCode=1; }
+  }catch(e){ logErr('llama pools',e); }
+
+  for(const profile of CONFIG.profiles){
+    errors.length=0;
+    const excluded=new Set((profile.excluded||[]).map(String));
+    const evmPositions=[];
+    for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana')){
+      const ck=w.chain in CHAINS ? w.chain : 'ethereum';
+      if(blockNums[ck]==null) continue;
+      try{
+        const ids=await walletPositionIds(ck, w.address.toLowerCase().replace(/^0x/,''));
+        console.log(profile.slug, ck, w.address.slice(0,8), '→', ids.length, 'NFTs');
+        for(const id of ids){
+          if(excluded.has(ck+':'+id) || excluded.has(String(id))) continue;
+          try{
+            const p=await fetchEvmPosition(ck,id,blockNums[ck],ethUsd,btcUsd);
+            if(p){ p.wallet='0x'+w.address.toLowerCase().replace(/^0x/,''); evmPositions.push(p); }
+          }catch(e){ logErr(ck+'#'+id,e); }
+          await sleep(200);
+        }
+      }catch(e){ logErr('wallet '+w.address.slice(0,8)+' '+ck,e); }
+    }
+    for(const pin of (profile.pinned||[])){
+      const ck=pin.chain in CHAINS ? pin.chain : 'ethereum';
+      if(excluded.has(ck+':'+pin.id)) continue;
+      if(evmPositions.some(p=>p.chain===ck&&p.id===pin.id)) continue;
+      try{ const p=await fetchEvmPosition(ck,pin.id,blockNums[ck],ethUsd,btcUsd); if(p) evmPositions.push(p); }
+      catch(e){ logErr('pin '+ck+'#'+pin.id,e); }
+    }
+    // deploy dating for duplicate-pair token0s
+    async function tokenDeployTs(ck,addr){
+      try{
+        const codeNow=await evm(ck,'eth_getCode',[addr,'latest']);
+        if(codeNow==='0x') return null;
+        let lo=1, hi=blockNums[ck];
+        for(let i=0;i<20;i++){
+          const mid=Math.floor((lo+hi)/2);
+          try{ const code=await evm(ck,'eth_getCode',[addr,'0x'+mid.toString(16)]); if(code&&code!=='0x') hi=mid; else lo=mid+1; }
+          catch(e){ lo=mid+1; }
+        }
+        const blk=await evm(ck,'eth_getBlockByNumber',['0x'+hi.toString(16),false]);
+        return Number(BigInt(blk.timestamp))*1000;
+      }catch(e){ return null; }
+    }
+    {
+      const byPair={};
+      for(const p of evmPositions){ (byPair[p.chain+p.pairLabel]=byPair[p.chain+p.pairLabel]||new Set()).add(p.token0); }
+      const dup=new Set();
+      for(const k in byPair) if(byPair[k].size>1) byPair[k].forEach(t=>dup.add(t));
+      const deployTs={};
+      for(const p of evmPositions){
+        if(dup.has(p.token0)){
+          const key=p.chain+':'+p.token0;
+          if(!(key in deployTs)) deployTs[key]=await tokenDeployTs(p.chain,p.token0);
+          p.token0DeployTs=deployTs[key];
+        }
+      }
+    }
+    // volatility per unique pool
+    const volCache={}, vol24Cache={};
+    for(const p of evmPositions){
+      try{
+        const key=p.chain+':'+p.pool;
+        if(!(key in volCache)) volCache[key]=await poolVolatility(p.chain,p.pool,10**(p.d0-p.d1),blockNums[p.chain]);
+        if(!(key in vol24Cache)) vol24Cache[key]=await poolVol24(p.chain,p.pool,10**(p.d0-p.d1),blockNums[p.chain]);
+        p.range=rangeAnalytics(p.price,p.priceLower,p.priceUpper,volCache[key]);
+        p.sigma30=volCache[key]; p.vol24=vol24Cache[key];
+      }catch(e){ p.range=null; }
+    }
+    // solana
+    let solPositions=[];
+    const solWallets=(profile.wallets||[]).filter(w=>w.chain==='solana').map(w=>w.address);
+    if(solWallets.length){
+      try{ solPositions=await fetchSolana(solWallets); }
+      catch(e){ logErr('sol',e); }
+    }
+    const data={ v:4, t:Date.now(), profile:profile.slug, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+      eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
+    fs.writeFileSync('data-'+profile.slug+'.json', JSON.stringify(data));
+    if(profile===CONFIG.profiles[0]) fs.writeFileSync('data.json', JSON.stringify(data));
+    console.log('profile',profile.slug,':',evmPositions.length,'evm +',solPositions.length,'sol · errors:',errors.length);
+  }
 };
 main().catch(e=>{ console.error('FATAL',e); process.exit(1); });
