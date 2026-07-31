@@ -312,6 +312,13 @@ function rangeAnalytics(price, lo, up, sigma){
 
 /* ---------- Solana (validated against official SDKs) ---------- */
 const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+const ORCA='whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
+/* Orca Whirlpool layouts — offsets derived from the official IDL (@orca-so/whirlpools-sdk) */
+const parseOrcaPosition=b=>({ whirlpool:pk(b,8), positionMint:pk(b,40), liquidity:leU128(b,72),
+  tickLower:leI32(b,88), tickUpper:leI32(b,92),
+  fgCheckA:leU128(b,96), feeOwedA:leU64(b,112), fgCheckB:leU128(b,120), feeOwedB:leU64(b,136) });
+const parseWhirlpool=b=>({ tickSpacing:leU16(b,41), feeRate:leU16(b,45), sqrtPriceX64:leU128(b,65),
+  tickCurrent:leI32(b,81), mintA:pk(b,101), fgGlobalA:leU128(b,165), mintB:pk(b,181), fgGlobalB:leU128(b,245) });
 const TOKEN_PROG='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const SOL_MINT='So11111111111111111111111111111111111111112';
@@ -359,9 +366,12 @@ async function fetchSolana(SOL_WALLETS){
       }catch(e){ logErr('solWallet '+w.slice(0,6),e); }
     }
   }
-  const pdas=[];
-  for(const c of cat) pdas.push(await pda([new TextEncoder().encode('position'),b58d(c.mint)],CLMM));
-  const found=[];
+  const pdas=[], orcaPdas=[];
+  for(const c of cat){
+    pdas.push(await pda([new TextEncoder().encode('position'),b58d(c.mint)],CLMM));
+    orcaPdas.push(await pda([new TextEncoder().encode('position'),b58d(c.mint)],ORCA));
+  }
+  const found=[], orcaFound=[];
   for(let i=0;i<pdas.length;i+=100){
     const res=await sol('getMultipleAccounts',[pdas.slice(i,i+100),{encoding:'base64'}]);
     res.value.forEach((a,j)=>{
@@ -371,7 +381,119 @@ async function fetchSolana(SOL_WALLETS){
       if(pp.liquidity>0n) found.push({cat:cat[i+j],pda:pdas[i+j],pp});
     });
   }
+  for(let i=0;i<orcaPdas.length;i+=100){
+    const res=await sol('getMultipleAccounts',[orcaPdas.slice(i,i+100),{encoding:'base64'}]);
+    res.value.forEach((a,j)=>{
+      if(!a||a.owner!==ORCA) return;
+      const op=parseOrcaPosition(b64(a.data[0]));
+      if(op.liquidity>0n) orcaFound.push({cat:cat[i+j],pda:orcaPdas[i+j],op});
+    });
+  }
+  console.log('sol found:', found.length,'raydium +',orcaFound.length,'orca');
+  if(!found.length && !orcaFound.length) return out;
+  // ---------- ORCA branch ----------
+  if(orcaFound.length){
+    const wpIds=[...new Set(orcaFound.map(x=>x.op.whirlpool))];
+    const wres=await sol('getMultipleAccounts',[wpIds,{encoding:'base64'}]);
+    const wps=new Map();
+    wres.value.forEach((a,i)=>{ if(a) wps.set(wpIds[i], parseWhirlpool(b64(a.data[0]))); });
+    const oMints=[...new Set([...wps.values()].flatMap(w=>[w.mintA,w.mintB]))];
+    // decimals straight from SPL mint accounts (offset 44)
+    const decMap={};
+    const mres=await sol('getMultipleAccounts',[oMints,{encoding:'base64'}]);
+    mres.value.forEach((a,i)=>{ if(a) decMap[oMints[i]]=b64(a.data[0])[44]; });
+    const oPrices={}; const oSyms={};
+    try{
+      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+oMints.join(','));
+      for(const m of oMints){ if(js[m]?.usdPrice!=null) oPrices[m]=Number(js[m].usdPrice); }
+    }catch(e){ logErr('jup orca',e); }
+    for(const m of oMints){
+      if(SOL_KNOWN[m]){ oSyms[m]=SOL_KNOWN[m]; continue; }
+      try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
+        oSyms[m]=(Array.isArray(js)?js.find(t=>t.id===m):null)?.symbol||m.slice(0,4)+'…'; }
+      catch(e){ oSyms[m]=m.slice(0,4)+'…'; }
+    }
+    // precise pending fees via Orca tick arrays (88 ticks/array, ASCII start-index seed)
+    const MASKO=(1n<<128n)-1n;
+    const taCacheO=new Map();
+    async function orcaTick(whirlpool, spacing, tick){
+      const per=spacing*88, start=Math.floor(tick/per)*per;
+      const key=whirlpool+':'+start;
+      if(!taCacheO.has(key)){
+        const addr=await pda([new TextEncoder().encode('tick_array'), b58d(whirlpool), new TextEncoder().encode(String(start))], ORCA);
+        const r=await sol('getMultipleAccounts',[[addr],{encoding:'base64'}]);
+        taCacheO.set(key, r.value[0]?b64(r.value[0].data[0]):null);
+      }
+      const b=taCacheO.get(key);
+      if(!b) return null;
+      const idx=Math.round((tick-Math.floor(tick/per)*per)/spacing);
+      if(idx<0||idx>=88) return null;
+      const base=12+idx*113;
+      return { fgA:leU128(b,base+33), fgB:leU128(b,base+49) };
+    }
+    const fgIn=(g,lo,up,cur,tl,tu)=>{
+      const below=cur>=tl?lo:(g-lo)&MASKO;
+      const above=cur<tu?up:(g-up)&MASKO;
+      return (g-below-above)&MASKO;
+    };
+    for(const {cat:c, pda:pd, op} of orcaFound){
+      const w=wps.get(op.whirlpool); if(!w) continue;
+      const dA=decMap[w.mintA]??9, dB=decMap[w.mintB]??9, scale=10**(dA-dB);
+      const sp=Number(w.sqrtPriceX64)/Q64;
+      const [ra,rb]=amounts(Number(op.liquidity),sp,tickToSqrt(op.tickLower),tickToSqrt(op.tickUpper));
+      const amtA=ra/10**dA, amtB=rb/10**dB;
+      const price=sp*sp*scale, priceLower=tickToPrice(op.tickLower)*scale, priceUpper=tickToPrice(op.tickUpper)*scale;
+      let usdA=oPrices[w.mintA]??null, usdB=oPrices[w.mintB]??null;
+      if(usdA==null&&usdB!=null) usdA=price*usdB;
+      if(usdB==null&&usdA!=null) usdB=usdA/price;
+      let fRawA=op.feeOwedA, fRawB=op.feeOwedB;
+      try{
+        const loT=await orcaTick(op.whirlpool,w.tickSpacing,op.tickLower);
+        const upT=await orcaTick(op.whirlpool,w.tickSpacing,op.tickUpper);
+        if(loT&&upT){
+          const inA=fgIn(w.fgGlobalA,loT.fgA,upT.fgA,w.tickCurrent,op.tickLower,op.tickUpper);
+          const inB=fgIn(w.fgGlobalB,loT.fgB,upT.fgB,w.tickCurrent,op.tickLower,op.tickUpper);
+          let dAg=(inA-op.fgCheckA)&MASKO, dBg=(inB-op.fgCheckB)&MASKO;
+          if(dAg>(1n<<127n)) dAg=0n;
+          if(dBg>(1n<<127n)) dBg=0n;
+          fRawA=op.feeOwedA+((dAg*op.liquidity)>>64n);
+          fRawB=op.feeOwedB+((dBg*op.liquidity)>>64n);
+        }
+      }catch(e){ logErr('orcaFees '+op.positionMint.slice(0,6),e); }
+      const fA=Number(fRawA)/10**dA, fB=Number(fRawB)/10**dB;
+      const tick=w.tickCurrent;
+      const inRange=tick>=op.tickLower&&tick<op.tickUpper;
+      const rangePos=(tick-op.tickLower)/(op.tickUpper-op.tickLower);
+      const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
+      let mintTs=null;
+      try{
+        let before,oldest=null,pages=0;
+        while(pages<3){
+          const sigs=await sol('getSignaturesForAddress',[pd,{limit:1000,...(before?{before}:{})}]);
+          if(!sigs||!sigs.length) break;
+          oldest=sigs[sigs.length-1];
+          if(sigs.length<1000) break;
+          before=oldest.signature; pages++;
+        }
+        if(oldest?.blockTime) mintTs=oldest.blockTime*1000;
+      }catch(e){}
+      out.push({ id:'sol:'+op.positionMint, chain:'sol', venue:'orca', relay:true, wallet:c.wallet,
+        nftMint:op.positionMint, poolId:op.whirlpool, pda:pd,
+        m0:{symbol:oSyms[w.mintA]}, m1:{symbol:oSyms[w.mintB]}, d0:dA, d1:dB, tick, price, priceLower, priceUpper,
+        amt0:amtA, amt1:amtB, f0:fA, f1:fB, usd0:usdA, usd1:usdB,
+        valueUsd:(usdA!=null&&usdB!=null)?amtA*usdA+amtB*usdB:null,
+        feesUsd:(usdA!=null&&usdB!=null)?fA*usdA+fB*usdB:null,
+        feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
+        poolAprPct:null, poolAprDay:null, poolAprWeek:null, poolAprMonth:null,
+        mintTs, ageDays:mintTs?(Date.now()-mintTs)/86400000:null,
+        inRange, rangePos, dLow, dUp, nearestEdge:dLow<dUp?'lower':'upper',
+        edgeDist:inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
+        pairLabel:oSyms[w.mintA]+' / '+oSyms[w.mintB],
+        feeLabel:(w.feeRate/1e4).toFixed(w.feeRate%100?2:1).replace(/\.0$/,'')+'%' });
+    }
+  }
   if(!found.length) return out;
+  // ---------- RAYDIUM branch ----------
   const poolIds=[...new Set(found.map(x=>x.pp.poolId))];
   const pools=new Map();
   const pr=await sol('getMultipleAccounts',[poolIds,{encoding:'base64'}]);

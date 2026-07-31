@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#04070d">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ARC // LP COMMAND — Uniswap V3 Telemetry</title>
 <style>
@@ -702,7 +706,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v17';
+const BUILD = 'v18';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1558,10 +1562,22 @@ async function discoverEthIds(){
 }
 
 /* ================= SCAN ORCHESTRATION ================= */
-let scanning = false;
+let scanning = false, scanStartedAt = 0;
 async function scan(isBoot){
-  if(scanning) return; scanning = true;
+  if(scanning) return;
+  scanning = true; scanStartedAt = Date.now();
   $('#scanIcon')?.classList.add('spinning');
+  try{
+    await scanInner(isBoot);
+  }catch(e){
+    log('critical','Scan crashed: '+esc(String(e&&e.message||e)).slice(0,90));
+  }finally{
+    scanning = false;
+    state.countdown = cfg.interval;
+    $('#scanIcon')?.classList.remove('spinning');
+  }
+}
+async function scanInner(isBoot){
   state.scanCount = (state.scanCount||0)+1;
   setConn('sync');
   // ---- Ethereum ----
@@ -1651,9 +1667,6 @@ async function scan(isBoot){
   if(state.samples.length>600) state.samples.shift();
   evaluateAlerts();
   renderAll();
-  state.countdown = cfg.interval;
-  scanning = false;
-  $('#scanIcon')?.classList.remove('spinning');
 }
 </script>
 <script>
@@ -1757,7 +1770,7 @@ const badgeOf = p => poolBadge.get(String(p.id)) || null;
 const eraOf = p => { const b=badgeOf(p); return b ? b.split(' ')[0] : null; };            // 'OLD' / 'NEW'
 const pairName = p => p.pairLabel + (badgeOf(p) ? ' ('+badgeOf(p)+')' : '');             // 'LCX / ETH (OLD ’19 ·fe41)'
 const pairShort = p => p.pairLabel + (eraOf(p) ? ' · '+eraOf(p) : '');                   // 'LCX / ETH · OLD'
-const posLink = p => p.chain==='sol' ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/'+((EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).uni)+'/'+p.id;
+const posLink = p => p.chain==='sol' ? (p.venue==='orca' ? 'https://www.orca.so/portfolio' : 'https://raydium.io/portfolio/?position_tab=concentrated') : 'https://app.uniswap.org/positions/v3/'+((EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).uni)+'/'+p.id;
 const scanBase = p => (EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).scan;
 const chainTag = p => p.chain==='sol' ? '◎SOL' : (p.chainTag||(EVM_CHAINS[p.chain]||{}).tag||'ETH');
 const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+' ↗</a>';
@@ -2662,7 +2675,10 @@ function renderCards(){
     // ---- header
     const head=el('div','chead');
     head.append(el('span','cdot'));
-    if(isSol) head.append(el('span',null,'<span style="color:var(--text-muted);font-size:12px" title="Solana · Raydium CLMM">◎</span>'));
+    if(isSol){
+      head.append(el('span',null,'<span style="color:var(--text-muted);font-size:12px" title="Solana">◎</span>'));
+      head.append(el('span','feet', p.venue==='orca' ? 'ORCA' : 'RAY'));
+    }
     else if(p.chain && p.chain!=='ethereum') head.append(el('span','feet',esc(chainTag(p))));
     head.append(el('span','pair',esc(p.pairLabel)));
     head.append(el('span','feet',esc(p.feeLabel)));
@@ -3015,10 +3031,21 @@ function bootMsg(m){ const b=$('#bootLog'); if(b) b.innerHTML = esc(m)+'<br>'+b.
 function tickClock(){
   const d=new Date();
   $('#hClock').textContent = d.toUTCString().slice(17,25);
-  if(!scanning && state.mode!=='boot'){
+  const cd=$('#hCountdown');
+  if(scanning){
+    cd.innerHTML='<span class="spinning" style="display:inline-block">◌</span>';
+    // watchdog: a scan can never legally take 4+ minutes — force-release the lock
+    if(Date.now()-scanStartedAt > 240000){
+      scanning=false; state.countdown=cfg.interval;
+      $('#scanIcon')?.classList.remove('spinning');
+      log('warning','Scan watchdog fired — a stuck scan was released. Auto-refresh resumed.');
+    }
+  } else if(state.mode!=='boot'){
     state.countdown--;
-    if(state.countdown<=0){ scan(); }
-    $('#hCountdown').innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
+    if(state.countdown<=0){ state.countdown=cfg.interval; scan(); }
+    cd.innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
+  } else {
+    cd.innerHTML='—<span class="unit">s</span>';
   }
 }
 const SEG_SHORT={d1:'24H',d7:'7D',d30:'30D',d365:'1Y',incept:'OPEN'};
