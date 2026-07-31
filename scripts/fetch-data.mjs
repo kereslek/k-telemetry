@@ -208,6 +208,23 @@ async function poolVolatility(pool, scale, blockNum){
   const varr=rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1);
   return Math.sqrt(varr)/Math.sqrt(2);                 // daily sigma (2-day gaps)
 }
+async function poolVol24(pool, scale, blockNum){
+  const pts=[];
+  for(let i=12;i>=0;i--){
+    const blk=blockNum-Math.round(i*600);            // 600 blocks ≈ 2h
+    try{
+      const r=await ethCall(pool,SEL.slot0,'0x'+blk.toString(16));
+      const sp=Number(BigInt(word(r,0)))/Q96;
+      pts.push(sp*sp*scale);
+    }catch(e){ pts.push(null); }
+  }
+  const rets=[];
+  for(let i=1;i<pts.length;i++) if(pts[i]!=null&&pts[i-1]!=null&&pts[i]>0&&pts[i-1]>0) rets.push(Math.log(pts[i]/pts[i-1]));
+  if(rets.length<6) return null;
+  const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
+  const varr=rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1);
+  return Math.sqrt(varr)*Math.sqrt(12);              // scale 2h → daily
+}
 const erf=x=>{const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;};
 const Phi=z=>0.5*(1+erf(z/Math.SQRT2));
 function rangeAnalytics(price, lo, up, sigma){
@@ -431,11 +448,14 @@ const main=async()=>{
     for(const p of ethPositions) if(p.token0 in deployTs) p.token0DeployTs=deployTs[p.token0];
   }
   // range analytics per unique pool
-  const volCache={};
+  const volCache={}, vol24Cache={};
   for(const p of ethPositions){
     try{
       if(!(p.pool in volCache)) volCache[p.pool]=await poolVolatility(p.pool, 10**(p.d0-p.d1), blockNum);
+      if(!(p.pool in vol24Cache)) vol24Cache[p.pool]=await poolVol24(p.pool, 10**(p.d0-p.d1), blockNum);
       p.range = rangeAnalytics(p.price, p.priceLower, p.priceUpper, volCache[p.pool]);
+      p.sigma30 = volCache[p.pool];
+      p.vol24 = vol24Cache[p.pool];
     }catch(e){ p.range=null; }
   }
   let solPositions=[];

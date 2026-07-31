@@ -361,6 +361,22 @@
   .econ-strip b{color:var(--text-primary)}
   @media(max-width:900px){.arch-row{grid-template-columns:1fr 1fr;row-gap:4px}.arch-row.hdr{display:none}.arch-row .num{text-align:left}}
 
+  /* seismograph */
+  .vol-chips{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0 4px}
+  .vol-chip{display:flex;align-items:center;gap:9px;border:1px solid;padding:7px 12px;font-size:12px}
+  .vol-chip .big{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+  .vol-chip.calm{border-color:var(--status-good);color:var(--status-good);background:rgba(12,163,12,.05)}
+  .vol-chip.normal{border-color:var(--accent-dim);color:var(--accent);background:rgba(53,214,232,.05)}
+  .vol-chip.elevated{border-color:var(--status-warning);color:var(--status-warning);background:rgba(250,178,25,.06)}
+  .vol-chip.storm{border-color:var(--status-critical);color:var(--status-critical);background:rgba(208,59,59,.08);animation:pulse 1.4s infinite}
+  .vol-chip .sub{font-size:10px;color:var(--text-muted)}
+  .press-row{display:grid;grid-template-columns:230px 1fr 210px;gap:14px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line-soft);font-size:12px}
+  .press-row:last-child{border-bottom:none}
+  .press-track{height:12px;background:var(--panel-2);border:1px solid var(--line);position:relative;overflow:hidden}
+  .press-fill{position:absolute;top:0;bottom:0;left:0}
+  .press-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
+  @media(max-width:760px){.press-row{grid-template-columns:1fr;gap:4px}.press-val{text-align:left}}
+
   /* event log */
   .log{max-height:260px;overflow-y:auto;font-size:12px}
   .log-row{display:flex;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line-soft);align-items:baseline}
@@ -459,6 +475,16 @@
   <div class="tiles" id="tiles"></div>
 
   <div id="panelStack">
+    <section class="panel" data-panel="seismo" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">MARKET SEISMOGRAPH — HOW HARD IS PRICE SHAKING?</span><span class="hint">24h realized volatility vs 30-day baseline · buffers measured in days of typical motion</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody">
+        <canvas id="seismo" style="width:100%;height:86px;display:block"></canvas>
+        <div id="seismoChips"></div>
+        <div id="seismoPressure"></div>
+      </div>
+    </section>
+
     <section class="panel" data-panel="rank" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
@@ -541,6 +567,7 @@
         <div class="card-x"><h4>ROI vs FEE APR vs PRICE DRIFT (IL)</h4><p><b>ROI</b> = everything (value change + fees) vs what you deposited. <b>Fee APR</b> = fees only. <b>Price drift (IL)</b> ≈ ROI − fees: what price movement alone did to you. Fees high but ROI low → the range is earning hard while price drifts against you.</p></div>
         <div class="card-x"><h4>FEES / $1K / DAY</h4><p>The fairest cross-LP metric: dollars earned per day per $1,000 deposited — strips out position size and age. The matrix column ◆ marks best-in-class.</p></div>
         <div class="card-x"><h4>LIVE vs RELAY</h4><p><b>LIVE · MAINNET</b> = your browser reads the chains directly. <b>LIVE · RELAY</b> = your GitHub repo fetched the data server-side (refreshed ~15 min) — used when your network/antivirus blocks RPC traffic. Both are real on-chain data.</p></div>
+        <div class="card-x"><h4>SEISMOGRAPH &amp; RANGE PRESSURE</h4><p>The wave shows current market agitation: <b>±%/day</b> is how much the pair typically moves in a day (24h realized volatility); <b>× vs 30d</b> compares it to the monthly baseline — CALM / NORMAL / ELEVATED / STORM. "Edge ≈ N days of typical motion" divides your remaining range buffer by daily volatility: <b>under 1 day = red</b> (an ordinary day can knock you out), 1–3 amber, 3+ green. High volatility often raises volume (more fees) but drains buffers faster.</p></div>
         <div class="card-x"><h4>ALERTS</h4><p>Thresholds are % of <b>range width</b>: WARN inside 20% of an edge, CRITICAL inside 8% (tunable in CONFIG). Arm ◉ ALERTS for browser pings even when the tab is in background.</p></div>
       </div></div>
     </section>
@@ -643,7 +670,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v13';
+const BUILD = 'v14';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1648,7 +1675,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  renderHeader(); renderTiles(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
   if(state.mode==='offline'){
@@ -1689,6 +1716,13 @@ function renderTiles(){
   { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
     mk('UNCLAIMED FEES', fmtUsd(totalFees),
        (topFee&&topFee.feesUsd>0 ? 'top: <b>'+esc(topFee.pairLabel)+' '+esc(posRef(topFee))+' · '+fmtUsd(topFee.feesUsd)+'</b> · ' : '')+'lifetime: <b>'+fmtUsd(totalEver,0)+'</b>'); }
+  { const dayOf = p => cfg.aprWin==='incept'
+      ? ((p.feesEverUsd!=null && p.ageDays>0.05) ? p.feesEverUsd/p.ageDays : null)
+      : (()=>{ const a=aprOf(p).v, base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; })();
+    const rows=ps.map(dayOf).filter(v=>v!=null);
+    const perDay=rows.length? rows.reduce((a,b)=>a+b,0) : null;
+    mk('FEE INCOME / DAY · '+WIN_LABEL[cfg.aprWin], perDay==null?'—':fmtUsd(perDay),
+       perDay==null?'switch timeframe in the header':'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo · avg over '+WIN_LABEL[cfg.aprWin].toLowerCase()); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
   mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
@@ -1890,6 +1924,99 @@ function renderMatrix(){
     });
     tbl.append(tr);
   });
+}
+
+/* ----- market seismograph ----- */
+let seismoAmp=0.3, seismoHex='#35d6e8', seismoInit=false;
+function volRegime(ratio){
+  if(ratio==null) return {key:'normal',label:'NO BASELINE',hex:'#35d6e8'};
+  if(ratio<0.8)  return {key:'calm',label:'CALM',hex:'#0ca30c'};
+  if(ratio<1.3)  return {key:'normal',label:'NORMAL',hex:'#35d6e8'};
+  if(ratio<2.0)  return {key:'elevated',label:'ELEVATED',hex:'#fab219'};
+  return {key:'storm',label:'STORM',hex:'#d03b3b'};
+}
+function renderSeismo(){
+  const chips=$('#seismoChips'), press=$('#seismoPressure');
+  if(!chips) return;
+  chips.innerHTML=''; press.innerHTML='';
+  chips.className='vol-chips';
+  const ps=ordered().filter(p=>p.chain!=='sol');
+  const pools=new Map();
+  for(const p of ps){
+    const key=p.pool||p.pairLabel;
+    if(!pools.has(key)) pools.set(key,{p, s24:p.vol24??null, s30:p.sigma30??p.range?.sigmaDaily??null});
+  }
+  let worstRatio=null, worstS24=0;
+  for(const [,x] of pools){
+    const ratio=(x.s24!=null&&x.s30)? x.s24/x.s30 : null;
+    const reg=volRegime(ratio);
+    if(ratio!=null && (worstRatio==null||ratio>worstRatio)) worstRatio=ratio;
+    if(x.s24!=null) worstS24=Math.max(worstS24,x.s24);
+    const chip=el('div','vol-chip '+reg.key);
+    chip.innerHTML='<span>'+esc(x.p.pairLabel)+(badgeOf(x.p)?' <span class="sub">'+esc(badgeOf(x.p).split(' ')[0])+'</span>':'')+'</span>'
+      +'<span class="big">'+(x.s24!=null?'±'+(x.s24*100).toFixed(1)+'%/day':'…')+'</span>'
+      +'<span>'+reg.label+(ratio!=null?' <span class="sub">'+ratio.toFixed(1)+'× vs 30d</span>':'')+'</span>';
+    chips.append(chip);
+  }
+  if(!pools.size) chips.innerHTML='<div style="color:var(--text-muted);font-size:12px">Volatility telemetry arrives with the next server refresh.</div>';
+  const worstReg=volRegime(worstRatio);
+  seismoAmp=Math.max(0.15,Math.min(1, (worstS24*100)/8 * (worstRatio||1)));
+  seismoHex=worstReg.hex;
+  // range pressure: buffer in days of typical motion
+  for(const p of ps){
+    const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
+    if(!s||!p.inRange||!(p.price>0)) continue;
+    const bufLog=Math.min(Math.log(p.price/p.priceLower), Math.log(p.priceUpper/p.price));
+    const days=bufLog/s;
+    const col=days<1?'var(--status-critical)':days<3?'var(--status-warning)':'var(--status-good)';
+    const row=el('div','press-row');
+    row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(p.pairLabel)+' '+linkRef(p)));
+    const track=el('div','press-track');
+    const fill=el('div','press-fill');
+    fill.style.width=Math.min(100,days/7*100)+'%';
+    fill.style.background='linear-gradient(90deg,'+col+'88,'+col+')';
+    fill.style.boxShadow='0 0 10px '+col;
+    track.append(fill); row.append(track);
+    row.append(el('div','press-val','edge ≈ <b style="color:'+col+'">'+(days<10?days.toFixed(1):Math.round(days))+' days</b> of typical motion'));
+    press.append(row);
+  }
+  if(!seismoInit){ seismoInit=true; initSeismoWave(); }
+}
+function initSeismoWave(){
+  const c=$('#seismo'); if(!c) return;
+  const ctx=c.getContext('2d');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W=0,H=0,t=0;
+  const layout=()=>{W=c.width=c.clientWidth||800;H=c.height=86;};
+  layout(); new ResizeObserver(layout).observe(c);
+  const buf=[];
+  function draw(){
+    if(!W) layout();
+    ctx.clearRect(0,0,W,H);
+    const mid=H/2;
+    // advance signal: noisy oscillation, amplitude = current regime
+    t+=0.35;
+    const amp=seismoAmp*(H*0.42);
+    const v=(Math.sin(t*0.9)*0.4+Math.sin(t*2.3)*0.3+Math.sin(t*5.1)*0.2+(Math.random()-0.5)*0.7)*amp;
+    buf.push(v); if(buf.length>W/2) buf.shift();
+    ctx.strokeStyle='#13233a'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(W,mid); ctx.stroke();
+    const grad=ctx.createLinearGradient(0,0,W,0);
+    grad.addColorStop(0,'transparent'); grad.addColorStop(.15,seismoHex+'55'); grad.addColorStop(1,seismoHex);
+    ctx.strokeStyle=grad; ctx.lineWidth=2;
+    ctx.shadowColor=seismoHex; ctx.shadowBlur=8;
+    ctx.beginPath();
+    buf.forEach((y,i)=>{ const x=W-(buf.length-i)*2; if(i===0)ctx.moveTo(x,mid+y); else ctx.lineTo(x,mid+y); });
+    ctx.stroke(); ctx.shadowBlur=0;
+    // label
+    ctx.fillStyle=seismoHex; ctx.font='700 12px ui-monospace,monospace'; ctx.textAlign='left';
+    const lbl=volRegime(seismoAmp>0.75?2.2:seismoAmp>0.45?1.5:seismoAmp>0.25?1:0.5);
+    ctx.fillText('● '+lbl.label, 10, 18);
+  }
+  function loop(){ const panel=c.closest('.panel');
+    if(!document.hidden && panel && !panel.classList.contains('collapsed')) draw();
+    if(!reduced) requestAnimationFrame(loop); }
+  if(reduced){ draw(); } else requestAnimationFrame(loop);
 }
 
 /* ----- leaderboard ----- */
