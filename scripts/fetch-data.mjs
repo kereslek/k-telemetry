@@ -3,7 +3,8 @@
    position data and writes data.json for the static dashboard to consume. */
 
 import fs from 'fs';
-const CONFIG = JSON.parse(fs.readFileSync('config.json','utf8'));
+const OUT='deck-r7k4x9';
+const CONFIG = JSON.parse(fs.readFileSync(OUT+'/config.json','utf8'));
 const SOL_RPCS = ['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com','https://solana.drpc.org'];
 const NPM_STD='0xc36442b4a4522e871399cd717abdd847ab11fe88', FACT_STD='0x1f98431c8ad98523631ae4a59f267346ea31f984';
 const CHAINS = {
@@ -698,6 +699,25 @@ const main=async()=>{
       try{ solPositions=await fetchSolana(solWallets); }
       catch(e){ logErr('sol',e); chainErrs.add('solana'); }
     }
+    // ---- harvest ledger: detect fee collections between snapshots (Solana has no easy event log) ----
+    try{
+      let ledger={}; try{ ledger=JSON.parse(fs.readFileSync(OUT+'/ledger-'+profile.slug+'.json','utf8')); }catch(e){}
+      let prev=null; try{ prev=JSON.parse(fs.readFileSync(OUT+'/data-'+profile.slug+'.json','utf8')); }catch(e){}
+      const prevSol=new Map((prev&&prev.sol||[]).map(p=>[p.id,p]));
+      for(const p of solPositions){
+        const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
+        const pv=prevSol.get(p.id);
+        if(pv && pv.feesUsd!=null && p.feesUsd!=null){
+          const drop=pv.feesUsd-p.feesUsd;
+          const valStable=Math.abs((pv.valueUsd||0)-(p.valueUsd||0)) < Math.max(50,(p.valueUsd||1)*0.5);
+          if(drop>0.5 && valStable) L.collectedUsd+=drop;   // pending fees fell without the position changing → harvested
+        }
+        p.feesCollectedUsd=L.collectedUsd;
+        p.feesEverUsd=L.collectedUsd+(p.feesUsd||0);
+        if(p.ageDays>0.05 && p.valueUsd>0) p.feeAprPct=(p.feesEverUsd/p.valueUsd)*(365/p.ageDays)*100;
+      }
+      fs.writeFileSync(OUT+'/ledger-'+profile.slug+'.json', JSON.stringify(ledger,null,1));
+    }catch(e){ logErr('ledger',e); }
     const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
     const chainStatus={};
     for(const ck of usedChains){
@@ -706,8 +726,8 @@ const main=async()=>{
     }
     const data={ v:5, t:Date.now(), profile:profile.slug, chainStatus, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
-    fs.writeFileSync('data-'+profile.slug+'.json', JSON.stringify(data));
-    if(profile===CONFIG.profiles[0]) fs.writeFileSync('data.json', JSON.stringify(data));
+    fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
+    if(profile===CONFIG.profiles[0]) fs.writeFileSync(OUT+'/data.json', JSON.stringify(data));
     console.log('profile',profile.slug,':',evmPositions.length,'evm +',solPositions.length,'sol · errors:',errors.length);
   }
 };
