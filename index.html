@@ -93,6 +93,7 @@
   }
   .hbtn:hover{background:rgba(53,214,232,.1);box-shadow:0 0 12px var(--accent-glow)}
   .hbtn.armed{color:var(--status-good);border-color:var(--status-good)}
+  .spinning{animation:spin 0.9s linear infinite}
 
   /* ============ LAYOUT ============ */
   main{max-width:1560px;margin:0 auto;padding:18px 22px 60px}
@@ -465,12 +466,13 @@
     <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
     <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
-    <button class="hbtn" id="btnRefresh">⟳ SCAN</button>
+    <button class="hbtn" id="btnRefresh"><span id="scanIcon" style="display:inline-block">⟳</span> SCAN</button>
     <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
   </div>
 </header>
 
 <main>
+  <div class="banner" id="partialBar" style="border-color:var(--status-warning);color:var(--status-warning)"></div>
   <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN. <span id="simErr" style="color:var(--status-critical)"></span></div>
 
   <div class="tiles" id="tiles"></div>
@@ -512,7 +514,7 @@
 
     <section class="panel" data-panel="cosmos" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CONSTELLATION — YOUR CAPITAL AS A GALAXY</span><span class="hint">size = value · halo = APR · ring = position in range · CLICK a body to open its module</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CONSTELLATION — YOUR CAPITAL AS A GALAXY</span><span class="hint">size = value · halo = APR · ring = range position · amber moon = unclaimed fees · CLICK a body to open its module</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" style="padding:0"><canvas id="cosmos" style="width:100%;height:400px;display:block;cursor:pointer"></canvas></div>
     </section>
 
@@ -699,7 +701,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v15';
+const BUILD = 'v16';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1558,6 +1560,7 @@ async function discoverEthIds(){
 let scanning = false;
 async function scan(isBoot){
   if(scanning) return; scanning = true;
+  $('#scanIcon')?.classList.add('spinning');
   state.scanCount = (state.scanCount||0)+1;
   setConn('sync');
   // ---- Ethereum ----
@@ -1603,6 +1606,7 @@ async function scan(isBoot){
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
+          if(d.chainStatus) state.chainStatus = d.chainStatus;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
           if(state.relayUsed) log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
@@ -1648,6 +1652,7 @@ async function scan(isBoot){
   renderAll();
   state.countdown = cfg.interval;
   scanning = false;
+  $('#scanIcon')?.classList.remove('spinning');
 }
 </script>
 <script>
@@ -1763,6 +1768,18 @@ function assignColors(){
 function renderAll(){
   assignColors(); assignPools();
   renderHeader(); renderTiles(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  // partial-data ribbon: some chains down, rest still current
+  {
+    const down=[];
+    for(const [ck,st] of Object.entries(state.chainStatus||{})) if(st!=='ok') down.push(ck.toUpperCase());
+    if(state.mode==='live' && state.lastScanErr && /^ETH:/.test(state.lastScanErr) && !state.relayUsed && !down.includes('ETHEREUM')) down.push('ETHEREUM (live scan)');
+    state.partialChains=down;
+    const pb=$('#partialBar');
+    if(down.length && state.mode==='live'){
+      pb.classList.add('show');
+      pb.innerHTML='⚠ PARTIAL DATA — '+esc(down.join(', '))+' failed to refresh on the last cycle. Every other chain shown is current; the affected chain\'s positions are hidden or stale until the next successful refresh.';
+    } else pb.classList.remove('show');
+  }
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
   if(state.mode==='offline'){
@@ -1782,7 +1799,8 @@ function renderHeader(){
 function setConn(mode){
   const led=$('#connLed'), lab=$('#connLabel');
   led.className='led'+(mode==='sim'?' sim':mode==='err'?' err':'');
-  lab.textContent = mode==='live' && state.relayUsed ? 'LIVE · RELAY' : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…');
+  lab.textContent = mode==='live' && (state.partialChains||[]).length ? 'LIVE · PARTIAL'
+    : (mode==='live' && state.relayUsed ? 'LIVE · RELAY' : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…'));
 }
 
 function renderTiles(){
@@ -2014,7 +2032,7 @@ function renderMatrix(){
 }
 
 /* ----- market seismograph ----- */
-let seismoAmp=0.3, seismoHex='#35d6e8', seismoInit=false;
+let seismoAmp=0.3, seismoHex='#35d6e8', seismoLabel='NORMAL', seismoInit=false;
 function volRegime(ratio){
   if(ratio==null) return {key:'normal',label:'NO BASELINE',hex:'#35d6e8'};
   if(ratio<0.8)  return {key:'calm',label:'CALM',hex:'#0ca30c'};
@@ -2049,6 +2067,57 @@ function renderSeismo(){
   const worstReg=volRegime(worstRatio);
   seismoAmp=Math.max(0.15,Math.min(1, (worstS24*100)/8 * (worstRatio||1)));
   seismoHex=worstReg.hex;
+  seismoLabel=worstReg.label + (worstRatio!=null?' · '+worstRatio.toFixed(1)+'× the 30-day norm':'');
+  // ---- history histogram: |move| per 2-day segment over 28 days, worst pool ----
+  let histHost=$('#seismoHist');
+  if(!histHost){ histHost=el('div'); histHost.id='seismoHist'; chips.after(histHost); }
+  histHost.innerHTML='';
+  let hp=null, hbest=-1;
+  for(const [,x] of pools){ if(x.p.volHist30 && (x.s24??0)>hbest){ hbest=x.s24??0; hp=x.p; } }
+  if(hp && hp.volHist30){
+    const moves=hp.volHist30.filter(m=>m!=null);
+    if(moves.length>3){
+      const W=1200,H=110,padL=56,padB=22,padT=14;
+      const NS='http://www.w3.org/2000/svg';
+      const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+      const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='10px';
+      const cur24=(hp.vol24??0)*100;
+      const maxV=Math.max(...moves,cur24,0.1)*1.15;
+      const Y=v=>padT+(1-v/maxV)*(H-padT-padB);
+      const n=moves.length, step=(W-padL-20)/(n+1), bw=Math.min(40,step*0.62);
+      const med=[...moves].sort((a,b)=>a-b)[Math.floor(moves.length/2)];
+      moves.forEach((m,i)=>{
+        const ratio=med>0?m/med:1;
+        const col=ratio<0.8?'#0ca30c':ratio<1.3?'#35d6e8':ratio<2?'#fab219':'#d03b3b';
+        const x=padL+step*i+(step-bw)/2;
+        const bar=mkel('rect',{x,y:Y(m),width:bw,height:Math.max(2,Y(0)-Y(m)),fill:col,opacity:.75,rx:2});
+        bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">≈'+(2*(n-i))+' days ago (2-day segment)</div><div class="tv">price moved <b>'+m.toFixed(1)+'%</b></div>'));
+        bar.addEventListener('mouseleave',hideTip);
+        svg.append(bar);
+      });
+      // NOW bar (24h realized, highlighted)
+      const xNow=padL+step*n+(step-bw)/2;
+      const nowBar=mkel('rect',{x:xNow,y:Y(cur24),width:bw,height:Math.max(2,Y(0)-Y(cur24)),fill:seismoHex,rx:2});
+      nowBar.style.filter='drop-shadow(0 0 6px '+seismoHex+')';
+      nowBar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">NOW — last 24h, scaled to daily</div><div class="tv"><b>±'+cur24.toFixed(1)+'%/day</b></div>'));
+      nowBar.addEventListener('mouseleave',hideTip);
+      svg.append(nowBar);
+      const nl=mkel('text',{x:xNow+bw/2,y:H-6,'text-anchor':'middle','font-size':9.5,fill:seismoHex,'font-weight':'700'}); nl.textContent='NOW'; svg.append(nl);
+      // median line
+      svg.append(mkel('line',{x1:padL,x2:W-14,y1:Y(med),y2:Y(med),stroke:'#7e97a8','stroke-dasharray':'4 4','stroke-width':1}));
+      const ml=mkel('text',{x:padL-6,y:Y(med)+3,'text-anchor':'end','font-size':9,fill:'#7e97a8'}); ml.textContent='norm '+med.toFixed(1)+'%'; svg.append(ml);
+      const tl=mkel('text',{x:padL-6,y:padT+4,'text-anchor':'end','font-size':9,fill:'#5d7889'}); tl.textContent=maxV.toFixed(0)+'%'; svg.append(tl);
+      histHost.append(el('div','flow-title','MOVEMENT HISTORY — '+esc(hp.pairLabel)+' · each bar = how much price moved in a 2-day segment (last 28 days) · dashed line = normal'));
+      histHost.append(svg);
+    }
+  }
+  // inline explanation
+  let expl=$('#seismoExpl');
+  if(!expl){ expl=el('div'); expl.id='seismoExpl'; press.after(expl); }
+  expl.innerHTML='<div class="arch-note">HOW TO READ — the wave and chips show how hard price is shaking RIGHT NOW (last 24h, annual-free, ±%/day). '
+    +'The verdict compares it to that pool\'s own 30-day norm: CALM &lt;0.8× · NORMAL 0.8–1.3× · ELEVATED 1.3–2× · <b>STORM ≥2×</b> — '
+    +'so "STORM" never means a market crash, it means <b>this pool is moving ≥2× faster than its own recent normal</b>. '
+    +'The histogram gives the receipts: 14 past segments vs the glowing NOW bar. High agitation usually means more volume (more fees) but faster buffer drain — check the pressure bars below.</div>';
   // range pressure: buffer in days of typical motion
   for(const p of ps){
     const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
@@ -2095,10 +2164,9 @@ function initSeismoWave(){
     ctx.beginPath();
     buf.forEach((y,i)=>{ const x=W-(buf.length-i)*2; if(i===0)ctx.moveTo(x,mid+y); else ctx.lineTo(x,mid+y); });
     ctx.stroke(); ctx.shadowBlur=0;
-    // label
+    // label — from the MEASURED regime, not animation amplitude
     ctx.fillStyle=seismoHex; ctx.font='700 12px ui-monospace,monospace'; ctx.textAlign='left';
-    const lbl=volRegime(seismoAmp>0.75?2.2:seismoAmp>0.45?1.5:seismoAmp>0.25?1:0.5);
-    ctx.fillText('● '+lbl.label, 10, 18);
+    ctx.fillText('● '+seismoLabel, 10, 18);
   }
   function loop(){ const panel=c.closest('.panel');
     if(!document.hidden && panel && !panel.classList.contains('collapsed')) draw();
@@ -2336,18 +2404,43 @@ function initCosmos(){
   let W=0,H=0;
   const layout=()=>{ W=c.width=c.clientWidth||800; H=c.height=400; };
   layout(); new ResizeObserver(layout).observe(c);
+  let bgStars=null, comet=null;
+  function makeBg(){
+    bgStars=Array.from({length:130},()=>({x:Math.random(),y:Math.random(),r:Math.random()*1.2+.2,tw:Math.random()*6.28,sp:.3+Math.random()*1.2,depth:.3+Math.random()*.7,
+      hue:Math.random()<.8?'160,220,235':'190,170,255'}));
+  }
   function draw(){
     if(!W) layout();
+    if(!bgStars) makeBg();
     ctx.clearRect(0,0,W,H);
     const cx=W/2, cy=H/2;
     const totV=cosmosNodes.reduce((s,n)=>s+n.val,0);
-    // deep space glaze
     const bg=ctx.createRadialGradient(cx,cy,0,cx,cy,W*.7);
-    bg.addColorStop(0,'rgba(22,70,100,.14)'); bg.addColorStop(.55,'rgba(90,50,150,.05)'); bg.addColorStop(1,'transparent');
+    bg.addColorStop(0,'rgba(22,70,100,.16)'); bg.addColorStop(.5,'rgba(90,50,150,.07)'); bg.addColorStop(1,'transparent');
     ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-    // orbits — one per position, sorted by value (biggest closest to the sun)
+    for(const st of bgStars){
+      const a=.25+.75*Math.abs(Math.sin(st.tw+cosmosT*st.sp));
+      const px=(st.x*W + Math.sin(cosmosT*.1)*8*st.depth+W)%W;
+      ctx.fillStyle='rgba('+st.hue+','+(a*.7*st.depth).toFixed(3)+')';
+      ctx.beginPath(); ctx.arc(px, st.y*H, st.r*st.depth+0.2, 0, 6.2832); ctx.fill();
+    }
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(cosmosT*.05);
+    for(let arm=0;arm<3;arm++){
+      ctx.rotate(2.09);
+      const g=ctx.createLinearGradient(0,0,W*.42,0);
+      g.addColorStop(0,'rgba(53,214,232,.10)'); g.addColorStop(.6,'rgba(120,90,220,.05)'); g.addColorStop(1,'transparent');
+      ctx.strokeStyle=g; ctx.lineWidth=26; ctx.lineCap='round';
+      ctx.beginPath();
+      for(let t=0;t<1;t+=.05){
+        const r=30+t*W*.40, a=t*2.4;
+        const x=Math.cos(a)*r, y=Math.sin(a)*r*.42;
+        t===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
     const sorted=[...cosmosNodes].sort((a,b)=>b.val-a.val);
-    const rMin=64, rMax=Math.min(W*.46,H*1.05);
+    const rMin=92, rMax=Math.min(W*.46,H*1.05);
     sorted.forEach((nd,i)=>{
       nd.orbA=rMin+(rMax-rMin)*(i/(Math.max(1,sorted.length-1)||1));
       nd.orbB=nd.orbA*0.42;
@@ -2355,14 +2448,23 @@ function initCosmos(){
       nd.speed=0.0035/(0.6+i*0.35);
     });
     for(const nd of sorted){
-      ctx.strokeStyle='rgba(53,214,232,.10)'; ctx.lineWidth=1;
+      const og=ctx.createLinearGradient(cx-nd.orbA,cy,cx+nd.orbA,cy);
+      og.addColorStop(0,'rgba(53,214,232,.04)'); og.addColorStop(.5,'rgba(53,214,232,.16)'); og.addColorStop(1,'rgba(53,214,232,.04)');
+      ctx.strokeStyle=og; ctx.lineWidth=1;
       ctx.beginPath(); ctx.ellipse(cx,cy,nd.orbA,nd.orbB,0,0,6.2832); ctx.stroke();
     }
-    // sun = portfolio
-    const sunR=17+Math.min(9,totV/4000);
-    const cor=ctx.createRadialGradient(cx,cy,sunR*.3,cx,cy,sunR*3.3);
+    const pulse=1+Math.sin(cosmosT*1.6)*.06;
+    const sunR=(17+Math.min(9,totV/4000))*pulse;
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(cosmosT*.15);
+    for(let k=0;k<8;k++){ ctx.rotate(Math.PI/4);
+      const rg=ctx.createLinearGradient(0,0,sunR*4.2,0);
+      rg.addColorStop(0,'rgba(53,214,232,.12)'); rg.addColorStop(1,'transparent');
+      ctx.fillStyle=rg; ctx.beginPath(); ctx.moveTo(sunR*.6,-2.5); ctx.lineTo(sunR*4.2,0); ctx.lineTo(sunR*.6,2.5); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    const cor=ctx.createRadialGradient(cx,cy,sunR*.3,cx,cy,sunR*3.4);
     cor.addColorStop(0,'rgba(53,214,232,.9)'); cor.addColorStop(.35,'rgba(53,214,232,.25)'); cor.addColorStop(1,'transparent');
-    ctx.fillStyle=cor; ctx.beginPath(); ctx.arc(cx,cy,sunR*3.3,0,6.2832); ctx.fill();
+    ctx.fillStyle=cor; ctx.beginPath(); ctx.arc(cx,cy,sunR*3.4,0,6.2832); ctx.fill();
     const sb=ctx.createRadialGradient(cx-sunR*.3,cy-sunR*.3,1,cx,cy,sunR);
     sb.addColorStop(0,'#eaffff'); sb.addColorStop(.6,'#35d6e8'); sb.addColorStop(1,'#0f4a58');
     ctx.fillStyle=sb; ctx.beginPath(); ctx.arc(cx,cy,sunR,0,6.2832); ctx.fill();
@@ -2370,7 +2472,16 @@ function initCosmos(){
     ctx.fillText(fmtUsd(totV,0), cx, cy+sunR+18);
     ctx.fillStyle='#7e97a8'; ctx.font='9px ui-monospace,monospace';
     ctx.fillText('PORTFOLIO CORE', cx, cy+sunR+31);
-    // planets
+    if(!comet && Math.random()<.004) comet={x:-40,y:Math.random()*H*.5,vx:4+Math.random()*3,vy:.6+Math.random()*.8};
+    if(comet){
+      const cg=ctx.createLinearGradient(comet.x,comet.y,comet.x-60,comet.y-14);
+      cg.addColorStop(0,'rgba(220,250,255,.95)'); cg.addColorStop(1,'transparent');
+      ctx.strokeStyle=cg; ctx.lineWidth=2.2;
+      ctx.beginPath(); ctx.moveTo(comet.x,comet.y); ctx.lineTo(comet.x-60,comet.y-14); ctx.stroke();
+      ctx.fillStyle='#eaffff'; ctx.beginPath(); ctx.arc(comet.x,comet.y,2.2,0,6.2832); ctx.fill();
+      comet.x+=comet.vx; comet.y+=comet.vy;
+      if(comet.x>W+80) comet=null;
+    }
     const maxV=Math.max(...sorted.map(n=>n.val),1);
     for(const nd of sorted){
       nd.ang+=reduced?0:nd.speed;
@@ -2378,7 +2489,15 @@ function initCosmos(){
       nd.y=cy+Math.sin(nd.ang)*nd.orbB;
       const pr=5+Math.sqrt(nd.val/maxV)*9;
       nd.hitR=pr;
-      // small halo scaled by APR (subtle)
+      ctx.lineWidth=pr*1.1; ctx.lineCap='round';
+      for(let seg=0;seg<10;seg++){
+        const a0=nd.ang-(seg+1)*.05, a1=nd.ang-seg*.05;
+        ctx.strokeStyle=nd.hex+(Math.round(28*(1-seg/10)).toString(16).padStart(2,'0'));
+        ctx.beginPath();
+        ctx.moveTo(cx+Math.cos(a0)*nd.orbA, cy+Math.sin(a0)*nd.orbB);
+        ctx.lineTo(cx+Math.cos(a1)*nd.orbA, cy+Math.sin(a1)*nd.orbB);
+        ctx.stroke();
+      }
       const halo=6+Math.min(18,(nd.apr||0)/8);
       const g=ctx.createRadialGradient(nd.x,nd.y,pr*.3,nd.x,nd.y,pr+halo);
       g.addColorStop(0,nd.hex+'aa'); g.addColorStop(.6,nd.hex+'22'); g.addColorStop(1,'transparent');
@@ -2386,19 +2505,26 @@ function initCosmos(){
       const body=ctx.createRadialGradient(nd.x-pr*.35,nd.y-pr*.35,.5,nd.x,nd.y,pr);
       body.addColorStop(0,'#f4feff'); body.addColorStop(.35,nd.hex); body.addColorStop(1,'#0a1322');
       ctx.fillStyle=body; ctx.beginPath(); ctx.arc(nd.x,nd.y,pr,0,6.2832); ctx.fill();
-      // status ring (thin)
-      ctx.lineWidth=2;
+      ctx.lineWidth=2; ctx.lineCap='butt';
       ctx.strokeStyle='rgba(255,255,255,.14)';
       ctx.beginPath(); ctx.arc(nd.x,nd.y,pr+3.5,0,6.2832); ctx.stroke();
       ctx.strokeStyle={good:'#0ca30c',warning:'#fab219',serious:'#ec835a',critical:'#d03b3b'}[nd.sev];
       ctx.beginPath(); ctx.arc(nd.x,nd.y,pr+3.5,-Math.PI/2,-Math.PI/2+nd.rangePos*6.2832); ctx.stroke();
-      // label: name above/below depending on hemisphere to avoid orbit clutter
+      if(nd.fees>1){
+        const mr=1.5+Math.min(3,Math.sqrt(nd.fees)/6);
+        const ma=cosmosT*2.2+nd.phase*3;
+        const mx=nd.x+Math.cos(ma)*(pr+9), my=nd.y+Math.sin(ma)*(pr+9)*.7;
+        ctx.fillStyle='#fab219'; ctx.shadowColor='#fab219'; ctx.shadowBlur=6;
+        ctx.beginPath(); ctx.arc(mx,my,mr,0,6.2832); ctx.fill();
+        ctx.shadowBlur=0;
+      }
       const below=nd.y>cy;
       ctx.fillStyle='#dcedf3'; ctx.font='600 10.5px ui-monospace,monospace';
       ctx.fillText(nd.pair, nd.x, nd.y+(below?pr+18:-pr-12));
       ctx.fillStyle='#7e97a8'; ctx.font='9px ui-monospace,monospace';
       ctx.fillText((nd.apr?nd.apr.toFixed(0)+'% · ':'')+fmtUsd(nd.val,0), nd.x, nd.y+(below?pr+30:-pr-24));
     }
+    cosmosT+=.02;
   }
   function loop(){
     const panel=c.closest('.panel');
@@ -3012,6 +3138,7 @@ async function init(){
       state.positions=new Map(merged.map(p=>[p.id,p]));
       state.ethUsd=state.ethUsd??d.ethUsd; state.gasGwei=state.gasGwei??d.gasGwei;
       if(d.topPools) state.topPools=d.topPools;
+      if(d.chainStatus) state.chainStatus=d.chainStatus;
       state.block=state.block??Number(d.block).toLocaleString();
       state.relayUsed=true; state.relayAt=d.t; state.mode='live';
       setConn('live'); renderAll(); hideBoot();

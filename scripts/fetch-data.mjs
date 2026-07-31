@@ -263,11 +263,16 @@ async function poolVolatility(ck,pool,scale,blockNum){
       samples.push(sp*sp*scale);
     }catch(e){ samples.push(null); }
   }
-  const rets=[];
-  for(let i=1;i<samples.length;i++) if(samples[i]!=null&&samples[i-1]!=null&&samples[i]>0&&samples[i-1]>0) rets.push(Math.log(samples[i]/samples[i-1]));
+  const rets=[], moves=[];
+  for(let i=1;i<samples.length;i++){
+    if(samples[i]!=null&&samples[i-1]!=null&&samples[i]>0&&samples[i-1]>0){
+      const r=Math.log(samples[i]/samples[i-1]);
+      rets.push(r); moves.push(Math.abs(r)*100);
+    } else moves.push(null);
+  }
   if(rets.length<5) return null;
   const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
-  return Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))/Math.sqrt(2);
+  return { sigma: Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))/Math.sqrt(2), moves };
 }
 async function poolVol24(ck,pool,scale,blockNum){
   const bph=CHAINS[ck].bph;
@@ -280,11 +285,16 @@ async function poolVol24(ck,pool,scale,blockNum){
       pts.push(sp*sp*scale);
     }catch(e){ pts.push(null); }
   }
-  const rets=[];
-  for(let i=1;i<pts.length;i++) if(pts[i]!=null&&pts[i-1]!=null&&pts[i]>0&&pts[i-1]>0) rets.push(Math.log(pts[i]/pts[i-1]));
+  const rets=[], moves=[];
+  for(let i=1;i<pts.length;i++){
+    if(pts[i]!=null&&pts[i-1]!=null&&pts[i]>0&&pts[i-1]>0){
+      const r=Math.log(pts[i]/pts[i-1]);
+      rets.push(r); moves.push(Math.abs(r)*100);
+    } else moves.push(null);
+  }
   if(rets.length<6) return null;
   const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
-  return Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))*Math.sqrt(12);
+  return { sigma: Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))*Math.sqrt(12), moves };
 }
 const erf=x=>{const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;};
 const Phi=z=>0.5*(1+erf(z/Math.SQRT2));
@@ -492,6 +502,7 @@ const main=async()=>{
 
   for(const profile of CONFIG.profiles){
     errors.length=0;
+    const chainErrs=new Set();
     const excluded=new Set((profile.excluded||[]).map(String));
     const evmPositions=[];
     for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana')){
@@ -508,7 +519,7 @@ const main=async()=>{
           }catch(e){ logErr(ck+'#'+id,e); }
           await sleep(200);
         }
-      }catch(e){ logErr('wallet '+w.address.slice(0,8)+' '+ck,e); }
+      }catch(e){ logErr('wallet '+w.address.slice(0,8)+' '+ck,e); chainErrs.add(ck); }
     }
     for(const pin of (profile.pinned||[])){
       const ck=pin.chain in CHAINS ? pin.chain : 'ethereum';
@@ -553,8 +564,9 @@ const main=async()=>{
         const key=p.chain+':'+p.pool;
         if(!(key in volCache)) volCache[key]=await poolVolatility(p.chain,p.pool,10**(p.d0-p.d1),blockNums[p.chain]);
         if(!(key in vol24Cache)) vol24Cache[key]=await poolVol24(p.chain,p.pool,10**(p.d0-p.d1),blockNums[p.chain]);
-        p.range=rangeAnalytics(p.price,p.priceLower,p.priceUpper,volCache[key]);
-        p.sigma30=volCache[key]; p.vol24=vol24Cache[key];
+        p.range=rangeAnalytics(p.price,p.priceLower,p.priceUpper,volCache[key]?.sigma);
+        p.sigma30=volCache[key]?.sigma??null; p.vol24=vol24Cache[key]?.sigma??null;
+        p.volHist30=volCache[key]?.moves??null; p.volHist24=vol24Cache[key]?.moves??null;
       }catch(e){ p.range=null; }
     }
     // solana
@@ -562,9 +574,15 @@ const main=async()=>{
     const solWallets=(profile.wallets||[]).filter(w=>w.chain==='solana').map(w=>w.address);
     if(solWallets.length){
       try{ solPositions=await fetchSolana(solWallets); }
-      catch(e){ logErr('sol',e); }
+      catch(e){ logErr('sol',e); chainErrs.add('solana'); }
     }
-    const data={ v:4, t:Date.now(), profile:profile.slug, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
+    const chainStatus={};
+    for(const ck of usedChains){
+      chainStatus[ck] = ck==='solana' ? (chainErrs.has('solana')?'down':'ok')
+        : (blockNums[ck]==null||chainErrs.has(ck) ? 'down' : 'ok');
+    }
+    const data={ v:5, t:Date.now(), profile:profile.slug, chainStatus, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
     fs.writeFileSync('data-'+profile.slug+'.json', JSON.stringify(data));
     if(profile===CONFIG.profiles[0]) fs.writeFileSync('data.json', JSON.stringify(data));
