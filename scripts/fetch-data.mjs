@@ -429,8 +429,24 @@ async function fetchSolana(SOL_WALLETS){
       if(!b) return null;
       const idx=Math.round((tick-Math.floor(tick/per)*per)/spacing);
       if(idx<0||idx>=88) return null;
-      const base=12+idx*113;
-      return { fgA:leU128(b,base+33), fgB:leU128(b,base+49) };
+      if(b.length>=9988){
+        // legacy fixed TickArray: 88 × 113-byte ticks at offset 12
+        const base=12+idx*113;
+        return { fgA:leU128(b,base+33), fgB:leU128(b,base+49) };
+      }
+      // DynamicTickArray: start@8, whirlpool@12, bitmap@44, then 88 borsh-enum ticks @60
+      // tag 0 = Uninitialized (1 byte, fee growth outside = 0); tag 1 = Initialized (1 + 112 bytes)
+      let off=60;
+      for(let i=0;i<88;i++){
+        if(off>=b.length) return null;
+        const tag=b[off];
+        if(i===idx){
+          if(tag===0) return { fgA:0n, fgB:0n };
+          return { fgA:leU128(b,off+1+32), fgB:leU128(b,off+1+48) };
+        }
+        off += 1 + (tag===1?112:0);
+      }
+      return null;
     }
     const fgIn=(g,lo,up,cur,tl,tu)=>{
       const below=cur>=tl?lo:(g-lo)&MASKO;
