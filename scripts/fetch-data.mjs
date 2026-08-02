@@ -241,7 +241,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
     }catch(e){}
   }
   const inRange=tick>=tickLower&&tick<tickUpper;
-  const rangePos=(tick-tickLower)/(tickUpper-tickLower);
+  const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
   return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
@@ -480,7 +480,7 @@ async function fetchSolana(SOL_WALLETS){
       const fA=Number(fRawA)/10**dA, fB=Number(fRawB)/10**dB;
       const tick=w.tickCurrent;
       const inRange=tick>=op.tickLower&&tick<op.tickUpper;
-      const rangePos=(tick-op.tickLower)/(op.tickUpper-op.tickLower);
+      const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
       const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
       let mintTs=null;
       try{
@@ -588,7 +588,7 @@ async function fetchSolana(SOL_WALLETS){
     const f0=Number(fRaw0)/10**d0, f1=Number(fRaw1)/10**d1;
     const tick=pool.tickCurrent;
     const inRange=tick>=pp.tickLower&&tick<pp.tickUpper;
-    const rangePos=(tick-pp.tickLower)/(pp.tickUpper-pp.tickLower);
+    const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
     const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
     let mintTs=null;
     try{
@@ -625,8 +625,12 @@ const main=async()=>{
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;
   let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
-  let ethUsd=null,btcUsd=null;
+  let ethUsd=null,btcUsd=null,ethUsdChg24=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
+  try{
+    const ago=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+(blockNum-7200).toString(16))),8);
+    if(ethUsd&&ago) ethUsdChg24=(ethUsd/ago-1)*100;
+  }catch(e){}
   try{ btcUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_BTC,SEL.latestAnswer)),8); }catch(e){}
   let topPools=[];
   try{
@@ -740,7 +744,17 @@ const main=async()=>{
       chainStatus[ck] = ck==='solana' ? (chainErrs.has('solana')?'down':'ok')
         : (blockNums[ck]==null||chainErrs.has(ck) ? 'down' : 'ok');
     }
-    const data={ v:5, t:Date.now(), profile:profile.slug, chainStatus, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
+    let history=[];
+    try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
+    {
+      const totV=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.valueUsd||0),0);
+      const totF=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.feesUsd||0),0);
+      history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100});
+      if(history.length>3000) history=history.slice(-3000);
+      fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
+    }
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, ethUsdChg24, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
     if(profile===CONFIG.profiles[0]) fs.writeFileSync(OUT+'/data.json', JSON.stringify(data));

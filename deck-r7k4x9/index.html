@@ -550,7 +550,7 @@
 
     <section class="panel" data-panel="telemetry" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">SESSION TELEMETRY</span><span class="hint">TOTAL PORTFOLIO VALUE · sampled each scan</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">PORTFOLIO HISTORY</span><span class="hint">TOTAL VALUE + UNCLAIMED FEES · recorded by the relay every 15 min, across sessions</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="sparkBody"></div>
     </section>
 
@@ -706,7 +706,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v18.3';
+const BUILD = 'v19';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -790,7 +790,9 @@ const state = {
   positions: new Map(),      // id -> position data
   ethUsd: null, btcUsd: null,
   block: null,
-  samples: [],               // {t, totalUsd}
+  samples: [],               // {t, totalUsd} — this session only
+  history: [],               // {t, v, f} — persistent, from the relay (15-min cadence)
+  ethUsdChg24: null,
   alertsSeen: {},            // id -> last severity notified
   countdown: cfg.interval,
   timer: null,
@@ -1055,7 +1057,7 @@ async function fetchPosition(id, prev){
 
   // 5) range position + edge distance
   const inRange = tick>=core.tickLower && tick<core.tickUpper;
-  const rangePos = (tick-core.tickLower)/(core.tickUpper-core.tickLower); // 0..1 (may exceed)
+  const rangePos = (price-priceLower)/(priceUpper-priceLower); // 0..1 linear price space (may exceed) — matches human reading of the range
   // distance to nearest edge as % of current price
   const dLow = (price-priceLower)/price*100;
   const dUp  = (priceUpper-price)/price*100;
@@ -1173,7 +1175,7 @@ function demoPositions(){
     const drift = 1 + (demoRand()-0.5)*0.01;
     const price = s.price*drift;
     const inRange = price>=s.lo && price<=s.up;
-    const rangePos = (Math.log(price)-Math.log(s.lo))/(Math.log(s.up)-Math.log(s.lo));
+    const rangePos = (price-s.lo)/(s.up-s.lo);
     const dLow=(price-s.lo)/price*100, dUp=(s.up-price)/price*100;
     const feesEverUsd = s.dep*s.feeRate*(s.age/365)*(0.8+demoRand()*0.4);
     const ilDrag = (demoRand()-0.55)*0.03;
@@ -1405,7 +1407,7 @@ async function scanSol(){
     const feesUsd=(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null;
     const tick=pool.tickCurrent;
     const inRange=tick>=pp.tickLower && tick<pp.tickUpper;
-    const rangePos=(tick-pp.tickLower)/(pp.tickUpper-pp.tickLower);
+    const rangePos=(price-priceLower)/(priceUpper-priceLower);
     const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
     const prev=state.positions.get('sol:'+pp.nftMint);
     const rinfo=state.rayPools?.[pp.poolId];
@@ -1562,6 +1564,13 @@ async function discoverEthIds(){
 }
 
 /* ================= SCAN ORCHESTRATION ================= */
+/* rangePos must be LINEAR price-space everywhere (v19). Relay snapshots from an
+   older server build may still carry tick-space values — recompute on ingest. */
+function linifyRangePos(p){
+  if(p && p.price!=null && p.priceLower!=null && p.priceUpper!=null && p.priceUpper!==p.priceLower)
+    p.rangePos = (p.price-p.priceLower)/(p.priceUpper-p.priceLower);
+  return p;
+}
 let scanning = false, scanStartedAt = 0;
 async function scan(isBoot){
   if(scanning) return;
@@ -1572,6 +1581,12 @@ async function scan(isBoot){
   }catch(e){
     log('critical','Scan crashed: '+esc(String(e&&e.message||e)).slice(0,90));
   }finally{
+    // learn how long a scan realistically takes (EMA) → powers the header countdown
+    const dur = (Date.now()-scanStartedAt)/1000;
+    if(dur>0.5 && dur<240){
+      const prev = store.get('scanDur', null);
+      store.set('scanDur', Math.round((prev ? prev*0.6+dur*0.4 : dur)*10)/10);
+    }
     scanning = false;
     state.countdown = cfg.interval;
     $('#scanIcon')?.classList.remove('spinning');
@@ -1618,9 +1633,11 @@ async function scanInner(isBoot){
         const d = await rr.json();
         const ageMin = (Date.now()-d.t)/60000;
         if(ageMin < 120){         // ignore ancient snapshots
-          if(!ethPs && d.eth && d.eth.length){ ethPs = d.eth; state.relayUsed = true; }
-          if(!solOk && Array.isArray(d.sol)){ state.solPositions = d.sol; solOk = true; state.relayUsed = true; }
+          if(!ethPs && d.eth && d.eth.length){ ethPs = d.eth.map(linifyRangePos); state.relayUsed = true; }
+          if(!solOk && Array.isArray(d.sol)){ state.solPositions = d.sol.map(linifyRangePos); solOk = true; state.relayUsed = true; }
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
+          if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
+          if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
           if(d.chainStatus) state.chainStatus = d.chainStatus;
@@ -1818,7 +1835,10 @@ function renderAll(){
 }
 function renderHeader(){
   $('#hBlock').textContent = state.block ?? '—';
-  $('#hEth').textContent = state.ethUsd ? fmtUsd(state.ethUsd,0) : '—';
+  const chg = state.ethUsdChg24;
+  $('#hEth').innerHTML = (state.ethUsd ? fmtUsd(state.ethUsd,0) : '—')
+    + (chg!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(chg>=0?'good':'critical')+')" title="ETH/USD change over the last 24h (Chainlink)">'
+        +(chg>=0?'▲':'▼')+Math.abs(chg).toFixed(1)+'%</span>' : '');
 }
 function setConn(mode){
   const led=$('#connLed'), lab=$('#connLabel');
@@ -2060,12 +2080,15 @@ function renderMatrix(){
 
 /* ----- market seismograph ----- */
 let seismoAmp=0.3, seismoHex='#35d6e8', seismoLabel='NORMAL', seismoInit=false;
+/* 5-tier regime, calibrated so the scale has headroom — crypto can genuinely do
+   6–10× its own norm, so 3× is only ELEVATED→STORM territory, not the ceiling. */
 function volRegime(ratio){
   if(ratio==null) return {key:'normal',label:'NO BASELINE',hex:'#35d6e8'};
   if(ratio<0.8)  return {key:'calm',label:'CALM',hex:'#0ca30c'};
-  if(ratio<1.3)  return {key:'normal',label:'NORMAL',hex:'#35d6e8'};
-  if(ratio<2.0)  return {key:'elevated',label:'ELEVATED',hex:'#fab219'};
-  return {key:'storm',label:'STORM',hex:'#d03b3b'};
+  if(ratio<1.5)  return {key:'normal',label:'NORMAL',hex:'#35d6e8'};
+  if(ratio<3.0)  return {key:'elevated',label:'ELEVATED',hex:'#fab219'};
+  if(ratio<6.0)  return {key:'storm',label:'STORM',hex:'#d03b3b'};
+  return {key:'extreme',label:'EXTREME',hex:'#ff2f6d'};
 }
 function renderSeismo(){
   const chips=$('#seismoChips'), press=$('#seismoPressure');
@@ -2095,9 +2118,39 @@ function renderSeismo(){
   seismoAmp=Math.max(0.15,Math.min(1, (worstS24*100)/8 * (worstRatio||1)));
   seismoHex=worstReg.hex;
   seismoLabel=worstReg.label + (worstRatio!=null?' · '+worstRatio.toFixed(1)+'× the 30-day norm':'');
+  // ---- regime meter: log scale 0.25×–12×, zone bands + needle at current ratio ----
+  let meterHost=$('#seismoMeter');
+  if(!meterHost){ meterHost=el('div'); meterHost.id='seismoMeter'; chips.after(meterHost); }
+  meterHost.innerHTML='';
+  {
+    const W=1200,H=64,padL=14,padR=14,y0=26,bh=14;
+    const NS='http://www.w3.org/2000/svg';
+    const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+    const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='8px';
+    const LO=0.25, HI=12;
+    const X=r=>padL+(Math.log(r)-Math.log(LO))/(Math.log(HI)-Math.log(LO))*(W-padL-padR);
+    const zones=[[LO,0.8,'#0ca30c','CALM'],[0.8,1.5,'#35d6e8','NORMAL'],[1.5,3,'#fab219','ELEVATED'],[3,6,'#d03b3b','STORM'],[6,HI,'#ff2f6d','EXTREME']];
+    for(const [a,b,col,lab] of zones){
+      svg.append(mkel('rect',{x:X(a),y:y0,width:X(b)-X(a),height:bh,fill:col,opacity:.28,rx:2}));
+      const tx=mkel('text',{x:(X(a)+X(b))/2,y:y0+bh+13,'text-anchor':'middle','font-size':9,fill:col,'font-weight':'700'}); tx.textContent=lab; svg.append(tx);
+    }
+    for(const r of [0.5,1,2,3,4,6,8,10]){
+      svg.append(mkel('line',{x1:X(r),x2:X(r),y1:y0-3,y2:y0+bh+3,stroke:'#1c2f47','stroke-width':1}));
+      const tx=mkel('text',{x:X(r),y:y0-7,'text-anchor':'middle','font-size':8.5,fill:'#5d7889'}); tx.textContent=r+'×'; svg.append(tx);
+    }
+    if(worstRatio!=null){
+      const nx=X(Math.max(LO,Math.min(HI,worstRatio)));
+      svg.append(mkel('line',{x1:nx,x2:nx,y1:y0-6,y2:y0+bh+5,stroke:'#eaf7fa','stroke-width':2.5}));
+      svg.append(mkel('path',{d:'M'+(nx-5)+' '+(y0-12)+' L'+(nx+5)+' '+(y0-12)+' L'+nx+' '+(y0-5)+' Z',fill:seismoHex}));
+      const vt=mkel('text',{x:nx,y:y0-16,'text-anchor':'middle','font-size':11,fill:seismoHex,'font-weight':'700'});
+      vt.textContent='NOW '+worstRatio.toFixed(1)+'×'; svg.append(vt);
+    }
+    meterHost.append(el('div','flow-title','AGITATION METER — today\'s shaking vs this pool\'s own 30-day norm (log scale — 10× can and does happen)'));
+    meterHost.append(svg);
+  }
   // ---- history histogram: |move| per 2-day segment over 28 days, worst pool ----
   let histHost=$('#seismoHist');
-  if(!histHost){ histHost=el('div'); histHost.id='seismoHist'; chips.after(histHost); }
+  if(!histHost){ histHost=el('div'); histHost.id='seismoHist'; ($('#seismoMeter')||chips).after(histHost); }
   histHost.innerHTML='';
   let hp=null, hbest=-1;
   for(const [,x] of pools){ if(x.p.volHist30 && (x.s24??0)>hbest){ hbest=x.s24??0; hp=x.p; } }
@@ -2115,7 +2168,7 @@ function renderSeismo(){
       const med=[...moves].sort((a,b)=>a-b)[Math.floor(moves.length/2)];
       moves.forEach((m,i)=>{
         const ratio=med>0?m/med:1;
-        const col=ratio<0.8?'#0ca30c':ratio<1.3?'#35d6e8':ratio<2?'#fab219':'#d03b3b';
+        const col=volRegime(ratio).hex;
         const x=padL+step*i+(step-bw)/2;
         const bar=mkel('rect',{x,y:Y(m),width:bw,height:Math.max(2,Y(0)-Y(m)),fill:col,opacity:.75,rx:2});
         bar.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">≈'+(2*(n-i))+' days ago (2-day segment)</div><div class="tv">price moved <b>'+m.toFixed(1)+'%</b></div>'));
@@ -2142,8 +2195,8 @@ function renderSeismo(){
   let expl=$('#seismoExpl');
   if(!expl){ expl=el('div'); expl.id='seismoExpl'; press.after(expl); }
   expl.innerHTML='<div class="arch-note">HOW TO READ — the wave and chips show how hard price is shaking RIGHT NOW (last 24h, annual-free, ±%/day). '
-    +'The verdict compares it to that pool\'s own 30-day norm: CALM &lt;0.8× · NORMAL 0.8–1.3× · ELEVATED 1.3–2× · <b>STORM ≥2×</b> — '
-    +'so "STORM" never means a market crash, it means <b>this pool is moving ≥2× faster than its own recent normal</b>. '
+    +'The meter compares it to that pool\'s own 30-day norm on a log scale with real headroom: CALM &lt;0.8× · NORMAL 0.8–1.5× · ELEVATED 1.5–3× · STORM 3–6× · <b>EXTREME ≥6×</b>. '
+    +'Crypto can genuinely hit 10× its norm, so 2–3× is only "elevated" — not a crisis. The verdict never means a market crash; it means <b>this pool is moving that many times faster than its own recent normal</b>. '
     +'The histogram gives the receipts: 14 past segments vs the glowing NOW bar. High agitation usually means more volume (more fees) but faster buffer drain — check the pressure bars below.</div>';
   // range pressure: buffer in days of typical motion
   for(const p of ps){
@@ -2636,22 +2689,43 @@ function renderOps(){
 /* ----- session sparkline ----- */
 function renderSpark(){
   const host=$('#sparkBody'); host.innerHTML='';
-  const s=state.samples;
-  if(s.length<2){ host.append(el('div',null,'<span style="color:var(--text-muted);font-size:11px">Collecting samples… value is recorded on every scan ('+cfg.interval+'s). Leave the tab open to build the curve.</span>')); return; }
+  // persistent relay history (15-min cadence, survives reloads) + any newer local samples
+  const hist=(state.history||[]).filter(x=>x&&x.t&&x.v!=null).map(x=>({t:x.t, v:x.v+(x.f||0)}));
+  const lastHistT=hist.length?hist[hist.length-1].t:0;
+  const lastHistV=hist.length?hist[hist.length-1].v:null;
+  // only splice in newer local samples that are plausible — a partial scan (one chain
+  // failed) would otherwise paint a fake cliff against the server-recorded curve
+  const local=state.samples.filter(x=>x.t>lastHistT && x.v>0
+    && (lastHistV==null || Math.abs(x.v-lastHistV)/lastHistV<0.3));
+  const s=[...hist, ...local].sort((a,b)=>a.t-b.t);
+  if(s.length<2){ host.append(el('div',null,'<span style="color:var(--text-muted);font-size:11px">Building history… the relay records total value + unclaimed fees every 15 minutes on the server, so this curve grows even while the tab is closed. Check back after a couple of refresh cycles.</span>')); return; }
+  const spanMs=s[s.length-1].t-s[0].t;
+  const spanTxt=spanMs>86400000*1.5?(spanMs/86400000).toFixed(1)+' days':Math.round(spanMs/3600000)+'h';
   const W=1200,H=150,padL=64,padR=10,padT=10,padB=22;
   const NS='http://www.w3.org/2000/svg';
   const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
   const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%';
   let mn=Math.min(...s.map(x=>x.v)), mx=Math.max(...s.map(x=>x.v));
   if(mx===mn){mx+=1;mn-=1;} const p=(mx-mn)*0.15; mn-=p; mx+=p;
-  const X=i=>padL+i/(s.length-1)*(W-padL-padR);
+  const t0=s[0].t, t1=s[s.length-1].t;
+  const X=t=>padL+(t-t0)/(t1-t0||1)*(W-padL-padR);
   const Y=v=>padT+(mx-v)/(mx-mn)*(H-padT-padB);
   niceTicks(mn,mx,3).forEach(t=>{
     svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Y(t),y2:Y(t),stroke:'#13233a','stroke-width':1}));
     const tx=mkel('text',{x:padL-8,y:Y(t)+3,'text-anchor':'end','font-size':9,fill:'#5d7889'}); tx.textContent=fmtUsd(t,0); svg.append(tx);
   });
-  const pts=s.map((x,i)=>X(i)+','+Y(x.v)).join(' ');
-  const area=mkel('polygon',{points:X(0)+','+Y(mn)+' '+pts+' '+X(s.length-1)+','+Y(mn), fill:'rgba(53,214,232,.08)'});
+  // day boundaries on the x-axis when the span covers multiple days
+  if(spanMs>86400000){
+    for(let d=new Date(t0); d.getTime()<t1; d.setUTCDate(d.getUTCDate()+1)){
+      const mid=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()+1);
+      if(mid<=t0||mid>=t1) continue;
+      svg.append(mkel('line',{x1:X(mid),x2:X(mid),y1:padT,y2:H-padB,stroke:'#13233a','stroke-width':1,'stroke-dasharray':'2 4'}));
+      const tx=mkel('text',{x:X(mid),y:H-8,'text-anchor':'middle','font-size':8.5,fill:'#5d7889'});
+      tx.textContent=new Date(mid).toUTCString().slice(5,11); svg.append(tx);
+    }
+  }
+  const pts=s.map(x=>X(x.t)+','+Y(x.v)).join(' ');
+  const area=mkel('polygon',{points:X(t0)+','+Y(mn)+' '+pts+' '+X(t1)+','+Y(mn), fill:'rgba(53,214,232,.08)'});
   const line=mkel('polyline',{points:pts, fill:'none', stroke:'#35d6e8','stroke-width':2,'stroke-linejoin':'round'});
   svg.append(area,line);
   // hover crosshair
@@ -2661,12 +2735,17 @@ function renderSpark(){
   svg.addEventListener('mousemove',ev=>{
     const r=svg.getBoundingClientRect();
     const fx=(ev.clientX-r.left)/r.width*W;
-    const i=Math.max(0,Math.min(s.length-1,Math.round((fx-padL)/(W-padL-padR)*(s.length-1))));
-    cross.setAttribute('x1',X(i)); cross.setAttribute('x2',X(i)); cross.setAttribute('opacity',1);
-    dot.setAttribute('cx',X(i)); dot.setAttribute('cy',Y(s[i].v)); dot.setAttribute('opacity',1);
-    showTip(ev,'<div class="tk">'+new Date(s[i].t).toUTCString().slice(17,25)+' UTC</div><div class="tv"><b>'+fmtUsd(s[i].v,0)+'</b> total value + unclaimed fees</div>');
+    const tt=t0+Math.max(0,Math.min(1,(fx-padL)/(W-padL-padR)))*(t1-t0);
+    let i=0,best=Infinity;
+    s.forEach((x,j)=>{const d=Math.abs(x.t-tt); if(d<best){best=d;i=j;}});
+    cross.setAttribute('x1',X(s[i].t)); cross.setAttribute('x2',X(s[i].t)); cross.setAttribute('opacity',1);
+    dot.setAttribute('cx',X(s[i].t)); dot.setAttribute('cy',Y(s[i].v)); dot.setAttribute('opacity',1);
+    showTip(ev,'<div class="tk">'+new Date(s[i].t).toUTCString().slice(5,25)+' UTC</div><div class="tv"><b>'+fmtUsd(s[i].v,0)+'</b> total value + unclaimed fees</div>');
   });
   svg.addEventListener('mouseleave',()=>{cross.setAttribute('opacity',0);dot.setAttribute('opacity',0);hideTip();});
+  const d0=s[0].v, dN=s[s.length-1].v, dd=d0? (dN-d0)/d0*100 : null;
+  host.append(el('div','flow-title','LAST '+spanTxt.toUpperCase()+' · '+s.length+' samples'
+    +(dd!=null?' · <span class="'+(dd>=0?'up':'down')+'">'+fmtPct(dd,2,true)+'</span> over the window':'')));
   host.append(svg);
 }
 
@@ -3042,7 +3121,11 @@ function tickClock(){
   $('#hClock').textContent = d.toUTCString().slice(17,25);
   const cd=$('#hCountdown');
   if(scanning){
-    cd.innerHTML='<span class="spinning" style="display:inline-block">◌</span>';
+    // realistic time-to-finish, learned from past scans (EMA of durations)
+    const est = store.get('scanDur', 40);
+    const left = Math.ceil(est - (Date.now()-scanStartedAt)/1000);
+    cd.innerHTML='<span class="spinning" style="display:inline-block">◌</span>'
+      +(left>0 ? ' ~'+left+'<span class="unit">s</span>' : ' …');
     // watchdog: a scan can never legally take 4+ minutes — force-release the lock
     if(Date.now()-scanStartedAt > 240000){
       scanning=false; state.countdown=cfg.interval;
@@ -3173,10 +3256,12 @@ async function init(){
       if(!r.ok) return;
       const d=await r.json();
       if(state.mode!=='boot' || (Date.now()-d.t)>7200000) return;
-      const merged=[...(d.eth||[]),...(d.sol||[])];
+      const merged=[...(d.eth||[]),...(d.sol||[])].map(linifyRangePos);
       if(!merged.length) return;
       state.positions=new Map(merged.map(p=>[p.id,p]));
       state.ethUsd=state.ethUsd??d.ethUsd; state.gasGwei=state.gasGwei??d.gasGwei;
+      if(d.ethUsdChg24!=null) state.ethUsdChg24=d.ethUsdChg24;
+      if(Array.isArray(d.history) && d.history.length) state.history=d.history;
       if(d.topPools) state.topPools=d.topPools;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
       state.block=state.block??Number(d.block).toLocaleString();
