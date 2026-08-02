@@ -724,7 +724,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v20';
+const BUILD = 'v20.2';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1727,11 +1727,11 @@ function evaluateAlerts(){
     if(prev !== sev){
       state.alertsSeen[p.id] = sev;
       if(prev !== undefined){ // don't spam on first load
-        const edge = p.nearestEdge==='lower'?'LOWER':'UPPER';
+        const de = dispEdge(p), edge = de.edge==='lower'?'LOWER':'UPPER';
         const msg = {
           good: p.pairLabel+' '+posRef(p)+' back IN RANGE.',
-          warning: p.pairLabel+' '+posRef(p)+' approaching '+edge+' edge — '+fmtPct(rangeFracDist(p),0)+' of range width left ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
-          serious: p.pairLabel+' '+posRef(p)+' CRITICAL — only '+fmtPct(rangeFracDist(p),0)+' of range width to '+edge+' edge ('+fmtPct(Math.min(p.dLow,p.dUp),1)+' in price).',
+          warning: p.pairLabel+' '+posRef(p)+' approaching '+edge+' edge — '+fmtPct(rangeFracDist(p),0)+' of range width left ('+de.sign+fmtPct(de.pct,1)+' in price).',
+          serious: p.pairLabel+' '+posRef(p)+' CRITICAL — only '+fmtPct(rangeFracDist(p),0)+' of range width to '+edge+' edge ('+de.sign+fmtPct(de.pct,1)+' in price).',
           critical: p.pairLabel+' '+posRef(p)+' is OUT OF RANGE — no fees accruing.',
         }[sev];
         log(sev==='good'?'good':(sev==='warning'?'warning':'critical'), msg);
@@ -1812,6 +1812,19 @@ const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel
 /* display orientation: auto-invert unreadable ratios (price < 0.01), per-position override via ⇄ */
 const autoInv = p => p.price>0 && p.price < 0.01;
 function getInv(p){ const ip=store.get('invPref',{}); const k=String(p.id); return (k in ip) ? ip[k] : autoInv(p); }
+/* range position & edge info in the DISPLAYED orientation — inverted pairs flip:
+   raw price near the LOWER bound displays near the HIGH end of the shown range */
+function dispRangePos(p){
+  if(!getInv(p)) return p.rangePos;
+  if(!(p.price>0&&p.priceLower>0&&p.priceUpper>0)||p.priceLower===p.priceUpper) return p.rangePos;
+  return (1/p.price-1/p.priceUpper)/(1/p.priceLower-1/p.priceUpper);
+}
+function dispEdge(p){ // nearest edge as the USER SEES it: {edge, sign, pct}
+  const inv=getInv(p);
+  const down = inv ? (1-p.price/p.priceUpper)*100 : p.dLow;
+  const up   = inv ? (p.price/p.priceLower-1)*100 : p.dUp;
+  return down<up ? {edge:'lower', sign:'−', pct:down} : {edge:'upper', sign:'+', pct:up};
+}
 function setInv(p,v){ const ip=store.get('invPref',{}); ip[String(p.id)]=v; store.set('invPref',ip); }
 function fmtRangeFor(p, lo, up){
   return getInv(p) ? fmtPrice(1/up)+' – '+fmtPrice(1/lo) : fmtPrice(lo)+' – '+fmtPrice(up);
@@ -2152,7 +2165,9 @@ function renderSeismo(){
   if(!meterHost){ meterHost=el('div'); meterHost.id='seismoMeter'; chips.after(meterHost); }
   meterHost.innerHTML='';
   {
-    const W=1200,H=64,padL=14,padR=14,y0=26,bh=14;
+    // adaptive viewBox: on phones render 1:1 so labels stay readable
+    const cw=chips.clientWidth||1200;
+    const W=cw>0&&cw<700?Math.max(340,cw):1200,H=64,padL=14,padR=14,y0=26,bh=14;
     const NS='http://www.w3.org/2000/svg';
     const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
     const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='8px';
@@ -2412,8 +2427,8 @@ function initFlowMap(){
       ctx.beginPath(); ctx.arc(mx,my,(i%3)*0.5+0.4,0,6.2832); ctx.fill(); }
     ctx.font='700 11px ui-monospace,monospace'; ctx.textAlign='left';
     ctx.fillStyle='#35d6e8'; ctx.fillText('◈ ACTION VECTORS', 12, 20);
-    ctx.font='9px ui-monospace,monospace'; ctx.fillStyle='#5d7889';
-    ctx.fillText('where capital wants to move next — animated from live yields', 138, 20);
+    if(W>=560){ ctx.font='9px ui-monospace,monospace'; ctx.fillStyle='#5d7889';
+      ctx.fillText('where capital wants to move next — animated from live yields', 138, 20); }
     if(m.optimal){
       const cx=W/2, cy=H/2+8, pulse=1+Math.sin(t*2)*0.05;
       for(let r=54;r>0;r-=18){
@@ -2428,52 +2443,71 @@ function initFlowMap(){
       ctx.fillText('no idle capital, no fee pile worth a harvest, no laggards — hold the line', cx, cy+80);
       return;
     }
-    const sx=Math.round(W*0.16), tx=Math.round(W*0.84);
-    const yFor=(arr,i)=>44+(i+0.5)*(H-56)/Math.max(1,arr.length);
+    // layout: horizontal on desktop, VERTICAL on phones (labels get full width)
+    const vert=W<560;
+    const trunc=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
+    const posOf=(arr,i,isSrc)=>vert
+      ? {x:(i+0.5)*W/Math.max(1,arr.length), y:isSrc?52:H-64}
+      : {x:isSrc?Math.round(W*0.16):Math.round(W*0.84), y:44+(i+0.5)*(H-56)/Math.max(1,arr.length)};
     const maxUsd=Math.max(...m.streams.map(s=>s.usd),1);
     // streams first (under nodes)
-    m.streams.forEach(st=>{
-      const sy=yFor(m.sources,st.si), ty=yFor(m.targets,st.ti);
-      const c1x=sx+(tx-sx)*0.42, c2x=tx-(tx-sx)*0.42;
+    m.streams.forEach((st,si2)=>{
+      const a=posOf(m.sources,st.si,true), b=posOf(m.targets,st.ti,false);
       const hex=m.sources[st.si].hex;
+      // control points bow along the main travel axis
+      const c1=vert?{x:a.x,y:a.y+(b.y-a.y)*0.42}:{x:a.x+(b.x-a.x)*0.42,y:a.y};
+      const c2=vert?{x:b.x,y:b.y-(b.y-a.y)*0.42}:{x:b.x-(b.x-a.x)*0.42,y:b.y};
       ctx.strokeStyle=hex+'2e'; ctx.lineWidth=1.5+3*Math.sqrt(st.usd/maxUsd);
-      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.bezierCurveTo(c1x,sy,c2x,ty,tx,ty); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.bezierCurveTo(c1.x,c1.y,c2.x,c2.y,b.x,b.y); ctx.stroke();
       if(!st.parts) st.parts=Array.from({length:3+Math.round(3*st.usd/maxUsd)},()=>({ph:Math.random(),sp:0.10+Math.random()*0.10}));
       st.parts.forEach(p=>{
         p.ph=(p.ph+p.sp*0.016)%1;
         for(let k=0;k<6;k++){
           const tt=Math.max(0,p.ph-k*0.014);
-          const px=bez(sx,tx,c1x,c2x,tt);
-          const py=bez(sy,ty,sy,ty,tt);   // curve's control ys equal the endpoint ys
           ctx.fillStyle=hex+['ff','cc','99','66','44','22'][k];
-          ctx.beginPath(); ctx.arc(px, py, k?1.6:2.6, 0, 6.2832); ctx.fill();
+          ctx.beginPath(); ctx.arc(bez(a.x,b.x,c1.x,c2.x,tt), bez(a.y,b.y,c1.y,c2.y,tt), k?1.6:2.6, 0, 6.2832); ctx.fill();
         }
       });
-      // action label at mid-arc
-      const midX=(sx+tx)/2, midY=(sy+ty)/2-8;
-      ctx.textAlign='center'; ctx.font='700 9.5px ui-monospace,monospace';
+      // action label at mid-arc (stagger on phones so labels don't stack)
+      const midX=vert?W/2:(a.x+b.x)/2, midY=(a.y+b.y)/2-8+(vert?(si2-(m.streams.length-1)/2)*13:0);
+      ctx.textAlign='center'; ctx.font='700 '+(vert?9:9.5)+'px ui-monospace,monospace';
       ctx.shadowColor=hex; ctx.shadowBlur=6; ctx.fillStyle='#eaf7fa';
       ctx.fillText(st.label, midX, midY); ctx.shadowBlur=0;
     });
     // nodes + labels
     m.sources.forEach((s,i)=>{
-      const y=yFor(m.sources,i), pulse=2.4+Math.sin(t*3+i)*0.6;
+      const pt=posOf(m.sources,i,true), pulse=2.4+Math.sin(t*3+i)*0.6;
       ctx.fillStyle=s.hex; ctx.shadowColor=s.hex; ctx.shadowBlur=10;
-      ctx.beginPath(); ctx.arc(sx,y,4+pulse*0.4,0,6.2832); ctx.fill(); ctx.shadowBlur=0;
-      ctx.textAlign='right'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
-      ctx.fillText(s.label, sx-12, y-2);
-      ctx.font='8.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
-      ctx.fillText(s.sub, sx-12, y+10);
+      ctx.beginPath(); ctx.arc(pt.x,pt.y,4+pulse*0.4,0,6.2832); ctx.fill(); ctx.shadowBlur=0;
+      if(vert){
+        ctx.textAlign='center'; ctx.font='700 8.5px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
+        ctx.fillText(trunc(s.label,16), pt.x, pt.y-18);
+        ctx.font='7.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+        ctx.fillText(trunc(s.sub,20), pt.x, pt.y-8);
+      } else {
+        ctx.textAlign='right'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
+        ctx.fillText(s.label, pt.x-12, pt.y-2);
+        ctx.font='8.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+        ctx.fillText(s.sub, pt.x-12, pt.y+10);
+      }
     });
     m.targets.forEach((g,i)=>{
-      const y=yFor(m.targets,i);
+      const pt=posOf(m.targets,i,false);
       ctx.strokeStyle=g.hex; ctx.lineWidth=1.6; ctx.shadowColor=g.hex; ctx.shadowBlur=8;
-      ctx.beginPath(); ctx.arc(tx,y,6+Math.sin(t*2.4+i)*1.2,0,6.2832); ctx.stroke();
-      ctx.fillStyle=g.hex; ctx.beginPath(); ctx.arc(tx,y,2.4,0,6.2832); ctx.fill(); ctx.shadowBlur=0;
-      ctx.textAlign='left'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
-      ctx.fillText(g.label, tx+12, y-2);
-      ctx.font='8.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
-      ctx.fillText(g.sub, tx+12, y+10);
+      ctx.beginPath(); ctx.arc(pt.x,pt.y,6+Math.sin(t*2.4+i)*1.2,0,6.2832); ctx.stroke();
+      ctx.fillStyle=g.hex; ctx.beginPath(); ctx.arc(pt.x,pt.y,2.4,0,6.2832); ctx.fill(); ctx.shadowBlur=0;
+      if(vert){
+        const cap=m.targets.length>4?11:16;
+        ctx.textAlign='center'; ctx.font='700 8.5px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
+        ctx.fillText(trunc(g.label,cap), pt.x, pt.y+20+(i%2)*20);
+        ctx.font='7.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+        ctx.fillText(trunc(g.sub,cap+7), pt.x, pt.y+30+(i%2)*20);
+      } else {
+        ctx.textAlign='left'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
+        ctx.fillText(g.label, pt.x+12, pt.y-2);
+        ctx.font='8.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+        ctx.fillText(g.sub, pt.x+12, pt.y+10);
+      }
     });
   }
   function loop(){ const panel=c.closest('.panel');
@@ -2838,8 +2872,8 @@ function renderOps(){
       const df = dailyFeeUsd(p);
       out.push({pri:'critical',ic:'⟳',msg:ref+' is <b>OUT OF RANGE — earning $0</b>. Full re-range costs ≈ <b>'+(rc!=null?fmtUsd(rc):'—')+'</b> (withdraw+collect+mint)'+(df!=null&&rc!=null&&df>0?' → paid back by fees in ≈ <b>'+Math.ceil(rc/df)+' days</b> at its recent rate':'')+'.'});
     }
-    else if(sev==='serious') out.push({pri:'serious',ic:'◆',msg:ref+' is <b>'+Math.round(rangeFracDist(p))+'% of range width</b> from its '+(p.nearestEdge==='lower'?'lower':'upper')+' edge ('+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'% in price). Decide your rebalance trigger NOW, before it exits.'});
-    else if(sev==='warning') out.push({pri:'warning',ic:'▲',msg:ref+' is drifting toward its '+(p.nearestEdge==='lower'?'lower':'upper')+' edge — goes idle after a '+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'% move. Watch it this session.'});
+    else if(sev==='serious'){ const de=dispEdge(p); out.push({pri:'serious',ic:'◆',msg:ref+' is <b>'+Math.round(rangeFracDist(p))+'% of range width</b> from its '+de.edge+' edge ('+de.sign+de.pct.toFixed(1)+'% in price). Decide your rebalance trigger NOW, before it exits.'}); }
+    else if(sev==='warning'){ const de=dispEdge(p); out.push({pri:'warning',ic:'▲',msg:ref+' is drifting toward its '+de.edge+' edge — goes idle after a '+de.sign+de.pct.toFixed(1)+'% move. Watch it this session.'}); }
     if(p.feesUsd!=null && p.feesUsd>0.5){
       const cost = p.chain==='sol' ? 0.02 : gasCostUsd(HARVEST_GAS);
       const df = dailyFeeUsd(p);
@@ -3038,8 +3072,9 @@ function gauge(p, hex){
   const wz=Math.min(0.45, cfg.warnPct/100);
   svg.append(mk('path',{d:arc(R,0,wz),stroke:'#fab219','stroke-width':8,fill:'none',opacity:.55}));
   svg.append(mk('path',{d:arc(R,1-wz,1),stroke:'#fab219','stroke-width':8,fill:'none',opacity:.55}));
-  // active fill up to needle
-  const f=Math.max(0,Math.min(1,p.rangePos));
+  // active fill up to needle — DISPLAYED orientation (inverted pairs flip ends)
+  const dr=dispRangePos(p);
+  const f=Math.max(0,Math.min(1,dr));
   svg.append(mk('path',{d:arc(R,0,f),stroke:hex,'stroke-width':4,fill:'none',opacity:.9}));
   // ticks
   for(let k=0;k<=4;k++){
@@ -3051,7 +3086,7 @@ function gauge(p, hex){
   svg.append(mk('line',{x1:cx,y1:cy,x2:cx+(R-13)*Math.cos(na),y2:cy-(R-13)*Math.sin(na),stroke:'#eaf7fa','stroke-width':2}));
   svg.append(mk('circle',{cx,cy,r:4,fill:hex}));
   const pct=mk('text',{x:cx,y:cy-14,'text-anchor':'middle','font-size':13,fill:'#eaf7fa','font-weight':600});
-  pct.textContent = p.inRange ? Math.round(p.rangePos*100)+'%' : (p.rangePos<0?'◀ OUT':'OUT ▶');
+  pct.textContent = p.inRange ? Math.round(dr*100)+'%' : (dr<0?'◀ OUT':'OUT ▶');
   svg.append(pct);
   const lo=mk('text',{x:cx-R,y:cy+8,'text-anchor':'middle','font-size':7.5,fill:'#5d7889'}); lo.textContent='LOW';
   const hi=mk('text',{x:cx+R,y:cy+8,'text-anchor':'middle','font-size':7.5,fill:'#5d7889'}); hi.textContent='HIGH';
