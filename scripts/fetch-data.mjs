@@ -635,12 +635,33 @@ const main=async()=>{
   let topPools=[];
   try{
     const js=await getJson('https://yields.llama.fi/pools',45000);
-    topPools=(js.data||[])
-      .filter(x=>['Ethereum','Solana','Arbitrum','Base','Optimism','Polygon'].includes(x.chain)
-        && ['uniswap-v3','raydium-clmm','orca-dex','uniswap-v4'].includes(x.project)
-        && x.tvlUsd>=3e6 && x.apy>0 && x.apy<=400)
-      .sort((a,b)=>b.apy-a.apy).slice(0,12)
-      .map(x=>({chain:x.chain,project:x.project,symbol:x.symbol,tvl:x.tvlUsd,apy:x.apy,base:x.apyBase??null,reward:x.apyReward??null,il:x.ilRisk??null,id:x.pool}));
+    // v20: broad multi-venue sweep, volatile/volatile pairs ONLY (no stables in either leg)
+    const VENUES=['uniswap-v3','uniswap-v4','raydium-clmm','orca-dex','orca','pancakeswap-amm-v3','pancakeswap-amm','aerodrome-slipstream','aerodrome-v1','velodrome-v3','velodrome-v2','camelot-v3','thena-v3','thena-fusion','quickswap-v3','quickswap-dex','sushiswap-v3','meteora-dlmm'];
+    const CHAINS_OK=['Ethereum','Solana','Arbitrum','Base','Optimism','Polygon','BSC','Avalanche'];
+    const STABLE=/(USD|DAI|FRAX|MIM|GHO|BUSD|EUR|LUSD|CRVUSD|DOLA|BOLD|MKUSD|PYUSD|FDUSD|TUSD|USDE|SUSDE|GUSD|PAI|UXD)/i;
+    const cand=(js.data||[]).filter(x=>{
+      if(!CHAINS_OK.includes(x.chain)||!VENUES.includes(x.project)) return false;
+      if(!(x.tvlUsd>=2e6 && x.apy>3 && x.apy<=500)) return false;
+      const legs=String(x.symbol||'').split('-');
+      if(legs.length<2) return false;
+      if(legs.some(l=>STABLE.test(l))) return false;          // no stablecoin legs
+      if((x.apyBase??0)<=0 && (x.apyReward??0)>(x.apy*0.98)) return false; // pure-emission farms with zero fee income
+      return true;
+    });
+    // rank on the sturdier of spot APY vs 30-day mean (kills one-day mirages), dedupe fee tiers, cap 8/venue
+    cand.sort((a,b)=>Math.min(b.apy,b.apyMean30d??b.apy)-Math.min(a.apy,a.apyMean30d??a.apy));
+    const seen=new Set(), perVenue={};
+    for(const x of cand){
+      const k=x.project+'|'+x.chain+'|'+x.symbol;
+      if(seen.has(k)) continue;
+      if((perVenue[x.project]||0)>=8) continue;
+      seen.add(k); perVenue[x.project]=(perVenue[x.project]||0)+1;
+      topPools.push({chain:x.chain,project:x.project,symbol:x.symbol,tvl:x.tvlUsd,apy:x.apy,
+        base:x.apyBase??null,reward:x.apyReward??null,il:x.ilRisk??null,id:x.pool,
+        mean30:x.apyMean30d??null,sig:x.sigma??null,vol1d:x.volumeUsd1d??null});
+      if(topPools.length>=25) break;
+    }
+    console.log('topPools:',topPools.length,'venues:',JSON.stringify(perVenue));
   }catch(e){ logErr('llama pools',e); }
 
   for(const profile of CONFIG.profiles){

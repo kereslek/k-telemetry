@@ -432,6 +432,24 @@
   .boot{font-size:11px;letter-spacing:.3em;color:var(--accent);animation:pulse 1.4s infinite}
   .bootlog{font-size:10px;color:var(--text-muted);height:70px;text-align:center;line-height:1.9}
   footer{max-width:1560px;margin:0 auto;padding:0 22px 30px;font-size:9px;color:var(--text-muted);letter-spacing:.1em;line-height:1.8}
+/* v20: global scope rows */
+.gp-row{padding:9px 10px;border:1px solid #13233a;border-radius:8px;margin-bottom:8px;background:rgba(10,20,34,.45)}
+.gp-row.hot{border-color:rgba(53,214,232,.45);box-shadow:0 0 14px rgba(53,214,232,.08) inset}
+.gp-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;font-size:12px}
+.gp-rank{color:var(--accent);font-weight:700;min-width:26px}
+.gp-pair b{color:var(--text-primary);letter-spacing:.4px}
+.gp-venue{color:var(--text-muted);font-size:10.5px}
+.gp-kind{font-size:9px;letter-spacing:1px;color:#7e97a8;border:1px solid #1c2f47;border-radius:4px;padding:1px 6px}
+.gp-apy{margin-left:auto;color:var(--status-good);font-weight:700;font-size:14px}
+.gp-apy .unit{font-size:9px;color:var(--text-muted);font-weight:400}
+.gp-m30{font-size:9px;color:var(--text-muted);font-weight:400;margin-left:6px}
+.gp-tvl{color:var(--text-secondary);font-size:10.5px}
+.gp-note{margin-top:5px;font-size:11px;line-height:1.55;color:var(--text-secondary)}
+.gp-note b{color:#7e97a8;font-size:9px;letter-spacing:1px;margin-right:2px}
+.gp-warn{color:var(--status-warning)}
+/* v20: action vector map */
+#flowMap{width:100%;height:300px;display:block;margin-top:14px;border:1px solid #13233a;border-radius:8px;background:radial-gradient(ellipse at 50% 120%,rgba(20,50,80,.35),rgba(6,12,22,.6))}
+@media (max-width:760px){ .gp-apy{margin-left:0} #flowMap{height:240px} }
 </style>
 </head>
 <body>
@@ -501,7 +519,7 @@
 
     <section class="panel" data-panel="flow" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CAPITAL FLOW — WHERE TO DEPLOY</span><span class="hint">capital share vs fee output · mismatches = opportunity</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CAPITAL FLOW — WHERE TO DEPLOY</span><span class="hint">capital share vs fee output · mismatches = opportunity · ACTION VECTORS map animates the suggested moves</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="flowBody"></div>
     </section>
 
@@ -531,7 +549,7 @@
 
     <section class="panel" data-panel="radar" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE RADAR</span><span class="hint">HOW FAR PRICE CAN MOVE BEFORE EACH LP STOPS EARNING · "OUT at −9.4%" = a 9.4% price drop exits the range</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">RANGE RADAR</span><span class="hint">SAFETY MARGIN PER LP · "exits if ▼13.5% / ▲24.8%" = a 13.5% price drop OR a 24.8% rise pushes it out of range and it stops earning fees</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="radarBody"></div>
     </section>
 
@@ -562,7 +580,7 @@
 
     <section class="panel" data-panel="global" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">GLOBAL SCOPE — TOP REALISTIC POOLS RIGHT NOW</span><span class="hint">DefiLlama · TVL ≥ $3M · CLMM venues on ETH & SOL · orientation only</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">GLOBAL SCOPE — TOP REALISTIC POOLS RIGHT NOW</span><span class="hint">25 volatile pairs · no stables · Uniswap · Pancake · Aerodrome · Raydium · Orca · Meteora &amp; more · 8 chains</span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="globalBody"></div>
     </section>
 
@@ -706,7 +724,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v19';
+const BUILD = 'v20';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1895,9 +1913,20 @@ function renderRadar(){
     name.append(el('span','cdot'), el('span',null, (p.chain==='sol'?'<span style="color:var(--text-muted)">◎</span> ':'')+esc(pairName(p))+' <span style="color:var(--text-muted);font-size:9px">'+esc(p.feeLabel)+'</span> <span style="font-size:9px">'+linkRef(p)+'</span>'));
     const bar = el('div',null); bar.append(rangeBar(p, false));
     const sev = severityOf(p);
-    const distTxt = p.inRange
-      ? 'OUT at '+(p.nearestEdge==='lower'?'−':'+')+Math.min(p.dLow,p.dUp).toFixed(1)+'%'
-      : 'OUT NOW · '+fmtPct(Math.abs(p.edgeDist),1)+' to re-enter';
+    // arrows follow the DISPLAYED price orientation (pairs like LCX/ETH render inverted)
+    const inv = getInv(p);
+    const downPct = inv ? (1-p.price/p.priceUpper)*100 : p.dLow;
+    const upPct   = inv ? (p.price/p.priceLower-1)*100 : p.dUp;
+    let distTxt;
+    if(p.inRange){
+      distTxt = 'earning · exits if price <b>▼'+downPct.toFixed(1)+'%</b> or <b>▲'+upPct.toFixed(1)+'%</b>';
+    } else {
+      const below = p.price<p.priceLower;                 // raw side of the miss
+      const needRise = inv ? !below : below;              // direction in displayed units
+      const pct = below ? (inv ? (1-p.price/p.priceLower)*100 : (p.priceLower-p.price)/p.price*100)
+                        : (inv ? (p.price/p.priceUpper-1)*100 : (p.price-p.priceUpper)/p.price*100);
+      distTxt = 'IDLE now · needs a <b>'+(needRise?'▲':'▼')+pct.toFixed(1)+'% '+(needRise?'rise':'drop')+'</b> to earn again';
+    }
     const dist = el('div','radar-dist','<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">'+SEV_ICON[sev]+'</span> '+distTxt);
     row.append(name,bar,dist);
     body.append(row);
@@ -2342,6 +2371,115 @@ function renderFlow(){
     +'<span>SOLANA TX ≈ <b>$0.02</b></span>'
     +'<span style="color:var(--text-muted)">estimates at current gas · 130k / 520k gas profiles</span>';
   host.append(strip);
+  // ---- ACTION VECTORS: animated re-deployment map ----
+  if(!flowMapCanvas){ flowMapCanvas=document.createElement('canvas'); flowMapCanvas.id='flowMap'; }
+  host.append(flowMapCanvas);
+  fmModel=buildFlowMap(ps, earn, totV, totE, healthy, star, lag);
+  if(!fmInit){ fmInit=true; initFlowMap(); }
+}
+
+/* ----- ACTION VECTORS map: sources (idle capital / fees / laggards) stream to targets ----- */
+let flowMapCanvas=null, fmModel=null, fmInit=false;
+function buildFlowMap(ps, earn, totV, totE, healthy, star, lag){
+  const sources=[], targets=[], streams=[];
+  healthy.slice(0,2).forEach(x=>targets.push({label:pairName(x.p)+' '+posRef(x.p), sub:x.a.toFixed(1)+'% APR · already yours', hex:seriesHex(cIdx(x.p))}));
+  (state.topPools||[]).slice(0,3).forEach(x=>targets.push({label:x.symbol, sub:(VENUE_NAME[x.project]||x.project)+' · '+x.apy.toFixed(0)+'% APY · new frontier', hex:'#b28bff'}));
+  const addStream=(src,ti,usd,label)=>{ sources.push(src); if(targets.length) streams.push({si:sources.length-1, ti:Math.min(ti,targets.length-1), usd, label}); };
+  ps.filter(p=>!p.inRange && (p.valueUsd||0)>0).forEach(p=>
+    addStream({label:pairName(p)+' '+posRef(p), sub:'OUT OF RANGE — '+fmtUsd(p.valueUsd,0)+' earning $0', hex:seriesHex(cIdx(p))}, 0, p.valueUsd, 'RE-RANGE '+fmtUsd(p.valueUsd,0)));
+  const fees=ps.reduce((s,p)=>s+(p.feesUsd||0),0);
+  const hc=gasCostUsd(HARVEST_GAS)||1;
+  if(fees>Math.max(25,hc*2)) addStream({label:'UNCLAIMED FEES', sub:'sitting idle across all LPs', hex:'#f7d154'}, 0, fees, 'HARVEST '+fmtUsd(fees,0)+' → COMPOUND');
+  if(lag && lag.gap<-0.08 && lag.p.inRange && (lag.p.valueUsd||0)>0){
+    const amt=lag.p.valueUsd*Math.min(0.5,-lag.gap);
+    addStream({label:pairName(lag.p)+' '+posRef(lag.p), sub:'fee output lags its capital share', hex:seriesHex(cIdx(lag.p))}, 0, amt, 'SHIFT ≈ '+fmtUsd(amt,0));
+  }
+  return {sources, targets, streams, optimal: !streams.length};
+}
+function initFlowMap(){
+  const c=flowMapCanvas, ctx=c.getContext('2d');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let t=0;
+  const bez=(a,b,c1,c2,tt)=>{const u=1-tt;return u*u*u*a+3*u*u*tt*c1+3*u*tt*tt*c2+tt*tt*tt*b;};
+  function draw(){
+    const W=c.width=c.clientWidth||900, H=c.height=c.clientHeight||300;
+    ctx.clearRect(0,0,W,H);
+    const m=fmModel; if(!m) return;
+    t+=0.016;
+    // ambient drifting motes
+    ctx.fillStyle='rgba(120,180,210,.14)';
+    for(let i=0;i<26;i++){ const mx=((i*97.3+t*8*(1+(i%5)/5))%(W+40))-20, my=(i*53.7)%H;
+      ctx.beginPath(); ctx.arc(mx,my,(i%3)*0.5+0.4,0,6.2832); ctx.fill(); }
+    ctx.font='700 11px ui-monospace,monospace'; ctx.textAlign='left';
+    ctx.fillStyle='#35d6e8'; ctx.fillText('◈ ACTION VECTORS', 12, 20);
+    ctx.font='9px ui-monospace,monospace'; ctx.fillStyle='#5d7889';
+    ctx.fillText('where capital wants to move next — animated from live yields', 138, 20);
+    if(m.optimal){
+      const cx=W/2, cy=H/2+8, pulse=1+Math.sin(t*2)*0.05;
+      for(let r=54;r>0;r-=18){
+        ctx.strokeStyle='rgba(12,163,110,'+(0.10+0.16*(54-r)/54)+')'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(cx,cy,r*pulse,0,6.2832); ctx.stroke();
+      }
+      for(let k=0;k<8;k++){ const a=t*0.8+k*0.785, rr=54*pulse;
+        ctx.fillStyle='rgba(64,220,150,.8)'; ctx.beginPath(); ctx.arc(cx+Math.cos(a)*rr, cy+Math.sin(a)*rr, 2, 0, 6.2832); ctx.fill(); }
+      ctx.textAlign='center'; ctx.font='700 13px ui-monospace,monospace'; ctx.fillStyle='#4ddc96';
+      ctx.fillText('ALL SYSTEMS OPTIMAL', cx, cy-70);
+      ctx.font='10px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+      ctx.fillText('no idle capital, no fee pile worth a harvest, no laggards — hold the line', cx, cy+80);
+      return;
+    }
+    const sx=Math.round(W*0.16), tx=Math.round(W*0.84);
+    const yFor=(arr,i)=>44+(i+0.5)*(H-56)/Math.max(1,arr.length);
+    const maxUsd=Math.max(...m.streams.map(s=>s.usd),1);
+    // streams first (under nodes)
+    m.streams.forEach(st=>{
+      const sy=yFor(m.sources,st.si), ty=yFor(m.targets,st.ti);
+      const c1x=sx+(tx-sx)*0.42, c2x=tx-(tx-sx)*0.42;
+      const hex=m.sources[st.si].hex;
+      ctx.strokeStyle=hex+'2e'; ctx.lineWidth=1.5+3*Math.sqrt(st.usd/maxUsd);
+      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.bezierCurveTo(c1x,sy,c2x,ty,tx,ty); ctx.stroke();
+      if(!st.parts) st.parts=Array.from({length:3+Math.round(3*st.usd/maxUsd)},()=>({ph:Math.random(),sp:0.10+Math.random()*0.10}));
+      st.parts.forEach(p=>{
+        p.ph=(p.ph+p.sp*0.016)%1;
+        for(let k=0;k<6;k++){
+          const tt=Math.max(0,p.ph-k*0.014);
+          const px=bez(sx,tx,c1x,c2x,tt);
+          const py=bez(sy,ty,sy,ty,tt);   // curve's control ys equal the endpoint ys
+          ctx.fillStyle=hex+['ff','cc','99','66','44','22'][k];
+          ctx.beginPath(); ctx.arc(px, py, k?1.6:2.6, 0, 6.2832); ctx.fill();
+        }
+      });
+      // action label at mid-arc
+      const midX=(sx+tx)/2, midY=(sy+ty)/2-8;
+      ctx.textAlign='center'; ctx.font='700 9.5px ui-monospace,monospace';
+      ctx.shadowColor=hex; ctx.shadowBlur=6; ctx.fillStyle='#eaf7fa';
+      ctx.fillText(st.label, midX, midY); ctx.shadowBlur=0;
+    });
+    // nodes + labels
+    m.sources.forEach((s,i)=>{
+      const y=yFor(m.sources,i), pulse=2.4+Math.sin(t*3+i)*0.6;
+      ctx.fillStyle=s.hex; ctx.shadowColor=s.hex; ctx.shadowBlur=10;
+      ctx.beginPath(); ctx.arc(sx,y,4+pulse*0.4,0,6.2832); ctx.fill(); ctx.shadowBlur=0;
+      ctx.textAlign='right'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
+      ctx.fillText(s.label, sx-12, y-2);
+      ctx.font='8.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+      ctx.fillText(s.sub, sx-12, y+10);
+    });
+    m.targets.forEach((g,i)=>{
+      const y=yFor(m.targets,i);
+      ctx.strokeStyle=g.hex; ctx.lineWidth=1.6; ctx.shadowColor=g.hex; ctx.shadowBlur=8;
+      ctx.beginPath(); ctx.arc(tx,y,6+Math.sin(t*2.4+i)*1.2,0,6.2832); ctx.stroke();
+      ctx.fillStyle=g.hex; ctx.beginPath(); ctx.arc(tx,y,2.4,0,6.2832); ctx.fill(); ctx.shadowBlur=0;
+      ctx.textAlign='left'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#c9dbe6';
+      ctx.fillText(g.label, tx+12, y-2);
+      ctx.font='8.5px ui-monospace,monospace'; ctx.fillStyle='#7e97a8';
+      ctx.fillText(g.sub, tx+12, y+10);
+    });
+  }
+  function loop(){ const panel=c.closest('.panel');
+    if(!document.hidden && c.isConnected && panel && !panel.classList.contains('collapsed')) draw();
+    if(!reduced) requestAnimationFrame(loop); }
+  if(reduced){ draw(); } else requestAnimationFrame(loop);
 }
 
 /* ----- outlook: projected earnings ----- */
@@ -2408,26 +2546,72 @@ function renderOutlook(){
 }
 
 /* ----- global scope ----- */
+const CHAIN_ICON={Ethereum:'⟠',Solana:'◎',Arbitrum:'🜁',Base:'🜂',Optimism:'🜃',Polygon:'⬡',BSC:'◆',Avalanche:'▲'};
+const VENUE_NAME={'uniswap-v3':'Uniswap V3','uniswap-v4':'Uniswap V4','raydium-clmm':'Raydium CLMM','orca-dex':'Orca','orca':'Orca','pancakeswap-amm-v3':'PancakeSwap V3','pancakeswap-amm':'PancakeSwap','aerodrome-slipstream':'Aerodrome','aerodrome-v1':'Aerodrome','velodrome-v3':'Velodrome','velodrome-v2':'Velodrome','camelot-v3':'Camelot V3','thena-v3':'Thena','thena-fusion':'Thena','quickswap-v3':'QuickSwap','quickswap-dex':'QuickSwap','sushiswap-v3':'Sushi V3','meteora-dlmm':'Meteora DLMM'};
+const FAM={
+  eth:['ETH','WETH','WSTETH','STETH','WEETH','RETH','CBETH','EZETH','RSETH','METH','OETH','OSETH','FRXETH','SFRXETH','SWETH','ANKRETH'],
+  btc:['BTC','WBTC','CBBTC','TBTC','LBTC','BTCB','FBTC','SOLVBTC','EBTC','UNIBTC','PUMPBTC'],
+  sol:['SOL','WSOL','MSOL','JITOSOL','BSOL','JUPSOL','INF','HSOL','VSOL','BNSOL'],
+  bnb:['BNB','WBNB'],
+};
+function famOf(sym){ const s=sym.toUpperCase(); for(const k in FAM) if(FAM[k].includes(s)) return k; return null; }
+function poolStrategy(x){
+  const legs=String(x.symbol||'').split('-').slice(0,2);
+  const f0=famOf(legs[0]), f1=famOf(legs[1]);
+  const rewardShare=(x.reward||0)/Math.max(0.0001,x.apy);
+  const apy=x.apy, m30=x.mean30;
+  const apyTxt=m30!=null&&Math.abs(m30-apy)>apy*0.25
+    ? apy.toFixed(0)+'% now / '+m30.toFixed(0)+'% 30-day avg' : apy.toFixed(0)+'%';
+  let kind,why,range,est;
+  if(f0&&f1&&f0===f1){ // correlated (LST/LRT/wrapped) — quasi-pegged
+    kind='CORRELATED';
+    why='Both legs track the same asset — price barely drifts, so IL is near zero and every basis point of volume lands as fees.';
+    range='ultra-tight ±1–3% around the peg ratio; recheck monthly, ranges rarely break';
+    est='pool-wide '+apyTxt+' → a tight band realistically captures <b>'+(apy*2).toFixed(0)+'–'+(apy*4).toFixed(0)+'%</b>';
+  } else if(f0&&f1){ // both majors
+    kind='BLUE-CHIP CROSS';
+    why='Two majors — deep liquidity, steady volume, IL is real but bounded by correlated market moves.';
+    range='±10–20% (≈1 month of typical motion); rebalance when price crosses 75% of the band';
+    est='pool-wide '+apyTxt+' → <b>'+(apy*1.5).toFixed(0)+'–'+(apy*2.5).toFixed(0)+'%</b> at ±15%';
+  } else if(f0||f1){ // major vs alt
+    kind='MAJOR / ALT';
+    why='One volatile alt against a major — fees are rich because vol is high, but the alt leg drives real IL. Fees must outrun divergence.';
+    range='wide ±25–50%, or asymmetric (more room on the alt\'s weak side); check weekly';
+    est='pool-wide '+apyTxt+' → <b>'+apy.toFixed(0)+'–'+(apy*1.8).toFixed(0)+'%</b> with a wide band, minus IL';
+  } else {
+    kind='DOUBLE VOLATILE';
+    why='Two non-major tokens — highest fee rate, highest IL, and thinner books. Conviction plays only; size small.';
+    range='very wide ±40–60% or near-full-range; treat rebalances as trades';
+    est='pool-wide '+apyTxt+' — take it at face value, IL can eat half';
+  }
+  const warn=[];
+  if(rewardShare>0.5) warn.push('⚠ '+Math.round(rewardShare*100)+'% of APY is emissions — check the reward token\'s chart before trusting it');
+  if(x.sig!=null&&x.sig>1) warn.push('⚠ APY is jumpy (high variance) — the 30-day mean is the honest number');
+  if(x.tvl<5e6) warn.push('smaller pool — enter/exit in tranches');
+  return {kind,why,range,est,warn};
+}
 function renderGlobal(){
   const host=$('#globalBody'); if(!host) return; host.innerHTML='';
   const tp=state.topPools||[];
   if(!tp.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Global pool scan arrives with the next server refresh (source: DefiLlama).</div>'; return; }
-  const maxApy=Math.max(...tp.map(x=>x.apy));
   tp.forEach((x,i)=>{
-    const row=el('div','rank-row'+(i===0?' first':''));
-    row.style.setProperty('--pcolor', i<3?'var(--accent)':'var(--series-extra)');
-    row.append(el('div','rank-badge','#'+(i+1)));
-    const nm=el('div','rank-name');
-    nm.innerHTML=(x.chain==='Solana'?'◎':'⟠')+' <b>'+esc(x.symbol)+'</b> <span class="sub">'+esc(x.project.replace('-',' '))+'</span>';
-    row.append(nm);
-    const track=el('div','rank-track'); const bar=el('div','rank-bar');
-    bar.style.width=Math.max(2,x.apy/maxApy*100)+'%'; bar.style.background=i<3?'#35d6e8':'#62788c'; track.append(bar); row.append(track);
-    row.append(el('div','rank-val',x.apy.toFixed(1)+'<span class="unit"> % APY</span>'));
-    row.append(el('div','rank-sub','TVL '+fmtUsd(x.tvl/1e6,1).replace('$','$')+'M'));
-    row.append(el('div','rank-sub',(x.reward?'incl. rewards':'fees only')+(x.il==='yes'?' · IL risk':'')));
+    const s=poolStrategy(x);
+    const row=el('div','gp-row'+(i<3?' hot':''));
+    row.innerHTML=
+      '<div class="gp-head">'
+      +'<span class="gp-rank">#'+(i+1)+'</span>'
+      +'<span class="gp-pair">'+(CHAIN_ICON[x.chain]||'·')+' <b>'+esc(x.symbol)+'</b></span>'
+      +'<span class="gp-venue">'+esc(VENUE_NAME[x.project]||x.project)+' · '+esc(x.chain)+'</span>'
+      +'<span class="gp-kind">'+s.kind+'</span>'
+      +'<span class="gp-apy">'+x.apy.toFixed(1)+'<span class="unit">% APY</span>'
+      +(x.mean30!=null?'<span class="gp-m30">'+x.mean30.toFixed(0)+'% 30d-avg</span>':'')+'</span>'
+      +'<span class="gp-tvl">TVL '+fmtUsd(x.tvl/1e6,1)+'M'+(x.vol1d?' · vol '+fmtUsd(x.vol1d/1e6,1)+'M/d':'')+'</span>'
+      +'</div>'
+      +'<div class="gp-note"><b>WHY</b> '+s.why+' <b>RANGE</b> '+s.range+'. <b>EST</b> '+s.est+'.'
+      +(s.warn.length?' <span class="gp-warn">'+s.warn.join(' · ')+'</span>':'')+'</div>';
     host.append(row);
   });
-  host.append(el('div','arch-note','Concentrated-liquidity venues (Uniswap V3/V4, Raydium CLMM, Orca) on Ethereum & Solana with ≥$3M TVL and APY ≤400% (filters out one-day mirages). APYs are pool-wide — a well-ranged position can beat them; an out-of-range one earns zero. Ideas radar, not advice.'));
+  host.append(el('div','arch-note','25 volatile/volatile pools (stable-paired pools excluded on purpose) swept from Uniswap V3/V4, PancakeSwap V3, Aerodrome, Velodrome, Camelot, Raydium, Orca, Meteora &amp; more across 8 chains · DefiLlama data · TVL ≥ $2M · pure-emission farms and one-day APY mirages filtered out · concentrated estimates assume the suggested band stays in range — an out-of-range position earns zero. Ideas radar, not advice.'));
 }
 
 /* ----- range architect ----- */
