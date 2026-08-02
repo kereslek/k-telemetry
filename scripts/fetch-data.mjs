@@ -636,7 +636,7 @@ const main=async()=>{
   try{
     const js=await getJson('https://yields.llama.fi/pools',45000);
     // v20: broad multi-venue sweep, volatile/volatile pairs ONLY (no stables in either leg)
-    const VENUES=['uniswap-v3','uniswap-v4','raydium-clmm','orca-dex','orca','pancakeswap-amm-v3','pancakeswap-amm','aerodrome-slipstream','aerodrome-v1','velodrome-v3','velodrome-v2','camelot-v3','thena-v3','thena-fusion','quickswap-v3','quickswap-dex','sushiswap-v3','meteora-dlmm'];
+    const VENUES=['uniswap-v3','uniswap-v4','raydium-clmm','raydium-amm','raydium-amm-v3','orca-dex','orca','pancakeswap-amm-v3','pancakeswap-v3','pancakeswap-amm','aerodrome-slipstream','aerodrome-v1','velodrome-v3','velodrome-v2','velodrome-slipstream','camelot-v3','camelot-v2','thena-v3','thena-fusion','quickswap-v3','quickswap-dex','sushiswap-v3','meteora-dlmm','meteora-damm-v2','meteora'];
     const CHAINS_OK=['Ethereum','Solana','Arbitrum','Base','Optimism','Polygon','BSC','Avalanche'];
     const STABLE=/(USD|DAI|FRAX|MIM|GHO|BUSD|EUR|LUSD|CRVUSD|DOLA|BOLD|MKUSD|PYUSD|FDUSD|TUSD|USDE|SUSDE|GUSD|PAI|UXD)/i;
     const cand=(js.data||[]).filter(x=>{
