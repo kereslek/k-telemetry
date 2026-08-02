@@ -706,7 +706,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v18.2';
+const BUILD = 'v18.3';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -1774,6 +1774,13 @@ const posLink = p => p.chain==='sol' ? (p.venue==='orca' ? 'https://www.orca.so/
 const scanBase = p => (EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).scan;
 const chainTag = p => p.chain==='sol' ? '◎SOL' : (p.chainTag||(EVM_CHAINS[p.chain]||{}).tag||'ETH');
 const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+' ↗</a>';
+/* display orientation: auto-invert unreadable ratios (price < 0.01), per-position override via ⇄ */
+const autoInv = p => p.price>0 && p.price < 0.01;
+function getInv(p){ const ip=store.get('invPref',{}); const k=String(p.id); return (k in ip) ? ip[k] : autoInv(p); }
+function setInv(p,v){ const ip=store.get('invPref',{}); ip[String(p.id)]=v; store.set('invPref',ip); }
+function fmtRangeFor(p, lo, up){
+  return getInv(p) ? fmtPrice(1/up)+' – '+fmtPrice(1/lo) : fmtPrice(lo)+' – '+fmtPrice(up);
+}
 const colorIndex = new Map();
 const cIdx = p => colorIndex.get(String(p.id)) ?? 5;
 function assignColors(){
@@ -1877,9 +1884,11 @@ function renderRadar(){
   });
 }
 /* shared range bar: log-scaled price position */
-function rangeBar(p, withLabels){
+function rangeBar(p, withLabels, inv){
+  if(inv===undefined) inv=getInv(p);
+  const dLo = inv?1/p.priceUpper:p.priceLower, dHi = inv?1/p.priceLower:p.priceUpper, dPr = inv?1/p.price:p.price;
   const wrap = el('div','rangebar');
-  const lo=Math.log(p.priceLower), hi=Math.log(p.priceUpper), pr=Math.log(p.price);
+  const lo=Math.log(dLo), hi=Math.log(dHi), pr=Math.log(dPr);
   const span = hi-lo;
   const viewLo = lo-span*0.35, viewHi = hi+span*0.35;
   const X = v => Math.max(0,Math.min(100,(v-viewLo)/(viewHi-viewLo)*100));
@@ -1895,13 +1904,14 @@ function rangeBar(p, withLabels){
   [lo,hi].forEach(v=>{const c=el('div','rb-cap');c.style.left='calc('+X(v)+'% - 1px)';wrap.append(c);});
   const cursor = el('div','rb-price'); cursor.style.left='calc('+X(pr)+'% - 1px)'; wrap.append(cursor);
   if(withLabels){
-    const l1=el('div','rb-lab',fmtPrice(p.priceLower)); l1.style.left=X(lo)+'%'; l1.style.transform='translateX(-50%)';
-    const l2=el('div','rb-lab',fmtPrice(p.priceUpper)); l2.style.left=X(hi)+'%'; l2.style.transform='translateX(-50%)';
+    const l1=el('div','rb-lab',fmtPrice(dLo)); l1.style.left=X(lo)+'%'; l1.style.transform='translateX(-50%)';
+    const l2=el('div','rb-lab',fmtPrice(dHi)); l2.style.left=X(hi)+'%'; l2.style.transform='translateX(-50%)';
     wrap.append(l1,l2);
   }
+  const unitTip = inv ? esc(p.m0.symbol)+' per '+esc(p.m1.symbol) : esc(p.m1.symbol)+' per '+esc(p.m0.symbol);
   wrap.addEventListener('mousemove', ev=>showTip(ev,
-    '<div class="tk">'+esc(pairName(p))+' · RANGE</div>'+
-    '<div class="tv">low '+fmtPrice(p.priceLower)+' · now <b>'+fmtPrice(p.price)+'</b> · high '+fmtPrice(p.priceUpper)+'</div>'+
+    '<div class="tk">'+esc(pairName(p))+' · RANGE ('+unitTip+')</div>'+
+    '<div class="tv">low '+fmtPrice(dLo)+' · now <b>'+fmtPrice(dPr)+'</b> · high '+fmtPrice(dHi)+'</div>'+
     '<div class="tv" style="color:var(--text-secondary)">'+(p.inRange?('edge distance '+fmtPct(Math.min(p.dLow,p.dUp),2)):'OUT OF RANGE')+'</div>'));
   wrap.addEventListener('mouseleave', hideTip);
   return wrap;
@@ -2389,11 +2399,11 @@ function renderArch(){
       row.append(el('div','num',r.concVsBalanced.toFixed(2)+'×'));
       let verdict,why;
       if(stay<50){ verdict='<span class="verdict loosen">LOOSEN</span>';
-        why='Current range has &lt;50% odds of containing price for 7 days at 30-day realized vol — expect frequent idle periods + rebalance costs. Balanced (80%-confidence) range: <b>'+fmtPrice(r.suggested.balanced.lo)+' – '+fmtPrice(r.suggested.balanced.up)+'</b>.'; }
+        why='Current range has &lt;50% odds of containing price for 7 days at 30-day realized vol — expect frequent idle periods + rebalance costs. Balanced (80%-confidence) range: <b>'+fmtRangeFor(p, r.suggested.balanced.lo, r.suggested.balanced.up)+'</b>.'; }
       else if(stay>92){ verdict='<span class="verdict tighten">TIGHTEN</span>';
-        why='Range is statistically over-wide — capital is under-concentrated ('+r.concVsBalanced.toFixed(2)+'× vs balanced). Tightening toward <b>'+fmtPrice(r.suggested.balanced.lo)+' – '+fmtPrice(r.suggested.balanced.up)+'</b> multiplies fee density ~'+(1/Math.max(r.concVsBalanced,0.05)).toFixed(1)+'× while keeping ~80% 7-day containment.'; }
+        why='Range is statistically over-wide — capital is under-concentrated ('+r.concVsBalanced.toFixed(2)+'× vs balanced). Tightening toward <b>'+fmtRangeFor(p, r.suggested.balanced.lo, r.suggested.balanced.up)+'</b> multiplies fee density ~'+(1/Math.max(r.concVsBalanced,0.05)).toFixed(1)+'× while keeping ~80% 7-day containment.'; }
       else { verdict='<span class="verdict hold">HOLD</span>';
-        why='Width is proportionate to realized volatility ('+stay.toFixed(0)+'% 7-day containment). Aggressive alt: <b>'+fmtPrice(r.suggested.tight.lo)+' – '+fmtPrice(r.suggested.tight.up)+'</b> (~50% containment, ~'+(r.concVsBalanced>0?( (Math.log(r.suggested.balanced.up/r.suggested.balanced.lo)/Math.log(r.suggested.tight.up/r.suggested.tight.lo)).toFixed(1)):'2')+'× denser fees, more rebalancing).'; }
+        why='Width is proportionate to realized volatility ('+stay.toFixed(0)+'% 7-day containment). Aggressive alt: <b>'+fmtRangeFor(p, r.suggested.tight.lo, r.suggested.tight.up)+'</b> (~50% containment, ~'+(r.concVsBalanced>0?( (Math.log(r.suggested.balanced.up/r.suggested.balanced.lo)/Math.log(r.suggested.tight.up/r.suggested.tight.lo)).toFixed(1)):'2')+'× denser fees, more rebalancing).'; }
       row.append(el('div',null,verdict+'<span style="font-size:11.5px;color:var(--text-secondary)">'+why+'</span>'));
       host.append(row);
     });
@@ -2663,12 +2673,11 @@ function renderSpark(){
 /* ----- position cards ----- */
 function renderCards(){
   const host=$('#cards');
-  const openInv = new Set([...host.querySelectorAll('.card')].filter(c=>c.dataset.inv==='1').map(c=>String(c.dataset.id)));
   host.innerHTML='';
   ordered().forEach(p=>{
     const i=cIdx(p);
-    const inv = openInv.has(String(p.id));
-    const card=el('article','card'); card.dataset.id=p.id; card.dataset.inv=inv?'1':'0'; card.draggable=true;
+    const inv = getInv(p);
+    const card=el('article','card'); card.dataset.id=p.id; card.draggable=true;
     card.style.setProperty('--pcolor', seriesColor(i));
     const sev=severityOf(p);
     const isSol = p.chain==='sol';
@@ -2720,7 +2729,7 @@ function renderCards(){
       mkm('PRICE DRIFT (IL)','<span class="'+(il>=0?'up':'down')+'">'+fmtPct(il,2,true)+'</span> <span class="unit">ROI − fees</span>');
     }
     body.append(m);
-    const rw=el('div','rangebar-wrap'); rw.append(rangeBar(p,true)); body.append(rw);
+    const rw=el('div','rangebar-wrap'); rw.append(rangeBar(p,true,inv)); body.append(rw);
     card.append(body);
     // ---- footer
     const foot=el('div','cfoot');
@@ -2738,7 +2747,7 @@ function renderCards(){
     }
     const ib=el('button','invbtn','⇄ '+unit.split(' per ')[0]);
     ib.title='Flip price units';
-    ib.addEventListener('click',()=>{card.dataset.inv=inv?'0':'1';renderCards();});
+    ib.addEventListener('click',()=>{ setInv(p,!inv); renderAll(); });
     foot.append(ib);
     card.append(foot);
     host.append(card);
