@@ -256,7 +256,7 @@
   .matrix tr:hover td{background:rgba(53,214,232,.03)}
 
   /* leaderboard */
-  .rank-row{display:grid;grid-template-columns:52px 300px 1fr 130px 130px 120px;gap:14px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line-soft)}
+  .rank-row{display:grid;grid-template-columns:52px 280px 1fr 120px 125px 110px 150px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line-soft)}
   .rank-row:last-child{border-bottom:none}
   .rank-badge{font-size:15px;font-weight:700;text-align:center;color:var(--text-muted)}
   .rank-row.first .rank-badge{color:var(--status-warning);text-shadow:0 0 12px rgba(250,178,25,.5)}
@@ -731,7 +731,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v21.2';
+const BUILD = 'v21.3';
 const DEFAULT_IDS = [1344396, 1342410, 1340170, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398};
@@ -2381,6 +2381,18 @@ function renderRank(){
     row.append(el('div','rank-val', a.v.toFixed(1)+'<span class="unit"> % APR'+(a.pool?' ◎pool':'')+'</span>'));
     row.append(el('div','rank-sub', earned!=null?('≈ '+fmtUsd(earned)+' fees'+(cfg.aprWin==='incept'?' total':' / '+WIN_LABEL[cfg.aprWin].toLowerCase())):'—'));
     row.append(el('div','rank-sub', p.valueUsd!=null?fmtUsd(p.valueUsd,0)+' deployed':'—'));
+    // LP age + verdict: young overperformer or old laggard — the interesting cases
+    { const ad=p.ageDays;
+      let ageTxt='age —', cls='';
+      if(ad!=null){
+        ageTxt='age '+(ad<1?Math.max(1,Math.round(ad*24))+'h':ad<60?Math.round(ad)+'d':(ad/30.44).toFixed(1)+'mo');
+        const half=rows.length/2;
+        if(ad<7 && i<half){ ageTxt+=' · <b style="color:var(--status-good)">NEW & FIRING</b>'; }
+        else if(ad<7){ ageTxt+=' · <span style="color:var(--text-muted)">new, warming up</span>'; }
+        else if(ad>=21 && i>=half && rows.length>2){ ageTxt+=' · <b style="color:var(--status-warning)">VETERAN, FADING</b>'; }
+        else if(ad>=21 && i<half){ ageTxt+=' · <span style="color:var(--status-good)">proven</span>'; }
+      }
+      row.append(el('div','rank-sub', ageTxt)); }
     host.append(row);
   });
   const skipped=ordered().length-rows.length;
