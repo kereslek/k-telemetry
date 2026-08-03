@@ -731,10 +731,10 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v21.1';
-const DEFAULT_IDS = [1344396, 1342410, 1340170, 1340238, 1339457];
+const BUILD = 'v21.2';
+const DEFAULT_IDS = [1344396, 1342410, 1340170, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
-const REPOSITIONED = {1338795: 1344396};
+const REPOSITIONED = {1338795: 1344396, 1339457: 1344398};
 const BASE_RPCS = [
   'https://eth.drpc.org',
   'https://ethereum-rpc.publicnode.com',
@@ -1650,7 +1650,8 @@ async function scanInner(isBoot){
         if(rp) results.push(rp);
         else if(cfg.ids.includes(id)){   // pinned but closed & empty → stop tracking it
           cfg.ids=cfg.ids.filter(x=>x!==id); store.set('ids',cfg.ids);
-          log('info','#'+id+' is closed & empty — dropped from tracking (repositioned LPs are auto-discovered from your wallet).');
+          state.ethCatalog=null;         // a vanished LP usually means a reposition — re-discover the wallet NOW
+          log('info','#'+id+' is closed & empty — dropped. Rescanning your wallets for the replacement LP…');
         }
       }catch(e){
         log('warning','#'+id+' fetch failed: '+esc(e.message).slice(0,80));
