@@ -432,6 +432,12 @@
   .boot{font-size:11px;letter-spacing:.3em;color:var(--accent);animation:pulse 1.4s infinite}
   .bootlog{font-size:10px;color:var(--text-muted);height:70px;text-align:center;line-height:1.9}
   footer{max-width:1560px;margin:0 auto;padding:0 22px 30px;font-size:9px;color:var(--text-muted);letter-spacing:.1em;line-height:1.8}
+/* v21: quick-add drop zone */
+#quickAdd{display:flex;align-items:center;gap:10px;border:1px dashed #1c2f47;border-radius:8px;padding:7px 12px;margin-bottom:12px;color:var(--text-muted);font-size:11px;letter-spacing:.4px}
+#quickAdd.drag{border-color:var(--accent);color:var(--accent);background:rgba(53,214,232,.06)}
+#quickAdd input{flex:1;min-width:110px;background:rgba(10,20,34,.6);border:1px solid #1c2f47;border-radius:6px;color:var(--text-primary);font:11px ui-monospace,monospace;padding:5px 8px;outline:none}
+#quickAdd input:focus{border-color:var(--accent)}
+@media(max-width:760px){ #quickAdd{flex-wrap:wrap} #quickAdd .qa-t{font-size:10px} }
 /* v20: global scope rows */
 .gp-row{padding:9px 10px;border:1px solid #13233a;border-radius:8px;margin-bottom:8px;background:rgba(10,20,34,.45)}
 .gp-row.hot{border-color:rgba(53,214,232,.45);box-shadow:0 0 14px rgba(53,214,232,.08) inset}
@@ -495,6 +501,7 @@
 </header>
 
 <main>
+  <div id="quickAdd"><span style="color:var(--accent)">⊕</span><span class="qa-t">TRACK MORE — drop or paste a wallet (0x… / Solana) or a Uniswap position #</span><input id="quickAddInput" placeholder="0x… · So1… · 1338795" spellcheck="false"><button class="hbtn" id="quickAddBtn">ADD</button></div>
   <div class="banner" id="partialBar" style="border-color:var(--status-warning);color:var(--status-warning)"></div>
   <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN. <span id="simErr" style="color:var(--status-critical)"></span></div>
 
@@ -724,7 +731,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v20.3';
+const BUILD = 'v21';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -782,8 +789,10 @@ function activeProfile(){
 }
 function profileWallets(chain){
   const pr=activeProfile();
-  if(!pr) return [];
-  return (pr.wallets||[]).filter(w=>w.chain===chain).map(w=>w.address);
+  const base=pr ? (pr.wallets||[]).filter(w=>w.chain===chain).map(w=>w.address) : [];
+  // quick-added wallets (drop/paste zone) live in this browser's storage and merge in
+  const extra=store.get(chain==='ethereum'?'extraEthWallets':'extraSolWallets',[]);
+  return [...new Set([...base,...extra])];
 }
 function saveProfilesLocal(){ store.set('profilesOverride', CONFIG_DATA); }
 async function loadConfig(){
@@ -1589,6 +1598,15 @@ function linifyRangePos(p){
     p.rangePos = (p.price-p.priceLower)/(p.priceUpper-p.priceLower);
   return p;
 }
+/* last-known snapshot: saved after every successful scan, restored when fully offline */
+function snapSave(){
+  try{
+    const ps=[...state.positions.values()].map(p=>JSON.parse(JSON.stringify(p,(k,v)=>typeof v==='bigint'?v.toString():v)));
+    if(!ps.length) return;
+    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
+      block:state.block, ethUsdChg24:state.ethUsdChg24, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
+  }catch(e){}
+}
 let scanning = false, scanStartedAt = 0;
 async function scan(isBoot){
   if(scanning) return;
@@ -1677,6 +1695,7 @@ async function scanInner(isBoot){
     }
     state.mode = 'live';
     setConn('live');
+    snapSave();                        // remember this as the last-known snapshot
     setTimeout(enrichHistories, 50);   // heavy ETH log queries run after first paint
   } else if(state.mode==='live'){
     setConn('err');
@@ -1690,16 +1709,33 @@ async function scanInner(isBoot){
     setConn('sim');
     if(isBoot) log('warning','DEMO MODE (?demo in URL) — all figures are SYNTHETIC.');
   } else {
-    state.mode = 'offline';
-    state.positions = new Map();     // NO fake data — empty until live data arrives
-    setConn('err');
-    if(isBoot) log('critical','OFFLINE — no live data could be read. Diagnostics running…');
-    if(!diagAutoRan){ diagAutoRan=true; setTimeout(runDiagnostics, 400); }
+    // fully offline: fall back to the LAST KNOWN snapshot instead of zeroes
+    const snap=store.get('lastSnap',null);
+    if(snap && Array.isArray(snap.ps) && snap.ps.length){
+      state.positions=new Map(snap.ps.map(p=>{ p.cached=true; return [p.id,p]; }));
+      state.ethUsd=state.ethUsd??snap.ethUsd; state.btcUsd=state.btcUsd??snap.btcUsd;
+      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block;
+      state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
+      if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
+      if(!(state.history||[]).length && snap.history) state.history=snap.history;
+      state.cacheAt=snap.t; state.mode='cache';
+      setConn('cache');
+      if(isBoot) log('warning','NO CONNECTION — showing the LAST KNOWN snapshot from '+Math.round((Date.now()-snap.t)/60000)+' min ago. Values are frozen, not live.');
+      if(!diagAutoRan){ diagAutoRan=true; setTimeout(runDiagnostics, 400); }
+    } else {
+      state.mode = 'offline';
+      state.positions = new Map();     // NO fake data — empty until live data arrives
+      setConn('err');
+      if(isBoot) log('critical','OFFLINE — no live data could be read (and no cached snapshot exists yet). Diagnostics running…');
+      if(!diagAutoRan){ diagAutoRan=true; setTimeout(runDiagnostics, 400); }
+    }
   }
-  // sample for session telemetry
-  const total = [...state.positions.values()].reduce((s,p)=>s+(p.valueUsd||0)+(p.feesUsd||0),0);
-  state.samples.push({t:Date.now(), v:total});
-  if(state.samples.length>600) state.samples.shift();
+  // sample for session telemetry (never sample frozen cache values)
+  if(state.mode!=='cache'){
+    const total = [...state.positions.values()].reduce((s,p)=>s+(p.valueUsd||0)+(p.feesUsd||0),0);
+    state.samples.push({t:Date.now(), v:total});
+    if(state.samples.length>600) state.samples.shift();
+  }
   evaluateAlerts();
   renderAll();
 }
@@ -1853,8 +1889,14 @@ function renderAll(){
     } else pb.classList.remove('show');
   }
   const banner=$('#simBanner');
-  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline');
-  if(state.mode==='offline'){
+  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline'||state.mode==='cache');
+  if(state.mode==='cache'){
+    const age=state.cacheAt?Math.round((Date.now()-state.cacheAt)/60000):null;
+    banner.style.borderColor='var(--status-warning)'; banner.style.color='var(--status-warning)';
+    banner.innerHTML='⚠ NO CONNECTION — showing the <b>LAST KNOWN snapshot</b> from '
+      +(state.cacheAt?new Date(state.cacheAt).toUTCString().slice(17,22)+' UTC ('+(age<120?age+' min':Math.round(age/60)+' h')+' ago)':'earlier')
+      +'. Every number is frozen at that moment — prices, fees and ranges have moved since. Reconnect and hit ⟳ SCAN to go live.';
+  } else if(state.mode==='offline'){
     banner.style.borderColor='var(--status-critical)'; banner.style.color='var(--status-critical)';
     banner.innerHTML='✕ OFFLINE — could not read live data, so NOTHING is shown (this dashboard never shows fake numbers). The EVENT LOG below lists every endpoint tested from this browser: green = works, red = blocked. Use ⎘ COPY REPORT and paste it to Claude, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG → hit ⟳ SCAN. '
       +(state.lastScanErr?'<span style="color:var(--status-critical)">LAST ERROR → '+esc(state.lastScanErr)+'</span>':'');
@@ -1873,7 +1915,12 @@ function renderHeader(){
 }
 function setConn(mode){
   const led=$('#connLed'), lab=$('#connLabel');
-  led.className='led'+(mode==='sim'?' sim':mode==='err'?' err':'');
+  led.className='led'+((mode==='sim'||mode==='cache')?' sim':mode==='err'?' err':'');
+  if(mode==='cache'){
+    const age=state.cacheAt?Math.round((Date.now()-state.cacheAt)/60000):null;
+    lab.textContent='CACHED'+(age!=null?' · '+(age<120?age+'m':Math.round(age/60)+'h')+' OLD':'');
+    return;
+  }
   lab.textContent = mode==='live' && (state.partialChains||[]).length ? 'LIVE · PARTIAL'
     : (mode==='live' && state.relayUsed ? 'LIVE · RELAY' : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…'));
 }
@@ -3445,12 +3492,58 @@ function initSky(){
   requestAnimationFrame(frame);
 }
 
+/* ---------- quick-add: drop/paste a wallet, pool NFT or position id ---------- */
+function quickAddParse(text){
+  const added=[], rejected=[];
+  for(const tk of String(text||'').split(/[\s,;]+/).filter(Boolean)){
+    const evm=tk.match(/0x[a-fA-F0-9]{40}/);
+    if(evm){
+      const w=evm[0].toLowerCase(), ex=store.get('extraEthWallets',[]);
+      if(!ex.includes(w)) store.set('extraEthWallets',[...ex,w]);
+      state.ethCatalog=null; added.push('ETH wallet '+w.slice(0,6)+'…'+w.slice(-4)); continue;
+    }
+    if(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(tk)){
+      const ex=store.get('extraSolWallets',[]);
+      if(!ex.includes(tk)) store.set('extraSolWallets',[...ex,tk]);
+      if(!cfg.solWallets.includes(tk)) cfg.solWallets.push(tk);
+      state.solCatalog=null; added.push('SOL wallet '+tk.slice(0,4)+'…'+tk.slice(-4)); continue;
+    }
+    const num=tk.match(/^#?(\d{3,8})$/);
+    if(num){
+      const id=Number(num[1]);
+      if(!cfg.ids.includes(id)){ cfg.ids.push(id); store.set('ids',cfg.ids); }
+      added.push('position #'+id); continue;
+    }
+    rejected.push(tk);
+  }
+  return {added, rejected};
+}
+function wireQuickAdd(){
+  const zone=$('#quickAdd'), inp=$('#quickAddInput');
+  if(!zone) return;
+  const commit=text=>{
+    const {added,rejected}=quickAddParse(text);
+    if(added.length){
+      log('good','Now tracking: '+esc(added.join(', '))+' — saved in THIS browser. To make it permanent on every device and the 15-min relay, tell Claude (e.g. “track wallet 0x…”).');
+      inp.value=''; scan();
+    }
+    if(rejected.length) log('warning','Not recognized: '+esc(rejected.slice(0,3).join(', ').slice(0,80))+' — expected a 0x… wallet, a Solana address, or a position number.');
+  };
+  ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();zone.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();zone.classList.remove('drag');}));
+  zone.addEventListener('drop',e=>commit(e.dataTransfer?.getData('text')||''));
+  inp.addEventListener('paste',e=>{ e.preventDefault(); commit((e.clipboardData||window.clipboardData).getData('text')); });
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') commit(inp.value); });
+  $('#quickAddBtn').addEventListener('click',()=>commit(inp.value));
+}
+
 async function init(){
   initSky();
   await loadConfig();
   renderProfileSeg();
   renderAprSeg();
   wireSettings();
+  wireQuickAdd();
   applyStoredOrders();
   wireDrag($('#panelStack'), '.panel', ids=>store.set('panelOrder', ids));
   document.querySelectorAll('.collapse-btn').forEach(b=>b.addEventListener('click',e=>{
