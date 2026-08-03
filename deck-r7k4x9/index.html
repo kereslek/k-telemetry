@@ -347,7 +347,7 @@
     .chead{flex-wrap:wrap;row-gap:6px}
   }
   @media(max-width:430px){
-    .hstat:nth-child(4){display:none}   /* hide NEXT SCAN on tiny screens */
+    .hstat:nth-child(2){display:none}   /* hide BLOCK on tiny screens — NEXT SCAN stays visible */
     .brand h1{font-size:12px}
     .seg{margin-left:0}
   }
@@ -489,7 +489,7 @@
     <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
     <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
-    <button class="hbtn" id="btnRefresh"><span id="scanIcon" style="display:inline-block">⟳</span> SCAN</button>
+    <button class="hbtn" id="btnRefresh"><span id="scanIcon" style="display:inline-block">⟳</span><span id="scanBtnTxt"> SCAN</span></button>
     <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
   </div>
 </header>
@@ -724,7 +724,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v20.2';
+const BUILD = 'v20.3';
 const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
 const BASE_RPCS = [
   'https://eth.drpc.org',
@@ -3339,12 +3339,14 @@ function tickClock(){
   const d=new Date();
   $('#hClock').textContent = d.toUTCString().slice(17,25);
   const cd=$('#hCountdown');
+  const bt=$('#scanBtnTxt');
   if(scanning){
     // realistic time-to-finish, learned from past scans (EMA of durations)
     const est = store.get('scanDur', 40);
     const left = Math.ceil(est - (Date.now()-scanStartedAt)/1000);
     cd.innerHTML='<span class="spinning" style="display:inline-block">◌</span>'
       +(left>0 ? ' ~'+left+'<span class="unit">s</span>' : ' …');
+    if(bt) bt.textContent = left>0 ? ' ~'+left+'s' : ' …';
     // watchdog: a scan can never legally take 4+ minutes — force-release the lock
     if(Date.now()-scanStartedAt > 240000){
       scanning=false; state.countdown=cfg.interval;
@@ -3352,10 +3354,12 @@ function tickClock(){
       log('warning','Scan watchdog fired — a stuck scan was released. Auto-refresh resumed.');
     }
   } else if(state.mode!=='boot'){
+    if(bt) bt.textContent=' SCAN';
     state.countdown--;
     if(state.countdown<=0){ state.countdown=cfg.interval; scan(); }
     cd.innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
   } else {
+    if(bt) bt.textContent=' SCAN';
     cd.innerHTML='—<span class="unit">s</span>';
   }
 }
