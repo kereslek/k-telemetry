@@ -731,8 +731,10 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v21';
-const DEFAULT_IDS = [1338795, 1342410, 1340170, 1340238, 1339457];
+const BUILD = 'v21.1';
+const DEFAULT_IDS = [1344396, 1342410, 1340170, 1340238, 1339457];
+/* closed positions that moved to a new NFT — migrate stored pins once */
+const REPOSITIONED = {1338795: 1344396};
 const BASE_RPCS = [
   'https://eth.drpc.org',
   'https://ethereum-rpc.publicnode.com',
@@ -746,12 +748,14 @@ const BASE_RPCS = [
 const RPCS = [...store.get('extraRpcs', []), ...BASE_RPCS];
 const DEMO_MODE = /[?&]demo/.test(location.search);
 const cfg = {
-  ids: store.get('ids', DEFAULT_IDS.slice()),
+  ids: store.get('ids', DEFAULT_IDS.slice()).map(i=>REPOSITIONED[i]||i).filter((v,i,a)=>a.indexOf(v)===i),
+  /* (persisted below if the migration changed anything) */
   warnPct: store.get('warnPct', 20),   // % of range width remaining to an edge
   critPct: store.get('critPct', 8),
   interval: (v=>v===45?300:v)(store.get('interval', 300)),   // default 5 min; migrates the old 45s default
   rpc: store.get('rpc', RPCS[0]),
 };
+{ const raw=store.get('ids',null); if(raw && raw.join()!==cfg.ids.join()) store.set('ids',cfg.ids); }
 
 const NPM   = '0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const FACTORY = '0x1f98431c8ad98523631ae4a59f267346ea31f984';
@@ -1072,6 +1076,7 @@ async function fetchPosition(id, prev){
   const [ra0, ra1] = amountsForLiquidity(L, sqrtP, sqrtA, sqrtB);
   const amt0 = ra0/10**d0, amt1 = ra1/10**d1;
   const f0 = bigToFloat(fee0,d0), f1 = bigToFloat(fee1,d1);
+  if(L===0 && f0===0 && f1===0) return null;   // closed & empty (e.g. repositioned) — mirror the relay's skip rule
   const scale = 10**(d0-d1);
   const price = sqrtP*sqrtP*scale;                     // token1 per token0, human units
   const priceLower = tickToPrice(core.tickLower)*scale;
@@ -1641,7 +1646,12 @@ async function scanInner(isBoot){
       try{
         const prev = state.positions.get(id);
         bootMsg('QUERYING POSITION #'+id+' …');
-        results.push(await fetchPosition(id, prev));
+        const rp = await fetchPosition(id, prev);
+        if(rp) results.push(rp);
+        else if(cfg.ids.includes(id)){   // pinned but closed & empty → stop tracking it
+          cfg.ids=cfg.ids.filter(x=>x!==id); store.set('ids',cfg.ids);
+          log('info','#'+id+' is closed & empty — dropped from tracking (repositioned LPs are auto-discovered from your wallet).');
+        }
       }catch(e){
         log('warning','#'+id+' fetch failed: '+esc(e.message).slice(0,80));
         state.lastScanErr = '#'+id+': '+String(e.message||e).slice(0,70);
@@ -3524,7 +3534,7 @@ function wireQuickAdd(){
   const commit=text=>{
     const {added,rejected}=quickAddParse(text);
     if(added.length){
-      log('good','Now tracking: '+esc(added.join(', '))+' — saved in THIS browser. To make it permanent on every device and the 15-min relay, tell Claude (e.g. “track wallet 0x…”).');
+      log('good','Now tracking: '+esc(added.join(', '))+' — remembered in this browser.');
       inp.value=''; scan();
     }
     if(rejected.length) log('warning','Not recognized: '+esc(rejected.slice(0,3).join(', ').slice(0,80))+' — expected a 0x… wallet, a Solana address, or a position number.');
