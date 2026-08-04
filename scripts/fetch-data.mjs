@@ -209,7 +209,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const col0=sum(hist.col,'a0',d0), col1=sum(hist.col,'a1',d1);
   const feeCol0=Math.max(0,col0-wdr0), feeCol1=Math.max(0,col1-wdr1);
   const ageDays=mintTs?(Date.now()-mintTs)/86400000:null;
-  let costUsd=null,roiPct=null,roiMode='hodl',feeAprPct=null,feesEverUsd=null;
+  let costUsd=null,roiPct=null,roiMode='hodl',feeAprPct=null,feesEverUsd=null,ilUsd=null,lpVsHodlUsd=null,hodlNowUsd=null;
   if(usd0!=null&&usd1!=null&&(dep0>0||dep1>0)){
     let e0=usd0,e1=usd1;
     if(ck==='ethereum'&&entryEthUsd&&ethUsd){
@@ -222,6 +222,10 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
     feesEverUsd=(feeCol0*usd0+feeCol1*usd1)+(feesUsd??0);
     const totalNow=(valueUsd??0)+(wdr0*usd0+wdr1*usd1)+feesEverUsd;
     if(costUsd>0){ roiPct=(totalNow-costUsd)/costUsd*100; if(ageDays>0.05) feeAprPct=(feesEverUsd/costUsd)*(365/ageDays)*100; }
+    // impermanent loss: what the position (incl. withdrawals) is worth NOW vs just holding the deposits
+    hodlNowUsd=dep0*usd0+dep1*usd1;
+    ilUsd=((valueUsd??0)+wdr0*usd0+wdr1*usd1)-hodlNowUsd;
+    lpVsHodlUsd=ilUsd+(feesEverUsd??0);   // positive → pooling beat holding
   }
   // fees accrued BEFORE the current month started (for the monthly fee ledger)
   let feesMonthStartUsd=null;
@@ -264,7 +268,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
   return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
-    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, costUsd, roiPct, roiMode, feeAprPct, aprW,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, ilUsd, lpVsHodlUsd, hodlNowUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
     nearestEdge: dLow<dUp?'lower':'upper',
     edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
@@ -787,7 +791,7 @@ const main=async()=>{
       try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
       if(fl.month!==monthKey){
         const prevTotal=(fl.closed||0)+Object.values(fl.pos||{}).reduce((s,x)=>s+Math.max(0,x.last-x.m0),0);
-        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100}].slice(-12);
+        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,ilEnd:fl.lastIl??null}].slice(-12);
         fl.month=monthKey; fl.closed=0;
         for(const id in fl.pos) fl.pos[id].m0=fl.pos[id].last;
       }
@@ -817,7 +821,8 @@ const main=async()=>{
       const nowD=new Date();
       const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
       const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
-      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+      fl.lastIl=Math.round(evmPositions.reduce((s,p)=>s+(p.ilUsd||0),0)*100)/100;
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null, prev:fl.months||[]};
       fs.writeFileSync(OUT+'/fees-'+profile.slug+'.json', JSON.stringify(fl,null,1));
     }catch(e){ logErr('feeMonth',e); }

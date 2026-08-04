@@ -574,6 +574,12 @@
       <div class="pbody" style="overflow-x:auto"><table class="matrix" id="matrixBody"></table></div>
     </section>
 
+    <section class="panel" data-panel="truth" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">TRUTH PANEL — LP vs HODL &amp; IMPERMANENT LOSS</span><span class="hint">was pooling worth it? fees earned vs what just holding would be worth · month-over-month ledger</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="truthBody"></div>
+    </section>
+
     <section class="panel" data-panel="telemetry" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">PORTFOLIO HISTORY</span><span class="hint">TOTAL VALUE + UNCLAIMED FEES · recorded by the relay every 15 min, across sessions</span><button class="collapse-btn">▾</button></div>
@@ -732,7 +738,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v24';
+const BUILD = 'v25';
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1893,7 +1899,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderCards();
+  renderHeader(); renderTiles(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderCards();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -1978,6 +1984,8 @@ function renderTiles(){
        cm?outc(fmtUsd(cm.total)):'—',
        cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd)+'</b> · '+cm.txCount+' LP tx'
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
+            +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?' · projected net ≈ <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'
+              +fmtUsd(fm.proj-cm.total/fm.elapsedDays*fm.daysInMonth,0)+'</b> by '+mName+' '+fm.daysInMonth:'')
             +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
           : 'gas + rebalance swap fees · starts with the next relay refresh'); }
   { const dayOf = p => cfg.aprWin==='incept'
@@ -3061,6 +3069,80 @@ function renderSpark(){
   host.append(el('div','flow-title','LAST '+spanTxt.toUpperCase()+' · '+s.length+' samples'
     +(dd!=null?' · <span class="'+(dd>=0?'up':'down')+'">'+fmtPct(dd,2,true)+'</span> over the window':'')));
   host.append(svg);
+}
+
+/* ----- truth panel: LP vs HODL, IL, monthly ledger ----- */
+function renderTruth(){
+  const host=$('#truthBody'); if(!host) return; host.innerHTML='';
+  const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const mn=k=>MN[Number(k.slice(5,7))-1]+' ’'+k.slice(2,4);
+  const g=v=>'<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
+  const ps=ordered().filter(p=>p.ilUsd!=null);
+  // ---- per-position: fees vs IL vs HODL ----
+  if(ps.length){
+    const hdr=el('div','arch-row hdr');
+    ['POSITION','FEES EARNED','IMPERMANENT LOSS','NET vs HODL','VERDICT'].forEach(h=>hdr.append(el('div',null,h)));
+    host.append(hdr);
+    let tF=0,tIl=0,tNet=0;
+    ps.forEach(p=>{
+      const f=p.feesEverUsd||0, il=p.ilUsd||0, net=p.lpVsHodlUsd??(il+f);
+      tF+=f; tIl+=il; tNet+=net;
+      const row=el('div','arch-row');
+      row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(pairName(p))+' '+linkRef(p)+(p.inRange?'':' <span style="color:var(--status-critical);font-size:9px">OUT</span>')));
+      row.append(el('div','num',g(f)));
+      row.append(el('div','num',g(il)));
+      row.append(el('div','num',g(net)));
+      let verdict;
+      if(net>=0) verdict='<span class="verdict keep">POOLING WINS</span>';
+      else if(f>0 && net>-f*0.5) verdict='<span class="verdict loosen">CLOSE CALL</span>';
+      else verdict='<span class="verdict" style="border-color:var(--status-critical);color:var(--status-critical)">HODL WOULD\'VE WON</span>';
+      row.append(el('div',null,verdict));
+      host.append(row);
+    });
+    const tot=el('div','arch-row'); tot.style.borderTop='1px solid var(--line-soft)';
+    tot.append(el('div',null,'<b>PORTFOLIO (EVM)</b>'));
+    tot.append(el('div','num',g(tF))); tot.append(el('div','num',g(tIl))); tot.append(el('div','num',g(tNet)));
+    tot.append(el('div',null,tNet>=0?'<b style="color:var(--status-good)">pooling is beating holding</b>':'<b style="color:var(--status-critical)">holding would be ahead</b>'));
+    host.append(tot);
+    // tighten/loosen coaching from the Architect's math
+    const notes=[];
+    ps.filter(p=>p.range&&p.inRange).forEach(p=>{
+      const r=p.range;
+      if(r.concVsBalanced<0.8 && r.stay7dPct>85)
+        notes.push('<b>'+esc(pairName(p))+'</b> '+linkRef(p)+': range is looser than needed ('+r.stay7dPct.toFixed(0)+'% 7-day containment). Tightening to the balanced band ≈ <b>'+(1/Math.max(0.05,r.concVsBalanced)).toFixed(1)+'× the fee capture</b> on the same capital.');
+      else if(r.stay7dPct<50)
+        notes.push('<b>'+esc(pairName(p))+'</b> '+linkRef(p)+': range is tighter than the volatility supports (&lt;50% odds of staying in for 7d) — more fees per hour in range, but frequent idle spells + re-range gas eat the edge.');
+    });
+    ps.filter(p=>!p.inRange).forEach(p=>notes.push('<b>'+esc(pairName(p))+'</b> '+linkRef(p)+': OUT OF RANGE — the divergence that pushed it out is locked in unless price returns; every idle hour is pure opportunity cost. Re-range or unwind.'));
+    if(notes.length) host.append(el('div','arch-note','<b>RANGE COACHING</b><br>'+notes.join('<br>')));
+    host.append(el('div','arch-note','HOW TO READ — IMPERMANENT LOSS compares your LP (current value + anything withdrawn) against simply holding the deposited tokens at today\'s prices: negative = the pool ratio-shifted you into the weaker token. NET vs HODL = IL + fees earned — the honest answer to “should I have just held?”. Range exits, IL drag and gas are ALL costs; fees must outrun the sum. ◎ Solana positions are excluded (deposit history unavailable — IL not computable from free RPC).'));
+  } else {
+    host.append(el('div',null,'<span style="color:var(--text-muted);font-size:12px">IL analytics arrive with the next relay refresh.</span>'));
+  }
+  // ---- month-over-month ledger ----
+  const fm=state.feeMonth, cm=state.costMonth;
+  if(fm){
+    const byM={};
+    (fm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].fees=x.total; byM[x.m].ilEnd=x.ilEnd; });
+    (cm?.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0); });
+    const rows=Object.keys(byM).sort().map(m=>({m,...byM[m],cur:false}));
+    rows.push({m:fm.month, fees:fm.mtd, costs:cm?cm.total:null, ilEnd:fm.ilNow, cur:true});
+    const wrap=el('div'); wrap.style.marginTop='16px';
+    wrap.append(el('div','flow-title','MONTH OVER MONTH — grows automatically as months complete'));
+    const hdr=el('div','arch-row hdr');
+    ['MONTH','FEES EARNED','COSTS','NET','PORTFOLIO IL AT MONTH END'].forEach(h=>hdr.append(el('div',null,h)));
+    wrap.append(hdr);
+    rows.forEach(r=>{
+      const row=el('div','arch-row');
+      row.append(el('div',null,'<b>'+mn(r.m)+'</b>'+(r.cur?' <span style="color:var(--accent);font-size:9px">IN PROGRESS · day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+'</span>':'')));
+      row.append(el('div','num',r.fees!=null?g(r.fees):'—'));
+      row.append(el('div','num',r.costs!=null?g(-r.costs):'—'));
+      row.append(el('div','num',(r.fees!=null&&r.costs!=null)?g(r.fees-r.costs):'—'));
+      row.append(el('div','num',r.ilEnd!=null?g(r.ilEnd):'—'));
+      wrap.append(row);
+    });
+    host.append(wrap);
+  }
 }
 
 /* ----- position cards ----- */
