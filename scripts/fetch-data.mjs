@@ -223,6 +223,23 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
     const totalNow=(valueUsd??0)+(wdr0*usd0+wdr1*usd1)+feesEverUsd;
     if(costUsd>0){ roiPct=(totalNow-costUsd)/costUsd*100; if(ageDays>0.05) feeAprPct=(feesEverUsd/costUsd)*(365/ageDays)*100; }
   }
+  // fees accrued BEFORE the current month started (for the monthly fee ledger)
+  let feesMonthStartUsd=null;
+  try{
+    if(usd0!=null&&usd1!=null&&mintTs!=null){
+      const nowD=new Date();
+      const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
+      if(mintTs>=msTs) feesMonthStartUsd=0;
+      else{
+        const hoursAgo=(Date.now()-msTs)/3600000;
+        const msBlock=Math.max(1,blockNum-Math.round(hoursAgo*C.bph));
+        const old=await feesOwedAt('0x'+msBlock.toString(16));
+        const cb0=sum(hist.col.filter(x=>x.block<msBlock),'a0',d0), cb1=sum(hist.col.filter(x=>x.block<msBlock),'a1',d1);
+        const wb0=sum(hist.dec.filter(x=>x.block<msBlock),'a0',d0), wb1=sum(hist.dec.filter(x=>x.block<msBlock),'a1',d1);
+        feesMonthStartUsd=(Math.max(0,cb0-wb0)+old.f0)*usd0+(Math.max(0,cb1-wb1)+old.f1)*usd1;
+      }
+    }
+  }catch(e){}
   const bpd=C.bph*24;
   const aprW={t:Date.now()};
   for(const [key,days] of [['d1',1],['d7',7],['d30',30],['d365',365]]){
@@ -246,7 +263,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
   return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
-    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
     nearestEdge: dLow<dUp?'lower':'upper',
     edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
@@ -760,6 +777,43 @@ const main=async()=>{
       }
       fs.writeFileSync(OUT+'/ledger-'+profile.slug+'.json', JSON.stringify(ledger,null,1));
     }catch(e){ logErr('ledger',e); }
+    // ---- monthly fee ledger: MTD earned across ACTIVE + CLOSED LPs, claimed + unclaimed ----
+    let feeMonth=null;
+    try{
+      const monthKey=new Date().toISOString().slice(0,7);
+      let fl={month:monthKey, closed:0, pos:{}, months:[]};
+      try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
+      if(fl.month!==monthKey){
+        const prevTotal=(fl.closed||0)+Object.values(fl.pos||{}).reduce((s,x)=>s+Math.max(0,x.last-x.m0),0);
+        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100}].slice(-12);
+        fl.month=monthKey; fl.closed=0;
+        for(const id in fl.pos) fl.pos[id].m0=fl.pos[id].last;
+      }
+      const seen=new Set();
+      for(const p of [...evmPositions,...solPositions]){
+        const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);
+        if(cum==null) continue;
+        seen.add(String(p.id));
+        const e=fl.pos[p.id];
+        if(!e){
+          const mintedThisMonth=p.mintTs && new Date(p.mintTs).toISOString().slice(0,7)===monthKey;
+          // baseline priority: 0 if minted this month → archive-read month-start fees → first-seen value
+          const m0=mintedThisMonth?0:(p.feesMonthStartUsd!=null?Math.min(p.feesMonthStartUsd,cum):cum);
+          fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100};
+        } else e.last=Math.round(cum*100)/100;
+      }
+      for(const id of Object.keys(fl.pos)){
+        if(!seen.has(String(id))){ fl.closed=(fl.closed||0)+Math.max(0,fl.pos[id].last-fl.pos[id].m0); delete fl.pos[id]; }
+      }
+      fl.closed=Math.round((fl.closed||0)*100)/100;
+      const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+Math.max(0,x.last-x.m0),0);
+      const nowD=new Date();
+      const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
+      const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+        proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null, prev:fl.months||[]};
+      fs.writeFileSync(OUT+'/fees-'+profile.slug+'.json', JSON.stringify(fl,null,1));
+    }catch(e){ logErr('feeMonth',e); }
     const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
     const chainStatus={};
     for(const ck of usedChains){
@@ -776,7 +830,7 @@ const main=async()=>{
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, ethUsdChg24, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, ethUsdChg24, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
     if(profile===CONFIG.profiles[0]) fs.writeFileSync(OUT+'/data.json', JSON.stringify(data));

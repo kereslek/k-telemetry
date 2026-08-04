@@ -731,7 +731,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v21.3';
+const BUILD = 'v22';
 const DEFAULT_IDS = [1344396, 1342410, 1340170, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398};
@@ -1609,7 +1609,7 @@ function snapSave(){
     const ps=[...state.positions.values()].map(p=>JSON.parse(JSON.stringify(p,(k,v)=>typeof v==='bigint'?v.toString():v)));
     if(!ps.length) return;
     store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
-      block:state.block, ethUsdChg24:state.ethUsdChg24, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
+      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
   }catch(e){}
 }
 let scanning = false, scanStartedAt = 0;
@@ -1685,6 +1685,7 @@ async function scanInner(isBoot){
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
           if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
+          if(d.feeMonth) state.feeMonth = d.feeMonth;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
           if(d.chainStatus) state.chainStatus = d.chainStatus;
@@ -1727,6 +1728,7 @@ async function scanInner(isBoot){
       state.ethUsd=state.ethUsd??snap.ethUsd; state.btcUsd=state.btcUsd??snap.btcUsd;
       state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block;
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
+      state.feeMonth=state.feeMonth??snap.feeMonth;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
       state.cacheAt=snap.t; state.mode='cache';
@@ -1954,6 +1956,14 @@ function renderTiles(){
   { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
     mk('UNCLAIMED FEES', fmtUsd(totalFees),
        (topFee&&topFee.feesUsd>0 ? 'top: <b>'+esc(topFee.pairLabel)+' '+esc(posRef(topFee))+' · '+fmtUsd(topFee.feesUsd)+'</b> · ' : '')+'lifetime: <b>'+fmtUsd(totalEver,0)+'</b>'); }
+  { const fm=state.feeMonth;
+    const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
+    mk('FEES EARNED · '+mName,
+       fm?fmtUsd(fm.mtd):'—',
+       fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth+' · ':'')
+            +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
+          : 'ledger starts with the next relay refresh (~15 min)'); }
   { const dayOf = p => cfg.aprWin==='incept'
       ? ((p.feesEverUsd!=null && p.ageDays>0.05) ? p.feesEverUsd/p.ageDays : null)
       : (()=>{ const a=aprOf(p).v, base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; })();
@@ -3601,6 +3611,7 @@ async function init(){
       state.ethUsd=state.ethUsd??d.ethUsd; state.gasGwei=state.gasGwei??d.gasGwei;
       if(d.ethUsdChg24!=null) state.ethUsdChg24=d.ethUsdChg24;
       if(Array.isArray(d.history) && d.history.length) state.history=d.history;
+      if(d.feeMonth) state.feeMonth=d.feeMonth;
       if(d.topPools) state.topPools=d.topPools;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
       state.block=state.block??Number(d.block).toLocaleString();
