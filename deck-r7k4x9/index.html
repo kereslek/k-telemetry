@@ -731,7 +731,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v22';
+const BUILD = 'v22.1';
 const DEFAULT_IDS = [1344396, 1342410, 1340170, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398};
@@ -1963,6 +1963,7 @@ function renderTiles(){
        fm?fmtUsd(fm.mtd):'—',
        fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
+            +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
           : 'ledger starts with the next relay refresh (~15 min)'); }
   { const dayOf = p => cfg.aprWin==='incept'
       ? ((p.feesEverUsd!=null && p.ageDays>0.05) ? p.feesEverUsd/p.ageDays : null)
