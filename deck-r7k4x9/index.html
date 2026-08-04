@@ -347,7 +347,7 @@
     .chead{flex-wrap:wrap;row-gap:6px}
   }
   @media(max-width:430px){
-    .hstat:nth-child(2){display:none}   /* hide BLOCK on tiny screens — NEXT SCAN stays visible */
+    .hstat:nth-child(1),.hstat:nth-child(2){display:none}   /* hide UTC + BLOCK on tiny screens — DATA AS OF + NEXT SCAN stay */
     .brand h1{font-size:12px}
     .seg{margin-left:0}
   }
@@ -484,12 +484,13 @@
   </div>
   <div class="brand">
     <h1>ARC // LP COMMAND</h1>
-    <div class="sub">UNISWAP V3 + RAYDIUM · <span id="buildTag"></span></div>
+    <div class="sub">UNISWAP V3 · RAYDIUM · ORCA · <span id="buildTag"></span></div>
   </div>
   <div class="hdr-stats">
     <div class="hstat"><div class="k">UTC</div><div class="v" id="hClock">—</div></div>
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
+    <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
     <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
     <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
     <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
@@ -617,7 +618,7 @@
 
 <footer>
   DATA — ETHEREUM: public JSON-RPC · position state from NonfungiblePositionManager · prices from pool slot0 + Chainlink · fees via static collect() simulation ·
-  deposit history via IncreaseLiquidity logs. SOLANA: Raydium CLMM positions auto-discovered from wallet NFTs (PDA-derived, read on-chain) · prices via Jupiter ·
+  deposit history via IncreaseLiquidity logs. SOLANA: Raydium CLMM + Orca Whirlpool positions auto-discovered from wallet NFTs (PDA-derived, read on-chain) · prices via Jupiter ·
   pool APR via Raydium API · open date from first transaction on the position account.<br>
   ROI method (ETH): (current value + fees earned − deposited value) / deposited value; entry-priced when archive data is available, else vs deposit at current prices (=PnL vs HODL).
   SOL "fees owed" are amounts accrued on the position account — Raydium's UI may show slightly more pending yield (unsettled fees + rewards). Not financial advice; verify before acting.
@@ -731,7 +732,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v23';
+const BUILD = 'v24';
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1707,6 +1708,7 @@ async function scanInner(isBoot){
       state.loggedRpc = state.lastRpc;
     }
     state.mode = 'live';
+    state.dataAt = state.relayUsed ? (state.relayAt || Date.now()) : Date.now();
     setConn('live');
     snapSave();                        // remember this as the last-known snapshot
     setTimeout(enrichHistories, 50);   // heavy ETH log queries run after first paint
@@ -1715,6 +1717,7 @@ async function scanInner(isBoot){
     log('critical','Scan failed on both chains — keeping last data.');
   } else if(DEMO_MODE){
     state.mode = 'sim';
+    state.dataAt = Date.now();
     const demo = demoPositions();
     state.positions = new Map(demo.map(p=>[p.id,p]));
     state.ethUsd = state.ethUsd ?? 3842.55;
@@ -1733,7 +1736,7 @@ async function scanInner(isBoot){
       state.costMonth=state.costMonth??snap.costMonth;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
-      state.cacheAt=snap.t; state.mode='cache';
+      state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
       setConn('cache');
       if(isBoot) log('warning','NO CONNECTION — showing the LAST KNOWN snapshot from '+Math.round((Date.now()-snap.t)/60000)+' min ago. Values are frozen, not live.');
       if(!diagAutoRan){ diagAutoRan=true; setTimeout(runDiagnostics, 400); }
@@ -1955,14 +1958,16 @@ function renderTiles(){
   mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
      ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
      : (state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed'));
+  const inc=v=>'<span style="color:var(--status-good)">+'+v+'</span>';   // income = green, costs = red
+  const outc=v=>'<span style="color:var(--status-critical)">−'+v+'</span>';
   { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
-    mk('UNCLAIMED FEES', fmtUsd(totalFees),
+    mk('UNCLAIMED FEES', inc(fmtUsd(totalFees)),
        (topFee&&topFee.feesUsd>0 ? 'top: <b>'+esc(topFee.pairLabel)+' '+esc(posRef(topFee))+' · '+fmtUsd(topFee.feesUsd)+'</b> · ' : '')+'lifetime: <b>'+fmtUsd(totalEver,0)+'</b>'); }
   { const fm=state.feeMonth;
     const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
     mk('FEES EARNED · '+mName,
-       fm?fmtUsd(fm.mtd):'—',
+       fm?inc(fmtUsd(fm.mtd)):'—',
        fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
             +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
@@ -1970,7 +1975,7 @@ function renderTiles(){
     const cm=state.costMonth;
     const net=(fm&&cm)?fm.mtd-cm.total:null;
     mk('COSTS · '+mName,
-       cm?fmtUsd(cm.total):'—',
+       cm?outc(fmtUsd(cm.total)):'—',
        cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd)+'</b> · '+cm.txCount+' LP tx'
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
@@ -1980,7 +1985,7 @@ function renderTiles(){
       : (()=>{ const a=aprOf(p).v, base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; })();
     const rows=ps.map(dayOf).filter(v=>v!=null);
     const perDay=rows.length? rows.reduce((a,b)=>a+b,0) : null;
-    mk('FEE INCOME / DAY · '+WIN_LABEL[cfg.aprWin], perDay==null?'—':fmtUsd(perDay),
+    mk('FEE INCOME / DAY · '+WIN_LABEL[cfg.aprWin], perDay==null?'—':inc(fmtUsd(perDay)),
        perDay==null?'switch timeframe in the header':'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo · avg over '+WIN_LABEL[cfg.aprWin].toLowerCase()); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
@@ -3429,6 +3434,18 @@ function bootMsg(m){ const b=$('#bootLog'); if(b) b.innerHTML = esc(m)+'<br>'+b.
 function tickClock(){
   const d=new Date();
   $('#hClock').textContent = d.toUTCString().slice(17,25);
+  // DATA AS OF: exact timestamp of what's on screen + live freshness age
+  { const el=$('#hDataTs');
+    if(el){
+      if(!state.dataAt) el.innerHTML='—';
+      else{
+        const age=(Date.now()-state.dataAt)/1000;
+        const ts=new Date(state.dataAt).toUTCString().slice(17,25);
+        const ageTxt=age<60?Math.round(age)+'s':age<3600?Math.round(age/60)+'m':(age/3600).toFixed(1)+'h';
+        const col=state.mode==='cache'?'var(--status-warning)':age<1500?'var(--status-good)':'var(--status-warning)';
+        el.innerHTML=ts+' <span class="unit" style="color:'+col+'">'+(state.mode==='cache'?'CACHE · ':'')+ageTxt+' old</span>';
+      }
+    } }
   const cd=$('#hCountdown');
   const bt=$('#scanBtnTxt');
   if(scanning){
@@ -3605,7 +3622,7 @@ async function init(){
   setInterval(tickClock,1000);
   $('#buildTag').textContent = 'BUILD '+BUILD;
   bootMsg('ESTABLISHING RPC UPLINK…');
-  log('info','ARC // LP COMMAND '+BUILD+' online. Tracking '+cfg.ids.length+' ETH positions + '+cfg.solWallets.length+' SOL wallets.');
+  log('info','ARC // LP COMMAND '+BUILD+' online. Watching '+(profileWallets('ethereum').length)+' EVM + '+cfg.solWallets.length+' SOL wallets — LPs auto-discovered every scan.');
   const hideBoot=()=>{ const bs=$('#bootScreen'); if(bs){ bs.classList.add('hide'); setTimeout(()=>bs.remove(),600); } };
   // INSTANT FIRST PAINT: relay snapshot renders in <1s while the live scan runs in parallel
   (async()=>{
@@ -3627,7 +3644,7 @@ async function init(){
       if(d.topPools) state.topPools=d.topPools;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
       state.block=state.block??Number(d.block).toLocaleString();
-      state.relayUsed=true; state.relayAt=d.t; state.mode='live';
+      state.relayUsed=true; state.relayAt=d.t; state.dataAt=d.t; state.mode='live';
       setConn('live'); renderAll(); hideBoot();
       log('good','Instant paint from relay snapshot ('+((Date.now()-d.t)/60000).toFixed(0)+' min old) — live scan continuing in background.');
     }catch(e){}
