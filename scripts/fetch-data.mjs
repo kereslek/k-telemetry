@@ -821,53 +821,102 @@ const main=async()=>{
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null, prev:fl.months||[]};
       fs.writeFileSync(OUT+'/fees-'+profile.slug+'.json', JSON.stringify(fl,null,1));
     }catch(e){ logErr('feeMonth',e); }
-    // ---- monthly COST ledger: gas for every LP operation + swap fees paid inside those txs ----
+    // ---- monthly COST ledger: gas for every LP op + ALL rebalance swap fees (any pool, any route) ----
     let costMonth=null;
     try{
       const monthKey=new Date().toISOString().slice(0,7);
-      let cl={month:monthKey, gasUsd:0, swapFeeUsd:0, txs:{}, months:[]};
+      let cl={month:monthKey, gasUsd:0, swapFeeUsd:0, txs:{}, scan:{}, months:[]};
       try{ cl=JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')); }catch(e){}
+      cl.scan=cl.scan||{};
       if(cl.month!==monthKey){
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100}].slice(-12);
         cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.txs={};
       }
-      const SWAP_TOPIC='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
+      const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
+      const SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822';
+      const TRANSFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
       const nowD=new Date();
       const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
-      const poolInfo=new Map(evmPositions.map(p=>[String(p.pool).toLowerCase(),p]));
-      const processTx=async(ck,tx,block)=>{
-        const C=CHAINS[ck];
-        if(blockNums[ck]==null) return;
-        const msBlock=Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*C.bph));
-        if(block<msBlock || cl.txs[tx]) return;
-        cl.txs[tx]=1;
+      const msBlockOf=ck=>Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*CHAINS[ck].bph));
+      // pool metadata cache (fee tier, tokens, prices) for ANY pool a swap routes through
+      const poolCache={};
+      const swapFeeOf=async(ck,lg)=>{
+        const addr=String(lg.address).toLowerCase(), key=ck+addr, isV2=lg.topics[0]===SWAP_V2;
+        let pc=poolCache[key];
+        if(!pc){
+          try{
+            const t0='0x'+(await evmCall(ck,addr,'0x0dfe1681')).slice(-40);
+            const t1='0x'+(await evmCall(ck,addr,'0xd21220a7')).slice(-40);
+            let fee=3000; // V2 fixed 0.3%
+            if(!isV2){ try{ fee=Number(BigInt(await evmCall(ck,addr,'0xddca3f43'))); }catch(e){} }
+            const mm0=await meta(ck,t0), mm1=await meta(ck,t1);
+            await llamaPrices([CHAINS[ck].llama+':'+t0,CHAINS[ck].llama+':'+t1]);
+            pc={fee,d0:mm0.decimals,d1:mm1.decimals,u0:priceCache[CHAINS[ck].llama+':'+t0],u1:priceCache[CHAINS[ck].llama+':'+t1]};
+          }catch(e){ pc=null; }
+          poolCache[key]=pc||{fee:0,d0:18,d1:18,u0:null,u1:null};
+          pc=poolCache[key];
+        }
+        let inUsd=0;
+        if(isV2){
+          const in0=bigToFloat(BigInt(word(lg.data,0)),pc.d0), in1=bigToFloat(BigInt(word(lg.data,1)),pc.d1);
+          inUsd=in0*(pc.u0||0)+in1*(pc.u1||0);
+        }else{
+          const a0=toSigned(BigInt(word(lg.data,0)),256), a1=toSigned(BigInt(word(lg.data,1)),256);
+          inUsd=(a0>0n?bigToFloat(a0,pc.d0)*(pc.u0||0):0)+(a1>0n?bigToFloat(a1,pc.d1)*(pc.u1||0):0);
+        }
+        return inUsd*pc.fee/1e6;
+      };
+      const countReceipt=async(ck,tx,requireRelevant)=>{
+        if(cl.txs[tx]) return;
         try{
           const rc=await evm(ck,'eth_getTransactionReceipt',[tx]);
-          if(!rc) return;
-          cl.gasUsd+=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);  // ETH-gas chains
-          for(const lg of (rc.logs||[])){
-            if(lg.topics&&lg.topics[0]===SWAP_TOPIC){
-              const pi=poolInfo.get(String(lg.address).toLowerCase());
-              if(!pi) continue;
-              const a0=toSigned(BigInt(word(lg.data,0)),256), a1=toSigned(BigInt(word(lg.data,1)),256);
-              const in0=a0>0n?bigToFloat(a0,pi.d0):0, in1=a1>0n?bigToFloat(a1,pi.d1):0;   // positive = paid into the pool
-              const feeFrac=(parseFloat(pi.feeLabel)||0)/100;
-              cl.swapFeeUsd+=(in0*(pi.usd0||0)+in1*(pi.usd1||0))*feeFrac;
-            }
-          }
+          if(!rc){ return; }
+          const swaps=(rc.logs||[]).filter(l=>l.topics&&(l.topics[0]===SWAP_V3||l.topics[0]===SWAP_V2));
+          const touchesNpm=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===CHAINS[ck].npm.toLowerCase());
+          if(requireRelevant && !swaps.length && !touchesNpm){ cl.txs[tx]=2; return; }  // plain transfer — seen, not a cost
+          cl.txs[tx]=1;
+          cl.gasUsd+=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);
+          for(const sw of swaps) cl.swapFeeUsd+=await swapFeeOf(ck,sw);
         }catch(e){ logErr('cost '+String(tx).slice(0,10),e); }
         await sleep(120);
       };
-      for(const p of evmPositions) for(const o of (p.opTxs||[])) await processTx(p.chain,o.tx,o.block);
-      // positions that closed this run: fetch their final history once so the close tx's gas is counted
+      // 1) LP operations of live positions (mint/add/remove/collect)
+      for(const p of evmPositions) for(const o of (p.opTxs||[]))
+        if(blockNums[p.chain]!=null && o.block>=msBlockOf(p.chain)) await countReceipt(p.chain,o.tx,false);
+      // 2) final close txs of positions that vanished this run
       for(const jc of justClosed){
         try{ const h=await evmHistory(jc.ck,Number(jc.id)||jc.id);
-          for(const x of [...h.inc,...h.dec,...h.col]) if(x.tx) await processTx(jc.ck,x.tx,x.block);
+          for(const x of [...h.inc,...h.dec,...h.col]) if(x.tx&&blockNums[jc.ck]!=null&&x.block>=msBlockOf(jc.ck)) await countReceipt(jc.ck,x.tx,false);
         }catch(e){ logErr('cost closed#'+jc.id,e); }
       }
+      // 3) wallet swap sweep: every tx this month where a wallet sent or received tokens,
+      //    kept only if it contains swap events or touches the position manager
+      for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana')){
+        const ck=w.chain in CHAINS?w.chain:'ethereum';
+        if(blockNums[ck]==null) continue;
+        const wt='0x'+pad32(w.address.toLowerCase().replace(/^0x/,''));
+        const skey=ck+':'+w.address.toLowerCase();
+        let from=cl.scan[skey]!=null?cl.scan[skey]+1:msBlockOf(ck);
+        const tip=blockNums[ck], CHUNK=ck==='ethereum'?9000:45000;
+        let guard=0;
+        while(from<=tip && guard<40){
+          guard++;
+          const to=Math.min(tip,from+CHUNK-1);
+          let hs=[];
+          try{
+            const out=await evm(ck,'eth_getLogs',[{fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16),topics:[TRANSFER,wt]}]);
+            const inn=await evm(ck,'eth_getLogs',[{fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16),topics:[TRANSFER,null,wt]}]);
+            hs=[...new Set([...out,...inn].map(l=>l.transactionHash))];
+          }catch(e){ logErr('swapscan '+ck+' '+from,e); break; }
+          for(const tx of hs) await countReceipt(ck,tx,true);
+          cl.scan[skey]=to; from=to+1;
+          await sleep(150);
+        }
+      }
       cl.gasUsd=Math.round(cl.gasUsd*100)/100; cl.swapFeeUsd=Math.round(cl.swapFeeUsd*100)/100;
+      const counted=Object.values(cl.txs).filter(v=>v===1).length;
       costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
-        total:Math.round((cl.gasUsd+cl.swapFeeUsd)*100)/100, txCount:Object.keys(cl.txs).length, prev:cl.months||[]};
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd)*100)/100, txCount:counted, prev:cl.months||[]};
       fs.writeFileSync(OUT+'/costs-'+profile.slug+'.json', JSON.stringify(cl,null,1));
     }catch(e){ logErr('costMonth',e); }
     const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
