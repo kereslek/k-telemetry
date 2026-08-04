@@ -125,7 +125,7 @@ async function evmHistory(ck,id){
   const C=CHAINS[ck];
   const topicId='0x'+pad32(id.toString(16));
   const logs=await evm(ck,'eth_getLogs',[{address:C.npm,topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL],topicId],fromBlock:'0x'+C.startBlock.toString(16),toBlock:'latest'}]);
-  const parse=lg=>({block:Number(BigInt(lg.blockNumber)),a0:BigInt(word(lg.data,1)),a1:BigInt(word(lg.data,2))});
+  const parse=lg=>({block:Number(BigInt(lg.blockNumber)),tx:lg.transactionHash,a0:BigInt(word(lg.data,1)),a1:BigInt(word(lg.data,2))});
   return { inc:logs.filter(l=>l.topics[0]===TOPIC_INC).map(parse),
            dec:logs.filter(l=>l.topics[0]===TOPIC_DEC).map(parse),
            col:logs.filter(l=>l.topics[0]===TOPIC_COL).map(parse) };
@@ -240,6 +240,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
       }
     }
   }catch(e){}
+  const opTxs=[...new Map([...hist.inc,...hist.dec,...hist.col].filter(x=>x.tx).map(x=>[x.tx,{tx:x.tx,block:x.block}])).values()];
   const bpd=C.bph*24;
   const aprW={t:Date.now()};
   for(const [key,days] of [['d1',1],['d7',7],['d30',30],['d365',365]]){
@@ -263,7 +264,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
   return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
-    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, costUsd, roiPct, roiMode, feeAprPct, aprW,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
     nearestEdge: dLow<dUp?'lower':'upper',
     edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
@@ -779,6 +780,7 @@ const main=async()=>{
     }catch(e){ logErr('ledger',e); }
     // ---- monthly fee ledger: MTD earned across ACTIVE + CLOSED LPs, claimed + unclaimed ----
     let feeMonth=null;
+    const justClosed=[];   // evm positions that vanished this run — their final close tx still owes gas accounting
     try{
       const monthKey=new Date().toISOString().slice(0,7);
       let fl={month:monthKey, closed:0, pos:{}, months:[]};
@@ -799,11 +801,16 @@ const main=async()=>{
           const mintedThisMonth=p.mintTs && new Date(p.mintTs).toISOString().slice(0,7)===monthKey;
           // baseline priority: 0 if minted this month → archive-read month-start fees → first-seen value
           const m0=mintedThisMonth?0:(p.feesMonthStartUsd!=null?Math.min(p.feesMonthStartUsd,cum):cum);
-          fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100};
+          fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100, ck:p.chain||'ethereum'};
         } else e.last=Math.round(cum*100)/100;
       }
       for(const id of Object.keys(fl.pos)){
-        if(!seen.has(String(id))){ fl.closed=(fl.closed||0)+Math.max(0,fl.pos[id].last-fl.pos[id].m0); delete fl.pos[id]; }
+        if(!seen.has(String(id))){
+          fl.closed=(fl.closed||0)+Math.max(0,fl.pos[id].last-fl.pos[id].m0);
+          const ck=fl.pos[id].ck||'ethereum';
+          if(ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
+          delete fl.pos[id];
+        }
       }
       fl.closed=Math.round((fl.closed||0)*100)/100;
       const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+Math.max(0,x.last-x.m0),0);
@@ -814,6 +821,55 @@ const main=async()=>{
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null, prev:fl.months||[]};
       fs.writeFileSync(OUT+'/fees-'+profile.slug+'.json', JSON.stringify(fl,null,1));
     }catch(e){ logErr('feeMonth',e); }
+    // ---- monthly COST ledger: gas for every LP operation + swap fees paid inside those txs ----
+    let costMonth=null;
+    try{
+      const monthKey=new Date().toISOString().slice(0,7);
+      let cl={month:monthKey, gasUsd:0, swapFeeUsd:0, txs:{}, months:[]};
+      try{ cl=JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')); }catch(e){}
+      if(cl.month!==monthKey){
+        cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100}].slice(-12);
+        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.txs={};
+      }
+      const SWAP_TOPIC='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
+      const nowD=new Date();
+      const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
+      const poolInfo=new Map(evmPositions.map(p=>[String(p.pool).toLowerCase(),p]));
+      const processTx=async(ck,tx,block)=>{
+        const C=CHAINS[ck];
+        if(blockNums[ck]==null) return;
+        const msBlock=Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*C.bph));
+        if(block<msBlock || cl.txs[tx]) return;
+        cl.txs[tx]=1;
+        try{
+          const rc=await evm(ck,'eth_getTransactionReceipt',[tx]);
+          if(!rc) return;
+          cl.gasUsd+=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);  // ETH-gas chains
+          for(const lg of (rc.logs||[])){
+            if(lg.topics&&lg.topics[0]===SWAP_TOPIC){
+              const pi=poolInfo.get(String(lg.address).toLowerCase());
+              if(!pi) continue;
+              const a0=toSigned(BigInt(word(lg.data,0)),256), a1=toSigned(BigInt(word(lg.data,1)),256);
+              const in0=a0>0n?bigToFloat(a0,pi.d0):0, in1=a1>0n?bigToFloat(a1,pi.d1):0;   // positive = paid into the pool
+              const feeFrac=(parseFloat(pi.feeLabel)||0)/100;
+              cl.swapFeeUsd+=(in0*(pi.usd0||0)+in1*(pi.usd1||0))*feeFrac;
+            }
+          }
+        }catch(e){ logErr('cost '+String(tx).slice(0,10),e); }
+        await sleep(120);
+      };
+      for(const p of evmPositions) for(const o of (p.opTxs||[])) await processTx(p.chain,o.tx,o.block);
+      // positions that closed this run: fetch their final history once so the close tx's gas is counted
+      for(const jc of justClosed){
+        try{ const h=await evmHistory(jc.ck,Number(jc.id)||jc.id);
+          for(const x of [...h.inc,...h.dec,...h.col]) if(x.tx) await processTx(jc.ck,x.tx,x.block);
+        }catch(e){ logErr('cost closed#'+jc.id,e); }
+      }
+      cl.gasUsd=Math.round(cl.gasUsd*100)/100; cl.swapFeeUsd=Math.round(cl.swapFeeUsd*100)/100;
+      costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd)*100)/100, txCount:Object.keys(cl.txs).length, prev:cl.months||[]};
+      fs.writeFileSync(OUT+'/costs-'+profile.slug+'.json', JSON.stringify(cl,null,1));
+    }catch(e){ logErr('costMonth',e); }
     const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
     const chainStatus={};
     for(const ck of usedChains){
@@ -830,8 +886,9 @@ const main=async()=>{
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, ethUsdChg24, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, ethUsdChg24, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
+    for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
     if(profile===CONFIG.profiles[0]) fs.writeFileSync(OUT+'/data.json', JSON.stringify(data));
     console.log('profile',profile.slug,':',evmPositions.length,'evm +',solPositions.length,'sol · errors:',errors.length);

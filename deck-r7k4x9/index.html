@@ -731,7 +731,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v22.2';
+const BUILD = 'v23';
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1609,7 +1609,7 @@ function snapSave(){
     const ps=[...state.positions.values()].map(p=>JSON.parse(JSON.stringify(p,(k,v)=>typeof v==='bigint'?v.toString():v)));
     if(!ps.length) return;
     store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
-      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
+      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
   }catch(e){}
 }
 let scanning = false, scanStartedAt = 0;
@@ -1686,6 +1686,7 @@ async function scanInner(isBoot){
           if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(d.feeMonth) state.feeMonth = d.feeMonth;
+          if(d.costMonth) state.costMonth = d.costMonth;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
           if(d.chainStatus) state.chainStatus = d.chainStatus;
@@ -1729,6 +1730,7 @@ async function scanInner(isBoot){
       state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block;
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
       state.feeMonth=state.feeMonth??snap.feeMonth;
+      state.costMonth=state.costMonth??snap.costMonth;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
       state.cacheAt=snap.t; state.mode='cache';
@@ -1964,7 +1966,15 @@ function renderTiles(){
        fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
             +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
-          : 'ledger starts with the next relay refresh (~15 min)'); }
+          : 'ledger starts with the next relay refresh (~15 min)');
+    const cm=state.costMonth;
+    const net=(fm&&cm)?fm.mtd-cm.total:null;
+    mk('COSTS · '+mName,
+       cm?fmtUsd(cm.total):'—',
+       cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd)+'</b> · '+cm.txCount+' LP tx'
+            +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
+            +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
+          : 'gas + rebalance swap fees · starts with the next relay refresh'); }
   { const dayOf = p => cfg.aprWin==='incept'
       ? ((p.feesEverUsd!=null && p.ageDays>0.05) ? p.feesEverUsd/p.ageDays : null)
       : (()=>{ const a=aprOf(p).v, base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; })();
@@ -3613,6 +3623,7 @@ async function init(){
       if(d.ethUsdChg24!=null) state.ethUsdChg24=d.ethUsdChg24;
       if(Array.isArray(d.history) && d.history.length) state.history=d.history;
       if(d.feeMonth) state.feeMonth=d.feeMonth;
+      if(d.costMonth) state.costMonth=d.costMonth;
       if(d.topPools) state.topPools=d.topPools;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
       state.block=state.block??Number(d.block).toLocaleString();
