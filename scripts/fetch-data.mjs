@@ -655,6 +655,21 @@ const main=async()=>{
     if(ethUsd&&ago) ethUsdChg24=(ethUsd/ago-1)*100;
   }catch(e){}
   try{ btcUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_BTC,SEL.latestAnswer)),8); }catch(e){}
+  // header ticker strip: SOL / LCX(new contract) / CPOOL — price + 24h change via DefiLlama
+  let tickers=null;
+  try{
+    const KEYS={SOL:'solana:So11111111111111111111111111111111111111112',
+                LCX:'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e',
+                CPOOL:'ethereum:0x66761fa41377003622aee3c7675fc7b5c1c2fac5'};
+    const ks=Object.values(KEYS).join(',');
+    const nowJ=await getJson('https://coins.llama.fi/prices/current/'+ks,20000);
+    const agoJ=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(Date.now()/1000-86400)+'/'+ks,20000);
+    tickers=Object.entries(KEYS).map(([sym,k])=>{
+      const c=nowJ.coins?.[k]?.price??null, a=agoJ.coins?.[k]?.price??null;
+      return {sym, usd:c, chg:(c!=null&&a)?(c/a-1)*100:null};
+    }).filter(t=>t.usd!=null);
+    if(!tickers.length) tickers=null;
+  }catch(e){ logErr('tickers',e); }
   let topPools=[];
   try{
     const js=await getJson('https://yields.llama.fi/pools',45000);
@@ -940,7 +955,7 @@ const main=async()=>{
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, ethUsdChg24, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
