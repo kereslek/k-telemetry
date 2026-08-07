@@ -347,7 +347,7 @@
     .chead{flex-wrap:wrap;row-gap:6px}
   }
   @media(max-width:430px){
-    .hstat:nth-child(1),.hstat:nth-child(2){display:none}   /* hide UTC + BLOCK on tiny screens — DATA AS OF + NEXT SCAN stay */
+    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}   /* hide UTC + BLOCK on tiny screens — prices, DATA AS OF + NEXT SCAN stay */
     .brand h1{font-size:12px}
     .seg{margin-left:0}
   }
@@ -490,6 +490,7 @@
     <div class="hstat"><div class="k">UTC</div><div class="v" id="hClock">—</div></div>
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
+    <span id="hTickers" style="display:contents"></span>
     <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
     <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
     <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
@@ -738,7 +739,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25';
+const BUILD = 'v25.1';
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1616,7 +1617,7 @@ function snapSave(){
     const ps=[...state.positions.values()].map(p=>JSON.parse(JSON.stringify(p,(k,v)=>typeof v==='bigint'?v.toString():v)));
     if(!ps.length) return;
     store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
-      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
+      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth, tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
   }catch(e){}
 }
 let scanning = false, scanStartedAt = 0;
@@ -1694,6 +1695,7 @@ async function scanInner(isBoot){
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(d.feeMonth) state.feeMonth = d.feeMonth;
           if(d.costMonth) state.costMonth = d.costMonth;
+          if(d.tickers) state.tickers = d.tickers;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
           if(d.chainStatus) state.chainStatus = d.chainStatus;
@@ -1740,6 +1742,7 @@ async function scanInner(isBoot){
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
       state.feeMonth=state.feeMonth??snap.feeMonth;
       state.costMonth=state.costMonth??snap.costMonth;
+      state.tickers=state.tickers??snap.tickers;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -1932,10 +1935,15 @@ function renderAll(){
 }
 function renderHeader(){
   $('#hBlock').textContent = state.block ?? '—';
-  const chg = state.ethUsdChg24;
-  $('#hEth').innerHTML = (state.ethUsd ? fmtUsd(state.ethUsd,0) : '—')
-    + (chg!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(chg>=0?'good':'critical')+')" title="ETH/USD change over the last 24h (Chainlink)">'
-        +(chg>=0?'▲':'▼')+Math.abs(chg).toFixed(1)+'%</span>' : '');
+  const chip = c => c!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(c>=0?'good':'critical')+')">'
+        +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>' : '';
+  $('#hEth').innerHTML = (state.ethUsd ? fmtUsd(state.ethUsd,0) : '—') + chip(state.ethUsdChg24);
+  const tk=$('#hTickers');
+  if(tk){
+    const pfmt=v=>v>=100?fmtUsd(v,0):v>=1?fmtUsd(v,2):'$'+v.toFixed(4);
+    tk.innerHTML=(state.tickers||[]).map(t=>
+      '<div class="hstat"><div class="k">'+esc(t.sym)+' / USD</div><div class="v">'+pfmt(t.usd)+chip(t.chg)+'</div></div>').join('');
+  }
 }
 function setConn(mode){
   const led=$('#connLed'), lab=$('#connLabel');
@@ -3723,6 +3731,7 @@ async function init(){
       if(Array.isArray(d.history) && d.history.length) state.history=d.history;
       if(d.feeMonth) state.feeMonth=d.feeMonth;
       if(d.costMonth) state.costMonth=d.costMonth;
+      if(d.tickers) state.tickers=d.tickers;
       if(d.topPools) state.topPools=d.topPools;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
       state.block=state.block??Number(d.block).toLocaleString();
