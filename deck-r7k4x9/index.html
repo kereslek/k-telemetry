@@ -306,6 +306,7 @@
   .fd-sub{font-size:12.5px;color:var(--text-secondary);margin-top:8px;line-height:1.55}
   .fd-sub b{color:var(--text-primary)}
   .fd-note{font-size:9.5px;color:var(--text-muted);margin-top:10px;letter-spacing:.08em}
+  .flow-omit{font-size:9.5px;color:var(--text-muted);margin-top:8px;letter-spacing:.06em}
 
   /* ============ RESPONSIVE ============ */
   @media(max-width:1000px){
@@ -2448,12 +2449,18 @@ function renderRank(){
 /* ----- capital flow ----- */
 function renderFlow(){
   const host=$('#flowBody'); host.innerHTML='';
-  const ps=ordered().filter(p=>p.valueUsd!=null&&p.valueUsd>0);
-  if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No live position values yet.</div>'; return; }
+  const all=ordered().filter(p=>p.valueUsd!=null&&p.valueUsd>0);
+  if(!all.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No live position values yet.</div>'; return; }
   const winDays={d1:1,d7:7,d30:30,d365:365}[cfg.aprWin];
-  const earn=p=>{ if(cfg.aprWin==='incept') return p.feesEverUsd||0;
+  // null = earnings unknown for this window (no APR yet / still loading), never 0. A fabricated
+  // zero deflates totE, inflates every other position's fee share, and gives the position a
+  // gap of -capitalShare — enough to brand a freshly opened LP a laggard before any data lands.
+  const earn=p=>{ if(cfg.aprWin==='incept') return p.feesEverUsd??null;
     const a=aprOf(p).v, base=p.valueUsd||p.costUsd||0;
-    return (a!=null&&base)? a/100*base*(winDays||1)/365 : 0; };
+    return (a!=null&&base)? a/100*base*(winDays||1)/365 : null; };
+  // Both bars must share one base, or "x% of capital → y% of fees" compares two different pies.
+  const ps=all.filter(p=>earn(p)!=null), omitted=all.filter(p=>earn(p)==null);
+  if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No earnings data for this timeframe yet.</div>'; return; }
   const totV=ps.reduce((s,p)=>s+p.valueUsd,0);
   const totE=ps.reduce((s,p)=>s+earn(p),0);
   const mkBar=(title,valFn,tot,fmt)=>{
@@ -2475,6 +2482,11 @@ function renderFlow(){
   };
   host.append(mkBar('CAPITAL SHARE — where your money sits', p=>p.valueUsd, totV, v=>fmtUsd(v,0)));
   host.append(mkBar('FEE OUTPUT SHARE · '+WIN_LABEL[cfg.aprWin]+' — where the money is made', earn, totE, v=>fmtUsd(v)));
+  if(omitted.length){
+    const ov=omitted.reduce((s,p)=>s+p.valueUsd,0);
+    host.append(el('div','flow-omit',omitted.length+' position'+(omitted.length>1?'s':'')+' ('+fmtUsd(ov,0)+') not shown — no '
+      +WIN_LABEL[cfg.aprWin]+' earnings data yet. Their share is unknown, not zero, so both bars exclude them.'));
+  }
   // mismatch callout
   let star=null, lag=null;
   if(totE>0){
