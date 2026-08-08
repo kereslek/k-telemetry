@@ -26,6 +26,10 @@ jobs:
           git config user.name "lp-hud-bot"
           git config user.email "bot@users.noreply.github.com"
           git add deck-r7k4x9/data*.json deck-r7k4x9/ledger*.json deck-r7k4x9/hist*.json deck-r7k4x9/fees*.json deck-r7k4x9/costs*.json
+          # blockcache.json persists mint blocks + the wallet transfer-scan checkpoint.
+          # Tolerant add: the script writes it inside a try/catch, so a missing file
+          # must never fail the data commit.
+          git add deck-r7k4x9/blockcache.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git pull --rebase origin gh-pages || true
             git commit -m "data refresh $(date -u +%FT%TZ)"

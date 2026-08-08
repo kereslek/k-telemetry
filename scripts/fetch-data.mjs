@@ -141,16 +141,34 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
    mint  — position id → mint block, found once by binary search, then never again
    tscan — wallet NFT-transfer scan checkpoint + candidate ids */
 let blockCache={mint:{},tscan:{}};
+/* Infra failures that mean "the node could not answer", never "the call reverted".
+   evm() surfaces these as plain Errors from post(), identical in shape to a revert. */
+const RPC_UNAVAILABLE=/HTTP (4[02389]|5\d\d)|abort|timed? ?out|rate|too many|limit exceeded|missing trie node|header not found|not available|no backend|ECONN|socket|network/i;
+/* One probe of positions(id) at a historical block.
+   true = live, false = reverted (not minted yet), throw = the node could not tell us.
+   Conflating the third case with the second walks the search past the real mint block,
+   and since the answer is cached permanently that bakes in an understated cost basis. */
+async function positionsLiveAt(ck,npm,idHex,block){
+  for(let attempt=0;attempt<3;attempt++){
+    try{ await evmCall(ck,npm,SEL.positions+idHex,'0x'+block.toString(16)); return true; }
+    catch(e){
+      if(!RPC_UNAVAILABLE.test(String((e&&e.message)||e))) return false;   // a real revert
+      await sleep(400*(attempt+1));
+    }
+  }
+  throw new Error('mint probe indeterminate at block '+block);
+}
 async function positionMintBlock(ck,id,tip){
   const key=ck+':'+id;
   if(blockCache.mint[key]!=null) return blockCache.mint[key];
   const C=CHAINS[ck], idHex=pad32(id.toString(16));
+  // Precondition: the search is only monotone while the position is live. positions(id)
+  // also reverts after a burn, so probing a closed id would binary-search on noise.
+  if(!await positionsLiveAt(ck,C.npm,idHex,tip)) throw new Error('position '+id+' not live at tip');
   let lo=C.startBlock, hi=tip;   // positions(id) reverts before mint → monotone for live positions
   while(lo<hi){
     const mid=Math.floor((lo+hi)/2);
-    let ok=false;
-    try{ await evmCall(ck,C.npm,SEL.positions+idHex,'0x'+mid.toString(16)); ok=true; }catch(e){}
-    if(ok) hi=mid; else lo=mid+1;
+    if(await positionsLiveAt(ck,C.npm,idHex,mid)) hi=mid; else lo=mid+1;
     await sleep(60);
   }
   blockCache.mint[key]=Math.max(C.startBlock,hi-1);
