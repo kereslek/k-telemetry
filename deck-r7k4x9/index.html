@@ -347,7 +347,7 @@
     .chead{flex-wrap:wrap;row-gap:6px}
   }
   @media(max-width:430px){
-    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}   /* hide UTC + BLOCK on tiny screens — prices, DATA AS OF + NEXT SCAN stay */
+    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}   /* hide CET clock + BLOCK on tiny screens — prices, DATA AS OF + NEXT DATA stay */
     .brand h1{font-size:12px}
     .seg{margin-left:0}
   }
@@ -487,12 +487,12 @@
     <div class="sub">UNISWAP V3 · RAYDIUM · ORCA · <span id="buildTag"></span></div>
   </div>
   <div class="hdr-stats">
-    <div class="hstat"><div class="k">UTC</div><div class="v" id="hClock">—</div></div>
+    <div class="hstat"><div class="k" id="hClockLabel">CET</div><div class="v" id="hClock">—</div></div>
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
     <span id="hTickers" style="display:contents"></span>
     <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
-    <div class="hstat"><div class="k">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
+    <div class="hstat"><div class="k" id="hCdLabel">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
     <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
     <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
@@ -739,7 +739,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.1';
+const BUILD = 'v25.2';
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -845,6 +845,10 @@ const fmtNum = (v, dp=4) => v==null ? '—' : Number(v).toLocaleString('en-US',{
 const fmtPct = (v, dp=2, sign) => v==null ? '—' : ((sign&&v>0?'+':'')+(v).toFixed(dp)+'%');
 const fmtPrice = p => p==null ? '—' : p>=1000 ? p.toLocaleString('en-US',{maximumFractionDigits:0}) : p>=1 ? p.toFixed(2) : p.toPrecision(4);
 const fmtAge = days => days==null ? '—' : days<1 ? Math.round(days*24)+'h' : days<60 ? days.toFixed(1)+'d' : (days/30.44).toFixed(1)+'mo';
+/* v25.2: every human-facing clock shows Budapest wall time (CET/CEST auto-labelled), not UTC */
+const TZ='Europe/Budapest';
+const fmtT=(t,withSec=true)=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour12:false,hour:'2-digit',minute:'2-digit',...(withSec?{second:'2-digit'}:{})});
+const tzAbbr=t=>{try{return new Intl.DateTimeFormat('en-GB',{timeZone:TZ,timeZoneName:'short'}).formatToParts(t?new Date(t):new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return 'CET';}};
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pad32 = h => h.replace(/^0x/,'').padStart(64,'0');
 const hexToBig = h => BigInt(h);
@@ -1814,17 +1818,17 @@ function log(kind, msg){
   const body = $('#logBody');
   const row = el('div','log-row '+kind);
   const t = new Date();
-  const dateStr = t.toISOString().slice(0,10);
+  const dateStr = t.toLocaleDateString('en-CA',{timeZone:TZ});   // YYYY-MM-DD, Budapest day
   row.dataset.date = dateStr;
   row.append(
-    el('span','ts', t.toUTCString().slice(17,25)),
+    el('span','ts', fmtT(t)),
     el('span','sev', {good:'✓',warning:'▲',critical:'✕',info:'·'}[kind]||'·'),
     el('span','msg', msg)
   );
   const top = body.firstElementChild;
   if(top && top.dataset && top.dataset.date && top.dataset.date !== dateStr){
-    const D = new Date(top.dataset.date);
-    body.prepend(el('div','log-day','— '+D.getUTCDate()+' '+['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][D.getUTCMonth()]+' '+D.getUTCFullYear()+' —'));
+    const [dy,dm,dd] = top.dataset.date.split('-').map(Number);
+    body.prepend(el('div','log-day','— '+dd+' '+['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][dm-1]+' '+dy+' —'));
   }
   body.prepend(row);
   while(body.children.length>110) body.lastChild.remove();
@@ -1921,7 +1925,7 @@ function renderAll(){
     const age=state.cacheAt?Math.round((Date.now()-state.cacheAt)/60000):null;
     banner.style.borderColor='var(--status-warning)'; banner.style.color='var(--status-warning)';
     banner.innerHTML='⚠ NO CONNECTION — showing the <b>LAST KNOWN snapshot</b> from '
-      +(state.cacheAt?new Date(state.cacheAt).toUTCString().slice(17,22)+' UTC ('+(age<120?age+' min':Math.round(age/60)+' h')+' ago)':'earlier')
+      +(state.cacheAt?fmtT(state.cacheAt,false)+' '+tzAbbr(state.cacheAt)+' ('+(age<120?age+' min':Math.round(age/60)+' h')+' ago)':'earlier')
       +'. Every number is frozen at that moment — prices, fees and ranges have moved since. Reconnect and hit ⟳ SCAN to go live.';
   } else if(state.mode==='offline'){
     banner.style.borderColor='var(--status-critical)'; banner.style.color='var(--status-critical)';
@@ -3070,7 +3074,7 @@ function renderSpark(){
     s.forEach((x,j)=>{const d=Math.abs(x.t-tt); if(d<best){best=d;i=j;}});
     cross.setAttribute('x1',X(s[i].t)); cross.setAttribute('x2',X(s[i].t)); cross.setAttribute('opacity',1);
     dot.setAttribute('cx',X(s[i].t)); dot.setAttribute('cy',Y(s[i].v)); dot.setAttribute('opacity',1);
-    showTip(ev,'<div class="tk">'+new Date(s[i].t).toUTCString().slice(5,25)+' UTC</div><div class="tv"><b>'+fmtUsd(s[i].v,0)+'</b> total value + unclaimed fees</div>');
+    showTip(ev,'<div class="tk">'+new Date(s[i].t).toLocaleString('en-GB',{timeZone:TZ,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})+' '+tzAbbr(s[i].t)+'</div><div class="tv"><b>'+fmtUsd(s[i].v,0)+'</b> total value + unclaimed fees</div>');
   });
   svg.addEventListener('mouseleave',()=>{cross.setAttribute('opacity',0);dot.setAttribute('opacity',0);hideTip();});
   const d0=s[0].v, dN=s[s.length-1].v, dd=d0? (dN-d0)/d0*100 : null;
@@ -3521,16 +3525,28 @@ function wireSettings(){
 
 /* ================= BOOT / CLOCK / LOOP ================= */
 function bootMsg(m){ const b=$('#bootLog'); if(b) b.innerHTML = esc(m)+'<br>'+b.innerHTML.split('<br>').slice(0,2).join('<br>'); }
+/* v25.2: how often does the SERVER actually deliver fresh data? Learned from the real
+   gaps between the last few relay refreshes (median), not from a wishful constant. */
+function relayCadenceMs(){
+  const h=state.history||[];
+  if(h.length<4) return 15*60000;
+  const ds=[];
+  for(let i=Math.max(1,h.length-9);i<h.length;i++){ const d=h[i].t-h[i-1].t; if(d>60000) ds.push(d); }
+  if(!ds.length) return 15*60000;
+  ds.sort((a,b)=>a-b);
+  return Math.min(Math.max(ds[Math.floor(ds.length/2)],5*60000),4*3600000);
+}
 function tickClock(){
   const d=new Date();
-  $('#hClock').textContent = d.toUTCString().slice(17,25);
+  $('#hClock').textContent = fmtT(d);
+  { const lb=$('#hClockLabel'); if(lb) lb.textContent=tzAbbr(); }
   // DATA AS OF: exact timestamp of what's on screen + live freshness age
   { const el=$('#hDataTs');
     if(el){
       if(!state.dataAt) el.innerHTML='—';
       else{
         const age=(Date.now()-state.dataAt)/1000;
-        const ts=new Date(state.dataAt).toUTCString().slice(17,25);
+        const ts=fmtT(state.dataAt);
         const ageTxt=age<60?Math.round(age)+'s':age<3600?Math.round(age/60)+'m':(age/3600).toFixed(1)+'h';
         const col=state.mode==='cache'?'var(--status-warning)':age<1500?'var(--status-good)':'var(--status-warning)';
         el.innerHTML=ts+' <span class="unit" style="color:'+col+'">'+(state.mode==='cache'?'CACHE · ':'')+ageTxt+' old</span>';
@@ -3555,7 +3571,21 @@ function tickClock(){
     if(bt) bt.textContent=' SCAN';
     state.countdown--;
     if(state.countdown<=0){ state.countdown=cfg.interval; scan(); }
-    cd.innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
+    // v25.2: on relay data the browser poll is not what refreshes the numbers — the server
+    // scan is. So count down to the EXPECTED next server refresh (learned cadence + ~90s
+    // commit→publish lag), and admit lateness with DUE instead of restarting a fake timer.
+    const lb=$('#hCdLabel');
+    if(state.relayUsed && state.dataAt){
+      if(lb) lb.textContent='NEXT DATA';
+      const left=state.dataAt+relayCadenceMs()+90000-Date.now();
+      cd.innerHTML = left>0
+        ? (left>=90000 ? '~'+Math.round(left/60000)+'<span class="unit">m</span>'
+                       : '~'+Math.max(5,Math.round(left/15000)*15)+'<span class="unit">s</span>')
+        : 'DUE<span class="unit"> '+Math.min(99,Math.max(1,Math.round(-left/60000)))+'m late</span>';
+    } else {
+      if(lb) lb.textContent='NEXT SCAN';
+      cd.innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
+    }
   } else {
     if(bt) bt.textContent=' SCAN';
     cd.innerHTML='—<span class="unit">s</span>';
