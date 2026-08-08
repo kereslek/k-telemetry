@@ -93,6 +93,8 @@
   .conn .label{font-size:10px;letter-spacing:.2em;color:var(--text-secondary)}
   .hbtn{
     font-family:var(--mono);font-size:10px;letter-spacing:.18em;cursor:pointer;
+    /* iOS reads a double-tap as zoom and eats the second click — this makes double-tap work */
+    touch-action:manipulation;-webkit-user-select:none;user-select:none;
     color:var(--accent);background:transparent;border:1px solid var(--accent-dim);
     padding:7px 13px;transition:all .15s;white-space:nowrap;
   }
@@ -3548,6 +3550,39 @@ function relayCadenceMs(){
   ds.sort((a,b)=>a-b);
   return Math.min(Math.max(ds[Math.floor(ds.length/2)],5*60000),4*3600000);
 }
+/* The NEXT DATA countdown used to be pure decoration: it hit zero, flipped to DUE, and
+   nothing ever went looking for the data it had just promised — the only thing that
+   actually refetched was a separate 5-minute poll on its own schedule. Once the prediction
+   expires we now probe the relay file directly (one small cache-busted GET) and apply it
+   the moment its timestamp advances. */
+const DUE_PROBE_MS=20000;
+async function relayNewerThan(t){
+  const slug=activeProfile()?.slug||'main';
+  let rr=await fetch('data-'+slug+'.json?nc='+Date.now(),{cache:'no-store'});
+  if(!rr.ok) rr=await fetch('data.json?nc='+Date.now(),{cache:'no-store'});
+  if(!rr.ok) return false;
+  const d=await rr.json();
+  return !!(d && typeof d.t==='number' && d.t>t);
+}
+function probeRelayDue(){
+  if(state.duePolling||scanning) return;
+  state.duePolling=true;
+  relayNewerThan(state.relayAt||0)
+    .then(newer=>{ if(newer){ log('good','Server published fresh data — pulling it now.'); scan(); } })
+    .catch(()=>{})
+    .finally(()=>{ state.duePolling=false; });
+}
+/* Double-tap SCAN. Always does a real fetch, always says plainly whether anything moved,
+   and releases a stuck scan lock so a second tap can never be a no-op. */
+async function hardRefresh(){
+  const before=state.dataAt||0;
+  scanning=false;
+  state.dueProbeAt=0;
+  log('good','HARD REFRESH — re-reading the server file, cache bypassed.');
+  await scan();
+  if((state.dataAt||0)>before) log('good','Fresh data applied — '+fmtT(state.dataAt)+'.');
+  else log('warning','Server has published nothing newer — still '+(state.dataAt?fmtT(state.dataAt):'—')+'. Nothing to apply.');
+}
 function tickClock(){
   const d=new Date();
   $('#hClock').textContent = fmtT(d);
@@ -3590,10 +3625,16 @@ function tickClock(){
     if(state.relayUsed && state.dataAt){
       if(lb) lb.textContent='NEXT DATA';
       const left=state.dataAt+relayCadenceMs()+90000-Date.now();
-      cd.innerHTML = left>0
-        ? (left>=90000 ? '~'+Math.round(left/60000)+'<span class="unit">m</span>'
-                       : '~'+Math.max(5,Math.round(left/15000)*15)+'<span class="unit">s</span>')
-        : 'DUE<span class="unit"> '+Math.min(99,Math.max(1,Math.round(-left/60000)))+'m late</span>';
+      if(left>0){
+        cd.innerHTML = left>=90000 ? '~'+Math.round(left/60000)+'<span class="unit">m</span>'
+                                   : '~'+Math.max(5,Math.round(left/15000)*15)+'<span class="unit">s</span>';
+        state.dueProbeAt=0;
+      }else{
+        // the promise expired — go and look, rather than just displaying DUE forever
+        if(!state.dueProbeAt||Date.now()>=state.dueProbeAt){ state.dueProbeAt=Date.now()+DUE_PROBE_MS; probeRelayDue(); }
+        const lateM=Math.min(99,Math.max(1,Math.round(-left/60000)));
+        cd.innerHTML = (state.duePolling?'CHECKING':'DUE')+'<span class="unit"> '+lateM+'m late</span>';
+      }
     } else {
       if(lb) lb.textContent='NEXT SCAN';
       cd.innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
@@ -3743,7 +3784,15 @@ async function init(){
     e.stopPropagation(); b.closest('.panel').classList.toggle('collapsed');
     b.textContent = b.closest('.panel').classList.contains('collapsed')?'▸':'▾';
   }));
-  $('#btnRefresh').addEventListener('click',()=>scan());
+  { let lastTap=0;
+    const btn=$('#btnRefresh');
+    btn.title='Tap to scan · double-tap to force a hard refresh';
+    btn.addEventListener('click',()=>{
+      const now=Date.now();
+      if(now-lastTap<500){ lastTap=0; hardRefresh(); return; }   // double-tap → force
+      lastTap=now; scan();
+    });
+  }
   $('#btnNotify').addEventListener('click',async()=>{
     if(!('Notification' in window)){ log('warning','This browser does not support notifications.'); return; }
     const perm = await Notification.requestPermission();
