@@ -2,34 +2,44 @@
  "month": "2026-08",
  "closed": 155.35,
  "pos": {
+  "1344728": {
+   "m0": 0,
+   "last": 36.62,
+   "ck": "ethereum"
+  },
   "1345047": {
    "m0": 0,
-   "last": 14.43,
+   "last": 14.29,
+   "ck": "ethereum"
+  },
+  "1346353": {
+   "m0": 0,
+   "last": 7.48,
    "ck": "ethereum"
   },
   "1346358": {
    "m0": 0.8,
-   "last": 2.51,
+   "last": 2.49,
    "ck": "ethereum"
   },
   "1346361": {
    "m0": 0.17,
-   "last": 2.25,
+   "last": 2.24,
    "ck": "ethereum"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 65.85,
-   "last": 71.91
+   "last": 71.89
   },
   "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
    "m0": 63.02,
-   "last": 69.43
+   "last": 69.42
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 54.29,
-   "last": 59.81
+   "last": 59.8
   }
  },
  "months": [],
- "lastIl": -0.02
+ "lastIl": -5.67
 }
