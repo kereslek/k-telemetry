@@ -30,8 +30,17 @@ jobs:
           # Tolerant add: the script writes it inside a try/catch, so a missing file
           # must never fail the data commit.
           git add deck-r7k4x9/blockcache.json 2>/dev/null || true
-          if ! git diff --cached --quiet; then
-            git pull --rebase origin gh-pages || true
-            git commit -m "data refresh $(date -u +%FT%TZ)"
-            git push
-          fi
+          if git diff --cached --quiet; then exit 0; fi
+          # Commit BEFORE rebasing. git refuses to rebase with a staged index, so the old
+          # order (add -> pull --rebase -> commit -> push) could never integrate remote work:
+          # the pull always failed, `|| true` hid it, and the push was rejected whenever the
+          # branch moved during a run. Retry the rebase+push to survive a genuine race.
+          git commit -m "data refresh $(date -u +%FT%TZ)"
+          for attempt in 1 2 3; do
+            if git pull --rebase origin gh-pages && git push origin gh-pages; then exit 0; fi
+            echo "push attempt $attempt failed — retrying"
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+          echo "could not push data refresh after 3 attempts"
+          exit 1
