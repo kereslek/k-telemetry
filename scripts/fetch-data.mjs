@@ -130,7 +130,15 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
   while(from<=toBlock && guard<220){
     guard++;
     const to=Math.min(toBlock,from+CHUNK-1);
-    out.push(...await evm(ck,'eth_getLogs',[{...filter,fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16)}]));
+    // One flaky chunk used to throw away the whole scan — losing a position's entire
+    // history (cost basis, fee totals) for the cycle. Retry before giving up.
+    let lg=null,err=null;
+    for(let attempt=0;attempt<3;attempt++){
+      try{ lg=await evm(ck,'eth_getLogs',[{...filter,fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16)}]); err=null; break; }
+      catch(e){ err=e; await sleep(500*(attempt+1)); }
+    }
+    if(err) throw err;
+    out.push(...lg);
     from=to+1;
     if(from<=toBlock) await sleep(120);
   }
@@ -141,9 +149,12 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
    mint  — position id → mint block, found once by binary search, then never again
    tscan — wallet NFT-transfer scan checkpoint + candidate ids */
 let blockCache={mint:{},tscan:{}};
-/* Infra failures that mean "the node could not answer", never "the call reverted".
-   evm() surfaces these as plain Errors from post(), identical in shape to a revert. */
-const RPC_UNAVAILABLE=/HTTP (4[02389]|5\d\d)|abort|timed? ?out|rate|too many|limit exceeded|missing trie node|header not found|not available|no backend|ECONN|socket|network/i;
+/* Only an explicit revert proves "this id did not exist yet". Everything else — including
+   phrasings we have never seen — is treated as "the node could not answer" and retried.
+   The asymmetry is deliberate: over-calling infra costs one logged error and a recompute
+   next run, while under-calling it silently caches a wrong mint block forever. Public RPCs
+   return things like "service temporarily unavailable", which no infra allowlist catches. */
+const RPC_REVERT=/revert|invalid token id|invalid opcode|out of gas|execution failed/i;
 /* One probe of positions(id) at a historical block.
    true = live, false = reverted (not minted yet), throw = the node could not tell us.
    Conflating the third case with the second walks the search past the real mint block,
@@ -152,7 +163,7 @@ async function positionsLiveAt(ck,npm,idHex,block){
   for(let attempt=0;attempt<3;attempt++){
     try{ await evmCall(ck,npm,SEL.positions+idHex,'0x'+block.toString(16)); return true; }
     catch(e){
-      if(!RPC_UNAVAILABLE.test(String((e&&e.message)||e))) return false;   // a real revert
+      if(RPC_REVERT.test(String((e&&e.message)||e))) return false;   // a real revert
       await sleep(400*(attempt+1));
     }
   }
