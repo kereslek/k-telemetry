@@ -777,6 +777,10 @@ const main=async()=>{
   for(const profile of CONFIG.profiles){
     errors.length=0;
     const chainErrs=new Set();
+    // Chains where we failed to LOOK this run. "Absent from the scan" is only evidence of a
+    // close when the scan actually succeeded — otherwise an RPC blip silently books a live
+    // position as closed, banks its MTD fees into fl.closed, and drops its baseline.
+    const scanIncomplete=new Set();
     const excluded=new Set((profile.excluded||[]).map(String));
     const evmPositions=[];
     for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana')){
@@ -790,10 +794,10 @@ const main=async()=>{
           try{
             const p=await fetchEvmPosition(ck,id,blockNums[ck],ethUsd,btcUsd);
             if(p){ p.wallet='0x'+w.address.toLowerCase().replace(/^0x/,''); evmPositions.push(p); }
-          }catch(e){ logErr(ck+'#'+id,e); }
+          }catch(e){ logErr(ck+'#'+id,e); scanIncomplete.add(ck); }
           await sleep(200);
         }
-      }catch(e){ logErr('wallet '+w.address.slice(0,8)+' '+ck,e); chainErrs.add(ck); }
+      }catch(e){ logErr('wallet '+w.address.slice(0,8)+' '+ck,e); chainErrs.add(ck); scanIncomplete.add(ck); }
     }
     for(const pin of (profile.pinned||[])){
       const ck=pin.chain in CHAINS ? pin.chain : 'ethereum';
@@ -848,7 +852,7 @@ const main=async()=>{
     const solWallets=(profile.wallets||[]).filter(w=>w.chain==='solana').map(w=>w.address);
     if(solWallets.length){
       try{ solPositions=await fetchSolana(solWallets); }
-      catch(e){ logErr('sol',e); chainErrs.add('solana'); }
+      catch(e){ logErr('sol',e); chainErrs.add('solana'); scanIncomplete.add('sol'); }
     }
     // ---- harvest ledger: detect fee collections between snapshots (Solana has no easy event log) ----
     try{
@@ -897,8 +901,16 @@ const main=async()=>{
       }
       for(const id of Object.keys(fl.pos)){
         if(!seen.has(String(id))){
+          const ckRaw=fl.pos[id].ck||'ethereum';
+          const chainKey=(String(id).startsWith('sol:')||ckRaw==='sol')?'sol':ckRaw;
+          // Absent because we could not look ≠ absent because it closed. Booking a close is
+          // irreversible here (fees banked, baseline dropped), so defer to a clean run.
+          if(scanIncomplete.has(chainKey)){
+            console.log('deferring close verdict for',id,'— scan incomplete on',chainKey);
+            continue;
+          }
           fl.closed=(fl.closed||0)+Math.max(0,fl.pos[id].last-fl.pos[id].m0);
-          const ck=fl.pos[id].ck||'ethereum';
+          const ck=ckRaw;
           // v25.2: legacy ledger entries have no .ck — a Solana id must never fall through to the EVM scanner
           if(!String(id).startsWith('sol:')&&ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
           delete fl.pos[id];
