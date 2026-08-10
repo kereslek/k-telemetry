@@ -185,6 +185,17 @@ async function positionMintBlock(ck,id,tip){
   blockCache.mint[key]=Math.max(C.startBlock,hi-1);
   return blockCache.mint[key];
 }
+/* ETH/USD at a historical block, from the Chainlink feed. Cached per block — a position
+   with several top-ups reuses blocks, and neighbouring positions often share them. */
+const ethUsdBlockCache={};
+async function ethUsdAtBlock(block){
+  if(block in ethUsdBlockCache) return ethUsdBlockCache[block];
+  try{
+    const r=await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+block.toString(16));
+    const v=bigToFloat(BigInt(r),8);
+    return ethUsdBlockCache[block]=(v>0?v:null);
+  }catch(e){ return ethUsdBlockCache[block]=null; }
+}
 async function evmHistory(ck,id,fromBlock,tip){
   const C=CHAINS[ck];
   const topicId='0x'+pad32(id.toString(16));
@@ -283,13 +294,34 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   let costUsd=null,roiPct=null,roiMode='hodl',feeAprPct=null,feesEverUsd=null,ilUsd=null,lpVsHodlUsd=null,hodlNowUsd=null;
   if(usd0!=null&&usd1!=null&&(dep0>0||dep1>0)){
     let e0=usd0,e1=usd1;
-    if(ck==='ethereum'&&entryEthUsd&&ethUsd){
-      const st=new Set(C.stables);
-      const sc=(addr,cur)=>{const a=addr.toLowerCase(); if(st.has(a))return 1; if(a===C.weth)return entryEthUsd; return cur!=null?cur*(entryEthUsd/ethUsd):null;};
-      const s0=sc(token0,usd0),s1=sc(token1,usd1);
-      if(s0!=null&&s1!=null){e0=s0;e1=s1;roiMode='entry';}
+    const st=new Set(C.stables);
+    const pricerAt=eAt=>(addr,cur)=>{const a=addr.toLowerCase(); if(st.has(a))return 1; if(a===C.weth)return eAt; return cur!=null?cur*(eAt/ethUsd):null;};
+    // Value every deposit at the ETH price of ITS OWN block. dep0/dep1 sum all
+    // IncreaseLiquidity events, so pricing the whole stack at the first mint's ETH price
+    // misstated the basis of later top-ups by however much ETH had moved in between.
+    let perEvent=null;
+    if(ck==='ethereum'&&ethUsd&&hist.inc.length){
+      let acc=0;
+      for(const ev of hist.inc){
+        const eAt=await ethUsdAtBlock(ev.block);
+        if(eAt==null){ acc=null; break; }
+        const sc=pricerAt(eAt);
+        const p0=sc(token0,usd0), p1=sc(token1,usd1);
+        if(p0==null||p1==null){ acc=null; break; }
+        acc+=bigToFloat(ev.a0,d0)*p0+bigToFloat(ev.a1,d1)*p1;
+      }
+      perEvent=acc;
     }
-    costUsd=dep0*e0+dep1*e1;
+    if(perEvent!=null){ costUsd=perEvent; roiMode='entry'; }
+    else{
+      // fallback: single entry price for the whole stack (pre-existing behaviour)
+      if(ck==='ethereum'&&entryEthUsd&&ethUsd){
+        const sc=pricerAt(entryEthUsd);
+        const s0=sc(token0,usd0),s1=sc(token1,usd1);
+        if(s0!=null&&s1!=null){e0=s0;e1=s1;roiMode='entry';}
+      }
+      costUsd=dep0*e0+dep1*e1;
+    }
     feesEverUsd=(feeCol0*usd0+feeCol1*usd1)+(feesUsd??0);
     const totalNow=(valueUsd??0)+(wdr0*usd0+wdr1*usd1)+feesEverUsd;
     if(costUsd>0){ roiPct=(totalNow-costUsd)/costUsd*100; if(ageDays>0.05) feeAprPct=(feesEverUsd/costUsd)*(365/ageDays)*100; }
