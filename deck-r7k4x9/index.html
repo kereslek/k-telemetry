@@ -539,6 +539,12 @@
       <div class="pbody" id="actionBody"></div>
     </section>
 
+    <section class="panel" data-panel="rank" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="rankBody"></div>
+    </section>
+
     <section class="panel" data-panel="seismo" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">MARKET SEISMOGRAPH — HOW HARD IS PRICE SHAKING?</span><span class="hint">24h realized volatility vs 30-day baseline · buffers measured in days of typical motion</span><button class="collapse-btn">▾</button></div>
@@ -604,11 +610,6 @@
       <div class="pbody" style="overflow-x:auto"><table class="matrix" id="matrixBody"></table></div>
     </section>
 
-    <section class="panel" data-panel="rank" draggable="true">
-      <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
-      <div class="pbody" id="rankBody"></div>
-    </section>
 
     <section class="panel" data-panel="telemetry" draggable="true">
       <div class="cb"></div>
@@ -2456,7 +2457,10 @@ function renderRank(){
     const track=el('div','rank-track');
     const bar=el('div','rank-bar'); bar.style.width=Math.max(2,a.v/max*100)+'%'; track.append(bar);
     row.append(track);
-    row.append(el('div','rank-val', a.v.toFixed(1)+'<span class="unit"> % APR'+(a.pool?' ◎pool':'')+'</span>'));
+    // A sole-LP pool's "pool APR" is computed from this position alone, so ranking it against
+    // genuinely contested pools compares a self-measurement to a market rate. Say so.
+    const soleTag=isSoleLp(p)?'<span class="unit" title="You are the only LP in this pool, so its pool-level APR is derived from your own position — self-referential, not a market rate."> ⊙self</span>':'';
+    row.append(el('div','rank-val', a.v.toFixed(1)+'<span class="unit"> % APR'+(a.pool?' ◎pool':'')+'</span>'+soleTag));
     row.append(el('div','rank-sub', earned!=null?('≈ '+fmtUsd(earned)+' fees'+(cfg.aprWin==='incept'?' total':' / '+WIN_LABEL[cfg.aprWin].toLowerCase())):'—'));
     row.append(el('div','rank-sub', p.valueUsd!=null?fmtUsd(p.valueUsd,0)+' deployed':'—'));
     // LP age + verdict: young overperformer or old laggard — the interesting cases
@@ -2680,6 +2684,16 @@ function initFlowMap(){
    Out of range is earning nothing right now; a sub-1-day buffer is hours away from that;
    harvesting only matters once it clears gas. Nothing is invented — when none of these
    fire the panel says so rather than manufacturing a task. */
+/* Pools where the user is the only liquidity provider. Two things follow, and both change
+   the advice: fee share cannot be diluted by competitors, so a tight range buys nothing that
+   a wide one does not — and the pool's own reported APR is derived from this position alone,
+   so it is self-referential, not a market benchmark. */
+function isSoleLp(p){
+  const list=(activeProfile()||{}).soleLp||[];
+  if(!list.length||!p.m0||!p.m1) return false;
+  const key=[p.m0.symbol,p.m1.symbol].map(x=>String(x).toUpperCase()).sort().join('/');
+  return list.some(e=>String(e).toUpperCase().split('/').map(x=>x.trim()).sort().join('/')===key);
+}
 function bufferDays(p){
   const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
   if(!s||!p.inRange||!(p.price>0)||!(p.priceLower>0)) return null;
@@ -2701,26 +2715,44 @@ function renderActions(){
     return;
   }
   for(const p of ps){
-    const ref=esc(pairName(p))+' '+linkRef(p), sev=severityOf(p), bd=bufferDays(p);
+    const ref=esc(pairName(p))+' '+linkRef(p), sev=severityOf(p), bd=bufferDays(p), sole=isSoleLp(p);
     if(sev==='critical')
       items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' is earning <b>nothing</b>',
-        sub:'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
+        sub:sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
+                :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
     else if(bd!=null&&bd<1)
       items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' has <b>'+bd.toFixed(1)+' days</b> of buffer left',
         sub:'One ordinary day of movement knocks this out of range. Widen or re-centre.',when:'<24h'});
     else if(sev==='serious')
       items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' is '+rangeFracDist(p).toFixed(1)+'% from its edge',
-        sub:'Buffer nearly gone'+(bd!=null?' — ≈'+bd.toFixed(1)+' days of typical motion':'')+'.',
+        sub:(bd!=null?'Buffer nearly gone — ≈'+bd.toFixed(1)+' days of typical motion. ':'Buffer nearly gone. ')
+          +(sole?'You are the only LP here, so widen once rather than chasing price — a wider range earns the same share and stops this recurring.'
+                :'Re-range or widen.'),
         when:bd!=null?'≈'+bd.toFixed(1)+'d':'soon'});
-    else if(bd!=null&&bd<3)
+    else if(bd!=null&&bd<3&&!sole)
       items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' has ≈<b>'+bd.toFixed(1)+' days</b> of buffer',
         sub:'Worth watching. Not urgent yet.',when:'≈'+bd.toFixed(1)+'d'});
   }
-  const hc=gasCostUsd(HARVEST_GAS);
-  if(hc!=null) for(const p of ps){
-    if((p.feesUsd||0) >= Math.max(25, hc*20))
-      items.push({r:4,cls:'good',tag:'HARVEST',head:esc(pairName(p))+' '+linkRef(p)+' holds <b>'+fmtUsd(p.feesUsd)+'</b> unclaimed',
-        sub:'Harvest tx ≈ '+fmtUsd(hc)+' — the fees clear that cost comfortably.',when:'any time'});
+  // Compounding, not "harvesting". Uncollected fees are safe but idle — the only thing
+  // leaving them costs you is the yield they would earn if redeployed. So the test is not
+  // "are the fees bigger than a tx" (they almost always are) but "does redeploying them earn
+  // back the collect+redeposit round trip quickly enough to be worth a transaction now".
+  // When gas rises the payback stretches and this stops being suggested by itself.
+  for(const p of ps){
+    const fees=p.feesUsd||0, apr=aprOf(p).v;
+    if(!(fees>0)||apr==null||apr<=0) continue;
+    const rt = p.chain==='sol' ? SOL_TX_USD*2 : gasCostUsd(COMPOUND_GAS);
+    if(rt==null||!(rt>0)) continue;
+    const daily=fees*(apr/100)/365;
+    if(!(daily>0)) continue;
+    const payback=rt/daily;          // days for the redeployed fees to earn the round trip back
+    if(payback>7) continue;          // let them accrue — not worth a transaction yet
+    items.push({r:4,cls:'good',tag:'COMPOUND',
+      head:esc(pairName(p))+' '+linkRef(p)+' has <b>'+fmtUsd(fees)+'</b> sitting idle',
+      sub:'Uncollected fees earn nothing. Redeployed at '+apr.toFixed(0)+'% they make ≈'+fmtUsd(daily)
+        +'/day, and collect+redeposit costs ≈'+fmtUsd(rt)+' — so it pays for itself in '
+        +(payback<1?'under a day':'≈'+payback.toFixed(1)+' days')+'. Collecting without redeploying gains you nothing.',
+      when:payback<1?'<1d payback':'≈'+payback.toFixed(1)+'d payback'});
   }
   if(state.dataAt && Date.now()-state.dataAt > 3*3600000)
     items.push({r:5,cls:'warn',tag:'STALE DATA',head:'Server data is <b>'+((Date.now()-state.dataAt)/3600000).toFixed(1)+'h</b> old',
@@ -3091,6 +3123,9 @@ function initCosmos(){
 
 /* ----- gas economics ----- */
 const HARVEST_GAS=130000, REBALANCE_GAS=520000;
+/* Collecting alone changes nothing — idle fees just move wallets. The action that pays is
+   collect + redeposit, so that is the cost the compounding call must clear. */
+const COMPOUND_GAS=380000, SOL_TX_USD=0.02;
 function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
 function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 
@@ -3427,7 +3462,7 @@ function wireDrag(container, selector, onOrder){
     item.addEventListener('drop',e=>e.preventDefault());
   });
 }
-const LAYOUT_VERSION=2;   // bump when the default panel order changes on purpose
+const LAYOUT_VERSION=3;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
   // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
   // reach anyone who has dragged a panel. Drop the stored order once per version bump.
