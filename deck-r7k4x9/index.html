@@ -2046,10 +2046,9 @@ function renderTiles(){
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
     mk('FEES EARNED · '+mName,
        fm?inc(fmtUsd(fm.mtd)):'—',
-       fm ? (fm.proj!=null?'≈<b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth
-              +(fm.projBasis==='run-rate'
-                 ? ' <span class="unit">(earned so far + open positions at '+fmtUsd(fm.dayRate||0)+'/day — closed LPs are not projected forward)</span>'
-                 : ' <span class="unit">(month-to-date average extrapolated — no live rate available)</span>')+' · ':'')
+       fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth
+              +' <span class="unit">(month-to-date average × '+fm.daysInMonth+' days'
+              +(fm.dayRate?'; open positions currently run at '+fmtUsd(fm.dayRate)+'/day':'')+')</span>'+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
             +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
           : 'ledger starts with the next relay refresh (~15 min)');
