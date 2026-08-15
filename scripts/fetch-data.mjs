@@ -1183,6 +1183,23 @@ const main=async()=>{
           catch(e){ logErr('jupBal',e); }
         }
       }
+      // Resolve names/symbols for Solana mints. A wallet full of "AeXrLf…" is unreadable,
+      // and for a token whose identity is in question the registered name is the fastest
+      // way to tell a bridged asset from an unrelated one sharing a ticker.
+      const needMeta=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&!r.symbol).map(r=>r.addr))].slice(0,45);
+      const solMeta={};
+      for(const m of needMeta){
+        try{
+          const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m, 12000);
+          const hit=Array.isArray(js)?js.find(t=>t.id===m):null;
+          if(hit) solMeta[m]={symbol:hit.symbol||null, name:hit.name||null};
+        }catch(e){}
+        await sleep(120);
+      }
+      for(const r of rows){
+        if(r.chain==='sol'&&!r.symbol&&solMeta[r.addr]){ r.symbol=solMeta[r.addr].symbol; r.name=solMeta[r.addr].name; }
+        else if(r.chain==='sol'&&solMeta[r.addr]?.name) r.name=solMeta[r.addr].name;
+      }
       for(const r of rows){
         r.usd = r.native
           ? (r.chain==='sol' ? (solNativeUsd!=null?r.amount*solNativeUsd:null) : (ethUsd!=null?r.amount*ethUsd:null))
