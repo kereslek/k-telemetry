@@ -315,6 +315,8 @@
   .act-crit{border-left-color:var(--status-critical)}
   .act-warn{border-left-color:var(--status-warning)}
   .act-good{border-left-color:var(--status-good)}
+  .act-watch{border-left-color:var(--text-muted);opacity:.82}
+  .act-watch .act-tag{color:var(--text-muted)}
   .act-tag{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--text-muted);min-width:104px;padding-top:3px}
   .act-crit .act-tag{color:var(--status-critical)}
   .act-warn .act-tag{color:var(--status-warning)}
@@ -542,7 +544,7 @@
   <div id="panelStack">
     <section class="panel act-panel" data-panel="action" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">ACTION REQUIRED — TIME SENSITIVE</span><span class="hint" id="actionHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">PRIORITY &amp; WATCH — CLOSEST TO THE EDGE FIRST</span><span class="hint" id="actionHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="actionBody"></div>
     </section>
 
@@ -2848,26 +2850,42 @@ function renderActions(){
       +'Double-tap SCAN to force a refresh.</span></span><span class="act-when">check</span></div>';
     return;
   }
-  for(const p of ps){
-    const ref=esc(pairName(p))+' '+linkRef(p), sev=severityOf(p), bd=bufferDays(p), sole=isSoleLp(p);
-    if(sev==='critical')
+  /* This is a monitoring panel, so it is never empty. Every position is ranked by how far
+     price must move before it stops earning — closest first — and the top WATCH_MIN always
+     show, healthy or not. Anything genuinely urgent keeps its own severity and sorts above
+     the watchlist, so a quiet list still tells you where the pressure is building rather
+     than going blank and leaving you to be surprised. */
+  const WATCH_MIN=6;
+  const ranked=ps.map(p=>{
+    const e=edgeMove(p), sev=severityOf(p), bd=bufferDays(p), sole=isSoleLp(p);
+    return {p, sev, bd, sole, move:(e?e.pct:(p.inRange?Infinity:0))};
+  }).sort((a,b)=>a.move-b.move);
+  let watchShown=0;
+  for(const x of ranked){
+    const p=x.p, ref=esc(pairName(p))+' '+linkRef(p);
+    if(x.sev==='critical'){
       items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' is earning <b>nothing</b>',
-        sub:sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
-                :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
-    else if(bd!=null&&bd<1)
+        sub:x.sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
+                  :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
+    } else if(x.bd!=null&&x.bd<1){
       items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' — '+edgePhrase(p),
-        sub:'That is inside a single ordinary day of movement, so this can stop earning at any time. Widen or re-centre.',
+        sub:'That is inside a single day of movement at this pair\'s recent pace, so it can stop earning at any time. Widen or re-centre.',
         when:edgeWhen(p)});
-    else if(sev==='serious')
+    } else if(x.sev==='serious'){
       items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' — '+edgePhrase(p),
         sub:'Only '+rangeFracDist(p).toFixed(0)+'% of the range is left on that side. '
-          +(sole?'You are the only LP here, so widen once rather than chasing price — a wider range earns the same share and stops this recurring.'
-                :'Re-range or widen.'),
+          +(x.sole?'You are the only LP here, so widen once rather than chasing price — a wider range earns the same share and stops this recurring.'
+                  :'Re-range or widen.'),
         when:edgeWhen(p)});
-    else if(bd!=null&&bd<3&&!sole)
+    } else if(x.bd!=null&&x.bd<3&&!x.sole){
       items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' — '+edgePhrase(p),
-        sub:'Still earning. Watching, not acting.',
+        sub:'Still earning. Watching, not acting.',when:edgeWhen(p)});
+    } else if(watchShown<WATCH_MIN){
+      watchShown++;
+      items.push({r:6,cls:'watch',tag:'WATCH #'+watchShown,head:ref+' — '+edgePhrase(p),
+        sub:'Healthy. Listed for monitoring, ranked by how close it is to the edge — nothing to do.',
         when:edgeWhen(p)});
+    }
   }
   // Compounding, not "harvesting". Uncollected fees are safe but idle — the only thing
   // leaving them costs you is the yield they would earn if redeployed. So the test is not
@@ -2900,14 +2918,15 @@ function renderActions(){
     items.push({r:5,cls:'warn',tag:'STALE DATA',head:'Server data is <b>'+((Date.now()-state.dataAt)/3600000).toFixed(1)+'h</b> old',
       sub:'The refresh job has not published since. Double-tap SCAN to force a check.',when:'check'});
   items.sort((a,b)=>a.r-b.r);
-  const urgent=items.filter(x=>x.r<=2).length;
-  $('#actionHint').textContent = items.length
-    ? (urgent?urgent+' urgent · ':'')+items.length+' item'+(items.length>1?'s':'')+' · worst first'
-    : 'nothing needs you right now';
+  const urgent=items.filter(x=>x.r<=2).length, watching=items.filter(x=>x.r===6).length;
+  $('#actionHint').textContent = (urgent? urgent+' need action · ' : 'nothing needs action · ')
+    + (watching? watching+' watched, closest to the edge first' : 'monitoring');
   if(!items.length){
     host.innerHTML='<div class="act-clear">✓ <b>All clear.</b> Every position is in range with healthy buffer, and no unclaimed fees are yet worth a transaction.</div>';
     return;
   }
+  const acting=items.filter(x=>x.r<=3).length;
+  if(!acting) host.append(el('div','act-clear','✓ <b>Nothing needs action.</b> The list below is monitoring only — positions ranked by how close price is to leaving their range.'));
   for(const it of items){
     const row=el('div','act-row act-'+it.cls);
     row.innerHTML='<span class="act-tag">'+it.tag+'</span><span class="act-body"><span class="act-head">'+it.head
