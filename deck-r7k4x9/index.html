@@ -1906,17 +1906,22 @@ const ordered = () => {
   });
   return ps;
 };
-const poolBadge = new Map();   // id -> 'OLD ’19 ·fe41' style label when a pair spans multiple token contracts
+const poolBadge = new Map();   // id -> 'OLD ’19 ·fe41' (token eras) or '4% ·YijE' (fee tiers)
 function assignPools(){
   poolBadge.clear();
+  /* Only a genuine token contract defines an era. This used to fall back to p.pool/p.poolId,
+     which meant Solana positions — they expose no mint — were compared by POOL. Two pools of
+     the same pair differ by FEE TIER, not by token age, so that invented an OLD/NEW contract
+     split that does not exist: SOL/CPOOL is one contract in a 1% pool and a 4% pool. Token
+     eras are matched on token0 alone; everything else is badged by its fee tier below. */
   const byPair = {};
   for(const p of state.positions.values()){
-    const tk = p.token0 || p.pool || p.poolId; if(!tk) continue;
+    const tk = p.token0; if(!tk) continue;
     (byPair[p.pairLabel] = byPair[p.pairLabel] || new Map());
     if(!byPair[p.pairLabel].has(tk)) byPair[p.pairLabel].set(tk, p.token0DeployTs ?? null);
   }
   for(const p of state.positions.values()){
-    const tk = p.token0 || p.pool || p.poolId; if(!tk) continue;
+    const tk = p.token0; if(!tk) continue;
     const variants = [...byPair[p.pairLabel].entries()];
     if(variants.length < 2) continue;
     variants.sort((a,b)=>{
@@ -1929,9 +1934,23 @@ function assignPools(){
     const yr = ts ? ' ’'+String(new Date(ts).getUTCFullYear()).slice(2) : '';
     poolBadge.set(String(p.id), era+yr+' ·'+String(tk).slice(-4));
   }
+  // Pairs that span several POOLS of the same token: distinguish by fee tier, which is the
+  // thing that actually differs. Positions sharing a pool share a badge, as they should.
+  const poolsPerPair = {};
+  for(const p of state.positions.values()){
+    const pool=String(p.poolId||p.pool||''); if(!pool) continue;
+    (poolsPerPair[p.pairLabel] = poolsPerPair[p.pairLabel] || new Set()).add(pool);
+  }
+  for(const p of state.positions.values()){
+    if(poolBadge.has(String(p.id))) continue;
+    const pool=String(p.poolId||p.pool||'');
+    if(!pool || !p.feeLabel) continue;
+    if((poolsPerPair[p.pairLabel]||new Set()).size < 2) continue;   // only when it disambiguates
+    poolBadge.set(String(p.id), p.feeLabel+' ·'+pool.slice(-4));
+  }
 }
 const badgeOf = p => poolBadge.get(String(p.id)) || null;
-const eraOf = p => { const b=badgeOf(p); return b ? b.split(' ')[0] : null; };            // 'OLD' / 'NEW'
+const eraOf = p => { const b=badgeOf(p); return b ? b.split(' ')[0] : null; };            // 'OLD'/'NEW' or '4%'/'1%'
 const pairName = p => p.pairLabel + (badgeOf(p) ? ' ('+badgeOf(p)+')' : '');             // 'LCX / ETH (OLD ’19 ·fe41)'
 const pairShort = p => p.pairLabel + (eraOf(p) ? ' · '+eraOf(p) : '');                   // 'LCX / ETH · OLD'
 const posLink = p => p.chain==='sol' ? (p.venue==='orca' ? 'https://www.orca.so/portfolio' : 'https://raydium.io/portfolio/?position_tab=concentrated') : 'https://app.uniswap.org/positions/v3/'+((EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).uni)+'/'+p.id;
