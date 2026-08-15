@@ -803,7 +803,7 @@ const cfg = {
   /* (persisted below if the migration changed anything) */
   warnPct: store.get('warnPct', 20),   // % of range width remaining to an edge
   critPct: store.get('critPct', 8),
-  interval: (v=>v===45?300:v)(store.get('interval', 300)),   // default 5 min; migrates the old 45s default
+  interval: (v=>(v===45||v===300)?900:v)(store.get('interval', 900)),   // default 15 min; migrates the old 45s / 5 min defaults
   rpc: store.get('rpc', RPCS[0]),
 };
 { const raw=store.get('ids',null); if(raw && raw.join()!==cfg.ids.join()) store.set('ids',cfg.ids); }
@@ -2071,7 +2071,13 @@ function renderTiles(){
     mk('FEE INCOME / DAY · '+WIN_LABEL[cfg.aprWin], perDay==null?'—':inc(fmtUsd(perDay)),
        perDay==null?'switch timeframe in the header':'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo · avg over '+WIN_LABEL[cfg.aprWin].toLowerCase()); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
-  mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>', 'vs deposit · fees included');
+  mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
+     pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
+       +'<br>what every LP is worth now <i>plus</i> all fees earned, against what you put in'
+       +'<br><span class="unit">weighted by position size · includes price moves, so it is not the same as fee yield'
+       +(()=>{ const known=ps.filter(p=>p.costUsd!=null).length;
+               return known<ps.length ? ' · covers '+known+' of '+ps.length+' positions — Solana deposit history is not recoverable from free RPC' : ''; })()
+       +'</span>');
   mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
      ps.length-inR>0 ? '<span class="down">'+(ps.length-inR)+' position(s) idle</span>' : '<span class="up">all earning</span>');
 }
@@ -2744,6 +2750,20 @@ function compoundCostUsd(p){
   const base=Math.max(ops??0, gasOnly??0);
   return base>0?base+swapFee:null;
 }
+/* "2.6 days of buffer" is abstract. What people actually want to know is how far price has
+   to move before the position stops earning, so lead with that and keep the days as the
+   second half — the move tells you how far, the days tell you how likely that is soon. */
+function edgeMove(p){
+  if(!p.inRange||p.dLow==null||p.dUp==null) return null;
+  return p.dLow<=p.dUp ? {dir:'fall', pct:p.dLow, edge:'lower'} : {dir:'rise', pct:p.dUp, edge:'upper'};
+}
+function edgePhrase(p,bd){
+  const e=edgeMove(p);
+  const pair=(p.m0&&p.m0.symbol?p.m0.symbol:'?')+'/'+(p.m1&&p.m1.symbol?p.m1.symbol:'?');
+  if(!e) return bd!=null?'≈<b>'+bd.toFixed(1)+' days</b> of typical movement from the edge':'near its edge';
+  return pair+' has to <b>'+e.dir+' '+e.pct.toFixed(1)+'%</b> before this stops earning'
+    +(bd!=null?' — about <b>'+bd.toFixed(1)+' day'+(bd<1.05?'':'s')+'</b> of typical movement':'');
+}
 function bufferDays(p){
   const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
   if(!s||!p.inRange||!(p.price>0)||!(p.priceLower>0)) return null;
@@ -2811,17 +2831,19 @@ function renderActions(){
         sub:sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
                 :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
     else if(bd!=null&&bd<1)
-      items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' has <b>'+bd.toFixed(1)+' days</b> of buffer left',
-        sub:'One ordinary day of movement knocks this out of range. Widen or re-centre.',when:'<24h'});
+      items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' — '+edgePhrase(p,bd),
+        sub:'That is inside a single ordinary day of movement, so this can stop earning at any time. Widen or re-centre.',
+        when:'<24h'});
     else if(sev==='serious')
-      items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' is '+rangeFracDist(p).toFixed(1)+'% from its edge',
-        sub:(bd!=null?'Buffer nearly gone — ≈'+bd.toFixed(1)+' days of typical motion. ':'Buffer nearly gone. ')
+      items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' — '+edgePhrase(p,bd),
+        sub:'Only '+rangeFracDist(p).toFixed(0)+'% of the range is left on that side. '
           +(sole?'You are the only LP here, so widen once rather than chasing price — a wider range earns the same share and stops this recurring.'
                 :'Re-range or widen.'),
         when:bd!=null?'≈'+bd.toFixed(1)+'d':'soon'});
     else if(bd!=null&&bd<3&&!sole)
-      items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' has ≈<b>'+bd.toFixed(1)+' days</b> of buffer',
-        sub:'Worth watching. Not urgent yet.',when:'≈'+bd.toFixed(1)+'d'});
+      items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' — '+edgePhrase(p,bd),
+        sub:'Still earning, and that is a normal-sized move rather than a crash. Worth watching, not acting on yet.',
+        when:'≈'+bd.toFixed(1)+'d'});
   }
   // Compounding, not "harvesting". Uncollected fees are safe but idle — the only thing
   // leaving them costs you is the yield they would earn if redeployed. So the test is not
@@ -3824,6 +3846,13 @@ async function hardRefresh(){
   if((state.dataAt||0)>before) log('good','Fresh data applied — '+fmtT(state.dataAt)+'.');
   else log('warning','Server has published nothing newer — still '+(state.dataAt?fmtT(state.dataAt):'—')+'. Nothing to apply.');
 }
+/* How long a scan actually takes, learned as an EMA of real runs. Shown beside the countdown
+   so the wait is a known quantity rather than a surprise once the spinner starts. */
+function scanTakesTxt(){
+  const d=store.get('scanDur',null);
+  if(d==null) return '';
+  return '<span class="unit"> · scan ~'+(d>=90?Math.round(d/60)+'m':Math.round(d)+'s')+'</span>';
+}
 function tickClock(){
   const d=new Date();
   $('#hClock').textContent = fmtT(d);
@@ -3867,8 +3896,8 @@ function tickClock(){
       if(lb) lb.textContent='NEXT DATA';
       const left=state.dataAt+relayCadenceMs()+90000-Date.now();
       if(left>0){
-        cd.innerHTML = left>=90000 ? '~'+Math.round(left/60000)+'<span class="unit">m</span>'
-                                   : '~'+Math.max(5,Math.round(left/15000)*15)+'<span class="unit">s</span>';
+        cd.innerHTML = (left>=90000 ? '~'+Math.round(left/60000)+'<span class="unit">m</span>'
+                                    : '~'+Math.max(5,Math.round(left/15000)*15)+'<span class="unit">s</span>')+scanTakesTxt();
         state.dueProbeAt=0;
       }else{
         // the promise expired — go and look, rather than just displaying DUE forever
@@ -3878,7 +3907,9 @@ function tickClock(){
       }
     } else {
       if(lb) lb.textContent='NEXT SCAN';
-      cd.innerHTML = Math.max(0,state.countdown)+'<span class="unit">s</span>';
+      const left=Math.max(0,state.countdown);
+      cd.innerHTML = (left>=90 ? Math.round(left/60)+'<span class="unit">m</span>'
+                               : left+'<span class="unit">s</span>')+scanTakesTxt();
     }
   } else {
     if(bt) bt.textContent=' SCAN';
