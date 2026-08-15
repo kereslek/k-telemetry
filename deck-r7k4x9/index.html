@@ -2564,7 +2564,11 @@ function renderFlow(){
     +'<span>HARVEST TX ≈ <b>'+(hc!=null?fmtUsd(hc):'—')+'</b></span>'
     +'<span>FULL RE-RANGE ≈ <b>'+(rcst!=null?fmtUsd(rcst):'—')+'</b></span>'
     +'<span>SOLANA TX ≈ <b>$0.02</b></span>'
-    +'<span style="color:var(--text-muted)">estimates at current gas · 130k / 520k gas profiles</span>';
+    +(state.costMonth&&state.costMonth.txCount>0
+      ? '<span>YOUR ACTUAL AVG ≈ <b>'+fmtUsd(((state.costMonth.gasUsd||0)+(state.costMonth.swapFeeUsd||0))/state.costMonth.txCount)
+        +'</b> / op <span class="unit">(gas + swap fees, '+state.costMonth.txCount+' ops this month)</span></span>'
+      : '')
+    +'<span style="color:var(--text-muted)">first three are gas only at current gwei — they exclude the swap fee and price impact of rebalancing, which is usually the larger cost</span>';
   host.append(strip);
   // ---- ACTION VECTORS: animated re-deployment map ----
   if(!flowMapCanvas){ flowMapCanvas=document.createElement('canvas'); flowMapCanvas.id='flowMap'; }
@@ -2711,6 +2715,21 @@ function isSoleLp(p){
   const key=[p.m0.symbol,p.m1.symbol].map(x=>String(x).toUpperCase()).sort().join('/');
   return list.some(e=>String(e).toUpperCase().split('/').map(x=>x.trim()).sort().join('/')===key);
 }
+/* What compounding actually costs. A gas estimate says about five cents, which is nonsense:
+   redeploying fees means collect, then usually a swap to rebalance into the pool's ratio —
+   paying that pool's own fee tier plus impact — then an add. The tool has been measuring the
+   real thing all along in costMonth (gas AND swap fees across every LP operation this month),
+   so use the observed average per operation and only fall back to a gas estimate without it. */
+function compoundCostUsd(p){
+  const cm=state.costMonth;
+  const perOp=(cm&&cm.txCount>0)?(((cm.gasUsd||0)+(cm.swapFeeUsd||0))/cm.txCount):null;
+  const gasOnly=p.chain==='sol'?SOL_TX_USD*2:gasCostUsd(COMPOUND_GAS);
+  const ops=perOp!=null?perOp*3:null;                        // collect + rebalance swap + add
+  const tier=parseFloat(String(p.feeLabel||'').replace(/[^\d.]/g,''))||0.3;
+  const swapFee=(p.feesUsd||0)*0.5*(tier/100);               // rebalancing ~half pays the tier
+  const base=Math.max(ops??0, gasOnly??0);
+  return base>0?base+swapFee:null;
+}
 function bufferDays(p){
   const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
   if(!s||!p.inRange||!(p.price>0)||!(p.priceLower>0)) return null;
@@ -2798,7 +2817,7 @@ function renderActions(){
   for(const p of ps){
     const fees=p.feesUsd||0, apr=aprOf(p).v;
     if(!(fees>0)||apr==null||apr<=0) continue;
-    const rt = p.chain==='sol' ? SOL_TX_USD*2 : gasCostUsd(COMPOUND_GAS);
+    const rt = compoundCostUsd(p);
     if(rt==null||!(rt>0)) continue;
     const daily=fees*(apr/100)/365;
     if(!(daily>0)) continue;
@@ -2807,7 +2826,7 @@ function renderActions(){
     items.push({r:4,cls:'good',tag:'COMPOUND',
       head:esc(pairName(p))+' '+linkRef(p)+' has <b>'+fmtUsd(fees)+'</b> sitting idle',
       sub:'Uncollected fees earn nothing. Redeployed at '+apr.toFixed(0)+'% they make ≈'+fmtUsd(daily)
-        +'/day, and collect+redeposit costs ≈'+fmtUsd(rt)+' — so it pays for itself in '
+        +'/day, and the collect + rebalance swap + redeposit round trip costs ≈'+fmtUsd(rt)+' — so it pays for itself in '
         +(payback<1?'under a day':'≈'+payback.toFixed(1)+' days')+'. Collecting without redeploying gains you nothing.',
       when:payback<1?'<1d payback':'≈'+payback.toFixed(1)+'d payback'});
   }
