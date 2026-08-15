@@ -277,7 +277,8 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const valueUsd=(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null;
   const feesUsd=(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null;
   let hist={inc:[],dec:[],col:[]}, mintTs=null, entryEthUsd=null;
-  try{ const mb=await positionMintBlock(ck,id,blockNum); hist=await evmHistory(ck,id,mb,blockNum); }catch(e){ logErr(ck+' hist#'+id,e); }
+  let histFrom=null;
+  try{ const mb=await positionMintBlock(ck,id,blockNum); histFrom=mb; hist=await evmHistory(ck,id,mb,blockNum); }catch(e){ logErr(ck+' hist#'+id,e); }
   if(hist.inc.length){
     const mintBlock=Math.min(...hist.inc.map(x=>x.block));
     try{ const blk=await evm(ck,'eth_getBlockByNumber',['0x'+mintBlock.toString(16),false]); mintTs=Number(BigInt(blk.timestamp))*1000; }catch(e){}
@@ -289,7 +290,16 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const dep0=sum(hist.inc,'a0',d0), dep1=sum(hist.inc,'a1',d1);
   const wdr0=sum(hist.dec,'a0',d0), wdr1=sum(hist.dec,'a1',d1);
   const col0=sum(hist.col,'a0',d0), col1=sum(hist.col,'a1',d1);
+  /* Everything ever collected = principal released by DecreaseLiquidity + fees, so netting
+     the cumulative totals is the right identity. Per-transaction matching is NOT — a decrease
+     credits tokensOwed and the collect frequently lands in a later transaction, which would
+     then count released principal as fee income.
+     feesEverUsd currently comes back equal to feesUsd for every position, i.e. this nets to
+     zero even after a real collect, so the components are published for diagnosis. */
   const feeCol0=Math.max(0,col0-wdr0), feeCol1=Math.max(0,col1-wdr1);
+  const feeDbg={nInc:hist.inc.length, nDec:hist.dec.length, nCol:hist.col.length,
+    col0:+col0.toFixed(6), col1:+col1.toFixed(8), wdr0:+wdr0.toFixed(6), wdr1:+wdr1.toFixed(8),
+    from:histFrom};
   const ageDays=mintTs?(Date.now()-mintTs)/86400000:null;
   let costUsd=null,roiPct=null,roiMode='hodl',feeAprPct=null,feesEverUsd=null,ilUsd=null,lpVsHodlUsd=null,hodlNowUsd=null;
   if(usd0!=null&&usd1!=null&&(dep0>0||dep1>0)){
@@ -371,7 +381,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
   return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
-    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, ilUsd, lpVsHodlUsd, hodlNowUsd, costUsd, roiPct, roiMode, feeAprPct, aprW,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, ilUsd, lpVsHodlUsd, hodlNowUsd, costUsd, roiPct, roiMode, feeAprPct, aprW, feeDbg,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
     nearestEdge: dLow<dUp?'lower':'upper',
     edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
@@ -995,7 +1005,7 @@ const main=async()=>{
       let fl={month:monthKey, closed:0, pos:{}, months:[]};
       try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
       if(fl.month!==monthKey){
-        const prevTotal=(fl.closed||0)+Object.values(fl.pos||{}).reduce((s,x)=>s+Math.max(0,x.last-x.m0),0);
+        const prevTotal=(fl.closed||0)+Object.values(fl.pos||{}).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
         fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,ilEnd:fl.lastIl??null}].slice(-12);
         fl.month=monthKey; fl.closed=0;
         for(const id in fl.pos) fl.pos[id].m0=fl.pos[id].last;
@@ -1010,8 +1020,18 @@ const main=async()=>{
           const mintedThisMonth=p.mintTs && new Date(p.mintTs).toISOString().slice(0,7)===monthKey;
           // baseline priority: 0 if minted this month → archive-read month-start fees → first-seen value
           const m0=mintedThisMonth?0:(p.feesMonthStartUsd!=null?Math.min(p.feesMonthStartUsd,cum):cum);
-          fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100, ck:p.chain||'ethereum'};
-        } else e.last=Math.round(cum*100)/100;
+          fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100,
+                        hwm:Math.round(cum*100)/100, acc:Math.round(Math.max(0,cum-m0)*100)/100,
+                        ck:p.chain||'ethereum'};
+        } else {
+          // cum is re-derived from chain each run and priced at spot, so it can fall for
+          // reasons that are not "you un-earned fees": a collect, or the fee tokens simply
+          // being worth less today. Accrue against a high-water mark so real growth is
+          // counted once and a dip never rewrites what the month already earned.
+          if(e.acc==null){ e.acc=Math.max(0,(e.last||0)-(e.m0||0)); e.hwm=e.last||0; }
+          if(cum>e.hwm){ e.acc=Math.round((e.acc+(cum-e.hwm))*100)/100; e.hwm=Math.round(cum*100)/100; }
+          e.last=Math.round(cum*100)/100;
+        }
       }
       for(const id of Object.keys(fl.pos)){
         if(!seen.has(String(id))){
@@ -1023,7 +1043,8 @@ const main=async()=>{
             console.log('deferring close verdict for',id,'— scan incomplete on',chainKey);
             continue;
           }
-          fl.closed=(fl.closed||0)+Math.max(0,fl.pos[id].last-fl.pos[id].m0);
+          const gone=fl.pos[id];
+          fl.closed=(fl.closed||0)+(gone.acc!=null?gone.acc:Math.max(0,gone.last-gone.m0));
           const ck=ckRaw;
           // v25.2: legacy ledger entries have no .ck — a Solana id must never fall through to the EVM scanner
           if(!String(id).startsWith('sol:')&&ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
@@ -1031,7 +1052,7 @@ const main=async()=>{
         }
       }
       fl.closed=Math.round((fl.closed||0)*100)/100;
-      const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+Math.max(0,x.last-x.m0),0);
+      const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
       const nowD=new Date();
       const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
       const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
