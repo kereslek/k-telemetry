@@ -1187,15 +1187,26 @@ const main=async()=>{
       // and for a token whose identity is in question the registered name is the fastest
       // way to tell a bridged asset from an unrelated one sharing a ticker.
       const needMeta=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&!r.symbol).map(r=>r.addr))].slice(0,45);
-      const solMeta={};
+      const solMeta={}; let metaFails=0, metaErr=null;
+      // Registries disagree on response shape (bare array / {tokens:[]} / single object), so
+      // accept all three and fall back to a second endpoint before giving up.
+      const pickHit=(js,m)=>{
+        const arr=Array.isArray(js)?js
+          :(Array.isArray(js&&js.tokens)?js.tokens
+          :((js&&(js.id||js.address))?[js]:[]));
+        return arr.find(t=>t&&(t.id===m||t.address===m)) || (arr.length===1?arr[0]:null);
+      };
       for(const m of needMeta){
-        try{
-          const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m, 12000);
-          const hit=Array.isArray(js)?js.find(t=>t.id===m):null;
-          if(hit) solMeta[m]={symbol:hit.symbol||null, name:hit.name||null};
-        }catch(e){}
-        await sleep(120);
+        let hit=null;
+        for(const url of ['https://lite-api.jup.ag/tokens/v2/search?query='+m,'https://tokens.jup.ag/token/'+m]){
+          try{ hit=pickHit(await getJson(url,12000),m); if(hit) break; }
+          catch(e){ if(!metaErr) metaErr=String((e&&e.message)||e).slice(0,80); }
+        }
+        if(hit) solMeta[m]={symbol:hit.symbol||null, name:hit.name||null}; else metaFails++;
+        await sleep(150);
       }
+      // Never swallow this: an unresolved mint is exactly the case where the name matters.
+      if(metaFails) logErr('solTokenMeta', new Error(metaFails+'/'+needMeta.length+' unresolved'+(metaErr?' · '+metaErr:'')));
       for(const r of rows){
         if(r.chain==='sol'&&!r.symbol&&solMeta[r.addr]){ r.symbol=solMeta[r.addr].symbol; r.name=solMeta[r.addr].name; }
         else if(r.chain==='sol'&&solMeta[r.addr]?.name) r.name=solMeta[r.addr].name;
