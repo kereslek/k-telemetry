@@ -324,6 +324,13 @@
   .act-sub{font-size:10.5px;color:var(--text-muted)}
   .act-when{font-family:var(--mono);font-size:10px;color:var(--text-muted);white-space:nowrap;padding-top:3px}
   .act-clear{font-size:12px;color:var(--text-muted);padding:4px 2px}
+  .idle-tbl{margin-top:12px;display:flex;flex-direction:column;gap:2px}
+  .idle-row{display:flex;align-items:baseline;gap:10px;padding:5px 8px;border-radius:3px}
+  .idle-row:nth-child(odd){background:rgba(255,255,255,.02)}
+  .idle-sym{flex:0 0 120px;font-family:var(--mono);font-size:11px;letter-spacing:.06em}
+  .idle-amt{flex:1;text-align:right;font-size:11.5px;color:var(--text-muted)}
+  .idle-usd{flex:0 0 110px;text-align:right;font-size:12px}
+  @media(max-width:560px){ .idle-sym{flex:0 0 88px} .idle-usd{flex:0 0 84px} }
   @media(max-width:560px){
     .act-row{flex-wrap:wrap;gap:6px}
     .act-tag{min-width:0}
@@ -543,6 +550,12 @@
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="rankBody"></div>
+    </section>
+
+    <section class="panel" data-panel="idle" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">IDLE CAPITAL — NOT IN AN LP</span><span class="hint" id="idleHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="idleBody"></div>
     </section>
 
     <section class="panel" data-panel="seismo" draggable="true">
@@ -1737,6 +1750,7 @@ async function scanInner(isBoot){
           if(d.tickers) state.tickers = d.tickers;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
+          if(d.idle) state.idle = d.idle;
           if(d.chainStatus) state.chainStatus = d.chainStatus;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
@@ -1941,7 +1955,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderCards();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderCards();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -2702,6 +2716,46 @@ function bufferDays(p){
   if(!s||!p.inRange||!(p.price>0)||!(p.priceLower>0)) return null;
   const d=Math.min(Math.log(p.price/p.priceLower), Math.log(p.priceUpper/p.price))/s;
   return isFinite(d)&&d>=0 ? d : null;
+}
+/* Idle capital, aggregated by token across every wallet. Deployed vs idle is the number
+   that actually frames "should I pool more" — and an unpriced token is shown as unpriced,
+   never folded into the total at zero, because a token with no price usually has no market. */
+function renderIdle(){
+  const host=$('#idleBody'); if(!host) return;
+  host.innerHTML='';
+  const idle=state.idle;
+  if(!idle||!idle.rows||!idle.rows.length){
+    $('#idleHint').textContent='no balance scan yet';
+    host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No wallet balance scan in this payload yet — the relay publishes it each cycle.</div>';
+    return;
+  }
+  const agg=new Map();
+  for(const r of idle.rows){
+    const key=(r.symbol||r.addr)+'|'+r.chain+'|'+r.addr;
+    const e=agg.get(key)||{sym:r.symbol||(r.addr.slice(0,6)+'…'), chain:r.chain, addr:r.addr, amount:0, usd:0, priced:r.usd!=null, wallets:0};
+    e.amount+=r.amount; e.usd+=(r.usd||0); e.wallets++; agg.set(key,e);
+  }
+  const rows=[...agg.values()].sort((a,b)=>(b.priced?b.usd:-1)-(a.priced?a.usd:-1));
+  const deployed=ordered().reduce((s,p)=>s+(p.valueUsd||0),0);
+  const idleUsd=idle.totalUsd||0;
+  $('#idleHint').textContent=fmtUsd(idleUsd,0)+' idle vs '+fmtUsd(deployed,0)+' deployed'
+    +(idle.unpriced?' · '+idle.unpriced+' unpriced':'');
+  const strip=el('div','econ-strip');
+  const pct=(idleUsd+deployed)>0?idleUsd/(idleUsd+deployed)*100:0;
+  strip.innerHTML='<span>IDLE <b>'+fmtUsd(idleUsd,0)+'</b></span><span>DEPLOYED <b>'+fmtUsd(deployed,0)+'</b></span>'
+    +'<span><b>'+pct.toFixed(0)+'%</b> of capital is not earning fees</span>';
+  host.append(strip);
+  const tbl=el('div','idle-tbl');
+  for(const r of rows.slice(0,18)){
+    const row=el('div','idle-row');
+    row.innerHTML='<span class="idle-sym">'+esc(r.sym)+(r.chain==='sol'?' <span class="unit">◎</span>':'')+'</span>'
+      +'<span class="idle-amt">'+r.amount.toLocaleString(undefined,{maximumFractionDigits:4})+'</span>'
+      +'<span class="idle-usd">'+(r.priced?fmtUsd(r.usd,2):'<span class="unit">unpriced</span>')+'</span>';
+    tbl.append(row);
+  }
+  host.append(tbl);
+  if(idle.unpriced) host.append(el('div','flow-omit',idle.unpriced+' holding'+(idle.unpriced>1?'s':'')
+    +' could not be priced by the feeds and are excluded from the total. A token with no price usually has no market — treat as zero until proven otherwise, and do not interact with unknown mints.'));
 }
 function renderActions(){
   const host=$('#actionBody'); if(!host) return;
@@ -3465,7 +3519,7 @@ function wireDrag(container, selector, onOrder){
     item.addEventListener('drop',e=>e.preventDefault());
   });
 }
-const LAYOUT_VERSION=3;   // bump when the default panel order changes on purpose
+const LAYOUT_VERSION=4;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
   // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
   // reach anyone who has dragged a panel. Drop the stored order once per version bump.
