@@ -560,7 +560,7 @@
 
     <section class="panel" data-panel="seismo" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">MARKET SEISMOGRAPH — HOW HARD IS PRICE SHAKING?</span><span class="hint">24h realized volatility vs 30-day baseline · buffers measured in days of typical motion</span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">MARKET SEISMOGRAPH — HOW HARD IS PRICE SHAKING?</span><span class="hint">24h realized volatility vs 30-day baseline · buffers shown as the move needed to exit, and how often one that big has happened</span><button class="collapse-btn">▾</button></div>
       <div class="pbody">
         <canvas id="seismo" style="width:100%;height:86px;display:block"></canvas>
         <div id="seismoChips"></div>
@@ -651,7 +651,7 @@
         <div class="card-x"><h4>ROI vs FEE APR vs PRICE DRIFT (IL)</h4><p><b>ROI</b> = everything (value change + fees) vs what you deposited. <b>Fee APR</b> = fees only. <b>Price drift (IL)</b> ≈ ROI − fees: what price movement alone did to you. Fees high but ROI low → the range is earning hard while price drifts against you.</p></div>
         <div class="card-x"><h4>FEES / $1K / DAY</h4><p>The fairest cross-LP metric: dollars earned per day per $1,000 deposited — strips out position size and age. The matrix column ◆ marks best-in-class.</p></div>
         <div class="card-x"><h4>LIVE vs RELAY</h4><p><b>LIVE · MAINNET</b> = your browser reads the chains directly. <b>LIVE · RELAY</b> = your GitHub repo fetched the data server-side (refreshed ~15 min) — used when your network/antivirus blocks RPC traffic. Both are real on-chain data.</p></div>
-        <div class="card-x"><h4>SEISMOGRAPH &amp; RANGE PRESSURE</h4><p>The wave shows current market agitation: <b>±%/day</b> is how much the pair typically moves in a day (24h realized volatility); <b>× vs 30d</b> compares it to the monthly baseline — CALM / NORMAL / ELEVATED / STORM. "Edge ≈ N days of typical motion" divides your remaining range buffer by daily volatility: <b>under 1 day = red</b> (an ordinary day can knock you out), 1–3 amber, 3+ green. High volatility often raises volume (more fees) but drains buffers faster.</p></div>
+        <div class="card-x"><h4>SEISMOGRAPH &amp; RANGE PRESSURE</h4><p>The wave shows current market agitation: <b>±%/day</b> is how much the pair typically moves in a day (24h realized volatility); <b>× vs 30d</b> compares it to the monthly baseline — CALM / NORMAL / ELEVATED / STORM. The pressure bar shows <b>the move price must make to leave your range</b>, and how many of the last fourteen two-day windows actually moved that far. That is history, not a forecast — deliberately so. A single "typical" figure would describe a normal distribution these pairs do not obey: daily volatility here implies roughly 6% moves while the largest real two-day move was over 40%. Colour still grades urgency (red = a move that size is common for this pair, green = it would be exceptional). High volatility often raises volume (more fees) but drains buffers faster.</p></div>
         <div class="card-x"><h4>ALERTS</h4><p>Thresholds are % of <b>range width</b>: WARN inside 20% of an edge, CRITICAL inside 8% (tunable in CONFIG). Arm ◉ ALERTS for browser pings even when the tab is in background.</p></div>
       </div></div>
     </section>
@@ -2415,12 +2415,12 @@ function renderSeismo(){
     +'The meter compares it to that pool\'s own 30-day norm on a log scale with real headroom: CALM &lt;0.8× · NORMAL 0.8–1.5× · ELEVATED 1.5–3× · STORM 3–6× · <b>EXTREME ≥6×</b>. '
     +'Crypto can genuinely hit 10× its norm, so 2–3× is only "elevated" — not a crisis. The verdict never means a market crash; it means <b>this pool is moving that many times faster than its own recent normal</b>. '
     +'The histogram gives the receipts: 14 past segments vs the glowing NOW bar. High agitation usually means more volume (more fees) but faster buffer drain — check the pressure bars below.</div>';
-  // range pressure: buffer in days of typical motion
+  // range pressure: how far price must move to leave the range, and how often that has happened
   for(const p of ps){
     const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
     if(!s||!p.inRange||!(p.price>0)) continue;
     const bufLog=Math.min(Math.log(p.price/p.priceLower), Math.log(p.priceUpper/p.price));
-    const days=bufLog/s;
+    const days=Math.pow(bufLog/s,2);   // diffusion: time scales as the square of distance/sigma
     const col=days<1?'var(--status-critical)':days<3?'var(--status-warning)':'var(--status-good)';
     const row=el('div','press-row');
     row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(pairName(p))+' '+linkRef(p)));
@@ -2430,7 +2430,10 @@ function renderSeismo(){
     fill.style.background='linear-gradient(90deg,'+col+'88,'+col+')';
     fill.style.boxShadow='0 0 10px '+col;
     track.append(fill); row.append(track);
-    row.append(el('div','press-val','edge ≈ <b style="color:'+col+'">'+(days<10?days.toFixed(1):Math.round(days))+' days</b> of typical motion'));
+    const need=Math.min(p.dLow??Infinity,p.dUp??Infinity), pr=edgePrecedent(p);
+    row.append(el('div','press-val', isFinite(need)
+      ? 'needs <b style="color:'+col+'">'+need.toFixed(1)+'%</b> to exit'+(pr?' <span class="unit">· seen in '+pr.over+' of last '+pr.n+' 2-day windows</span>':'')
+      : '—'));
     press.append(row);
   }
   if(!seismoInit){ seismoInit=true; initSeismoWave(); }
@@ -2757,17 +2760,38 @@ function edgeMove(p){
   if(!p.inRange||p.dLow==null||p.dUp==null) return null;
   return p.dLow<=p.dUp ? {dir:'fall', pct:p.dLow, edge:'lower'} : {dir:'rise', pct:p.dUp, edge:'upper'};
 }
-function edgePhrase(p,bd){
+/* How often a move that size has actually happened, counted from the last 28 days of two-day
+   price segments. This is history, not a forecast: no distribution is assumed and nothing is
+   claimed about what happens next. That matters here — these pairs have a daily sigma implying
+   roughly 6% moves while the largest real two-day move was 42%, so any "typical movement"
+   figure would describe a distribution the asset does not obey. */
+function edgePrecedent(p){
+  const h=Array.isArray(p.volHist30)?p.volHist30.filter(v=>typeof v==='number'&&isFinite(v)):null;
+  const e=edgeMove(p);
+  if(!h||!h.length||!e) return null;
+  return {over:h.filter(v=>v>=e.pct).length, n:h.length, max:Math.max(...h)};
+}
+function edgePhrase(p){
   const e=edgeMove(p);
   const pair=(p.m0&&p.m0.symbol?p.m0.symbol:'?')+'/'+(p.m1&&p.m1.symbol?p.m1.symbol:'?');
-  if(!e) return bd!=null?'≈<b>'+bd.toFixed(1)+' days</b> of typical movement from the edge':'near its edge';
-  return pair+' has to <b>'+e.dir+' '+e.pct.toFixed(1)+'%</b> before this stops earning'
-    +(bd!=null?' — about <b>'+bd.toFixed(1)+' day'+(bd<1.05?'':'s')+'</b> of typical movement':'');
+  if(!e) return 'is near its edge';
+  const pr=edgePrecedent(p);
+  let t=pair+' has to <b>'+e.dir+' '+e.pct.toFixed(1)+'%</b> before this stops earning';
+  if(pr) t += pr.over>0
+    ? ' — a move that big happened in <b>'+pr.over+' of the last '+pr.n+'</b> two-day windows'
+    : ' — no two-day window in the last '+pr.n+' moved that far (biggest was '+pr.max.toFixed(1)+'%)';
+  return t;
 }
+const edgeWhen=p=>{ const e=edgeMove(p); return e?((e.dir==='fall'?'−':'+')+e.pct.toFixed(1)+'%'):'—'; };
+/* Used only to rank and threshold, never shown as a forecast. Price is a diffusion: expected
+   displacement grows with the SQUARE ROOT of time, so the time to cover a distance goes as the
+   square of (distance / daily sigma). The old linear form understated it, and understated it
+   most for the safest positions — exaggerating urgency exactly where there was least. */
 function bufferDays(p){
   const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
   if(!s||!p.inRange||!(p.price>0)||!(p.priceLower>0)) return null;
-  const d=Math.min(Math.log(p.price/p.priceLower), Math.log(p.priceUpper/p.price))/s;
+  const k=Math.min(Math.log(p.price/p.priceLower), Math.log(p.priceUpper/p.price))/s;
+  const d=k*k;
   return isFinite(d)&&d>=0 ? d : null;
 }
 /* Idle capital, aggregated by token across every wallet. Deployed vs idle is the number
@@ -2831,19 +2855,19 @@ function renderActions(){
         sub:sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
                 :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
     else if(bd!=null&&bd<1)
-      items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' — '+edgePhrase(p,bd),
+      items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' — '+edgePhrase(p),
         sub:'That is inside a single ordinary day of movement, so this can stop earning at any time. Widen or re-centre.',
-        when:'<24h'});
+        when:edgeWhen(p)});
     else if(sev==='serious')
-      items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' — '+edgePhrase(p,bd),
+      items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' — '+edgePhrase(p),
         sub:'Only '+rangeFracDist(p).toFixed(0)+'% of the range is left on that side. '
           +(sole?'You are the only LP here, so widen once rather than chasing price — a wider range earns the same share and stops this recurring.'
                 :'Re-range or widen.'),
-        when:bd!=null?'≈'+bd.toFixed(1)+'d':'soon'});
+        when:edgeWhen(p)});
     else if(bd!=null&&bd<3&&!sole)
-      items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' — '+edgePhrase(p,bd),
-        sub:'Still earning, and that is a normal-sized move rather than a crash. Worth watching, not acting on yet.',
-        when:'≈'+bd.toFixed(1)+'d'});
+      items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' — '+edgePhrase(p),
+        sub:'Still earning. Watching, not acting.',
+        when:edgeWhen(p)});
   }
   // Compounding, not "harvesting". Uncollected fees are safe but idle — the only thing
   // leaving them costs you is the yield they would earn if redeployed. So the test is not
@@ -2991,7 +3015,7 @@ function poolStrategy(x){
   } else if(f0&&f1){ // both majors
     kind='BLUE-CHIP CROSS';
     why='Two majors — deep liquidity, steady volume, IL is real but bounded by correlated market moves.';
-    range='±10–20% (≈1 month of typical motion); rebalance when price crosses 75% of the band';
+    range='±10–20%; rebalance when price crosses 75% of the band';
     est='pool-wide '+apyTxt+' → <b>'+(apy*1.5).toFixed(0)+'–'+(apy*2.5).toFixed(0)+'%</b> at ±15%';
   } else if(f0||f1){ // major vs alt
     kind='MAJOR / ALT';
