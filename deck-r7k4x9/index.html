@@ -2068,10 +2068,20 @@ function renderTiles(){
   { const dayOf = p => cfg.aprWin==='incept'
       ? ((p.feesEverUsd!=null && p.ageDays>0.05) ? p.feesEverUsd/p.ageDays : null)
       : (()=>{ const a=aprOf(p).v, base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; })();
-    const rows=ps.map(dayOf).filter(v=>v!=null);
+    const rows=ps.map(p=>dayOf(p)).filter(v=>v!=null);
     const perDay=rows.length? rows.reduce((a,b)=>a+b,0) : null;
+    // small per-pair split: a single total hides which pool is actually producing the income
+    const byPair=new Map();
+    for(const p of ps){ const v=dayOf(p); if(v==null) continue;
+      const k=pairShort(p); byPair.set(k,(byPair.get(k)||0)+v); }
+    const parts=[...byPair.entries()].sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>esc(k)+' <b>'+fmtUsd(v)+'</b>'+(perDay>0?' <span style="opacity:.7">'+Math.round(v/perDay*100)+'%</span>':''));
+    const noData=ps.length-rows.length;
     mk('FEE INCOME / DAY · '+WIN_LABEL[cfg.aprWin], perDay==null?'—':inc(fmtUsd(perDay)),
-       perDay==null?'switch timeframe in the header':'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo · avg over '+WIN_LABEL[cfg.aprWin].toLowerCase()); }
+       perDay==null?'switch timeframe in the header'
+         :'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo · avg over '+WIN_LABEL[cfg.aprWin].toLowerCase()
+          +(parts.length?'<br><span class="unit">'+parts.join('&nbsp; · &nbsp;')
+            +(noData?'&nbsp; · &nbsp;'+noData+' position'+(noData>1?'s':'')+' without '+WIN_LABEL[cfg.aprWin]+' data':'')+'</span>':'')); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
      pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
