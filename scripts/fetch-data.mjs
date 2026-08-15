@@ -745,6 +745,77 @@ async function fetchSolana(SOL_WALLETS){
   return out;
 }
 
+/* ---------- IDLE BALANCES: what is sitting in the wallets, not in an LP ----------
+   The dashboard has always measured deployed capital and been blind to everything else,
+   which makes "should I pool more?" unanswerable from the data. This scans each wallet for
+   native + token balances and prices them with the same feeds the LP side already uses.
+
+   EVM token discovery: ERC-20 has no "list my tokens" call, so candidates come from a known
+   list plus every contract that has sent this wallet a Transfer, checkpointed in blockcache
+   so later runs only walk the delta. Solana needs none of that — getTokenAccountsByOwner
+   returns every SPL balance in one call. */
+const TOPIC_XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const KNOWN_ERC20={
+  ethereum:[
+    '0x8cd41041505885ef0ad3858181d66f17be8aae7e',   // LCX (new)
+    '0x037a54aab062628c9bbae1fdb1583c195585fe41',   // LCX (old)
+    '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',   // WETH
+    '0x66761fa41377003622aee3c7675fc7b5c1c2fac5',   // CPOOL (Clearpool)
+    '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',   // USDC
+    '0xdac17f958d2ee523a2206206994597c13d831ec7',   // USDT
+    '0x6b175474e89094c44da98b954eedeac495271d0f',   // DAI
+  ],
+};
+async function erc20Candidates(ck,wallet,tip){
+  const C=CHAINS[ck], out=new Set((KNOWN_ERC20[ck]||[]).map(a=>a.toLowerCase()));
+  const key='bal:'+ck+':'+wallet;
+  const tc=blockCache.tscan[key]||{last:Math.max(C.startBlock,tip-180*C.bph*24)-1,ids:[]};
+  try{
+    const logs=await getLogsChunked(ck,{topics:[TOPIC_XFER,null,'0x'+pad32(wallet)]},tc.last+1,tip);
+    for(const lg of logs){ const a=String(lg.address||'').toLowerCase(); if(a&&!tc.ids.includes(a)) tc.ids.push(a); }
+    tc.last=tip; blockCache.tscan[key]=tc;
+  }catch(e){ logErr('balScan '+ck+' '+wallet.slice(0,8),e); }
+  for(const a of tc.ids) out.add(a);
+  return [...out];
+}
+async function evmWalletBalances(ck,wallet,tip){
+  const C=CHAINS[ck], rows=[];
+  try{
+    const wei=BigInt(await evm(ck,'eth_getBalance',['0x'+wallet,'latest']));
+    if(wei>0n) rows.push({addr:'native',symbol:C.tag==='ETH'?'ETH':'native',decimals:18,amount:bigToFloat(wei,18),native:true});
+  }catch(e){ logErr('nativeBal '+ck+' '+wallet.slice(0,8),e); }
+  const cands=await erc20Candidates(ck,wallet,tip);
+  for(const addr of cands){
+    try{
+      const raw=await evmCall(ck,addr,SEL2.balanceOf+pad32(wallet));
+      const bal=BigInt(raw);
+      if(bal<=0n) continue;
+      const m=await meta(ck,addr);
+      rows.push({addr,symbol:m.symbol,decimals:m.decimals,amount:bigToFloat(bal,m.decimals)});
+    }catch(e){}
+    await sleep(70);
+  }
+  return rows;
+}
+async function solWalletBalances(wallet){
+  const rows=[];
+  try{
+    const r=await sol('getBalance',[wallet]);
+    const lam=Number(r?.value ?? r ?? 0);
+    if(lam>0) rows.push({addr:'native',symbol:'SOL',decimals:9,amount:lam/1e9,native:true});
+  }catch(e){ logErr('solBal '+wallet.slice(0,6),e); }
+  try{
+    const r=await sol('getTokenAccountsByOwner',[wallet,{programId:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'},{encoding:'jsonParsed'}]);
+    for(const acc of (r?.value||[])){
+      const info=acc?.account?.data?.parsed?.info;
+      const amt=Number(info?.tokenAmount?.uiAmount||0);
+      if(!(amt>0)) continue;
+      rows.push({addr:info.mint,symbol:SOL_KNOWN[info.mint]||null,decimals:info.tokenAmount.decimals,amount:amt});
+    }
+  }catch(e){ logErr('solTokens '+wallet.slice(0,6),e); }
+  return rows;
+}
+
 /* ---------- main ---------- */
 const main=async()=>{
   try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{}}; }catch(e){}
@@ -1084,8 +1155,50 @@ const main=async()=>{
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }
+    // ---- idle balances: everything held that is NOT in an LP ----
+    let idle=null;
+    try{
+      const rows=[];
+      for(const w of (profile.wallets||[])){
+        const addr=w.address;
+        if(w.chain==='solana'){
+          for(const r of await solWalletBalances(addr)) rows.push({...r, chain:'sol', wallet:addr});
+        }else{
+          const ck=w.chain in CHAINS ? w.chain : 'ethereum';
+          if(blockNums[ck]==null) continue;
+          const clean=addr.toLowerCase().replace(/^0x/,'');
+          for(const r of await evmWalletBalances(ck,clean,blockNums[ck])) rows.push({...r, chain:ck, wallet:addr});
+        }
+      }
+      // price: EVM via the same DefiLlama feed the LP side uses, Solana via Jupiter
+      const llamaKeys=[...new Set(rows.filter(r=>r.chain!=='sol'&&!r.native).map(r=>CHAINS[r.chain].llama+':'+r.addr))];
+      if(llamaKeys.length) await llamaPrices(llamaKeys);
+      const solNativeUsd=(tickers||[]).find(t=>t.sym==='SOL')?.usd ?? null;
+      const solMints=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native).map(r=>r.addr))];
+      let jp={};
+      if(solMints.length){
+        for(let i=0;i<solMints.length;i+=80){
+          try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+solMints.slice(i,i+80).join(','));
+               for(const m of solMints.slice(i,i+80)) if(js[m]?.usdPrice!=null) jp[m]=Number(js[m].usdPrice); }
+          catch(e){ logErr('jupBal',e); }
+        }
+      }
+      for(const r of rows){
+        r.usd = r.native
+          ? (r.chain==='sol' ? (solNativeUsd!=null?r.amount*solNativeUsd:null) : (ethUsd!=null?r.amount*ethUsd:null))
+          : (r.chain==='sol' ? (jp[r.addr]!=null?r.amount*jp[r.addr]:null)
+                             : (priceCache[CHAINS[r.chain].llama+':'+r.addr]!=null?r.amount*priceCache[CHAINS[r.chain].llama+':'+r.addr]:null));
+        r.usd = r.usd!=null ? Math.round(r.usd*100)/100 : null;   // null = unpriced, never 0
+      }
+      rows.sort((x,y)=>(y.usd??-1)-(x.usd??-1));
+      idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
+             unpriced:rows.filter(r=>r.usd==null).length };
+      fs.writeFileSync(OUT+'/balances-'+profile.slug+'.json', JSON.stringify(idle,null,1));
+      console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
+    }catch(e){ logErr('balances',e); }
+
     const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
-      eth:evmPositions, sol:solPositions, topPools, errors:[...errors] };
+      eth:evmPositions, sol:solPositions, topPools, idle, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
     if(profile===CONFIG.profiles[0]) fs.writeFileSync(OUT+'/data.json', JSON.stringify(data));
