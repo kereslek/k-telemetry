@@ -1239,27 +1239,6 @@ const main=async()=>{
       // Resolve names/symbols for Solana mints. A wallet full of "AeXrLf…" is unreadable,
       // and for a token whose identity is in question the registered name is the fastest
       // way to tell a bridged asset from an unrelated one sharing a ticker.
-      /* Provenance for any Solana holding worth caring about. A ticker proves nothing — this
-         wallet holds a fake "Zcash" and a fake "JitoSOL" — so publish the facts that actually
-         distinguish a bridged asset from a lookalike: total supply (compare to the real
-         token's), whether anyone can still mint more, whether it can be frozen, and how the
-         registry tags it. */
-      const wantInfo=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&(r.usd==null||r.usd>=50)).map(r=>r.addr))].slice(0,12);
-      const mintInfo={};
-      for(const m of wantInfo){
-        const o={};
-        try{ const r=await sol('getTokenSupply',[m]);
-             o.supply=r?.value?.uiAmountString??null; o.decimals=r?.value?.decimals??null; }catch(e){}
-        try{ const r=await sol('getAccountInfo',[m,{encoding:'jsonParsed'}]);
-             const i=r?.value?.data?.parsed?.info;
-             o.mintAuthority=i?.mintAuthority??null; o.freezeAuthority=i?.freezeAuthority??null; }catch(e){}
-        try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m,12000);
-             const hit=Array.isArray(js)?js.find(t=>t.id===m):(Array.isArray(js&&js.tokens)?js.tokens.find(t=>t.id===m):null);
-             if(hit){ o.name=hit.name??null; o.symbol=hit.symbol??null;
-                      o.verified=hit.isVerified??null; o.tags=hit.tags??null; o.holders=hit.holderCount??null; } }catch(e){}
-        mintInfo[m]=o;
-        await sleep(150);
-      }
       const needMeta=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&!r.symbol).map(r=>r.addr))].slice(0,45);
       const solMeta={}; let metaFails=0, metaErr=null;
       // Registries disagree on response shape (bare array / {tokens:[]} / single object), so
@@ -1293,6 +1272,27 @@ const main=async()=>{
         r.usd = r.usd!=null ? Math.round(r.usd*100)/100 : null;   // null = unpriced, never 0
       }
       rows.sort((x,y)=>(y.usd??-1)-(x.usd??-1));
+      /* Provenance for any Solana holding worth caring about. A ticker proves nothing — this
+         wallet holds a fake "Zcash" and a fake "JitoSOL" — so publish the facts that actually
+         distinguish a bridged asset from a lookalike: total supply (compare to the real
+         token's), whether anyone can still mint more, whether it can be frozen, and how the
+         registry tags it. */
+      const wantInfo=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&(r.usd==null||r.usd>=50)).map(r=>r.addr))].slice(0,12);
+      const mintInfo={};
+      for(const m of wantInfo){
+        const o={};
+        try{ const r=await sol('getTokenSupply',[m]);
+             o.supply=r?.value?.uiAmountString??null; o.decimals=r?.value?.decimals??null; }catch(e){}
+        try{ const r=await sol('getAccountInfo',[m,{encoding:'jsonParsed'}]);
+             const i=r?.value?.data?.parsed?.info;
+             o.mintAuthority=i?.mintAuthority??null; o.freezeAuthority=i?.freezeAuthority??null; }catch(e){}
+        try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m,12000);
+             const hit=Array.isArray(js)?js.find(t=>t.id===m):(Array.isArray(js&&js.tokens)?js.tokens.find(t=>t.id===m):null);
+             if(hit){ o.name=hit.name??null; o.symbol=hit.symbol??null;
+                      o.verified=hit.isVerified??null; o.tags=hit.tags??null; o.holders=hit.holderCount??null; } }catch(e){}
+        mintInfo[m]=o;
+        await sleep(150);
+      }
       idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
              unpriced:rows.filter(r=>r.usd==null).length, mintInfo };
       fs.writeFileSync(OUT+'/balances-'+profile.slug+'.json', JSON.stringify(idle,null,1));
