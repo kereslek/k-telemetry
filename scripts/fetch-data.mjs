@@ -1079,8 +1079,21 @@ const main=async()=>{
       const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
       const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
       fl.lastIl=Math.round(evmPositions.reduce((s,p)=>s+(p.ilUsd||0),0)*100)/100;
+      /* Projecting the month-to-date average forward assumes two false things: that positions
+         which have already closed keep paying (their earnings sit in mtd but they earn nothing
+         now), and that the average rate so far is the rate from here. Project the run rate of
+         what is actually open and add it to what the month has already banked. Falls back to
+         the old extrapolation only when no position has a usable rate. */
+      let dayRate=0, ratedN=0;
+      for(const p of [...evmPositions,...solPositions]){
+        const a=(p.chain==='sol')?(p.poolAprDay??null):(p.aprW?(p.aprW.d1??null):null);
+        if(a!=null && p.valueUsd>0){ dayRate+=p.valueUsd*a/100/365; ratedN++; }
+      }
+      const remainDays=Math.max(0,daysInMonth-elapsed);
+      const projVal = ratedN ? mtd+dayRate*remainDays : mtd/elapsed*daysInMonth;
       feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
-        proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null, prev:fl.months||[]};
+        proj: elapsed>0.25?Math.round(projVal*100)/100:null,
+        projBasis: ratedN?'run-rate':'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[]};
       fs.writeFileSync(OUT+'/fees-'+profile.slug+'.json', JSON.stringify(fl,null,1));
     }catch(e){ logErr('feeMonth',e); }
     // ---- monthly COST ledger: gas for every LP op + ALL rebalance swap fees (any pool, any route) ----

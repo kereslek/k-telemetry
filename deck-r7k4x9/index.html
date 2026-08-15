@@ -1822,15 +1822,26 @@ async function scanInner(isBoot){
 </script>
 <script>
 /* ================= ALERTS ================= */
+/* Risk distance must be measured in log-price space. Concentrated liquidity is uniform in
+   tick space, which is logarithmic, so on a wide range the linear position badly misstates how
+   close an edge really is: a 1..100 range with price at 5 sits 4% along linearly — an EDGE
+   CRITICAL alarm — but 35% along in log terms, needing an 80% fall to actually exit.
+   rangePos itself stays linear, because that is how a person reads a range on a bar. */
+function rangeFracLog(p){
+  if(!(p.price>0&&p.priceLower>0&&p.priceUpper>p.priceLower)) return null;
+  const f=Math.log(p.price/p.priceLower)/Math.log(p.priceUpper/p.priceLower);
+  return Math.min(Math.max(f,0),1);
+}
 function severityOf(p){
   if(!p.inRange) return 'critical';
-  // distance to nearest edge as % of RANGE WIDTH (adapts to tight & wide ranges alike)
-  const d = Math.min(p.rangePos, 1-p.rangePos)*100;
+  // distance to nearest edge as % of RANGE WIDTH, in log space (adapts to tight & wide alike)
+  const f=rangeFracLog(p);
+  const d = (f!=null ? Math.min(f,1-f) : Math.min(p.rangePos,1-p.rangePos))*100;
   if(d <= cfg.critPct) return 'serious';
   if(d <= cfg.warnPct) return 'warning';
   return 'good';
 }
-const rangeFracDist = p => Math.min(p.rangePos, 1-p.rangePos)*100;
+const rangeFracDist = p => { const f=rangeFracLog(p); return (f!=null?Math.min(f,1-f):Math.min(p.rangePos,1-p.rangePos))*100; };
 const SEV_LABEL = {good:'IN RANGE', warning:'NEAR EDGE', serious:'EDGE CRITICAL', critical:'OUT OF RANGE'};
 const posRef = p => p.chain==='sol' ? '◎'+String(p.nftMint||'').slice(0,4)+'…' : '#'+p.id;
 const SEV_CHIP = {good:'in', warning:'near', serious:'edge', critical:'out'};
@@ -2035,7 +2046,10 @@ function renderTiles(){
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
     mk('FEES EARNED · '+mName,
        fm?inc(fmtUsd(fm.mtd)):'—',
-       fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth+' · ':'')
+       fm ? (fm.proj!=null?'≈<b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth
+              +(fm.projBasis==='run-rate'
+                 ? ' <span class="unit">(earned so far + open positions at '+fmtUsd(fm.dayRate||0)+'/day — closed LPs are not projected forward)</span>'
+                 : ' <span class="unit">(month-to-date average extrapolated — no live rate available)</span>')+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
             +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
           : 'ledger starts with the next relay refresh (~15 min)');
@@ -2046,7 +2060,8 @@ function renderTiles(){
        cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd)+'</b> · '+cm.txCount+' LP tx'
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?' · projected net ≈ <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'
-              +fmtUsd(fm.proj-cm.total/fm.elapsedDays*fm.daysInMonth,0)+'</b> by '+mName+' '+fm.daysInMonth:'')
+              +fmtUsd(fm.proj-cm.total/fm.elapsedDays*fm.daysInMonth,0)+'</b> by '+mName+' '+fm.daysInMonth
+              +' <span class="unit">(costs extrapolated from this month\'s pace)</span>':'')
             +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
           : 'gas + rebalance swap fees · starts with the next relay refresh'); }
   { const dayOf = p => cfg.aprWin==='incept'
