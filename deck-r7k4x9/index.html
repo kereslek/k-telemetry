@@ -309,6 +309,26 @@
   .fd-sub b{color:var(--text-primary)}
   .fd-note{font-size:9.5px;color:var(--text-muted);margin-top:10px;letter-spacing:.08em}
   .flow-omit{font-size:9.5px;color:var(--text-muted);margin-top:8px;letter-spacing:.06em}
+  .act-panel{border-color:rgba(255,176,32,.35)}
+  .act-row{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;margin-bottom:6px;border-radius:3px;
+    border-left:3px solid var(--text-muted);background:rgba(255,255,255,.02)}
+  .act-crit{border-left-color:var(--status-critical)}
+  .act-warn{border-left-color:var(--status-warning)}
+  .act-good{border-left-color:var(--status-good)}
+  .act-tag{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--text-muted);min-width:104px;padding-top:3px}
+  .act-crit .act-tag{color:var(--status-critical)}
+  .act-warn .act-tag{color:var(--status-warning)}
+  .act-good .act-tag{color:var(--status-good)}
+  .act-body{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .act-head{font-size:12.5px}
+  .act-sub{font-size:10.5px;color:var(--text-muted)}
+  .act-when{font-family:var(--mono);font-size:10px;color:var(--text-muted);white-space:nowrap;padding-top:3px}
+  .act-clear{font-size:12px;color:var(--text-muted);padding:4px 2px}
+  @media(max-width:560px){
+    .act-row{flex-wrap:wrap;gap:6px}
+    .act-tag{min-width:0}
+    .act-when{width:100%;text-align:right;padding-top:0}
+  }
 
   /* ============ RESPONSIVE ============ */
   @media(max-width:1000px){
@@ -513,6 +533,12 @@
   <div class="tiles" id="tiles"></div>
 
   <div id="panelStack">
+    <section class="panel act-panel" data-panel="action" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">ACTION REQUIRED — TIME SENSITIVE</span><span class="hint" id="actionHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="actionBody"></div>
+    </section>
+
     <section class="panel" data-panel="seismo" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">MARKET SEISMOGRAPH — HOW HARD IS PRICE SHAKING?</span><span class="hint">24h realized volatility vs 30-day baseline · buffers measured in days of typical motion</span><button class="collapse-btn">▾</button></div>
@@ -523,10 +549,10 @@
       </div>
     </section>
 
-    <section class="panel" data-panel="rank" draggable="true">
+    <section class="panel" data-panel="truth" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
-      <div class="pbody" id="rankBody"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">TRUTH PANEL — LP vs HODL &amp; IMPERMANENT LOSS</span><span class="hint">was pooling worth it? fees earned vs what just holding would be worth · month-over-month ledger</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="truthBody"></div>
     </section>
 
     <section class="panel" data-panel="flow" draggable="true">
@@ -537,7 +563,7 @@
 
     <section class="panel" data-panel="outlook" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">OUTLOOK — PROJECTED EARNINGS</span><span class="hint" id="outlookHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">OUTLOOK — PROJECTED EARNINGS</span><span class="seg" id="outlookSeg"></span><span class="hint" id="outlookHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="outlookBody"></div>
     </section>
 
@@ -578,10 +604,10 @@
       <div class="pbody" style="overflow-x:auto"><table class="matrix" id="matrixBody"></table></div>
     </section>
 
-    <section class="panel" data-panel="truth" draggable="true">
+    <section class="panel" data-panel="rank" draggable="true">
       <div class="cb"></div>
-      <div class="phead"><span class="drag-dots">⠿</span><span class="t">TRUTH PANEL — LP vs HODL &amp; IMPERMANENT LOSS</span><span class="hint">was pooling worth it? fees earned vs what just holding would be worth · month-over-month ledger</span><button class="collapse-btn">▾</button></div>
-      <div class="pbody" id="truthBody"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="rankBody"></div>
     </section>
 
     <section class="panel" data-panel="telemetry" draggable="true">
@@ -1522,8 +1548,10 @@ async function enrichAprWindows(){
 /* which APR the UI shows, per the global window selector */
 const WIN_LABEL = {d1:'24H', d7:'7D', d30:'30D', d365:'1Y', incept:'SINCE OPEN'};
 cfg.aprWin = store.get('aprWin','d1');
-function aprOf(p){
-  const w = cfg.aprWin;
+/* Outlook projects a year out, so it runs on its own longer window rather than the
+   header's. A 24h rate annualised is noise; 30D is the sane default. */
+cfg.outlookWin = (v=>(v==='d7'||v==='d30')?v:'d30')(store.get('outlookWin','d30'));
+function aprOfWin(p,w){
   if(w==='incept') return {v: p.feeAprPct ?? null, pool:false};
   if(p.chain==='sol'){
     const v = {d1:p.poolAprDay, d7:p.poolAprWeek, d30:p.poolAprMonth, d365:null}[w];
@@ -1531,6 +1559,7 @@ function aprOf(p){
   }
   return {v: p.aprW ? (p.aprW[w] ?? null) : null, pool:false};
 }
+function aprOf(p){ return aprOfWin(p, cfg.aprWin); }
 
 /* ---- connectivity diagnostics: tests every endpoint from THIS browser ---- */
 const hostOf = u => u.replace('https://','').split('/')[0];
@@ -1909,7 +1938,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderCards();
+  renderHeader(); renderTiles(); renderActions(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderCards();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -2647,10 +2676,87 @@ function initFlowMap(){
 }
 
 /* ----- outlook: projected earnings ----- */
+/* Only genuinely urgent, genuinely actionable things, ranked by the cost of ignoring them.
+   Out of range is earning nothing right now; a sub-1-day buffer is hours away from that;
+   harvesting only matters once it clears gas. Nothing is invented — when none of these
+   fire the panel says so rather than manufacturing a task. */
+function bufferDays(p){
+  const s=(p.vol24??p.sigma30??p.range?.sigmaDaily);
+  if(!s||!p.inRange||!(p.price>0)||!(p.priceLower>0)) return null;
+  const d=Math.min(Math.log(p.price/p.priceLower), Math.log(p.priceUpper/p.price))/s;
+  return isFinite(d)&&d>=0 ? d : null;
+}
+function renderActions(){
+  const host=$('#actionBody'); if(!host) return;
+  host.innerHTML='';
+  const items=[], ps=ordered().filter(p=>p.valueUsd!=null);
+  // No positions loaded is NOT an all-clear — it means nothing could be assessed. Saying
+  // "all clear" here would be the most dangerous lie the panel could tell.
+  if(!ps.length){
+    $('#actionHint').textContent='cannot assess — no position data';
+    host.innerHTML='<div class="act-row act-warn"><span class="act-tag">NO DATA</span><span class="act-body">'
+      +'<span class="act-head">No position data loaded — nothing could be checked.</span>'
+      +'<span class="act-sub">This is not an all-clear. Positions may need attention and the dashboard cannot see them. '
+      +'Double-tap SCAN to force a refresh.</span></span><span class="act-when">check</span></div>';
+    return;
+  }
+  for(const p of ps){
+    const ref=esc(pairName(p))+' '+linkRef(p), sev=severityOf(p), bd=bufferDays(p);
+    if(sev==='critical')
+      items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' is earning <b>nothing</b>',
+        sub:'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
+    else if(bd!=null&&bd<1)
+      items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' has <b>'+bd.toFixed(1)+' days</b> of buffer left',
+        sub:'One ordinary day of movement knocks this out of range. Widen or re-centre.',when:'<24h'});
+    else if(sev==='serious')
+      items.push({r:2,cls:'warn',tag:'EDGE CRITICAL',head:ref+' is '+rangeFracDist(p).toFixed(1)+'% from its edge',
+        sub:'Buffer nearly gone'+(bd!=null?' — ≈'+bd.toFixed(1)+' days of typical motion':'')+'.',
+        when:bd!=null?'≈'+bd.toFixed(1)+'d':'soon'});
+    else if(bd!=null&&bd<3)
+      items.push({r:3,cls:'warn',tag:'NEAR EDGE',head:ref+' has ≈<b>'+bd.toFixed(1)+' days</b> of buffer',
+        sub:'Worth watching. Not urgent yet.',when:'≈'+bd.toFixed(1)+'d'});
+  }
+  const hc=gasCostUsd(HARVEST_GAS);
+  if(hc!=null) for(const p of ps){
+    if((p.feesUsd||0) >= Math.max(25, hc*20))
+      items.push({r:4,cls:'good',tag:'HARVEST',head:esc(pairName(p))+' '+linkRef(p)+' holds <b>'+fmtUsd(p.feesUsd)+'</b> unclaimed',
+        sub:'Harvest tx ≈ '+fmtUsd(hc)+' — the fees clear that cost comfortably.',when:'any time'});
+  }
+  if(state.dataAt && Date.now()-state.dataAt > 3*3600000)
+    items.push({r:5,cls:'warn',tag:'STALE DATA',head:'Server data is <b>'+((Date.now()-state.dataAt)/3600000).toFixed(1)+'h</b> old',
+      sub:'The refresh job has not published since. Double-tap SCAN to force a check.',when:'check'});
+  items.sort((a,b)=>a.r-b.r);
+  const urgent=items.filter(x=>x.r<=2).length;
+  $('#actionHint').textContent = items.length
+    ? (urgent?urgent+' urgent · ':'')+items.length+' item'+(items.length>1?'s':'')+' · worst first'
+    : 'nothing needs you right now';
+  if(!items.length){
+    host.innerHTML='<div class="act-clear">✓ <b>All clear.</b> Every position is in range with healthy buffer, and no unclaimed fees are yet worth a transaction.</div>';
+    return;
+  }
+  for(const it of items){
+    const row=el('div','act-row act-'+it.cls);
+    row.innerHTML='<span class="act-tag">'+it.tag+'</span><span class="act-body"><span class="act-head">'+it.head
+      +'</span><span class="act-sub">'+it.sub+'</span></span><span class="act-when">'+it.when+'</span>';
+    host.append(row);
+  }
+}
+function renderOutlookSeg(){
+  const seg=$('#outlookSeg'); if(!seg) return;
+  seg.innerHTML='';
+  for(const k of ['d7','d30']){
+    const b=el('button', cfg.outlookWin===k?'on':null, WIN_LABEL[k]);
+    b.title={d7:'Project from the last 7 days of fee rates',d30:'Project from the last 30 days of fee rates'}[k];
+    b.addEventListener('click',()=>{ cfg.outlookWin=k; store.set('outlookWin',k); renderOutlookSeg(); renderOutlook(); });
+    seg.append(b);
+  }
+}
 function renderOutlook(){
   const host=$('#outlookBody'); host.innerHTML='';
-  const ps=ordered().map(p=>({p,a:aprOf(p).v,base:p.valueUsd||p.costUsd||0})).filter(x=>x.a!=null&&x.base>0);
-  $('#outlookHint').textContent='AT CURRENT '+WIN_LABEL[cfg.aprWin]+' RATES · fees only, price assumed flat · not a promise';
+  renderOutlookSeg();
+  const win=cfg.outlookWin;
+  const ps=ordered().map(p=>({p,a:aprOfWin(p,win).v,base:p.valueUsd||p.costUsd||0})).filter(x=>x.a!=null&&x.base>0);
+  $('#outlookHint').textContent='AT '+WIN_LABEL[win]+' RATES · fees only, price assumed flat · not a promise';
   if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Waiting for APR data for this timeframe…</div>'; return; }
   const wapr=ps.reduce((s,x)=>s+x.a*x.base,0)/ps.reduce((s,x)=>s+x.base,0);
   const totBase=ps.reduce((s,x)=>s+x.base,0);
@@ -3321,7 +3427,11 @@ function wireDrag(container, selector, onOrder){
     item.addEventListener('drop',e=>e.preventDefault());
   });
 }
+const LAYOUT_VERSION=2;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
+  // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
+  // reach anyone who has dragged a panel. Drop the stored order once per version bump.
+  if(store.get('layoutV',1)!==LAYOUT_VERSION){ store.set('panelOrder',null); store.set('layoutV',LAYOUT_VERSION); }
   const po=store.get('panelOrder',null);
   if(po){ const stack=$('#panelStack');
     po.forEach(k=>{const p=stack.querySelector('[data-panel="'+k+'"]'); if(p)stack.append(p);}); }
