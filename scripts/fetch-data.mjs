@@ -893,6 +893,11 @@ const main=async()=>{
       const prevSol=new Map((prev&&prev.sol||[]).map(p=>[p.id,p]));
       for(const p of solPositions){
         const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
+        // Solana has no fee event log, so collectedUsd only ever covers what this bot has
+        // WATCHED. Stamp when that started: annualising a partial fee history over the
+        // position's full age understates it by the ratio of the two (a 289-day position
+        // seen for 12 days reads ~23x too low).
+        if(!L.since) L.since=Date.now();
         const pv=prevSol.get(p.id);
         if(pv && pv.feesUsd!=null && p.feesUsd!=null){
           const drop=pv.feesUsd-p.feesUsd;
@@ -901,7 +906,13 @@ const main=async()=>{
         }
         p.feesCollectedUsd=L.collectedUsd;
         p.feesEverUsd=L.collectedUsd+(p.feesUsd||0);
-        if(p.ageDays>0.05 && p.valueUsd>0) p.feeAprPct=(p.feesEverUsd/p.valueUsd)*(365/p.ageDays)*100;
+        // Annualise over the OBSERVED window, not the position's age, and flag that the
+        // figure is partial so the UI can say "since tracked" rather than "since open".
+        const obsDays=(Date.now()-L.since)/86400000;
+        p.feesObservedDays=Math.round(obsDays*100)/100;
+        p.feesPartial=p.ageDays!=null && p.ageDays>obsDays+1;
+        if(obsDays>0.5 && p.valueUsd>0) p.feeAprPct=(p.feesEverUsd/p.valueUsd)*(365/obsDays)*100;
+        else p.feeAprPct=null;
       }
       fs.writeFileSync(OUT+'/ledger-'+profile.slug+'.json', JSON.stringify(ledger,null,1));
     }catch(e){ logErr('ledger',e); }

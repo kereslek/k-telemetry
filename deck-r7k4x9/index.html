@@ -1553,7 +1553,9 @@ cfg.aprWin = store.get('aprWin','d1');
    header's. A 24h rate annualised is noise; 30D is the sane default. */
 cfg.outlookWin = (v=>(v==='d7'||v==='d30')?v:'d30')(store.get('outlookWin','d30'));
 function aprOfWin(p,w){
-  if(w==='incept') return {v: p.feeAprPct ?? null, pool:false};
+  // partial = the fee history behind this number starts when tracking began, not when the
+  // position opened (Solana has no fee event log). Annualised over the observed window.
+  if(w==='incept') return {v: p.feeAprPct ?? null, pool:false, partial:!!p.feesPartial};
   if(p.chain==='sol'){
     const v = {d1:p.poolAprDay, d7:p.poolAprWeek, d30:p.poolAprMonth, d365:null}[w];
     return {v: v ?? null, pool:true};
@@ -2460,7 +2462,8 @@ function renderRank(){
     // A sole-LP pool's "pool APR" is computed from this position alone, so ranking it against
     // genuinely contested pools compares a self-measurement to a market rate. Say so.
     const soleTag=isSoleLp(p)?'<span class="unit" title="You are the only LP in this pool, so its pool-level APR is derived from your own position — self-referential, not a market rate."> ⊙self</span>':'';
-    row.append(el('div','rank-val', a.v.toFixed(1)+'<span class="unit"> % APR'+(a.pool?' ◎pool':'')+'</span>'+soleTag));
+    const partTag=(a.partial&&cfg.aprWin==='incept')?'<span class="unit" title="Fees before tracking began are not visible (Solana has no fee event log), so this covers '+(p.feesObservedDays||0).toFixed(1)+' observed days, not the position\'s full life."> ◐'+(p.feesObservedDays||0).toFixed(0)+'d obs</span>':'';
+    row.append(el('div','rank-val', a.v.toFixed(1)+'<span class="unit"> % APR'+(a.pool?' ◎pool':'')+'</span>'+soleTag+partTag));
     row.append(el('div','rank-sub', earned!=null?('≈ '+fmtUsd(earned)+' fees'+(cfg.aprWin==='incept'?' total':' / '+WIN_LABEL[cfg.aprWin].toLowerCase())):'—'));
     row.append(el('div','rank-sub', p.valueUsd!=null?fmtUsd(p.valueUsd,0)+' deployed':'—'));
     // LP age + verdict: young overperformer or old laggard — the interesting cases
