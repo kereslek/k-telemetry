@@ -148,7 +148,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* persistent scan cache (committed with the other JSON ledgers):
    mint  — position id → mint block, found once by binary search, then never again
    tscan — wallet NFT-transfer scan checkpoint + candidate ids */
-let blockCache={mint:{},tscan:{}};
+let blockCache={mint:{},tscan:{},evh:{}};
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
    The asymmetry is deliberate: over-calling infra costs one logged error and a recompute
@@ -287,9 +287,30 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
     }
   }
   const sum=(arr,k,dec)=>arr.reduce((s,x)=>s+bigToFloat(x[k],dec),0);
-  const dep0=sum(hist.inc,'a0',d0), dep1=sum(hist.inc,'a1',d1);
-  const wdr0=sum(hist.dec,'a0',d0), wdr1=sum(hist.dec,'a1',d1);
-  const col0=sum(hist.col,'a0',d0), col1=sum(hist.col,'a1',d1);
+  const rDep0=sum(hist.inc,'a0',d0), rDep1=sum(hist.inc,'a1',d1);
+  const rWdr0=sum(hist.dec,'a0',d0), rWdr1=sum(hist.dec,'a1',d1);
+  const rCol0=sum(hist.col,'a0',d0), rCol1=sum(hist.col,'a1',d1);
+  /* A public RPC can return a partial log set without erroring — that is exactly what zeroed
+     this position's collected fees earlier today. Every sum here is cumulative over the
+     position's life and can only grow, so a reading below the previous one is proof the scan
+     came back short, not that history changed. Hold the high-water values so cost basis, fees,
+     ROI and IL stay right, and refuse to publish the window-scoped figures, which cannot be
+     reconstructed from a short read and would otherwise report a falsely low APR. */
+  const evKey=ck+':'+id, prevEv=blockCache.evh[evKey]||null;
+  const obsEv={nInc:hist.inc.length,nDec:hist.dec.length,nCol:hist.col.length,
+               dep0:rDep0,dep1:rDep1,wdr0:rWdr0,wdr1:rWdr1,col0:rCol0,col1:rCol1,mintTs:mintTs||null};
+  let histPartial=false;
+  if(prevEv) for(const k of ['nInc','nDec','nCol','dep0','dep1','wdr0','wdr1','col0','col1'])
+    if((obsEv[k]||0) < (prevEv[k]||0)-1e-9){ histPartial=true; break; }
+  const mx=(a,b)=>Math.max(a||0,b||0);
+  const dep0=histPartial?mx(rDep0,prevEv.dep0):rDep0, dep1=histPartial?mx(rDep1,prevEv.dep1):rDep1;
+  const wdr0=histPartial?mx(rWdr0,prevEv.wdr0):rWdr0, wdr1=histPartial?mx(rWdr1,prevEv.wdr1):rWdr1;
+  const col0=histPartial?mx(rCol0,prevEv.col0):rCol0, col1=histPartial?mx(rCol1,prevEv.col1):rCol1;
+  if(histPartial){
+    logErr(ck+' partial log read #'+id, new Error('inc/dec/col '+obsEv.nInc+'/'+obsEv.nDec+'/'+obsEv.nCol
+      +' < seen '+prevEv.nInc+'/'+prevEv.nDec+'/'+prevEv.nCol+' — held high-water totals, windows suppressed'));
+    if(prevEv.mintTs && (!mintTs || prevEv.mintTs<mintTs)) mintTs=prevEv.mintTs;
+  } else blockCache.evh[evKey]=obsEv;
   /* Everything ever collected = principal released by DecreaseLiquidity + fees, so netting
      the cumulative totals is the right identity. Per-transaction matching is NOT — a decrease
      credits tokensOwed and the collect frequently lands in a later transaction, which would
@@ -343,7 +364,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   // fees accrued BEFORE the current month started (for the monthly fee ledger)
   let feesMonthStartUsd=null;
   try{
-    if(usd0!=null&&usd1!=null&&mintTs!=null){
+    if(usd0!=null&&usd1!=null&&mintTs!=null&&!histPartial){
       const nowD=new Date();
       const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
       if(mintTs>=msTs) feesMonthStartUsd=0;
@@ -362,6 +383,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const aprW={t:Date.now()};
   for(const [key,days] of [['d1',1],['d7',7],['d30',30],['d365',365]]){
     aprW[key]=null;
+    if(histPartial) continue;              // a short read understates the window → publish nothing
     if(ageDays!=null&&ageDays<days) continue;
     try{
       const blk=blockNum-Math.round(days*bpd);
@@ -381,7 +403,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
   return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1,
     m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
-    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, ilUsd, lpVsHodlUsd, hodlNowUsd, costUsd, roiPct, roiMode, feeAprPct, aprW, feeDbg,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, ilUsd, lpVsHodlUsd, hodlNowUsd, costUsd, roiPct, roiMode, feeAprPct, aprW, feeDbg, histPartial,
     mintTs, ageDays, inRange, rangePos, dLow, dUp,
     nearestEdge: dLow<dUp?'lower':'upper',
     edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
@@ -828,7 +850,7 @@ async function solWalletBalances(wallet){
 
 /* ---------- main ---------- */
 const main=async()=>{
-  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{}}; }catch(e){}
+  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{}}; }catch(e){}
   const blockNums={};
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;

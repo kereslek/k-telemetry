@@ -2830,6 +2830,12 @@ function renderActions(){
         +(payback<1?'under a day':'≈'+payback.toFixed(1)+' days')+'. Collecting without redeploying gains you nothing.',
       when:payback<1?'<1d payback':'≈'+payback.toFixed(1)+'d payback'});
   }
+  const partial=ps.filter(p=>p.histPartial);
+  if(partial.length) items.push({r:5,cls:'warn',tag:'DATA INCOMPLETE',
+    head:partial.length+' position'+(partial.length>1?'s':'')+' returned an incomplete history read',
+    sub:'Cost basis and lifetime fees are held at their last known-good values. APR windows are '
+      +'suppressed rather than reported low, so do not read a missing APR as a bad one. Refills on the next clean scan.',
+    when:'auto'});
   if(state.dataAt && Date.now()-state.dataAt > 3*3600000)
     items.push({r:5,cls:'warn',tag:'STALE DATA',head:'Server data is <b>'+((Date.now()-state.dataAt)/3600000).toFixed(1)+'h</b> old',
       sub:'The refresh job has not published since. Double-tap SCAN to force a check.',when:'check'});
