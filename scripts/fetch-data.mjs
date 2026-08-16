@@ -762,7 +762,7 @@ async function fetchSolana(SOL_WALLETS){
     }catch(e){}
     const rinfo=ray[pp.poolId]||{};
     out.push({ id:'sol:'+pp.nftMint, chain:'sol', relay:true, wallet:c.wallet, nftMint:pp.nftMint, poolId:pp.poolId, pda:pd,
-      m0:{symbol:symbols[pool.mint0]}, m1:{symbol:symbols[pool.mint1]}, d0, d1, tick, price, priceLower, priceUpper,
+      m0:{symbol:symbols[pool.mint0]}, m1:{symbol:symbols[pool.mint1]}, mint0:pool.mint0, mint1:pool.mint1, d0, d1, tick, price, priceLower, priceUpper,
       amt0, amt1, f0, f1, usd0, usd1,
       valueUsd:(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null,
       feesUsd:(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null,
@@ -846,6 +846,56 @@ async function solWalletBalances(wallet){
     }
   }catch(e){ logErr('solTokens '+wallet.slice(0,6),e); }
   return rows;
+}
+
+/* ---------- Solana fee collections, read from transaction history ----------
+   The snapshot method compares pending fees between runs and books the drop. A harvest that
+   lands between two runs — with fees re-accruing before the next one — leaves no drop to see,
+   so it books nothing: on 08-16 roughly $173 was collected and $14 recorded. Fees here accrue
+   fast enough ($66 in two hours on one pool) that this is the normal case, not an edge case.
+
+   So read the position's own transaction history instead. For every signature since the last
+   checkpoint, take the owner's positive balance change in the pool's two mints — tokens moving
+   out of the pool to the owner is what a collect is. This sees the harvest itself rather than
+   its after-image, whatever the scan timing.
+
+   Limits, stated rather than hidden: a single transaction that harvests AND redeposits nets
+   out and is undercounted; amounts are valued at current prices, as on the EVM side; and the
+   first run only records a checkpoint, booking nothing, so it cannot double-count against what
+   the snapshot method already wrote. */
+async function solCollectedSince(pos, sinceSig){
+  const out={amt:{}, newest:null, scanned:0, ok:false, err:null};
+  const addr=pos.pda||pos.nftMint, owner=pos.wallet;
+  if(!addr||!owner) { out.err='no position address'; return out; }
+  try{
+    const q={limit:40}; if(sinceSig) q.until=sinceSig;
+    const sigs=await sol('getSignaturesForAddress',[addr,q]);
+    if(!Array.isArray(sigs)){ out.err='bad signature response'; return out; }
+    out.ok=true;
+    if(!sigs.length) return out;                 // nothing new since the checkpoint
+    out.newest=sigs[0].signature;
+    if(!sinceSig) return out;                    // first sight: checkpoint only, book nothing
+    const mints=[pos.mint0,pos.mint1].filter(Boolean);
+    for(const s of sigs.slice(0,15)){            // cap the work per position per run
+      if(s.err) continue;
+      let tx=null;
+      try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); }
+      catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
+      if(!tx||!tx.meta) continue;
+      out.scanned++;
+      const pre=tx.meta.preTokenBalances||[], post=tx.meta.postTokenBalances||[];
+      const amtOf=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i); return e?Number(e.uiTokenAmount.uiAmount||0):0; };
+      const rows=[...pre,...post].filter(x=>x.owner===owner && (!mints.length||mints.includes(x.mint)));
+      const seen=new Set();
+      for(const r of rows){
+        if(seen.has(r.accountIndex)) continue; seen.add(r.accountIndex);
+        const d=amtOf(post,r.accountIndex)-amtOf(pre,r.accountIndex);
+        if(d>0) out.amt[r.mint]=(out.amt[r.mint]||0)+d;   // received from the pool
+      }
+      await sleep(90);
+    }
+  }catch(e){ out.err=String((e&&e.message)||e).slice(0,80); }
+  return out;
 }
 
 /* ---------- main ---------- */
@@ -1001,12 +1051,34 @@ const main=async()=>{
         // position's full age understates it by the ratio of the two (a 289-day position
         // seen for 12 days reads ~23x too low).
         if(!L.since) L.since=Date.now();
-        const pv=prevSol.get(p.id);
-        if(pv && pv.feesUsd!=null && p.feesUsd!=null){
-          const drop=pv.feesUsd-p.feesUsd;
-          const valStable=Math.abs((pv.valueUsd||0)-(p.valueUsd||0)) < Math.max(50,(p.valueUsd||1)*0.5);
-          if(drop>0.5 && valStable) L.collectedUsd+=drop;   // pending fees fell without the position changing → harvested
+        /* Transaction history is authoritative when it can be read; the snapshot diff below is
+           only the fallback. Never run both for the same position — that double-counts. */
+        let txOk=false;
+        try{
+          const r=await solCollectedSince(p, L.sig||null);
+          if(r.ok){
+            txOk=true;
+            const first=!L.sig;
+            if(r.newest) L.sig=r.newest;
+            let add=0;
+            for(const m in r.amt){
+              const px = m===p.mint0 ? p.usd0 : (m===p.mint1 ? p.usd1 : null);
+              if(px!=null) add += r.amt[m]*px;
+            }
+            if(!first && add>0){ L.collectedUsd+=add; L.lastBooked=Math.round(add*100)/100; }
+            L.txScanned=r.scanned;
+          }
+          if(r.err) L.txErr=r.err; else delete L.txErr;
+        }catch(e){ /* fall through to the snapshot method */ }
+        if(!txOk){
+          const pv=prevSol.get(p.id);
+          if(pv && pv.feesUsd!=null && p.feesUsd!=null){
+            const drop=pv.feesUsd-p.feesUsd;
+            const valStable=Math.abs((pv.valueUsd||0)-(p.valueUsd||0)) < Math.max(50,(p.valueUsd||1)*0.5);
+            if(drop>0.5 && valStable) L.collectedUsd+=drop;   // pending fees fell without the position changing → harvested
+          }
         }
+        p.feeSource = txOk ? 'tx' : 'snapshot';
         p.feesCollectedUsd=L.collectedUsd;
         p.feesEverUsd=L.collectedUsd+(p.feesUsd||0);
         // Annualise over the OBSERVED window, not the position's age, and flag that the
