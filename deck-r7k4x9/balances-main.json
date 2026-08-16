@@ -1,5 +1,5 @@
 {
- "t": 1786838184502,
+ "t": 1786838837324,
  "rows": [
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -9,7 +9,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 10908.15
+   "usd": 10905.37
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -18,7 +18,7 @@
    "amount": 320000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 4578.9
+   "usd": 4555.53
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -27,7 +27,7 @@
    "amount": 304000.00000000006,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 4349.96
+   "usd": 4327.75
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -36,7 +36,7 @@
    "amount": 85000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 1216.27
+   "usd": 1210.06
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -45,7 +45,7 @@
    "amount": 65000,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 930.09
+   "usd": 925.34
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -73,7 +73,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 301.03
+   "usd": 301
   },
   {
    "addr": "native",
@@ -123,7 +123,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 76.01
+   "usd": 76
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -132,7 +132,7 @@
    "amount": 4000,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 57.24
+   "usd": 56.94
   },
   {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -623,22 +623,56 @@
    "usd": null
   }
  ],
- "totalUsd": 23841.06,
+ "totalUsd": 23781.4,
  "unpriced": 29,
  "mintInfo": {
-  "5yaJTKau21oWZcVnE4LxZDwLA7Vdx1FK6CAt8Amgjrc": {
-   "supply": "998685899.241354",
+  "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
+   "supply": "4315198.494683078",
+   "decimals": 9,
+   "mintAuthority": "EMjuABxELpYWYEwjkKmQKBNCwdaFAy4QYAs6W9bDQDNw",
+   "freezeAuthority": null,
+   "name": "Jupiter Staked SOL",
+   "symbol": "JupSOL",
+   "verified": true,
+   "tags": [
+    "verified",
+    "yield",
+    "community",
+    "lst",
+    "original-lst",
+    "strict"
+   ],
+   "holders": 32864
+  },
+  "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg": {
+   "supply": "3581764.892056897",
+   "decimals": 9,
+   "mintAuthority": "BCtWmFRmrRB7WqjdX3FXK34TybwKu89Uzqne1ZbdYogb",
+   "freezeAuthority": null,
+   "name": "Clearpool",
+   "symbol": "CPOOL",
+   "verified": null,
+   "tags": [
+    "unknown"
+   ],
+   "holders": 1232
+  },
+  "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
+   "supply": "76722844796.45163",
    "decimals": 6,
    "mintAuthority": null,
    "freezeAuthority": null,
-   "name": "Inside-her Trading",
-   "symbol": "CREAMPIE",
-   "verified": null,
+   "name": "Pudgy Penguins",
+   "symbol": "PENGU",
+   "verified": true,
    "tags": [
-    "launchpad",
-    "unknown"
+    "meme",
+    "birdeye-trending",
+    "community",
+    "moonshot-verified",
+    "verified"
    ],
-   "holders": 1089
+   "holders": 539231
   },
   "RZRyr758BfvKcQTVp1XQoCe9BH2t724XQkLJkiikQ5f": {
    "supply": "770802425.611799237",
@@ -669,57 +703,11 @@
    ],
    "holders": 125
   },
-  "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4": {
-   "supply": "212843117.092663",
-   "decimals": 6,
-   "mintAuthority": "AVzP2GeRmqGphJsMxWoqjpUifPpCret7LqWhD8NWQK49",
-   "freezeAuthority": "AVzP2GeRmqGphJsMxWoqjpUifPpCret7LqWhD8NWQK49",
-   "name": "Jupiter Perps",
-   "symbol": "JLP",
-   "verified": true,
-   "tags": [
-    "community",
-    "strict",
-    "verified",
-    "defi"
-   ],
-   "holders": 89890
-  },
   "2wU245PELvg34UZTPZzMWMLh9z6yYmS5NWtZTecVVTV1": {
    "supply": "89256",
    "decimals": 0,
    "mintAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
    "freezeAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL"
-  },
-  "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
-   "supply": "76722844796.45163",
-   "decimals": 6,
-   "mintAuthority": null,
-   "freezeAuthority": null,
-   "name": "Pudgy Penguins",
-   "symbol": "PENGU",
-   "verified": true,
-   "tags": [
-    "moonshot-verified",
-    "verified",
-    "meme",
-    "birdeye-trending",
-    "community"
-   ],
-   "holders": 539229
-  },
-  "3yD9LmPa14aWUDwZusws5MioY9whXVJjUyg7EwxZihUU": {
-   "supply": "11236582004.48",
-   "decimals": 2,
-   "mintAuthority": "BCD75RNBHrJJpW4dXVagL5mPjzRLnVZq4YirJdjEYMV7",
-   "freezeAuthority": null,
-   "name": "Schwab Token (Wormhole)",
-   "symbol": "SCHWAB",
-   "verified": null,
-   "tags": [
-    "unknown"
-   ],
-   "holders": 26
   },
   "445e6tWwcA8WTbMqoVxMLkbxdgq9re8x4Y3g3zhkhbBc": {
    "supply": "3511517.3485",
@@ -778,6 +766,12 @@
    "decimals": 0,
    "mintAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
    "freezeAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD"
+  },
+  "7HSpjyQR6mxk7WxycsD7KZCZHtxVuE4upSMyWErR1Eyj": {
+   "supply": "13816",
+   "decimals": 0,
+   "mintAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
+   "freezeAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9"
   }
  }
 }
