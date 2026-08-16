@@ -2937,6 +2937,27 @@ function renderActions(){
         +(payback<1?'under a day':'≈'+payback.toFixed(1)+' days')+'. Collecting without redeploying gains you nothing.',
       when:payback<1?'<1d payback':'≈'+payback.toFixed(1)+'d payback'});
   }
+  /* A position is priced from the venue it trades on. When the same token also has an
+     independent reference price, a wide gap is not a curiosity — it is the mark being set by
+     a thin local market, and on a pool where you are the only LP it is your own quote. Say so
+     rather than reporting the higher number as fact. */
+  const refPx={}; for(const t of (state.tickers||[])) if(t.sym&&t.usd>0) refPx[String(t.sym).toUpperCase()]=t.usd;
+  const seenDiv=new Set();
+  for(const p of ps){
+    for(const [sym,px] of [[p.m0&&p.m0.symbol,p.usd0],[p.m1&&p.m1.symbol,p.usd1]]){
+      if(!sym||!(px>0)) continue;
+      const r=refPx[String(sym).toUpperCase()]; if(!r||seenDiv.has(sym)) continue;
+      const div=(px/r-1)*100;
+      if(Math.abs(div)<15) continue;
+      seenDiv.add(sym);
+      const held=ps.reduce((s,q)=>s+((q.m0&&q.m0.symbol===sym?q.amt0:0)||(q.m1&&q.m1.symbol===sym?q.amt1:0)||0),0);
+      items.push({r:2,cls:'warn',tag:'MARK DIVERGES',
+        head:esc(sym)+' is marked at <b>'+fmtUsd(px,px<1?6:2)+'</b> here vs <b>'+fmtUsd(r,r<1?6:2)+'</b> reference — <b>'+(div>0?'+':'')+div.toFixed(0)+'%</b>',
+        sub:'Positions are valued at the venue price. '+(held>0?'You hold ≈'+held.toLocaleString(undefined,{maximumFractionDigits:0})+' '+esc(sym)+', so this gap is worth ≈'+fmtUsd(Math.abs(held*(px-r)),0)+' of book value. ':'')
+          +'If the two are the same asset, the gap is what an arbitrageur collects and you are on the expensive side.',
+        when:(div>0?'+':'')+div.toFixed(0)+'%'});
+    }
+  }
   const partial=ps.filter(p=>p.histPartial);
   if(partial.length) items.push({r:5,cls:'warn',tag:'DATA INCOMPLETE',
     head:partial.length+' position'+(partial.length>1?'s':'')+' returned an incomplete history read',
