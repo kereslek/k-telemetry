@@ -1,5 +1,5 @@
 {
- "t": 1786863987962,
+ "t": 1786864683486,
  "rows": [
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -9,7 +9,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 10912.93
+   "usd": 10920.74
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -48,6 +48,16 @@
    "usd": 924.79
   },
   {
+   "addr": "native",
+   "symbol": "SOL",
+   "decimals": 9,
+   "amount": 4.802491732,
+   "native": true,
+   "chain": "sol",
+   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
+   "usd": 361.52
+  },
+  {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
    "symbol": "CPOOL",
    "decimals": 18,
@@ -67,16 +77,6 @@
   },
   {
    "addr": "native",
-   "symbol": "SOL",
-   "decimals": 9,
-   "amount": 4.000001066,
-   "native": true,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 301
-  },
-  {
-   "addr": "native",
    "symbol": "ETH",
    "decimals": 18,
    "amount": 0.11337322443159553,
@@ -86,26 +86,6 @@
    "usd": 212.96
   },
   {
-   "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
-   "symbol": "CPOOL",
-   "decimals": 9,
-   "amount": 5135.27891095,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Clearpool",
-   "usd": 132.34
-  },
-  {
-   "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
-   "symbol": "CPOOL",
-   "decimals": 9,
-   "amount": 4972.65362769,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Clearpool",
-   "usd": 128.15
-  },
-  {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
    "symbol": "PENGU",
    "decimals": 6,
@@ -113,17 +93,17 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 106.22
+   "usd": 106.53
   },
   {
-   "addr": "native",
-   "symbol": "SOL",
+   "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
+   "symbol": "CPOOL",
    "decimals": 9,
-   "amount": 1.01,
-   "native": true,
+   "amount": 3000,
    "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 76
+   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
+   "name": "Clearpool",
+   "usd": 77.31
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -142,7 +122,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 54.69
+   "usd": 54.85
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -152,6 +132,16 @@
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
    "usd": 47.72
+  },
+  {
+   "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
+   "symbol": "CPOOL",
+   "decimals": 9,
+   "amount": 1152.145119027,
+   "chain": "sol",
+   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
+   "name": "Clearpool",
+   "usd": 29.69
   },
   {
    "addr": "native",
@@ -172,6 +162,16 @@
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Schwab Token (Wormhole)",
    "usd": 16.94
+  },
+  {
+   "addr": "native",
+   "symbol": "SOL",
+   "decimals": 9,
+   "amount": 0.110984578,
+   "native": true,
+   "chain": "sol",
+   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
+   "usd": 8.35
   },
   {
    "addr": "native",
@@ -303,7 +303,7 @@
    "addr": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
    "symbol": "USDC",
    "decimals": 6,
-   "amount": 0.002,
+   "amount": 0.0031,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "usd": 0
@@ -341,7 +341,7 @@
    "addr": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
    "symbol": "USDC",
    "decimals": 6,
-   "amount": 0.001,
+   "amount": 0.0021,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "usd": 0
@@ -623,7 +623,7 @@
    "usd": null
   }
  ],
- "totalUsd": 23788.31,
+ "totalUsd": 23635.97,
  "unpriced": 29,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
@@ -635,14 +635,31 @@
    "symbol": "JupSOL",
    "verified": true,
    "tags": [
-    "original-lst",
-    "strict",
     "verified",
     "yield",
     "community",
-    "lst"
+    "lst",
+    "original-lst",
+    "strict"
    ],
-   "holders": 32871
+   "holders": 32872
+  },
+  "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
+   "supply": "76722844796.056023",
+   "decimals": 6,
+   "mintAuthority": null,
+   "freezeAuthority": null,
+   "name": "Pudgy Penguins",
+   "symbol": "PENGU",
+   "verified": true,
+   "tags": [
+    "verified",
+    "meme",
+    "birdeye-trending",
+    "community",
+    "moonshot-verified"
+   ],
+   "holders": 539242
   },
   "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg": {
    "supply": "3581764.892056897",
@@ -656,23 +673,6 @@
     "unknown"
    ],
    "holders": 1231
-  },
-  "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
-   "supply": "76722844796.056023",
-   "decimals": 6,
-   "mintAuthority": null,
-   "freezeAuthority": null,
-   "name": "Pudgy Penguins",
-   "symbol": "PENGU",
-   "verified": true,
-   "tags": [
-    "birdeye-trending",
-    "community",
-    "moonshot-verified",
-    "verified",
-    "meme"
-   ],
-   "holders": 539243
   },
   "RZRyr758BfvKcQTVp1XQoCe9BH2t724XQkLJkiikQ5f": {
    "supply": "770802425.611799237",
