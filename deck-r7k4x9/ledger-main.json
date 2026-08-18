@@ -3,19 +3,22 @@
   "collectedUsd": 136.23865121629854,
   "since": 1786804445105,
   "sig": "5CXaMLA2HoHqTin4yzmSjV2QMcZiSo8ZXv6Q1HNfa3GW8xe8rxb44vdjfrZnkBLygx6a4gU58ZjiVboMEKnTEJpu",
-  "txScanned": 0
+  "txScanned": 0,
+  "txErr": "HTTP 400"
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
   "collectedUsd": 124.81778007064227,
   "since": 1786804445105,
   "sig": "38rNrJcG7kPM85atxw8a2Cj7rAJER6CdXdBryjGCZCRwFvub2nYpDjMhzz7uZagBVHf5sr3QRSeaHjrC3NAWgKjs",
-  "txScanned": 0
+  "txScanned": 0,
+  "txErr": "HTTP 400"
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
   "collectedUsd": 107.51991950222045,
   "since": 1786804445105,
   "sig": "2uqvimc7gEuzeH5sZGK3jmNJB3UGudJmAcBoWxDPNo9rga4Yj2puPNKhYBozvDmgMhMc9KHnoTcXFHRpAWEMm6wS",
-  "txScanned": 0
+  "txScanned": 0,
+  "txErr": "HTTP 400"
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
   "collectedUsd": 0
@@ -30,6 +33,7 @@
   "collectedUsd": 0,
   "since": 1786864626363,
   "sig": "2udX7wSJvaC2ob9LBXy3s5ytf4cZtTRLygJFXst3fdSJHyaTFAJHM8j4V42RwGieuBmS31a4e373miqJzDTqo5Lv",
-  "txScanned": 0
+  "txScanned": 0,
+  "txErr": "HTTP 400"
  }
 }
