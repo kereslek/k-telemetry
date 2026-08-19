@@ -1,68 +1,68 @@
 {
  "month": "2026-08",
- "closed": 207.89,
+ "closed": 391.75,
  "pos": {
-  "1345047": {
-   "m0": 0,
-   "last": 48.94,
-   "ck": "ethereum",
-   "acc": 48.94,
-   "hwm": 48.94
-  },
-  "1346353": {
-   "m0": 0,
-   "last": 99.5,
-   "ck": "ethereum",
-   "acc": 99.5,
-   "hwm": 99.5
-  },
   "1346358": {
    "m0": 0.8,
-   "last": 27.83,
+   "last": 27.77,
    "ck": "ethereum",
    "acc": 27.03,
    "hwm": 27.83
   },
-  "1346361": {
-   "m0": 0.17,
-   "last": 35.59,
-   "ck": "ethereum",
-   "acc": 35.42,
-   "hwm": 35.59
-  },
   "1347571": {
    "m0": 0,
-   "last": 20.07,
+   "last": 21.13,
    "ck": "ethereum",
-   "acc": 20.07,
-   "hwm": 20.07
+   "acc": 21.13,
+   "hwm": 21.13
+  },
+  "1351948": {
+   "m0": 0,
+   "last": 0,
+   "hwm": 0,
+   "acc": 0,
+   "ck": "ethereum"
+  },
+  "1351954": {
+   "m0": 0,
+   "last": 1.43,
+   "hwm": 1.43,
+   "acc": 1.43,
+   "ck": "ethereum"
+  },
+  "1351974": {
+   "m0": 0,
+   "last": 1.38,
+   "hwm": 1.38,
+   "acc": 1.38,
+   "ck": "ethereum"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 65.85,
-   "last": 138.24,
-   "acc": 72.41,
-   "hwm": 138.26
+   "last": 140.53,
+   "acc": 74.68,
+   "hwm": 140.53
   },
   "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
    "m0": 63.02,
-   "last": 128.07,
-   "acc": 65.08,
-   "hwm": 128.1
+   "last": 129.89,
+   "acc": 66.87,
+   "hwm": 129.89
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 54.29,
-   "last": 109.62,
-   "acc": 55.35,
-   "hwm": 109.64
+   "last": 110.8,
+   "acc": 56.51,
+   "hwm": 110.8
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 0,
-   "last": 0.79,
-   "hwm": 0.8,
-   "acc": 0.8,
+   "last": 1.7,
+   "hwm": 1.7,
+   "acc": 1.7,
    "ck": "sol"
   }
  },
  "months": [],
- "lastIl": -129.02
+ "lastIl": -44.99
 }
