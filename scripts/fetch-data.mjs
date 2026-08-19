@@ -148,7 +148,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* persistent scan cache (committed with the other JSON ledgers):
    mint  — position id → mint block, found once by binary search, then never again
    tscan — wallet NFT-transfer scan checkpoint + candidate ids */
-let blockCache={mint:{},tscan:{},evh:{},mintInfo:{}};
+let blockCache={mint:{},tscan:{},evh:{},mintInfo:{},tokMeta:{}};
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
    The asymmetry is deliberate: over-calling infra costs one logged error and a recompute
@@ -900,7 +900,7 @@ async function solCollectedSince(pos, sinceSig){
 
 /* ---------- main ---------- */
 const main=async()=>{
-  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{}}; }catch(e){}
+  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{},tokMeta:bc.tokMeta||{}}; }catch(e){}
   const blockNums={};
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;
@@ -1311,8 +1311,15 @@ const main=async()=>{
       // Resolve names/symbols for Solana mints. A wallet full of "AeXrLf…" is unreadable,
       // and for a token whose identity is in question the registered name is the fastest
       // way to tell a bridged asset from an unrelated one sharing a ticker.
-      const needMeta=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&!r.symbol).map(r=>r.addr))].slice(0,45);
-      const solMeta={}; let metaFails=0, metaErr=null;
+      /* Names do not change, and a mint no registry lists will not be listed in fifteen
+         minutes either. Cache both outcomes — hits indefinitely, misses for a week — so the
+         same ~30 lookups stop running every quarter hour. */
+      const tokMeta=Object.assign({}, blockCache.tokMeta||{});
+      const META_MISS_TTL=7*86400000;
+      const metaFresh=m=>{ const c=tokMeta[m]; return !!c && (!c.miss || Date.now()-c.at<META_MISS_TTL); };
+      const needMeta=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&!r.symbol).map(r=>r.addr))]
+        .filter(m=>!metaFresh(m)).slice(0,15);
+      let metaHard=0, metaErr=null;
       // Registries disagree on response shape (bare array / {tokens:[]} / single object), so
       // accept all three and fall back to a second endpoint before giving up.
       const pickHit=(js,m)=>{
@@ -1322,19 +1329,28 @@ const main=async()=>{
         return arr.find(t=>t&&(t.id===m||t.address===m)) || (arr.length===1?arr[0]:null);
       };
       for(const m of needMeta){
-        let hit=null;
+        let hit=null, answered=false;
         for(const url of ['https://lite-api.jup.ag/tokens/v2/search?query='+m,'https://tokens.jup.ag/token/'+m]){
-          try{ hit=pickHit(await getJson(url,12000),m); if(hit) break; }
+          try{ hit=pickHit(await getJson(url,12000),m); answered=true; if(hit) break; }
           catch(e){ if(!metaErr) metaErr=String((e&&e.message)||e).slice(0,80); }
         }
-        if(hit) solMeta[m]={symbol:hit.symbol||null, name:hit.name||null}; else metaFails++;
+        if(hit) tokMeta[m]={symbol:hit.symbol||null, name:hit.name||null, at:Date.now()};
+        else if(answered) tokMeta[m]={symbol:null, name:null, miss:true, at:Date.now()};
+        else metaHard++;
         await sleep(150);
       }
-      // Never swallow this: an unresolved mint is exactly the case where the name matters.
-      if(metaFails) logErr('solTokenMeta', new Error(metaFails+'/'+needMeta.length+' unresolved'+(metaErr?' · '+metaErr:'')));
+      blockCache.tokMeta=tokMeta;
+      /* A registry that answers "no such token" has told us something true: the mint is
+         unlisted. That is a fact about the token, not a fault in the read, and raising it as an
+         error every run put a permanent banner on the dashboard — which is how an error strip
+         gets ignored. Only an endpoint that would not answer at all is worth reporting. */
+      if(metaHard) logErr('solTokenMeta', new Error(metaHard+'/'+needMeta.length+' lookups failed'+(metaErr?' · '+metaErr:'')));
       for(const r of rows){
-        if(r.chain==='sol'&&!r.symbol&&solMeta[r.addr]){ r.symbol=solMeta[r.addr].symbol; r.name=solMeta[r.addr].name; }
-        else if(r.chain==='sol'&&solMeta[r.addr]?.name) r.name=solMeta[r.addr].name;
+        if(r.chain!=='sol') continue;
+        const c=tokMeta[r.addr];
+        if(!c||c.miss) continue;
+        if(!r.symbol&&c.symbol) r.symbol=c.symbol;
+        if(c.name) r.name=c.name;
       }
       for(const r of rows){
         r.usd = r.native
