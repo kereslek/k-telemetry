@@ -2893,9 +2893,13 @@ function renderActions(){
   }).sort((a,b)=>a.move-b.move);
   let watchShown=0;
   for(const x of ranked){
-    const p=x.p, ref=esc(pairName(p))+' '+linkRef(p);
+    const p=x.p;
+    // how long this LP has been open — a 9-month position and a 2-day one carry the same
+    // edge distance very differently, so the age belongs next to it rather than a panel away
+    const ageTag = p.ageDays!=null ? ' <span class="unit">· '+fmtAge(p.ageDays)+' old</span>' : '';
+    const ref=esc(pairName(p))+' '+linkRef(p)+ageTag;
     if(x.sev==='critical'){
-      items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' is earning <b>nothing</b>',
+      items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' — earning <b>nothing</b>',
         sub:x.sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
                   :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
     } else if(x.bd!=null&&x.bd<1){
