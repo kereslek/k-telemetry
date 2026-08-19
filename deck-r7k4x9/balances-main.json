@@ -1,5 +1,5 @@
 {
- "t": 1787164144976,
+ "t": 1787164504865,
  "rows": [
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -9,7 +9,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 12259.72
+   "usd": 12283.7
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -73,7 +73,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 112
+   "usd": 112.75
   },
   {
    "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -93,7 +93,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 83.16
+   "usd": 83.49
   },
   {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -103,7 +103,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 57.67
+   "usd": 58.05
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -172,7 +172,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 8.15
+   "usd": 8.19
   },
   {
    "addr": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
@@ -623,7 +623,7 @@
    "usd": null
   }
  ],
- "totalUsd": 25401,
+ "totalUsd": 25426.48,
  "unpriced": 29,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
@@ -635,18 +635,18 @@
    "symbol": "JupSOL",
    "verified": true,
    "tags": [
-    "community",
-    "lst",
     "original-lst",
     "strict",
     "verified",
-    "yield"
+    "yield",
+    "community",
+    "lst"
    ],
-   "holders": 32871,
-   "at": 1787164141268
+   "holders": 32873,
+   "at": 1787164499581
   },
   "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
-   "supply": "76722844615.332106",
+   "supply": "76722844613.74556",
    "decimals": 6,
    "mintAuthority": null,
    "freezeAuthority": null,
@@ -660,8 +660,8 @@
     "verified",
     "meme"
    ],
-   "holders": 540389,
-   "at": 1787164141569
+   "holders": 540386,
+   "at": 1787164500050
   },
   "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg": {
    "supply": "3581764.892056897",
@@ -675,7 +675,7 @@
     "unknown"
    ],
    "holders": 1231,
-   "at": 1787164141850
+   "at": 1787164500452
   },
   "RZRyr758BfvKcQTVp1XQoCe9BH2t724XQkLJkiikQ5f": {
    "supply": "770802425.611799237",
@@ -689,7 +689,7 @@
     "unknown"
    ],
    "holders": 905,
-   "at": 1787164142141
+   "at": 1787164500857
   },
   "apySoLhdVa6QbvNyEjXCbET3FdUm9cCdEvYyjCU7icM": {
    "supply": "577.447487652",
@@ -706,14 +706,14 @@
     "yield"
    ],
    "holders": 125,
-   "at": 1787164142414
+   "at": 1787164501286
   },
   "2wU245PELvg34UZTPZzMWMLh9z6yYmS5NWtZTecVVTV1": {
    "supply": "89244",
    "decimals": 0,
    "mintAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
    "freezeAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
-   "at": 1787164142784
+   "at": 1787164501714
   },
   "445e6tWwcA8WTbMqoVxMLkbxdgq9re8x4Y3g3zhkhbBc": {
    "supply": "3511517.3485",
@@ -727,7 +727,7 @@
     "unknown"
    ],
    "holders": null,
-   "at": 1787164143072
+   "at": 1787164502128
   },
   "4mkNVHv8GvnTL9AhBMgmApTAwUHEMAVkFURmAmgURqBb": {
    "supply": "9707385.9978",
@@ -741,7 +741,7 @@
     "unknown"
    ],
    "holders": 5,
-   "at": 1787164143600
+   "at": 1787164502548
   },
   "5Dq4uDjh1YDanWt4fVDjsZxcsTGNJv4HeLUCE6DJAQ8n": {
    "supply": "9919019.74",
@@ -755,7 +755,7 @@
     "unknown"
    ],
    "holders": 11,
-   "at": 1787164143876
+   "at": 1787164502993
   },
   "5GXSUz7mCWHdACpFNs7iUCcSbk4gAGxXTUiCpaMzRda4": {
    "supply": "18446744040074554.615",
@@ -769,21 +769,21 @@
     "unknown"
    ],
    "holders": null,
-   "at": 1787164144151
+   "at": 1787164503578
   },
   "75skRPMmz2j9PE6cTokWm7kky8S8pPGbJPr14PnLPGWe": {
    "supply": "2855",
    "decimals": 0,
    "mintAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
    "freezeAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
-   "at": 1787164144502
+   "at": 1787164504141
   },
   "7HSpjyQR6mxk7WxycsD7KZCZHtxVuE4upSMyWErR1Eyj": {
    "supply": "13816",
    "decimals": 0,
    "mintAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
    "freezeAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
-   "at": 1787164144855
+   "at": 1787164504745
   }
  }
 }
