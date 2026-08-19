@@ -1,7 +1,7 @@
 {
  "month": "2026-08",
  "gasUsd": 54.62,
- "swapFeeUsd": 28.36,
+ "swapFeeUsd": 28.34,
  "txs": {
   "0x8a11bcc171790efe517ee388f80c8c55644ea3866ada52406a3369259db84089": 1,
   "0xe3e52524514cd0c034c22191e559b9542559b05cb998e90deb5d9426c65747bc": 1,
@@ -55,8 +55,8 @@
  },
  "months": [],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 25790952,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 25790952,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 25790952
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 25790982,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 25790982,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 25790982
  }
 }
