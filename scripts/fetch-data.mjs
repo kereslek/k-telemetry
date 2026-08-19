@@ -148,7 +148,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* persistent scan cache (committed with the other JSON ledgers):
    mint  — position id → mint block, found once by binary search, then never again
    tscan — wallet NFT-transfer scan checkpoint + candidate ids */
-let blockCache={mint:{},tscan:{},evh:{}};
+let blockCache={mint:{},tscan:{},evh:{},mintInfo:{}};
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
    The asymmetry is deliberate: over-calling infra costs one logged error and a recompute
@@ -876,7 +876,7 @@ async function solCollectedSince(pos, sinceSig){
     out.newest=sigs[0].signature;
     if(!sinceSig) return out;                    // first sight: checkpoint only, book nothing
     const mints=[pos.mint0,pos.mint1].filter(Boolean);
-    for(const s of sigs.slice(0,15)){            // cap the work per position per run
+    for(const s of sigs.slice(0,8)){             // cap the work per position per run
       if(s.err) continue;
       let tx=null;
       try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); }
@@ -892,7 +892,7 @@ async function solCollectedSince(pos, sinceSig){
         const d=amtOf(post,r.accountIndex)-amtOf(pre,r.accountIndex);
         if(d>0) out.amt[r.mint]=(out.amt[r.mint]||0)+d;   // received from the pool
       }
-      await sleep(90);
+      await sleep(60);
     }
   }catch(e){ out.err=String((e&&e.message)||e).slice(0,80); }
   return out;
@@ -900,7 +900,7 @@ async function solCollectedSince(pos, sinceSig){
 
 /* ---------- main ---------- */
 const main=async()=>{
-  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{}}; }catch(e){}
+  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{}}; }catch(e){}
   const blockNums={};
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;
@@ -1349,8 +1349,12 @@ const main=async()=>{
          distinguish a bridged asset from a lookalike: total supply (compare to the real
          token's), whether anyone can still mint more, whether it can be frozen, and how the
          registry tags it. */
-      const wantInfo=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&(r.usd==null||r.usd>=50)).map(r=>r.addr))].slice(0,12);
-      const mintInfo={};
+      /* Supply, authorities and registry tags change on the order of never, so refreshing
+         them every quarter hour was pure run time. Reuse yesterday's answer. */
+      const mintInfo=Object.assign({}, blockCache.mintInfo||{});
+      const DAY=86400000;
+      const wantInfo=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&(r.usd==null||r.usd>=50)).map(r=>r.addr))]
+        .filter(m=>!(mintInfo[m]&&mintInfo[m].at&&Date.now()-mintInfo[m].at<DAY)).slice(0,12);
       for(const m of wantInfo){
         const o={};
         try{ const r=await sol('getTokenSupply',[m]);
@@ -1362,9 +1366,11 @@ const main=async()=>{
              const hit=Array.isArray(js)?js.find(t=>t.id===m):(Array.isArray(js&&js.tokens)?js.tokens.find(t=>t.id===m):null);
              if(hit){ o.name=hit.name??null; o.symbol=hit.symbol??null;
                       o.verified=hit.isVerified??null; o.tags=hit.tags??null; o.holders=hit.holderCount??null; } }catch(e){}
+        o.at=Date.now();
         mintInfo[m]=o;
-        await sleep(150);
+        await sleep(120);
       }
+      blockCache.mintInfo=mintInfo;
       idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
              unpriced:rows.filter(r=>r.usd==null).length, mintInfo };
       fs.writeFileSync(OUT+'/balances-'+profile.slug+'.json', JSON.stringify(idle,null,1));

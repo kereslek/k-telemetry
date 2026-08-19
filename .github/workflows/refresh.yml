@@ -32,15 +32,24 @@ jobs:
           # must never fail the data commit.
           git add deck-r7k4x9/blockcache.json 2>/dev/null || true
           if git diff --cached --quiet; then exit 0; fi
-          # Commit BEFORE rebasing. git refuses to rebase with a staged index, so the old
-          # order (add -> pull --rebase -> commit -> push) could never integrate remote work:
-          # the pull always failed, `|| true` hid it, and the push was rejected whenever the
-          # branch moved during a run. Retry the rebase+push to survive a genuine race.
-          git commit -m "data refresh $(date -u +%FT%TZ)"
+          # Do NOT rebase. Every file here is regenerated from chain on each run, and
+          # hist-main.json is an append-only series: two runs each append a different point
+          # to the same line, so a rebase hits a textual conflict it can never resolve. The
+          # retry loop then replayed the identical conflict three times and failed the job,
+          # which is exactly what happened on run 32285427734.
+          # Instead: keep what this run produced, reset onto whatever the remote now has, put
+          # our files back, and commit on top. Our data is the newer read in every case. The
+          # only loss is a concurrent run's single history point, which the next run replaces.
+          OUT=$(mktemp -d); cp deck-r7k4x9/*.json "$OUT"/
           for attempt in 1 2 3; do
-            if git pull --rebase origin gh-pages && git push origin gh-pages; then exit 0; fi
-            echo "push attempt $attempt failed — retrying"
-            git rebase --abort 2>/dev/null || true
+            git fetch origin gh-pages
+            git reset --hard origin/gh-pages
+            cp "$OUT"/*.json deck-r7k4x9/
+            git add deck-r7k4x9/*.json
+            if git diff --cached --quiet; then echo "nothing new after reset"; exit 0; fi
+            git commit -m "data refresh $(date -u +%FT%TZ)"
+            if git push origin gh-pages; then exit 0; fi
+            echo "push attempt $attempt lost a race — retrying"
             sleep $((attempt * 5))
           done
           echo "could not push data refresh after 3 attempts"
