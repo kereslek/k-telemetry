@@ -40,7 +40,15 @@ jobs:
           # Instead: keep what this run produced, reset onto whatever the remote now has, put
           # our files back, and commit on top. Our data is the newer read in every case. The
           # only loss is a concurrent run's single history point, which the next run replaces.
-          OUT=$(mktemp -d); cp deck-r7k4x9/*.json "$OUT"/
+          # Save only what this run generated. config.json is hand-edited and must never be
+          # copied back over a newer remote version — a reset that restored a stale config
+          # would silently revert a wallet the owner had just added.
+          OUT=$(mktemp -d)
+          # An "if", not "[ x = y ] && continue": Actions runs this under bash -e, where a
+          # false test as the last command of an && list aborts the whole job.
+          for f in deck-r7k4x9/*.json; do
+            if [ "$(basename "$f")" != "config.json" ]; then cp "$f" "$OUT"/; fi
+          done
           for attempt in 1 2 3; do
             git fetch origin gh-pages
             git reset --hard origin/gh-pages
