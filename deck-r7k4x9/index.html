@@ -397,7 +397,17 @@
   .plink:hover{color:var(--accent);border-color:var(--accent)}
   .econ-strip{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border:1px dashed var(--line);font-size:11.5px;color:var(--text-secondary)}
   .econ-strip b{color:var(--text-primary)}
-  @media(max-width:900px){.arch-row{grid-template-columns:1fr 1fr;row-gap:4px}.arch-row.hdr{display:none}.arch-row .num{text-align:left}}
+  .arch-row .sub2{display:block;font-size:9.5px;letter-spacing:.03em;color:var(--text-muted);margin-top:2px;font-variant-numeric:tabular-nums}
+  .verdict.early,.verdict.level{color:var(--text-muted);border-color:var(--line)}
+  .arch-adv{font-size:11px;color:var(--text-muted);line-height:1.5}
+  .vgrid{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 12px;align-items:baseline;font-size:11.5px;margin:6px 0 2px}
+  .vgrid .num{font-variant-numeric:tabular-nums;text-align:right}
+  .vgrid .vh{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted)}
+  .vlead{color:var(--status-good)} .vlag{color:var(--status-warning)}
+  @media(max-width:900px){.arch-row{grid-template-columns:1fr 1fr;row-gap:4px}.arch-row.hdr{display:none}.arch-row .num{text-align:left}
+    .arch-row>[data-l]::before{content:attr(data-l);display:block;font-size:8px;letter-spacing:.14em;color:var(--text-muted)}
+    .arch-row>.arch-pos,.arch-row>.arch-adv{grid-column:1/-1}
+    .vgrid{grid-template-columns:1fr auto auto}.vgrid .vspan{display:none}}
 
   /* seismograph */
   .vol-chips{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0 4px}
@@ -3455,50 +3465,173 @@ function renderSpark(){
   host.append(svg);
 }
 
+/* ---- LP vs HODL: the verdict is worthless without the size of it ----
+   A bare badge was firing "HODL WOULD'VE WON" on #1351948 — an hour-old position whose net
+   was −$0.00000000025. Three of five verdicts were rounding dust. A call needs a window long
+   enough for fees and divergence to separate, a gap big enough to survive rounding, and a
+   number attached, so "won" can be weighed against the cost and risk of acting on it. */
+const HODL_MIN_DAYS=1, HODL_MIN_FRAC=0.001;
+function hodlCall(p){
+  const f=p.feesEverUsd||0, net=p.lpVsHodlUsd??((p.ilUsd||0)+f);
+  const base=(p.costUsd!=null&&p.costUsd>0)?p.costUsd:null, age=p.ageDays;
+  const ratable=base!=null&&age!=null&&age>=HODL_MIN_DAYS;
+  const rate=v=>ratable?v/base/age*365*100:null;
+  const netApr=rate(net), grossApr=rate(f), pct=base!=null?net/base*100:null;
+  if(age==null||age<HODL_MIN_DAYS)
+    return {state:'early',label:'TOO EARLY',net,pct:null,netApr:null,grossApr:null,
+      why:'open '+fmtAge(age)+' — fees and divergence need a day at minimum before either says anything'};
+  const floor=base!=null?Math.max(1,base*HODL_MIN_FRAC):1;
+  if(Math.abs(net)<floor)
+    return {state:'level',label:'LEVEL',net,pct,netApr,grossApr,
+      why:'within '+fmtUsd(floor)+' of simply holding — too close to call either way'};
+  if(net>=0)            return {state:'win',  label:'POOLING WINS',      net,pct,netApr,grossApr};
+  if(f>0&&net>-f*0.5)   return {state:'close',label:'CLOSE CALL',        net,pct,netApr,grossApr};
+  return                       {state:'lose', label:"HODL WOULD'VE WON", net,pct,netApr,grossApr};
+}
+/* The lever, not the label. "HODL would have won" is not advice — it names a past that cannot
+   be changed. What can be changed is the band, the tier, and where the next dollar goes. */
+function hodlLever(p,c){
+  if(!p.inRange) return 'Out of range — earning nothing, and the divergence that pushed it out stays locked in until price returns. Re-range around spot or unwind.';
+  if(c.state==='early') return 'Nothing to judge yet. Let it hold range for a day.';
+  const r=p.range, gn=(c.grossApr!=null&&c.netApr!=null);
+  if(r&&r.concVsBalanced<0.8&&r.stay7dPct>85)
+    return 'Band is wider than this volatility needs ('+r.stay7dPct.toFixed(0)+'% odds of holding 7d). Tightening to the balanced band concentrates the same dollars for <b>≈'+(1/Math.max(0.05,r.concVsBalanced)).toFixed(1)+'× the fee capture</b>.';
+  if(r&&r.stay7dPct<50)
+    return 'Band is tighter than the volatility supports (&lt;50% odds of holding 7d) — strong capture while in range, but idle spells and re-range gas take it back.';
+  if(c.state==='lose'||c.state==='close')
+    return 'Divergence is outrunning fees'+(gn?' — '+c.grossApr.toFixed(0)+'%/yr gross lands at <b>'+c.netApr.toFixed(0)+'%/yr after IL</b>':'')+'. Tighten to raise capture, or treat it as a directional hold you are being paid to keep.';
+  if(c.state==='win'&&gn)
+    return 'Fees are clearing divergence: '+c.grossApr.toFixed(0)+'%/yr gross, <b>'+c.netApr.toFixed(0)+'%/yr net of IL</b>. Band and capture are matched — leave it.';
+  return 'Band and capture are matched — nothing to change.';
+}
 /* ----- truth panel: LP vs HODL, IL, monthly ledger ----- */
 function renderTruth(){
   const host=$('#truthBody'); if(!host) return; host.innerHTML='';
   const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const mn=k=>MN[Number(k.slice(5,7))-1]+' ’'+k.slice(2,4);
-  const g=v=>'<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
+  const g=v=>Math.abs(v)<0.005
+    ? '<b style="color:var(--text-muted)">$0.00</b>'
+    : '<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
   const ps=ordered().filter(p=>p.ilUsd!=null);
   // ---- per-position: fees vs IL vs HODL ----
   if(ps.length){
+    const cell=(cls,html,label)=>{ const c=el('div',cls,html); if(label) c.setAttribute('data-l',label); return c; };
     const hdr=el('div','arch-row hdr');
-    ['POSITION','FEES EARNED','IMPERMANENT LOSS','NET vs HODL','VERDICT'].forEach(h=>hdr.append(el('div',null,h)));
+    ['POSITION','FEES EARNED','IMPERMANENT LOSS','NET vs HODL','VERDICT','WHAT TO DO'].forEach(h=>hdr.append(el('div',null,h)));
     host.append(hdr);
+    const VCLS={win:'keep',close:'loosen',lose:'',early:'early',level:'level'};
     let tF=0,tIl=0,tNet=0;
     ps.forEach(p=>{
       const f=p.feesEverUsd||0, il=p.ilUsd||0, net=p.lpVsHodlUsd??(il+f);
       tF+=f; tIl+=il; tNet+=net;
+      const c=hodlCall(p);
       const row=el('div','arch-row');
-      row.append(el('div',null,'<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(pairName(p))+' '+linkRef(p)+(p.inRange?'':' <span style="color:var(--status-critical);font-size:9px">OUT</span>')));
-      row.append(el('div','num',g(f)));
-      row.append(el('div','num',g(il)));
-      row.append(el('div','num',g(net)));
-      let verdict;
-      if(net>=0) verdict='<span class="verdict keep">POOLING WINS</span>';
-      else if(f>0 && net>-f*0.5) verdict='<span class="verdict loosen">CLOSE CALL</span>';
-      else verdict='<span class="verdict" style="border-color:var(--status-critical);color:var(--status-critical)">HODL WOULD\'VE WON</span>';
-      row.append(el('div',null,verdict));
+      row.append(cell('arch-pos','<span class="cdot" style="display:inline-block;width:8px;height:8px;background:'+seriesHex(cIdx(p))+';margin-right:8px"></span>'+esc(pairName(p))+' '+linkRef(p)+(p.inRange?'':' <span style="color:var(--status-critical);font-size:9px">OUT</span>')
+        +'<span class="sub2">'+esc(p.feeLabel||'')+' · '+fmtAge(p.ageDays)+' old · '+fmtUsd(p.costUsd,0)+' in</span>'));
+      row.append(cell('num',g(f)+(c.grossApr!=null?'<span class="sub2">'+c.grossApr.toFixed(0)+'%/yr gross</span>':''),'FEES EARNED'));
+      row.append(cell('num',g(il),'IMPERMANENT LOSS'));
+      // The headline number, and the two normalisations that make it comparable across
+      // positions of different size and age.
+      row.append(cell('num',g(net)+(c.pct!=null||c.netApr!=null?'<span class="sub2">'
+        +(c.pct!=null?(c.pct>=0?'+':'−')+Math.abs(c.pct).toFixed(2)+'% of deposit':'')
+        +(c.pct!=null&&c.netApr!=null?' · ':'')
+        +(c.netApr!=null?(c.netApr>=0?'+':'−')+Math.abs(c.netApr).toFixed(0)+'%/yr net':'')+'</span>':''),'NET vs HODL'));
+      const vstyle=c.state==='lose'?' style="border-color:var(--status-critical);color:var(--status-critical)"':'';
+      row.append(cell(null,'<span class="verdict '+VCLS[c.state]+'"'+vstyle+'>'+esc(c.label)+'</span>'
+        +(c.why?'<span class="sub2">'+esc(c.why)+'</span>':''),'VERDICT'));
+      row.append(cell('arch-adv',hodlLever(p,c),'WHAT TO DO'));
       host.append(row);
     });
     const tot=el('div','arch-row'); tot.style.borderTop='1px solid var(--line-soft)';
-    tot.append(el('div',null,'<b>PORTFOLIO (EVM)</b>'));
-    tot.append(el('div','num',g(tF))); tot.append(el('div','num',g(tIl))); tot.append(el('div','num',g(tNet)));
-    tot.append(el('div',null,tNet>=0?'<b style="color:var(--status-good)">pooling is beating holding</b>':'<b style="color:var(--status-critical)">holding would be ahead</b>'));
+    const tBase=ps.reduce((s,p)=>s+(p.costUsd||0),0);
+    tot.append(cell('arch-pos','<b>PORTFOLIO (EVM)</b>'+(tBase>0?'<span class="sub2">'+fmtUsd(tBase,0)+' deposited</span>':'')));
+    tot.append(cell('num',g(tF),'FEES EARNED')); tot.append(cell('num',g(tIl),'IMPERMANENT LOSS'));
+    tot.append(cell('num',g(tNet)+(tBase>0?'<span class="sub2">'+(tNet>=0?'+':'−')+Math.abs(tNet/tBase*100).toFixed(2)+'% of deposit</span>':''),'NET vs HODL'));
+    tot.append(cell(null,tNet>=0?'<b style="color:var(--status-good)">pooling is ahead</b>':'<b style="color:var(--status-critical)">holding would be ahead</b>','VERDICT'));
+    tot.append(cell('arch-adv',tBase>0?'Pooling has returned <b>'+fmtUsd(Math.abs(tNet))+'</b> '+(tNet>=0?'more':'less')+' than holding the same tokens would have — '+Math.abs(tNet/tBase*100).toFixed(2)+'% of the '+fmtUsd(tBase,0)+' you put in.':'—','WHAT TO DO'));
     host.append(tot);
-    // tighten/loosen coaching from the Architect's math
-    const notes=[];
-    ps.filter(p=>p.range&&p.inRange).forEach(p=>{
-      const r=p.range;
-      if(r.concVsBalanced<0.8 && r.stay7dPct>85)
-        notes.push('<b>'+esc(pairName(p))+'</b> '+linkRef(p)+': range is looser than needed ('+r.stay7dPct.toFixed(0)+'% 7-day containment). Tightening to the balanced band ≈ <b>'+(1/Math.max(0.05,r.concVsBalanced)).toFixed(1)+'× the fee capture</b> on the same capital.');
-      else if(r.stay7dPct<50)
-        notes.push('<b>'+esc(pairName(p))+'</b> '+linkRef(p)+': range is tighter than the volatility supports (&lt;50% odds of staying in for 7d) — more fees per hour in range, but frequent idle spells + re-range gas eat the edge.');
-    });
-    ps.filter(p=>!p.inRange).forEach(p=>notes.push('<b>'+esc(pairName(p))+'</b> '+linkRef(p)+': OUT OF RANGE — the divergence that pushed it out is locked in unless price returns; every idle hour is pure opportunity cost. Re-range or unwind.'));
-    if(notes.length) host.append(el('div','arch-note','<b>RANGE COACHING</b><br>'+notes.join('<br>')));
+    /* ---- variants of one pair: the allocation question that still has an answer ----
+       "Should I be in LCX/ETH?" is rarely the live question — the tokens are already bought
+       and the past is not actionable. "Which of my four LCX/ETH bands deserves the next
+       dollar?" almost always is. Every variant is normalised to one unit — dollars per $1,000
+       deployed per 30 days — each measured over its OWN observed window, so a nine-day
+       position and a one-hour one are never compared on different clocks. */
+    const VAR_MIN_DAYS=2;
+    const spanOf=q=>(q.priceLower>0&&q.priceUpper>0)?q.priceUpper/q.priceLower:null;
+    const fmtSpan=v=>v==null?'band —':(v>=10?v.toFixed(0):v.toFixed(1))+'× band';
+    const groups=new Map();
+    for(const q of ordered()){
+      if(q.valueUsd==null) continue;
+      const k=q.pairLabel||pairName(q);
+      if(!groups.has(k)) groups.set(k,[]);
+      groups.get(k).push(q);
+    }
+    for(const [pair,list] of groups){
+      if(list.length<2) continue;
+      const vrows=list.map(q=>{
+        /* Solana exposes no deposit history on free RPC, so there is no cost basis and no IL:
+           current value is the only honest denominator, and the yield shown is gross. */
+        const base=q.chain==='sol'?(q.valueUsd??null):(q.costUsd??q.valueUsd??null);
+        const win =q.chain==='sol'?(q.feesObservedDays??null):(q.ageDays??null);
+        const fees=q.feesEverUsd;
+        const ok=base!=null&&base>0&&win!=null&&win>=VAR_MIN_DAYS&&fees!=null;
+        return {q,base,win,ok, gross: ok?fees/base*1000/win*30:null};
+      });
+      const usable=vrows.filter(r=>r.ok).sort((a,b)=>b.gross-a.gross);
+      const young=vrows.length-usable.length;
+      const box=el('div','arch-note');
+      let html='<b>'+esc(pair)+' — '+list.length+' VARIANTS</b>';
+      if(usable.length<2){
+        html+='<br>Only '+usable.length+' of '+list.length+' has '+VAR_MIN_DAYS+'+ days of fee history, so there is nothing to rank yet. '
+          +young+' too new — they will enter the comparison as they age.';
+        box.innerHTML=html; host.append(box); continue;
+      }
+      const solGroup=usable.some(r=>r.q.chain==='sol');
+      html+='<div class="vgrid"><span class="vh">VARIANT</span><span class="vh vspan">BAND</span>'
+         +'<span class="vh num">DEPLOYED</span><span class="vh num">FEES / $1K / 30D</span>';
+      usable.forEach((r,i)=>{
+        const cls=i===0?'vlead':(i===usable.length-1?'vlag':'');
+        html+='<span class="'+cls+'">'+esc(r.q.feeLabel||'—')+' '+linkRef(r.q)+'</span>'
+           +'<span class="vspan">'+fmtSpan(spanOf(r.q))+'</span>'
+           +'<span class="num">'+fmtUsd(r.base,0)+'</span>'
+           +'<span class="num '+cls+'">'+fmtUsd(r.gross,0)+'</span>';
+      });
+      html+='</div>';
+      const lead=usable[0], lag=usable[usable.length-1];
+      const ratio=lag.gross>0?lead.gross/lag.gross:null;
+      const poolKey=q=>String(q.poolId||q.pool||'');
+      const samePool=!!poolKey(lead.q)&&poolKey(lead.q)===poolKey(lag.q);
+      const sameTier=String(lead.q.feeLabel)===String(lag.q.feeLabel);
+      const L='<b>'+esc(lead.q.feeLabel)+' · '+fmtSpan(spanOf(lead.q))+'</b>', G='<b>'+esc(lag.q.feeLabel)+' · '+fmtSpan(spanOf(lag.q))+'</b>';
+      if(ratio==null||ratio<1.2){
+        html+='All variants are earning within '+(ratio?((ratio-1)*100).toFixed(0):'0')+'% of each other per dollar deployed. '
+          +'No reallocation edge here worth paying gas for — leave the split alone.';
+      }else if(samePool&&isSoleLp(lead.q)){
+        /* The case that reads as an opportunity and is not one. Two bands in ONE pool with no
+           other LP means a single fee pot: every trade pays you whichever band catches it, so
+           shuffling capital between them cannot raise total income. What the gap does prove is
+           that the wide band's capital is sitting where price never trades. */
+        html+=L+' is earning <b>'+ratio.toFixed(1)+'×</b> per dollar what '+G+' earns — but both are in the <b>same pool</b>, and you are its only LP. '
+          +'That means one fee pot: every trade pays you regardless of which band catches it, so moving capital from one to the other <b>adds nothing to total income</b> — it only changes which position books it. '
+          +'What the gap really shows is that '+G+' is spread so thin that its '+fmtUsd(lag.base,0)+' is close to idle. '
+          +'<b>Withdrawing it would cost you almost no fee income</b> — the trades it is not catching are already being caught by your other band. Redeploy it somewhere it can earn: the other tier, or outside this pair.';
+      }else if(samePool){
+        html+=L+' is earning <b>'+ratio.toFixed(1)+'×</b> per dollar what '+G+' earns, in the same pool. '
+          +'Your cut of that pool is your share of the liquidity at the tick being traded, so pulling the '+fmtUsd(lag.base,0)+' out of the thin band and concentrating it near spot raises your share of the very same trades. Band width is the lever, not the pair.';
+      }else{
+        /* Genuinely different pools: volume routes between them, so this is a real allocation
+           choice and the gap is a real (if optimistic) gain. */
+        const gap=(lead.gross-lag.gross)*lag.base/1000;
+        html+=L+' is earning <b>'+ratio.toFixed(1)+'×</b> per dollar what '+G+' earns, and these are <b>separate pools</b> — so '+(sameTier?'the band width':'the fee tier')+' is the lever that matters, not whether to hold '+esc(pair)+' at all. '
+          +'At the leader’s rate the '+fmtUsd(lag.base,0)+' in the laggard would throw off about <b>'+fmtUsd(gap,0)+' more per 30 days</b>. Treat that as a ceiling: moving in changes the split that produced the rate. ';
+        html+= isSoleLp(lead.q)
+          ? '<b>You are the only LP in both</b>, so fees follow trading volume, not your capital — <b>adding fresh money creates no new fees</b>, it spreads the same fees thinner. Move existing capital between pools; do not top up to chase the rate.'
+          : 'Your fee share tracks your liquidity share in the active band, so weight moved toward the better pool should carry roughly its rate with it.';
+      }
+      if(young) html+='<br><span style="opacity:.75">'+young+' variant'+(young>1?'s':'')+' under '+VAR_MIN_DAYS+' days old excluded — too new to measure.</span>';
+      if(solGroup) html+='<br><span style="opacity:.75">◎ Solana: gross fee yield only. No deposit history on free RPC means no cost basis and no IL, so these rates are before divergence, not net of it.</span>';
+      box.innerHTML=html; host.append(box);
+    }
     host.append(el('div','arch-note','HOW TO READ — IMPERMANENT LOSS compares your LP (current value + anything withdrawn) against simply holding the deposited tokens at today\'s prices: negative = the pool ratio-shifted you into the weaker token. NET vs HODL = IL + fees earned — the honest answer to “should I have just held?”. Range exits, IL drag and gas are ALL costs; fees must outrun the sum. ◎ Solana positions are excluded (deposit history unavailable — IL not computable from free RPC).'));
   } else {
     host.append(el('div',null,'<span style="color:var(--text-muted);font-size:12px">IL analytics arrive with the next relay refresh.</span>'));
