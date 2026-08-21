@@ -330,8 +330,13 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
     // Value every deposit at the ETH price of ITS OWN block. dep0/dep1 sum all
     // IncreaseLiquidity events, so pricing the whole stack at the first mint's ETH price
     // misstated the basis of later top-ups by however much ETH had moved in between.
+    /* Not on a partial read. dep/wdr/col above are all held at their high-water marks when the
+       log set comes back short, but this loop walks the RAW event list — so a dropped
+       IncreaseLiquidity would shrink the basis while IL kept the full deposits, inflating both
+       roiPct and feeAprPct. A position with a top-up (two inc events) that reads back one would
+       show roughly double its true return. Fall back to the guarded dep totals instead. */
     let perEvent=null;
-    if(ck==='ethereum'&&ethUsd&&hist.inc.length){
+    if(ck==='ethereum'&&ethUsd&&hist.inc.length&&!histPartial){
       let acc=0;
       for(const ev of hist.inc){
         const eAt=await ethUsdAtBlock(ev.block);
