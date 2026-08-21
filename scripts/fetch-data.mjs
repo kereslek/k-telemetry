@@ -868,8 +868,8 @@ async function solWalletBalances(wallet){
    out and is undercounted; amounts are valued at current prices, as on the EVM side; and the
    first run only records a checkpoint, booking nothing, so it cannot double-count against what
    the snapshot method already wrote. */
-async function solCollectedSince(pos, sinceSig){
-  const out={amt:{}, newest:null, scanned:0, ok:false, err:null};
+async function solCollectedSince(pos, sinceSig, booked){
+  const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0};
   const addr=pos.pda||pos.nftMint, owner=pos.wallet;
   if(!addr||!owner) { out.err='no position address'; return out; }
   try{
@@ -883,6 +883,12 @@ async function solCollectedSince(pos, sinceSig){
     const mints=[pos.mint0,pos.mint1].filter(Boolean);
     for(const s of sigs.slice(0,8)){             // cap the work per position per run
       if(s.err) continue;
+      /* One harvest can collect from several of this wallet's positions in a single
+         transaction, and that transaction then appears in EVERY one of their signature lists.
+         The delta measured below is the WALLET's, not this position's, so without this guard
+         each position books the full combined amount and the same dollars land in MTD two or
+         three times. Whoever reaches the transaction first books it; the rest skip it. */
+      if(booked && booked.has(s.signature)){ out.shared++; continue; }
       let tx=null;
       try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); }
       catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
@@ -892,11 +898,15 @@ async function solCollectedSince(pos, sinceSig){
       const amtOf=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i); return e?Number(e.uiTokenAmount.uiAmount||0):0; };
       const rows=[...pre,...post].filter(x=>x.owner===owner && (!mints.length||mints.includes(x.mint)));
       const seen=new Set();
+      let got=0;
       for(const r of rows){
         if(seen.has(r.accountIndex)) continue; seen.add(r.accountIndex);
         const d=amtOf(post,r.accountIndex)-amtOf(pre,r.accountIndex);
-        if(d>0) out.amt[r.mint]=(out.amt[r.mint]||0)+d;   // received from the pool
+        if(d>0){ out.amt[r.mint]=(out.amt[r.mint]||0)+d; got+=d; }   // received from the pool
       }
+      // Claim the signature only if value was actually taken from it. A zero-delta read must
+      // not lock another position out of booking a transaction that did pay it.
+      if(got>0 && booked) booked.add(s.signature);
       await sleep(60);
     }
   }catch(e){ out.err=String((e&&e.message)||e).slice(0,80); }
@@ -1049,6 +1059,9 @@ const main=async()=>{
       let ledger={}; try{ ledger=JSON.parse(fs.readFileSync(OUT+'/ledger-'+profile.slug+'.json','utf8')); }catch(e){}
       let prev=null; try{ prev=JSON.parse(fs.readFileSync(OUT+'/data-'+profile.slug+'.json','utf8')); }catch(e){}
       const prevSol=new Map((prev&&prev.sol||[]).map(p=>[p.id,p]));
+      // Shared across every position this run, and persisted, so a harvest transaction is
+      // booked exactly once no matter how many positions it touched or which run reaches it.
+      const booked=new Set(Array.isArray(ledger.__sigs)?ledger.__sigs:[]);
       for(const p of solPositions){
         const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
         // Solana has no fee event log, so collectedUsd only ever covers what this bot has
@@ -1060,7 +1073,7 @@ const main=async()=>{
            only the fallback. Never run both for the same position — that double-counts. */
         let txOk=false;
         try{
-          const r=await solCollectedSince(p, L.sig||null);
+          const r=await solCollectedSince(p, L.sig||null, booked);
           if(r.ok){
             txOk=true;
             const first=!L.sig;
@@ -1072,6 +1085,7 @@ const main=async()=>{
             }
             if(!first && add>0){ L.collectedUsd+=add; L.lastBooked=Math.round(add*100)/100; }
             L.txScanned=r.scanned;
+            if(r.shared) L.sharedTx=r.shared; else delete L.sharedTx;
           }
           if(r.err) L.txErr=r.err; else delete L.txErr;
         }catch(e){ /* fall through to the snapshot method */ }
@@ -1094,6 +1108,7 @@ const main=async()=>{
         if(obsDays>0.5 && p.valueUsd>0) p.feeAprPct=(p.feesEverUsd/p.valueUsd)*(365/obsDays)*100;
         else p.feeAprPct=null;
       }
+      ledger.__sigs=[...booked].slice(-400);   // newest kept; bounded so the file cannot grow forever
       fs.writeFileSync(OUT+'/ledger-'+profile.slug+'.json', JSON.stringify(ledger,null,1));
     }catch(e){ logErr('ledger',e); }
     // ---- monthly fee ledger: MTD earned across ACTIVE + CLOSED LPs, claimed + unclaimed ----
