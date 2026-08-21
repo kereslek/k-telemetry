@@ -9,14 +9,14 @@
   "collectedUsd": 155.18071745576066,
   "since": 1786804445105,
   "sig": "6192NTormEsTe3rpDRhECJ3LjWkqyQn2sgcygZtmn82sRkmTh6J6NeiHXiFrHg8i4U1dd3yminqgDGFrmWokDhkT",
-  "txScanned": 1,
+  "txScanned": 0,
   "lastBooked": 30.36
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
   "collectedUsd": 137.88285688733882,
   "since": 1786804445105,
   "sig": "6192NTormEsTe3rpDRhECJ3LjWkqyQn2sgcygZtmn82sRkmTh6J6NeiHXiFrHg8i4U1dd3yminqgDGFrmWokDhkT",
-  "txScanned": 1,
+  "txScanned": 0,
   "lastBooked": 30.36
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
@@ -33,5 +33,6 @@
   "since": 1786864626363,
   "sig": "2udX7wSJvaC2ob9LBXy3s5ytf4cZtTRLygJFXst3fdSJHyaTFAJHM8j4V42RwGieuBmS31a4e373miqJzDTqo5Lv",
   "txScanned": 0
- }
+ },
+ "__sigs": []
 }
