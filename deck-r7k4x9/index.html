@@ -2954,9 +2954,12 @@ function renderActions(){
     const sizeTag = p.valueUsd!=null ? ' <span class="act-size">· '+fmtK(p.valueUsd)+'</span>' : '';
     const ref=esc(pairName(p))+' '+linkRef(p)+sizeTag+ageTag;
     if(x.sev==='critical'){
+      const owed=p.feesUsd||0;
+      const owedTxt = owed>1 ? ' It also holds <b>'+fmtUsd(owed)+'</b> in uncollected fees — those are safe where they are, '
+          +'cost nothing to leave, and are released by the same transaction that re-ranges or closes it. Nothing to decide separately.' : '';
       items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' — earning <b>nothing</b>',
         sub:backToRangeText(p)+' '+(x.sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
-                  :'Every hour it stays out is fees forgone.'),when:'now'});
+                  :'Every hour it stays out is fees forgone.')+owedTxt,when:'now'});
     } else if(x.bd!=null&&x.bd<1){
       items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' — '+edgePhrase(p),
         sub:'That is inside a single day of movement at this pair\'s recent pace, so it can stop earning at any time. Widen or re-centre.',
@@ -2991,15 +2994,11 @@ function renderActions(){
     /* Capital only compounds where the position is actually earning. Redeploying into an
        out-of-range position buys nothing whatever its historical APR says — this was telling
        you to compound #1351974, which had been earning zero for two days. */
-    if(!p.inRange){
-      if(fees>=Math.max(25,rt*10)) items.push({r:5,cls:'watch',tag:'FEES STRANDED',
-        head:esc(pairName(p))+' '+linkRef(p)+' holds <b>'+fmtUsd(fees)+'</b> in uncollected fees, out of range',
-        sub:'Collecting these is cheap and they stop being at risk of nothing — but there is no point redeploying them here, '
-          +'because this position earns nothing until price is back inside its band. Any past APR it shows is history, not income. '
-          +'Collect them with the re-range if you do one; on their own they can wait.',
-        when:'with a re-range'});
-      continue;
-    }
+    /* Nothing to advise for an out-of-range position. Uncollected fees sit in tokensOwed,
+       where they are safe, do not decay and cost nothing to leave; they are released by the
+       same transaction that closes or re-ranges, so collecting is never a decision of its own.
+       The fees are reported as context on the OUT OF RANGE row instead of posing as an action. */
+    if(!p.inRange) continue;
     if(apr==null||apr<=0) continue;
     const daily=fees*(apr/100)/365;
     if(!(daily>0)) continue;
