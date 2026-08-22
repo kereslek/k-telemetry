@@ -2825,13 +2825,17 @@ function isSoleLp(p){
    real thing all along in costMonth (gas AND swap fees across every LP operation this month),
    so use the observed average per operation and only fall back to a gas estimate without it. */
 function compoundCostUsd(p){
-  const cm=state.costMonth;
-  const perOp=(cm&&cm.txCount>0)?(((cm.gasUsd||0)+(cm.swapFeeUsd||0))/cm.txCount):null;
-  const gasOnly=p.chain==='sol'?SOL_TX_USD*2:gasCostUsd(COMPOUND_GAS);
-  const ops=perOp!=null?perOp*3:null;                        // collect + rebalance swap + add
   const tier=parseFloat(String(p.feeLabel||'').replace(/[^\d.]/g,''))||0.3;
   const swapFee=(p.feesUsd||0)*0.5*(tier/100);               // rebalancing ~half pays the tier
-  const base=Math.max(ops??0, gasOnly??0);
+  /* costMonth is built from Ethereum gas and Ethereum swap events — it says nothing about
+     Solana, where a transaction is cents. Blending the two put a ~$5.80 price on a Solana
+     round trip and produced the advice NOT to collect fees that cost about twenty cents to
+     collect. Each chain is costed from its own numbers. */
+  if(p.chain==='sol') return SOL_TX_USD*2 + swapFee;
+  const cm=state.costMonth;
+  const perOp=(cm&&cm.txCount>0)?(((cm.gasUsd||0)+(cm.swapFeeUsd||0))/cm.txCount):null;
+  const ops=perOp!=null?perOp*3:null;                        // collect + rebalance swap + add
+  const base=Math.max(ops??0, gasCostUsd(COMPOUND_GAS)??0);
   return base>0?base+swapFee:null;
 }
 /* "2.6 days of buffer" is abstract. What people actually want to know is how far price has
@@ -2978,19 +2982,50 @@ function renderActions(){
   // "are the fees bigger than a tx" (they almost always are) but "does redeploying them earn
   // back the collect+redeposit round trip quickly enough to be worth a transaction now".
   // When gas rises the payback stretches and this stops being suggested by itself.
+  const COMPOUND_MIN_MULT=10;      // fees must be worth at least this many round trips
   for(const p of ps){
     const fees=p.feesUsd||0, apr=aprOf(p).v;
-    if(!(fees>0)||apr==null||apr<=0) continue;
+    if(!(fees>0)) continue;
     const rt = compoundCostUsd(p);
     if(rt==null||!(rt>0)) continue;
+    /* Capital only compounds where the position is actually earning. Redeploying into an
+       out-of-range position buys nothing whatever its historical APR says — this was telling
+       you to compound #1351974, which had been earning zero for two days. */
+    if(!p.inRange){
+      if(fees>=Math.max(25,rt*10)) items.push({r:5,cls:'watch',tag:'FEES STRANDED',
+        head:esc(pairName(p))+' '+linkRef(p)+' holds <b>'+fmtUsd(fees)+'</b> in uncollected fees, out of range',
+        sub:'Collecting these is cheap and they stop being at risk of nothing — but there is no point redeploying them here, '
+          +'because this position earns nothing until price is back inside its band. Any past APR it shows is history, not income. '
+          +'Collect them with the re-range if you do one; on their own they can wait.',
+        when:'with a re-range'});
+      continue;
+    }
+    if(apr==null||apr<=0) continue;
     const daily=fees*(apr/100)/365;
     if(!(daily>0)) continue;
     const payback=rt/daily;          // days for the redeployed fees to earn the round trip back
-    if(payback>7) continue;          // let them accrue — not worth a transaction yet
+    /* Two gates, and the advice must quote whichever bites harder or it promises a threshold it
+       will not honour. The round trip costs the same whenever it is done and the fees accrue
+       either way, so harvesting a small balance spends a fixed cost on a smaller prize — hence
+       a floor of ten round trips. And the redeployed amount still has to earn that cost back
+       inside a week to be worth doing now rather than later. */
+    const PAYBACK_MAX=7;
+    const minWorth=Math.max(rt*COMPOUND_MIN_MULT, rt*365/(PAYBACK_MAX*(apr/100)));
+    if(fees < minWorth){
+      if(fees>=rt*2) items.push({r:7,cls:'watch',tag:'LET IT ACCRUE',
+        head:esc(pairName(p))+' '+linkRef(p)+' has <b>'+fmtUsd(fees)+'</b> uncollected — not worth a transaction yet',
+        sub:'The collect + swap + redeposit round trip costs ≈'+fmtUsd(rt)+', which is '+(rt/fees*100).toFixed(0)
+          +'% of what you would be collecting. That cost is the same whenever you do it and the fees keep accruing either way, '
+          +'so waiting buys a bigger prize for the identical fee. At '+apr.toFixed(0)+'% this is worth a transaction from about <b>'
+          +fmtUsd(minWorth,0)+'</b>.',
+        when:'wait for ≈'+fmtUsd(minWorth,0)});
+      continue;
+    }
     items.push({r:4,cls:'good',tag:'COMPOUND',
       head:esc(pairName(p))+' '+linkRef(p)+' has <b>'+fmtUsd(fees)+'</b> sitting idle',
       sub:'Uncollected fees earn nothing. Redeployed at '+apr.toFixed(0)+'% they make ≈'+fmtUsd(daily)
-        +'/day, and the collect + rebalance swap + redeposit round trip costs ≈'+fmtUsd(rt)+' — so it pays for itself in '
+        +'/day, and the collect + rebalance swap + redeposit round trip costs ≈'+fmtUsd(rt)+' — '+(rt/fees*100).toFixed(0)
+        +'% of the amount, paying for itself in '
         +(payback<1?'under a day':'≈'+payback.toFixed(1)+' days')+'. Collecting without redeploying gains you nothing.',
       when:payback<1?'<1d payback':'≈'+payback.toFixed(1)+'d payback'});
   }
