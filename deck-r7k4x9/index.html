@@ -3674,13 +3674,30 @@ function renderPlaybook(){
       +(twoContracts?', across <b>'+tokens.size+' different token contracts</b>':'')+'. They are not interchangeable.</span>'
       +'<span class="act-sub">';
     if(feedBlind){
+      /* One feed price for two contracts cannot describe both — but it usually describes ONE of
+         them, and which one is knowable: the pool it agrees with. That identifies which holdings
+         are marked at a price someone would really pay, and which are not. */
+      const near=rated.length?rated[0]:null, far=rated.length>1?rated[rated.length-1]:null;
       body+='These are <b>different tokens</b>, not two venues for one token — and the price feed returns the <b>same</b> price for '
-        +'both, so it cannot distinguish them. Every USD figure for at least one of these pools is therefore unverified, and the two '
-        +'cannot be ranked on how far each sits from "the" market price. '
-        +'Decide this on the things that are actually knowable: which contract has a future. If one migrates one-way into the other, '
-        +'its pool only thins from here, and liquidity that thins is worse fills going in and worse going out. '
-        +'<b>Build on the contract being migrated to, and migrate the remainder rather than deploying into what is being left behind.</b> '
-        +'Confirm independently which contract your price source is quoting before trusting any dollar value on the other.';
+        +'both, so it cannot be quoting both. ';
+      if(near&&far&&near.div<5&&far.div>10){
+        const nearTok=String(near.p.token0||'').slice(0,10), farTok=String(far.p.token0||'').slice(0,10);
+        const farPool=pbPoolPx(far.p);
+        body+='It sits within <b>'+near.div.toFixed(1)+'%</b> of the <b>'+esc(nearTok)+'…</b> pool but <b>'+far.div.toFixed(1)
+          +'%</b> away from <b>'+esc(farTok)+'…</b>, so on this evidence <b>the feed is quoting '+esc(nearTok)+'…</b>. '
+          +'Holdings of that contract are marked at a price the wider market recognises. Holdings of <b>'+esc(farTok)+'…</b> carry the '
+          +'same number while their own pool quotes '+fmtUsd(farPool,5)+' — carried roughly <b>'+far.div.toFixed(0)+'% above</b> what '
+          +'that pool would actually pay. Treat every dollar figure for that contract as provisional until you confirm which contract '
+          +'your exchange and your price source really quote. '
+          +'If the two are the same asset with a one-way migration between them, a gap this wide is worth acting on in whichever '
+          +'direction ends with more tokens — but a quoted price in a thin pool is not an executable one, so check depth before '
+          +'sizing anything against it.';
+      } else {
+        body+='Every USD figure for at least one of these pools is therefore unverified, and they cannot be ranked on distance from '
+          +'"the" market price. Decide instead on what is knowable: which contract has a future. Build on the contract being migrated '
+          +'to, and migrate the remainder rather than deploying into what is being left behind. Confirm independently which contract '
+          +'your price source is quoting before trusting any dollar value on the other.';
+      }
     } else if(rated.length>=2){
       const tightest=rated[0], loosest=rated[rated.length-1];
       body+='Measured against the market feed, <b>'+esc(String(tightest.p.feeLabel))+' · '+String(tightest.p.pool||tightest.p.poolId).slice(0,10)
