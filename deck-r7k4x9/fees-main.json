@@ -4,23 +4,23 @@
  "pos": {
   "1351974": {
    "m0": 0,
-   "last": 84.35,
+   "last": 82.1,
    "hwm": 90.64,
    "acc": 90.64,
    "ck": "ethereum"
   },
   "1355331": {
    "m0": 0,
-   "last": 1.74,
+   "last": 1.72,
    "hwm": 1.74,
    "acc": 1.74,
    "ck": "ethereum"
   },
   "1355336": {
    "m0": 0,
-   "last": 0,
-   "hwm": 0,
-   "acc": 0,
+   "last": 0.04,
+   "hwm": 0.04,
+   "acc": 0.04,
    "ck": "ethereum"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
@@ -31,13 +31,13 @@
   },
   "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
    "m0": 63.02,
-   "last": 182.71,
+   "last": 182.73,
    "acc": 119.89,
    "hwm": 182.91
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 54.29,
-   "last": 155.67,
+   "last": 155.68,
    "acc": 101.51,
    "hwm": 155.8
   },
@@ -50,5 +50,5 @@
   }
  },
  "months": [],
- "lastIl": -1332.77
+ "lastIl": -1145.87
 }
