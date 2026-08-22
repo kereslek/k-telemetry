@@ -1392,7 +1392,10 @@ const main=async()=>{
     {
       const totV=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.valueUsd||0),0);
       const totF=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.feesUsd||0),0);
-      history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100});
+      // g: gas price at this sample. Without a stored series there is nothing to call a gas
+      // price high or low AGAINST, and a gauge with no distribution behind it is decoration.
+      history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100,
+                    g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null});
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }

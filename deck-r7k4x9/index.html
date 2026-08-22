@@ -85,6 +85,21 @@
   .hstat .k{font-size:8.5px;letter-spacing:.22em;color:var(--text-muted)}
   .hstat .v{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums}
   .hstat .v .unit{color:var(--text-muted);font-size:10px}
+  .gasstat{text-align:right}
+  .gaswrap{display:flex;align-items:center;gap:7px;justify-content:flex-end}
+  .gasgauge{width:60px;height:32px;flex:none;overflow:visible}
+  .gg-seg{fill:none;stroke-width:5;stroke-linecap:butt;opacity:.30}
+  .gg-a{stroke:var(--status-good)} .gg-b{stroke:var(--status-warning)}
+  .gg-c{stroke:var(--status-serious)} .gg-d{stroke:var(--status-critical)}
+  .gg-seg.on{opacity:1}
+  .gg-needle{stroke:var(--text-primary);stroke-width:2;stroke-linecap:round;
+             transform-box:view-box;transform-origin:38px 34px;transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+  .gg-hub{fill:var(--text-primary)}
+  .gastxt{text-align:left;line-height:1.15}
+  .gasnum{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .gasnum .unit{color:var(--text-muted);font-size:10px}
+  .gasband{font-size:8.5px;letter-spacing:.14em;white-space:nowrap}
+  .gassub{font-size:9px;color:var(--text-muted);white-space:nowrap;margin-top:1px}
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
   .led.sim{background:var(--status-warning);box-shadow:0 0 8px var(--status-warning)}
@@ -532,6 +547,20 @@
     <div class="hstat"><div class="k" id="hClockLabel">CET</div><div class="v" id="hClock">—</div></div>
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
+    <div class="hstat gasstat" id="hGasStat" title="Cost to transact on Ethereum right now"><div class="k">ETH GAS</div>
+      <div class="gaswrap">
+        <svg class="gasgauge" viewBox="0 0 76 40" aria-hidden="true">
+          <path class="gg-seg gg-a" d="M10.0 34.0 A28 28 0 0 1 24.0 9.75"/>
+          <path class="gg-seg gg-b" d="M24.0 9.75 A28 28 0 0 1 43.79 6.61"/>
+          <path class="gg-seg gg-c" d="M43.79 6.61 A28 28 0 0 1 56.21 12.73"/>
+          <path class="gg-seg gg-d" d="M56.21 12.73 A28 28 0 0 1 66.0 34.0"/>
+          <line class="gg-needle" id="ggNeedle" x1="38" y1="34" x2="38" y2="10"/>
+          <circle class="gg-hub" cx="38" cy="34" r="2.6"/>
+        </svg>
+        <div class="gastxt"><div class="gasnum" id="hGasNum">—</div><div class="gasband" id="hGasBand">—</div></div>
+      </div>
+      <div class="gassub" id="hGasSub">—</div>
+    </div>
     <span id="hTickers" style="display:contents"></span>
     <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
     <div class="hstat"><div class="k" id="hCdLabel">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
@@ -2035,6 +2064,7 @@ function renderAll(){
   $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% OF RANGE WIDTH FROM EDGE';
 }
 function renderHeader(){
+  renderGasGauge();
   $('#hBlock').textContent = state.block ?? '—';
   const chip = c => c!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(c>=0?'good':'critical')+')">'
         +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>' : '';
@@ -3359,6 +3389,65 @@ const HARVEST_GAS=130000, REBALANCE_GAS=520000;
 /* Collecting alone changes nothing — idle fees just move wallets. The action that pays is
    collect + redeposit, so that is the cost the compounding call must clear. */
 const COMPOUND_GAS=380000, SOL_TX_USD=0.02;
+/* ---- ETH gas gauge ----
+   Two questions, and they need different answers. "What does it cost right now" is a fact and
+   is always shown in dollars for the operation actually performed, not in gwei, because gwei
+   is not a price anyone pays. "Is that high or low" is a claim, and it is only made against
+   this deck's own recorded gas history. Until enough samples exist the panel says so rather
+   than inventing a percentile — the axis below is a stated scale, never a claim about typical. */
+const GAS_LO=0.1, GAS_HI=100;                       // gauge axis in gwei, log-spaced
+const GAS_BANDS=[[1,'VERY LOW','good'],[5,'LOW','good'],[15,'NORMAL','warning'],[40,'HIGH','serious'],[Infinity,'SEVERE','critical']];
+function gasFrac(g){
+  if(!(g>0)) return null;
+  const f=Math.log10(g/GAS_LO)/Math.log10(GAS_HI/GAS_LO);
+  return Math.max(0,Math.min(1,f));
+}
+function gasPercentile(g){
+  const h=(state.history||[]).map(x=>x&&x.g).filter(v=>typeof v==='number'&&v>0);
+  if(h.length<12) return {n:h.length,pct:null};
+  const below=h.filter(v=>v<g).length;
+  return {n:h.length,pct:below/h.length*100};
+}
+function renderGasGauge(){
+  const g=state.gasGwei, num=$('#hGasNum'), band=$('#hGasBand'), sub=$('#hGasSub'), needle=$('#ggNeedle');
+  if(!num) return;
+  const segs=['a','b','c','d'].map(c=>document.querySelector('.gg-'+c));
+  segs.forEach(x=>x&&x.classList.remove('on'));
+  if(g==null){
+    num.innerHTML='—'; band.textContent=''; sub.textContent='no gas reading';
+    if(needle) needle.style.transform='rotate(-90deg)';
+    return;
+  }
+  const f=gasFrac(g);
+  if(needle) needle.style.transform='rotate('+(f*180-90).toFixed(1)+'deg)';
+  const bi=g<1?0:g<5?1:g<15?2:3;
+  if(segs[bi]) segs[bi].classList.add('on');
+  const b=GAS_BANDS.find(x=>g<x[0]);
+  num.innerHTML=(g<1?g.toFixed(3):g<10?g.toFixed(2):g.toFixed(1))+'<span class="unit"> gwei</span>';
+  band.style.color='var(--status-'+b[2]+')';
+  // The number that decides anything: what an operation you actually perform costs today.
+  const rr=gasCostUsd(REBALANCE_GAS), hv=gasCostUsd(HARVEST_GAS);
+  sub.textContent = rr!=null ? ('re-range '+fmtUsd(rr)+' · harvest '+fmtUsd(hv)) : 'no ETH price for cost';
+  /* The relative reading belongs next to the word it qualifies, not tacked onto the cost line —
+     and while there is no recorded history it must say so rather than imply a ranking. */
+  const {n,pct}=gasPercentile(g);
+  /* pct is the share of past readings BELOW the current price, so a HIGH pct means gas is
+     expensive right now. Printing that as "cheaper than 83%" was exactly backwards, and wrong
+     in the direction that matters — it read as a green light at the top of the range. Say it
+     the way round that is true, and flip the phrasing at the midpoint so neither end reads as
+     a double negative. */
+  band.textContent = b[1] + (pct==null ? ''
+    : (pct<=50 ? ' · CHEAPER THAN '+(100-pct).toFixed(0)+'%' : ' · PRICIER THAN '+pct.toFixed(0)+'%'));
+  if(pct==null && n===0) sub.textContent += ' · building history';
+  const st=$('#hGasStat');
+  if(st) st.title='Ethereum gas is '+g.toFixed(3)+' gwei. A full re-range (~'+(REBALANCE_GAS/1000)+'k gas) costs about '
+    +(rr!=null?fmtUsd(rr):'—')+' at this price, a harvest (~'+(HARVEST_GAS/1000)+'k gas) about '+(hv!=null?fmtUsd(hv):'—')
+    +'. Gauge axis is '+GAS_LO+'–'+GAS_HI+' gwei on a log scale. '
+    +(pct==null?'Not enough recorded history yet to say whether this is high or low.'
+               :'Against this deck\'s own '+n+' recorded readings, '+pct.toFixed(0)+'% were cheaper than this and '
+                +(100-pct).toFixed(0)+'% dearer.')
+    +' Gas is only part of the cost — a rebalance also pays swap fees and price impact, usually the larger half.';
+}
 function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
 function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 
