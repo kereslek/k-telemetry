@@ -558,6 +558,12 @@
       <div class="pbody" id="actionBody"></div>
     </section>
 
+    <section class="panel act-panel" data-panel="playbook" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">PLAYBOOK — WHAT TO DO, AND WHY</span><span class="hint" id="playbookHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="playbookBody"></div>
+    </section>
+
     <section class="panel" data-panel="rank" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">LEADERBOARD — BEST EARNING LP</span><span class="seg aprSegHost"></span><span class="hint" id="rankHint"></span><button class="collapse-btn">▾</button></div>
@@ -1997,7 +2003,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderCards();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -3465,6 +3471,161 @@ function renderSpark(){
   host.append(svg);
 }
 
+/* ================= PLAYBOOK =================
+   The panels above report state. This one has to answer the only question that matters when
+   a position has moved: what should I do, and why. Every line here is derived from published
+   data — nothing is asserted that the payload cannot support, and where a number is unknown
+   the line says so instead of guessing. */
+/* price is token1 per token0 on every chain here, so the pool's own view of token0 in USD is
+   price x usd1. Reaching for state.ethUsd instead only works where token1 IS ether — it
+   printed SOL at $4.19m in the SOL/CPOOL pool. */
+function pbPoolPx(p){ return (p.price!=null&&p.usd1!=null)?p.price*p.usd1:null; }
+function pbSide(p){
+  // Which way it exited decides what you now hold, and the two cases need opposite responses.
+  if(p.inRange) return null;
+  return (p.rangePos!=null && p.rangePos>1) ? 'above' : 'below';
+}
+function renderPlaybook(){
+  const host=$('#playbookBody'); if(!host) return; host.innerHTML='';
+  const ps=ordered().filter(p=>p.valueUsd!=null);
+  const hint=$('#playbookHint');
+  if(!ps.length){
+    if(hint) hint.textContent='no position data';
+    host.innerHTML='<div class="act-row act-warn"><span class="act-tag">NO DATA</span><span class="act-body">'
+      +'<span class="act-head">No positions loaded — no advice can be given.</span>'
+      +'<span class="act-sub">This is not an all-clear. Nothing could be assessed.</span></span></div>';
+    return;
+  }
+  const items=[];
+
+  /* ---- 1. positions that have left their range ---- */
+  const out=ps.filter(p=>!p.inRange);
+  for(const p of out){
+    const side=pbSide(p), back=Math.abs(p.edgeDist??0);
+    const t0=p.m0&&p.m0.symbol, t1=p.m1&&p.m1.symbol;
+    const held=side==='above'?t1:t0, sold=side==='above'?t0:t1;
+    const row=el('div','act-row act-warn');
+    row.innerHTML='<span class="act-tag">OUT OF RANGE</span><span class="act-body">'
+      +'<span class="act-head">'+esc(pairName(p))+' '+linkRef(p)+' exited <b>'+side.toUpperCase()+'</b> — it is now '
+      +'holding '+esc(String(held))+' and earning nothing.</span>'
+      +'<span class="act-sub">Exiting '+side+' means the pool sold your <b>'+esc(String(sold))+'</b> for <b>'+esc(String(held))
+      +'</b> on the way '+(side==='above'?'up':'down')+', at prices inside the old band — so every unit went at less than '
+      +(side==='above'?'today’s price':'you could buy it back for')+'. That trade is already done; it is not undone by closing or by waiting. '
+      +'Price must move <b>'+back.toFixed(1)+'%</b> '+(side==='above'?'down':'up')+' to re-enter.<br>'
+      +'<b>Leave it</b> and the position is a standing order to '+(side==='above'?'re-buy '+esc(String(sold))+' if price falls back'
+      :'sell '+esc(String(sold))+' if price recovers')+' — free to hold, but dead capital ('+fmtUsd(p.valueUsd,0)+') until then. '
+      +'<b>Close it</b> and you keep '+esc(String(held))+' outright and can redeploy. '
+      +'The choice is directional, not a yield question: leaving it only pays if you want '+esc(String(sold))+' back at these levels.</span></span>';
+    items.push({el:row,rank:back<10?0:1});
+  }
+
+  /* ---- 2. pool price vs market feed ---- */
+  const seen=new Set();
+  for(const p of ps){
+    const key=p.pool||p.poolId; if(!key||seen.has(key)) continue; seen.add(key);
+    const pool=pbPoolPx(p), feed=p.usd0;
+    if(pool==null||feed==null||feed<=0) continue;
+    const div=(pool/feed-1)*100;
+    if(Math.abs(div)<10) continue;
+    const row=el('div','act-row act-warn');
+    row.innerHTML='<span class="act-tag">MARK DIVERGES</span><span class="act-body">'
+      +'<span class="act-head">'+esc(pairName(p))+' — this pool prices '+esc(String(p.m0&&p.m0.symbol))+' at <b>'+fmtUsd(pool,5)
+      +'</b> but the market feed says <b>'+fmtUsd(feed,5)+'</b> ('+(div>=0?'+':'')+div.toFixed(1)+'%).</span>'
+      +'<span class="act-sub">The dashboard values your holdings and computes impermanent loss at the <b>feed</b> price, so while '
+      +'these disagree, every USD figure here — position value, IL, "what holding would be worth", the idle balance — carries that '
+      +'same gap. The pool price is what you can actually transact against on-chain right now; the feed may include venues you cannot '
+      +'reach, or be stale. Before sizing any buy or sell off these numbers, check which of the two you would really be trading into.</span></span>';
+    items.push({el:row,rank:0});
+  }
+
+  /* ---- 3. how to size a new band, from the volatility actually being realised ---- */
+  const withRange=ps.filter(p=>p.range&&p.range.suggested&&p.range.suggested.balanced&&p.range.sigmaDaily!=null);
+  const byPair=new Map();
+  for(const p of withRange) if(!byPair.has(p.pairLabel)) byPair.set(p.pairLabel,p);
+  for(const [pair,p] of byPair){
+    const b=p.range.suggested.balanced, sig=p.range.sigmaDaily, eu=p.usd1;   // quote token, not always ETH
+    const days=w=>{ const half=Math.log(w.up/w.lo)/2; return sig>0?Math.pow(half/sig,2):null; };
+    const dB=days(b), tight=p.range.suggested.tight, wide=p.range.suggested.wide;
+    const usd=v=>eu!=null?fmtUsd(v*eu,5):'—';
+    const row=el('div','act-row');
+    row.innerHTML='<span class="act-tag">BAND SIZE</span><span class="act-body">'
+      +'<span class="act-head">'+esc(pair)+' — a new band sized for the volatility being realised now: <b>'
+      +b.lo.toPrecision(4)+' – '+b.up.toPrecision(4)+'</b> ('+usd(b.lo)+' – '+usd(b.up)+' per '+esc(String(p.m0&&p.m0.symbol))+').</span>'
+      +'<span class="act-sub">Daily volatility here is <b>'+(sig*100).toFixed(1)+'%</b>. Because price wanders as the square root of '
+      +'time, a band survives roughly (half-width ÷ σ)² days — so this one is a <b>~'+(dB!=null?dB.toFixed(0):'—')+' day</b> band, not a '
+      +'permanent one. Halving the width does not halve its life, it quarters it. '
+      +'Tighter ('+tight.lo.toPrecision(4)+' – '+tight.up.toPrecision(4)+') earns more per dollar while it holds and needs re-ranging '
+      +'sooner; wider ('+wide.lo.toPrecision(4)+' – '+wide.up.toPrecision(4)+') earns less but survives longer. '
+      +'These are estimates from recent movement only — they carry no view on direction, and a trend can walk through any of them.</span></span>';
+    items.push({el:row,rank:2});
+  }
+
+  /* ---- 4. same pair, several pools: which one to build in ---- */
+  const groups=new Map();
+  for(const p of ps){ const k=p.pairLabel||'—'; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(p); }
+  for(const [pair,list] of groups){
+    const pools=new Map();
+    for(const p of list){ const k=p.pool||p.poolId; if(k&&!pools.has(k)) pools.set(k,p); }
+    if(pools.size<2) continue;
+    const rows=[...pools.values()].map(p=>{
+      const pool=pbPoolPx(p), feed=p.usd0;
+      return {p, div:(pool!=null&&feed)?Math.abs(pool/feed-1)*100:null};
+    });
+    const rated=rows.filter(r=>r.div!=null).sort((a,b)=>a.div-b.div);
+    const row=el('div','act-row');
+    let body='<span class="act-tag">WHICH POOL</span><span class="act-body">'
+      +'<span class="act-head">'+esc(pair)+' trades in '+pools.size+' separate pools. They are not interchangeable.</span>'
+      +'<span class="act-sub">';
+    if(rated.length>=2){
+      const tightest=rated[0], loosest=rated[rated.length-1];
+      body+='Measured against the market feed, <b>'+esc(String(tightest.p.feeLabel))+' · '+String(tightest.p.pool||tightest.p.poolId).slice(0,10)
+        +'…</b> is off by '+tightest.div.toFixed(1)+'%, while <b>'+esc(String(loosest.p.feeLabel))+' · '
+        +String(loosest.p.pool||loosest.p.poolId).slice(0,10)+'…</b> is off by '+loosest.div.toFixed(1)+'%. '
+        +'A pool whose price sits far from the wider market is thin: little liquidity is holding it in line, so you get worse fills going '
+        +'in and out, and the price you are quoted moves more against you. Depth is worth more than a headline fee tier — a 1% pool that '
+        +'tracks the market beats a 4% pool that does not, because the gap costs you on entry and again on exit. '
+        +'On this evidence, build in <b>'+esc(String(tightest.p.feeLabel))+' · '+String(tightest.p.pool||tightest.p.poolId).slice(0,10)+'…</b>. ';
+    } else {
+      body+='Not enough price data to rank them this cycle. ';
+    }
+    body+='If one pool is an older token contract with a one-way migration to a newer one, its liquidity only thins further over time — '
+      +'build on the contract with a future, and migrate the rest rather than deploying into what is being left behind.</span></span>';
+    row.innerHTML=body;
+    items.push({el:row,rank:2});
+  }
+
+  /* ---- 5. concentration ---- */
+  const idle=state.idle;
+  if(idle&&idle.rows&&idle.rows.length){
+    const bySym=new Map();
+    for(const r of idle.rows){ if(r.usd==null) continue; bySym.set(r.symbol||r.addr,(bySym.get(r.symbol||r.addr)||0)+r.usd); }
+    const deployed=ps.reduce((s,p)=>s+(p.valueUsd||0),0);
+    const total=deployed+(idle.totalUsd||0);
+    const top=[...bySym.entries()].sort((a,b)=>b[1]-a[1])[0];
+    if(top&&total>0&&top[1]/total>0.25){
+      const row=el('div','act-row act-warn');
+      row.innerHTML='<span class="act-tag">CONCENTRATION</span><span class="act-body">'
+        +'<span class="act-head"><b>'+esc(String(top[0]))+'</b> is '+(top[1]/total*100).toFixed(0)+'% of everything you hold ('
+        +fmtUsd(top[1],0)+' of '+fmtUsd(total,0)+'), and most of it is sitting idle.</span>'
+        +'<span class="act-sub">Concentration is a position whether or not you chose it — and an LP on that same token is the one thing '
+        +'quietly reducing it, by selling into strength. That is what shows up as impermanent loss: the cost of having de-risked. '
+        +'Note the marked value assumes you could sell at the feed price; a bag this size relative to on-chain depth would move the price '
+        +'against you well before it was done, so treat the figure as an upper bound rather than cash.</span></span>';
+      items.push({el:row,rank:1});
+    }
+  }
+
+  if(!items.length){
+    host.innerHTML='<div class="act-row"><span class="act-tag">CLEAR</span><span class="act-body">'
+      +'<span class="act-head">Every position is in range and no pool is mispriced against the market.</span>'
+      +'<span class="act-sub">Nothing here needs a decision today.</span></span></div>';
+    if(hint) hint.textContent='nothing to act on';
+    return;
+  }
+  items.sort((a,b)=>a.rank-b.rank).forEach(x=>host.append(x.el));
+  if(hint) hint.textContent=out.length?(out.length+' out of range'):(items.length+' to consider');
+}
+
 /* ---- LP vs HODL: the verdict is worthless without the size of it ----
    A bare badge was firing "HODL WOULD'VE WON" on #1351948 — an hour-old position whose net
    was −$0.00000000025. Three of five verdicts were rounding dust. A call needs a window long
@@ -3812,7 +3973,7 @@ function wireDrag(container, selector, onOrder){
     item.addEventListener('drop',e=>e.preventDefault());
   });
 }
-const LAYOUT_VERSION=4;   // bump when the default panel order changes on purpose
+const LAYOUT_VERSION=5;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
   // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
   // reach anyone who has dragged a panel. Drop the stored order once per version bump.
