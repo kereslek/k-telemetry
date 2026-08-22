@@ -3,21 +3,27 @@
   "collectedUsd": 136.23865121629854,
   "since": 1786804445105,
   "sig": "5CXaMLA2HoHqTin4yzmSjV2QMcZiSo8ZXv6Q1HNfa3GW8xe8rxb44vdjfrZnkBLygx6a4gU58ZjiVboMEKnTEJpu",
-  "txScanned": 0
+  "txScanned": 0,
+  "attrib": 0,
+  "lump": 0
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
   "collectedUsd": 155.18071745576066,
   "since": 1786804445105,
   "sig": "6192NTormEsTe3rpDRhECJ3LjWkqyQn2sgcygZtmn82sRkmTh6J6NeiHXiFrHg8i4U1dd3yminqgDGFrmWokDhkT",
   "txScanned": 0,
-  "lastBooked": 30.36
+  "lastBooked": 30.36,
+  "attrib": 0,
+  "lump": 0
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
   "collectedUsd": 137.88285688733882,
   "since": 1786804445105,
   "sig": "6192NTormEsTe3rpDRhECJ3LjWkqyQn2sgcygZtmn82sRkmTh6J6NeiHXiFrHg8i4U1dd3yminqgDGFrmWokDhkT",
   "txScanned": 0,
-  "lastBooked": 30.36
+  "lastBooked": 30.36,
+  "attrib": 0,
+  "lump": 0
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
   "collectedUsd": 0
@@ -32,7 +38,9 @@
   "collectedUsd": 0,
   "since": 1786864626363,
   "sig": "2udX7wSJvaC2ob9LBXy3s5ytf4cZtTRLygJFXst3fdSJHyaTFAJHM8j4V42RwGieuBmS31a4e373miqJzDTqo5Lv",
-  "txScanned": 0
+  "txScanned": 0,
+  "attrib": 0,
+  "lump": 0
  },
  "__sigs": []
 }
