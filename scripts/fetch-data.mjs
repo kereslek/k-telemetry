@@ -911,8 +911,51 @@ async function solWalletBalances(wallet){
    out and is undercounted; amounts are valued at current prices, as on the EVM side; and the
    first run only records a checkpoint, booking nothing, so it cannot double-count against what
    the snapshot method already wrote. */
+/* Attribute a harvest to the position it actually came from.
+   Wallet balance deltas cannot do this: when one transaction collects from several positions
+   the wallet just sees one lump, and every position claims all of it. The transaction itself
+   knows better. Each Raydium instruction names the personal position PDA in its account list,
+   and the token transfers it triggers sit in the innerInstructions group indexed to it — so
+   the transfers under the instruction naming THIS pda are this position's fees, and no other
+   position's. Returns null when the shape is not recognisable, and the caller falls back. */
+function solAttribute(tx, pda, mints){
+  try{
+    const msg=tx.transaction&&tx.transaction.message; if(!msg) return null;
+    const keys=(msg.accountKeys||[]).map(k=>typeof k==='string'?k:(k&&k.pubkey));
+    const top=msg.instructions||[];
+    const idxs=[];
+    top.forEach((ix,i)=>{ const a=ix.accounts||[]; if(Array.isArray(a)&&a.some(x=>x===pda)) idxs.push(i); });
+    if(!idxs.length) return null;                     // this pda is not named by any instruction
+    const inner=tx.meta&&tx.meta.innerInstructions;
+    if(!Array.isArray(inner)||!inner.length) return null;
+    const bal=[...(tx.meta.preTokenBalances||[]),...(tx.meta.postTokenBalances||[])];
+    const mintOf={}, decOf={};
+    for(const b of bal){
+      const addr=keys[b.accountIndex]; if(addr&&b.mint) mintOf[addr]=b.mint;
+      if(b.mint&&b.uiTokenAmount&&b.uiTokenAmount.decimals!=null) decOf[b.mint]=b.uiTokenAmount.decimals;
+    }
+    const amt={}; let saw=false;
+    for(const g of inner){
+      if(!idxs.includes(g.index)) continue;
+      for(const ins of (g.instructions||[])){
+        const pi=ins.parsed; if(!pi) continue;
+        if(pi.type!=='transfer'&&pi.type!=='transferChecked') continue;
+        const info=pi.info||{};
+        const mint=info.mint||mintOf[info.destination];
+        if(!mint) continue;
+        if(mints.length&&!mints.includes(mint)) continue;
+        let v=null;
+        if(info.tokenAmount&&info.tokenAmount.uiAmount!=null) v=Number(info.tokenAmount.uiAmount);
+        else if(info.amount!=null&&decOf[mint]!=null) v=Number(info.amount)/Math.pow(10,decOf[mint]);
+        if(v==null||!(v>0)) continue;
+        amt[mint]=(amt[mint]||0)+v; saw=true;
+      }
+    }
+    return saw?amt:null;
+  }catch(e){ return null; }
+}
 async function solCollectedSince(pos, sinceSig, booked){
-  const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0};
+  const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0};
   const addr=pos.pda||pos.nftMint, owner=pos.wallet;
   if(!addr||!owner) { out.err='no position address'; return out; }
   try{
@@ -937,6 +980,15 @@ async function solCollectedSince(pos, sinceSig, booked){
       catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
       if(!tx||!tx.meta) continue;
       out.scanned++;
+      /* Preferred: read this position's own transfers out of the transaction. Exact even when
+         several positions were harvested together, so no cross-position guard is needed. */
+      const att=solAttribute(tx, addr, mints);
+      if(att){
+        for(const m in att) out.amt[m]=(out.amt[m]||0)+att[m];
+        out.attributed++;
+        await sleep(60);
+        continue;
+      }
       const pre=tx.meta.preTokenBalances||[], post=tx.meta.postTokenBalances||[];
       const amtOf=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i); return e?Number(e.uiTokenAmount.uiAmount||0):0; };
       const rows=[...pre,...post].filter(x=>x.owner===owner && (!mints.length||mints.includes(x.mint)));
@@ -949,7 +1001,7 @@ async function solCollectedSince(pos, sinceSig, booked){
       }
       // Claim the signature only if value was actually taken from it. A zero-delta read must
       // not lock another position out of booking a transaction that did pay it.
-      if(got>0 && booked) booked.add(s.signature);
+      if(got>0){ out.lump++; if(booked) booked.add(s.signature); }
       await sleep(60);
     }
   }catch(e){ out.err=String((e&&e.message)||e).slice(0,80); }
@@ -1129,6 +1181,7 @@ const main=async()=>{
             if(!first && add>0){ L.collectedUsd+=add; L.lastBooked=Math.round(add*100)/100; }
             L.txScanned=r.scanned;
             if(r.shared) L.sharedTx=r.shared; else delete L.sharedTx;
+            L.attrib=r.attributed||0; L.lump=r.lump||0;
           }
           if(r.err) L.txErr=r.err; else delete L.txErr;
         }catch(e){ /* fall through to the snapshot method */ }
