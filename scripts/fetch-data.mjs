@@ -918,7 +918,7 @@ async function solWalletBalances(wallet){
    and the token transfers it triggers sit in the innerInstructions group indexed to it — so
    the transfers under the instruction naming THIS pda are this position's fees, and no other
    position's. Returns null when the shape is not recognisable, and the caller falls back. */
-function solAttribute(tx, pda, mints){
+function solAttribute(tx, pda, mints, owner){
   try{
     const msg=tx.transaction&&tx.transaction.message; if(!msg) return null;
     const keys=(msg.accountKeys||[]).map(k=>typeof k==='string'?k:(k&&k.pubkey));
@@ -929,9 +929,11 @@ function solAttribute(tx, pda, mints){
     const inner=tx.meta&&tx.meta.innerInstructions;
     if(!Array.isArray(inner)||!inner.length) return null;
     const bal=[...(tx.meta.preTokenBalances||[]),...(tx.meta.postTokenBalances||[])];
-    const mintOf={}, decOf={};
+    const mintOf={}, decOf={}, ownerOf={};
     for(const b of bal){
-      const addr=keys[b.accountIndex]; if(addr&&b.mint) mintOf[addr]=b.mint;
+      const addr=keys[b.accountIndex];
+      if(addr&&b.mint) mintOf[addr]=b.mint;
+      if(addr&&b.owner) ownerOf[addr]=b.owner;
       if(b.mint&&b.uiTokenAmount&&b.uiTokenAmount.decimals!=null) decOf[b.mint]=b.uiTokenAmount.decimals;
     }
     const amt={}; let saw=false;
@@ -944,6 +946,12 @@ function solAttribute(tx, pda, mints){
         const mint=info.mint||mintOf[info.destination];
         if(!mint) continue;
         if(mints.length&&!mints.includes(mint)) continue;
+        /* Direction matters, and dropping this check is what broke it. Fees flow vault -> your
+           token account; a redeposit flows the other way, your account -> vault. Counting both
+           booked a $105 redeposit into 6sGWez as $105 of fee income on top of its real $29.
+           The wallet-delta method this replaced had the check implicitly, in "owner === owner
+           and delta > 0". Only an inflow to THIS owner is income. */
+        if(owner && ownerOf[info.destination]!==owner) continue;
         let v=null;
         if(info.tokenAmount&&info.tokenAmount.uiAmount!=null) v=Number(info.tokenAmount.uiAmount);
         else if(info.amount!=null&&decOf[mint]!=null) v=Number(info.amount)/Math.pow(10,decOf[mint]);
@@ -982,7 +990,7 @@ async function solCollectedSince(pos, sinceSig, booked){
       out.scanned++;
       /* Preferred: read this position's own transfers out of the transaction. Exact even when
          several positions were harvested together, so no cross-position guard is needed. */
-      const att=solAttribute(tx, addr, mints);
+      const att=solAttribute(tx, addr, mints, owner);
       if(att){
         for(const m in att) out.amt[m]=(out.amt[m]||0)+att[m];
         out.attributed++;
