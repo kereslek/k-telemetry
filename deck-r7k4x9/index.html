@@ -3572,11 +3572,27 @@ function renderPlaybook(){
       return {p, div:(pool!=null&&feed)?Math.abs(pool/feed-1)*100:null};
     });
     const rated=rows.filter(r=>r.div!=null).sort((a,b)=>a.div-b.div);
-    const row=el('div','act-row');
+    /* Same pair label can hide two different token contracts. If it does, ranking them on
+       distance from "the" feed price is meaningless whenever the feed returns the same number
+       for both — it cannot tell them apart, so at least one pool is being judged against a
+       price that does not describe it. Say that instead of picking a winner from noise. */
+    const tokens=new Set(rows.map(r=>String(r.p.token0||'').toLowerCase()).filter(Boolean));
+    const feeds=new Set(rows.map(r=>r.p.usd0).filter(v=>v!=null).map(v=>v.toFixed(8)));
+    const twoContracts=tokens.size>1, feedBlind=twoContracts&&feeds.size===1;
+    const row=el('div','act-row'+(twoContracts?' act-warn':''));
     let body='<span class="act-tag">WHICH POOL</span><span class="act-body">'
-      +'<span class="act-head">'+esc(pair)+' trades in '+pools.size+' separate pools. They are not interchangeable.</span>'
+      +'<span class="act-head">'+esc(pair)+' trades in '+pools.size+' separate pools'
+      +(twoContracts?', across <b>'+tokens.size+' different token contracts</b>':'')+'. They are not interchangeable.</span>'
       +'<span class="act-sub">';
-    if(rated.length>=2){
+    if(feedBlind){
+      body+='These are <b>different tokens</b>, not two venues for one token — and the price feed returns the <b>same</b> price for '
+        +'both, so it cannot distinguish them. Every USD figure for at least one of these pools is therefore unverified, and the two '
+        +'cannot be ranked on how far each sits from "the" market price. '
+        +'Decide this on the things that are actually knowable: which contract has a future. If one migrates one-way into the other, '
+        +'its pool only thins from here, and liquidity that thins is worse fills going in and worse going out. '
+        +'<b>Build on the contract being migrated to, and migrate the remainder rather than deploying into what is being left behind.</b> '
+        +'Confirm independently which contract your price source is quoting before trusting any dollar value on the other.';
+    } else if(rated.length>=2){
       const tightest=rated[0], loosest=rated[rated.length-1];
       body+='Measured against the market feed, <b>'+esc(String(tightest.p.feeLabel))+' · '+String(tightest.p.pool||tightest.p.poolId).slice(0,10)
         +'…</b> is off by '+tightest.div.toFixed(1)+'%, while <b>'+esc(String(loosest.p.feeLabel))+' · '
@@ -3588,8 +3604,9 @@ function renderPlaybook(){
     } else {
       body+='Not enough price data to rank them this cycle. ';
     }
-    body+='If one pool is an older token contract with a one-way migration to a newer one, its liquidity only thins further over time — '
-      +'build on the contract with a future, and migrate the rest rather than deploying into what is being left behind.</span></span>';
+    if(!feedBlind) body+='If one pool is an older token contract with a one-way migration to a newer one, its liquidity only thins further '
+      +'over time — build on the contract with a future, and migrate the rest rather than deploying into what is being left behind.';
+    body+='</span></span>';
     row.innerHTML=body;
     items.push({el:row,rank:2});
   }
