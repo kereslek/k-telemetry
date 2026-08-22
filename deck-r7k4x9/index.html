@@ -100,6 +100,7 @@
   .gasnum .unit{color:var(--text-muted);font-size:10px}
   .gasband{font-size:8.5px;letter-spacing:.14em;white-space:nowrap}
   .gassub{font-size:9px;color:var(--text-muted);white-space:nowrap;margin-top:1px}
+  .act-size{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
   .led.sim{background:var(--status-warning);box-shadow:0 0 8px var(--status-warning)}
@@ -934,6 +935,7 @@ const fmtUsd = (v, dp) => v==null ? '—' : '$'+Number(v).toLocaleString('en-US'
 const fmtNum = (v, dp=4) => v==null ? '—' : Number(v).toLocaleString('en-US',{maximumFractionDigits:dp});
 const fmtPct = (v, dp=2, sign) => v==null ? '—' : ((sign&&v>0?'+':'')+(v).toFixed(dp)+'%');
 const fmtPrice = p => p==null ? '—' : p>=1000 ? p.toLocaleString('en-US',{maximumFractionDigits:0}) : p>=1 ? p.toFixed(2) : p.toPrecision(4);
+const fmtK = v => v==null ? '—' : Math.abs(v)>=1000 ? '$'+(v/1000).toFixed(v>=10000?0:1)+'k' : '$'+Math.round(v);
 const fmtAge = days => days==null ? '—' : days<1 ? Math.round(days*24)+'h' : days<60 ? days.toFixed(1)+'d' : (days/30.44).toFixed(1)+'mo';
 /* v25.2: every human-facing clock shows Budapest wall time (CET/CEST auto-labelled), not UTC */
 const TZ='Europe/Budapest';
@@ -2943,11 +2945,14 @@ function renderActions(){
     // how long this LP has been open — a 9-month position and a 2-day one carry the same
     // edge distance very differently, so the age belongs next to it rather than a panel away
     const ageTag = p.ageDays!=null ? ' <span class="unit">· '+fmtAge(p.ageDays)+' old</span>' : '';
-    const ref=esc(pairName(p))+' '+linkRef(p)+ageTag;
+    // Size sits ahead of age because it decides which row matters: a 2% drift on $8k outranks
+    // a 2% drift on $400, and the panel used to present them as equals.
+    const sizeTag = p.valueUsd!=null ? ' <span class="act-size">· '+fmtK(p.valueUsd)+'</span>' : '';
+    const ref=esc(pairName(p))+' '+linkRef(p)+sizeTag+ageTag;
     if(x.sev==='critical'){
       items.push({r:0,cls:'crit',tag:'OUT OF RANGE',head:ref+' — earning <b>nothing</b>',
-        sub:x.sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
-                  :'Every hour it stays out is fees forgone. Re-range or close.',when:'now'});
+        sub:backToRangeText(p)+' '+(x.sole?'You are the only LP here, so the pool has no active liquidity at all — it cannot trade until you are back in range. Widen rather than re-centre.'
+                  :'Every hour it stays out is fees forgone.'),when:'now'});
     } else if(x.bd!=null&&x.bd<1){
       items.push({r:1,cls:'crit',tag:'ABOUT TO EXIT',head:ref+' — '+edgePhrase(p),
         sub:'That is inside a single day of movement at this pair\'s recent pace, so it can stop earning at any time. Widen or re-centre.',
@@ -3568,6 +3573,38 @@ function renderSpark(){
 /* price is token1 per token0 on every chain here, so the pool's own view of token0 in USD is
    price x usd1. Reaching for state.ethUsd instead only works where token1 IS ether — it
    printed SOL at $4.19m in the SOL/CPOOL pool. */
+/* How far back to the band, in every form that helps the decision: the move as a percentage,
+   the actual price it has to reach, and how long a move that size takes to become ordinary at
+   the volatility currently being realised. That last figure is NOT a forecast — displacement
+   grows with the square root of time, so it says when a move this size stops being unusual,
+   and says nothing at all about direction. Drift away is exactly as likely as drift back. */
+function backToRange(p){
+  if(p.inRange||p.price==null||!(p.price>0)) return null;
+  const above = p.rangePos!=null && p.rangePos>1;
+  const target = above ? p.priceUpper : p.priceLower;
+  if(!(target>0)) return null;
+  const pct = Math.abs(p.price-target)/p.price*100;
+  const sig = p.range && p.range.sigmaDaily;
+  const logD = Math.abs(Math.log(p.price/target));
+  const days = (sig>0) ? Math.pow(logD/sig,2) : null;
+  return {above, target, pct, days,
+          targetUsd: p.usd1!=null ? target*p.usd1 : null,
+          sym: (p.m0&&p.m0.symbol)||'token'};
+}
+function backToRangeText(p){
+  const b=backToRange(p); if(!b) return '';
+  const lvl = b.targetUsd!=null ? ' ('+fmtUsd(b.targetUsd,5)+')' : '';
+  let t = '<b>'+esc(String(b.sym))+' must move '+b.pct.toFixed(1)+'% '+(b.above?'down':'up')
+        + ' to '+b.target.toPrecision(4)+lvl+'</b> before this earns again';
+  if(b.days!=null){
+    const d=b.days;
+    const when = d<0.5 ? 'inside half a day' : d<1.5 ? 'about a day' : d<10 ? 'about '+d.toFixed(1)+' days' : 'roughly '+Math.round(d)+' days';
+    t += '. At the volatility now being realised a move that far becomes ordinary in <b>'+when+'</b>'
+       + (d<2 ? ' — close enough that waiting is reasonable' : d>14 ? ' — far enough that waiting is a long bet' : '')
+       + ', though nothing says it goes that way rather than further out.';
+  } else t += '.';
+  return t;
+}
 function pbPoolPx(p){ return (p.price!=null&&p.usd1!=null)?p.price*p.usd1:null; }
 function pbSide(p){
   // Which way it exited decides what you now hold, and the two cases need opposite responses.
@@ -3600,7 +3637,7 @@ function renderPlaybook(){
       +'<span class="act-sub">Exiting '+side+' means the pool sold your <b>'+esc(String(sold))+'</b> for <b>'+esc(String(held))
       +'</b> on the way '+(side==='above'?'up':'down')+', at prices inside the old band — so every unit went at less than '
       +(side==='above'?'today’s price':'you could buy it back for')+'. That trade is already done; it is not undone by closing or by waiting. '
-      +'Price must move <b>'+back.toFixed(1)+'%</b> '+(side==='above'?'down':'up')+' to re-enter.<br>'
+      +backToRangeText(p)+'<br>'
       +'<b>Leave it</b> and the position is a standing order to '+(side==='above'?'re-buy '+esc(String(sold))+' if price falls back'
       :'sell '+esc(String(sold))+' if price recovers')+' — free to hold, but dead capital ('+fmtUsd(p.valueUsd,0)+') until then. '
       +'<b>Close it</b> and you keep '+esc(String(held))+' outright and can redeploy. '
