@@ -111,6 +111,26 @@ async function meta(ck,addr){
 }
 /* universal pricing: DefiLlama coins API, pool-derived fallback */
 const priceCache={};
+/* Real prices as of a past moment. A historical price never changes, so anything derived
+   from one can be cached permanently — which is the whole point: a cost basis must be a fact
+   about the past, not a figure recomputed from today's market on every run. */
+async function llamaHistorical(keys,ts){
+  const out={};
+  try{
+    const js=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(ts)+'/'+keys.join(','),20000);
+    for(const k of keys){ const c=js&&js.coins&&js.coins[k]; if(c&&c.price!=null) out[k]=c.price; }
+  }catch(e){ logErr('llamaHist',e); }
+  return out;
+}
+async function blockTs(ck,block){
+  const key=ck+':'+block, hit=blockCache.blkTs[key];
+  if(hit!=null) return hit;
+  try{
+    const blk=await evm(ck,'eth_getBlockByNumber',['0x'+block.toString(16),false]);
+    const t=Number(BigInt(blk.timestamp));
+    blockCache.blkTs[key]=t; return t;
+  }catch(e){ return null; }
+}
 async function llamaPrices(keys){
   const need=keys.filter(k=>!(k in priceCache));
   for(let i=0;i<need.length;i+=40){
@@ -148,7 +168,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* persistent scan cache (committed with the other JSON ledgers):
    mint  — position id → mint block, found once by binary search, then never again
    tscan — wallet NFT-transfer scan checkpoint + candidate ids */
-let blockCache={mint:{},tscan:{},evh:{},mintInfo:{},tokMeta:{}};
+let blockCache={mint:{},tscan:{},evh:{},mintInfo:{},tokMeta:{},depUsd:{},blkTs:{}};
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
    The asymmetry is deliberate: over-calling infra costs one logged error and a recompute
@@ -337,14 +357,37 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
        show roughly double its true return. Fall back to the guarded dep totals instead. */
     let perEvent=null;
     if(ck==='ethereum'&&ethUsd&&hist.inc.length&&!histPartial){
+      /* Price every deposit at the real prices of ITS OWN moment, then cache that dollar
+         figure permanently. The previous estimate — today's token price scaled by the ETH
+         ratio — silently assumed the token held its value in ETH terms. When LCX moved ~90%
+         against ETH in a day, four positions' bases inflated 63-70% with no capital added,
+         which flowed straight into ROI and fee APR. */
       let acc=0;
       for(const ev of hist.inc){
-        const eAt=await ethUsdAtBlock(ev.block);
-        if(eAt==null){ acc=null; break; }
-        const sc=pricerAt(eAt);
-        const p0=sc(token0,usd0), p1=sc(token1,usd1);
-        if(p0==null||p1==null){ acc=null; break; }
-        acc+=bigToFloat(ev.a0,d0)*p0+bigToFloat(ev.a1,d1)*p1;
+        const dk=ck+':'+id+':'+ev.block;
+        let v=blockCache.depUsd[dk];
+        if(v==null){
+          const ts=await blockTs(ck,ev.block);
+          if(ts!=null){
+            const k0=C.llama+':'+token0, k1=C.llama+':'+token1;
+            const hp=await llamaHistorical([k0,k1],ts);
+            if(hp[k0]!=null&&hp[k1]!=null){
+              v=bigToFloat(ev.a0,d0)*hp[k0]+bigToFloat(ev.a1,d1)*hp[k1];
+              blockCache.depUsd[dk]=v;          // a fact about the past — never recomputed
+            }
+          }
+          if(v==null){
+            // No historical quote. Fall back to the old estimate for this run only, and do
+            // NOT cache it, so a later run can still record the real figure.
+            const eAt=await ethUsdAtBlock(ev.block);
+            if(eAt==null){ acc=null; break; }
+            const sc=pricerAt(eAt);
+            const p0=sc(token0,usd0), p1=sc(token1,usd1);
+            if(p0==null||p1==null){ acc=null; break; }
+            v=bigToFloat(ev.a0,d0)*p0+bigToFloat(ev.a1,d1)*p1;
+          }
+        }
+        acc+=v;
       }
       perEvent=acc;
     }
@@ -915,7 +958,7 @@ async function solCollectedSince(pos, sinceSig, booked){
 
 /* ---------- main ---------- */
 const main=async()=>{
-  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{},tokMeta:bc.tokMeta||{}}; }catch(e){}
+  try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{},tokMeta:bc.tokMeta||{},depUsd:bc.depUsd||{},blkTs:bc.blkTs||{}}; }catch(e){}
   const blockNums={};
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;
