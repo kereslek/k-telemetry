@@ -3,8 +3,8 @@
   "collectedUsd": 209.76183123558675,
   "since": 1786804445105,
   "sig": "LQzqfLwAQeDRbELetFEGLUZbZEUaBM2XCmQfLmCFvYb7eThV9ei3aqPTsNBcmpNfUTGe6L7W7cnW3zxnVKyoe2h",
-  "txScanned": 1,
-  "attrib": 1,
+  "txScanned": 0,
+  "attrib": 0,
   "lump": 0,
   "lastBooked": 73.52
  },
@@ -36,14 +36,13 @@
   "collectedUsd": 0
  },
  "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
-  "collectedUsd": 29.15,
+  "collectedUsd": 133.67629788233808,
   "since": 1786864626363,
   "sig": "5HdwJTHYv6upbr7Aenb8vPWSdmYXL93WRpRojyGZU3WPZUKwA1wEP9k9qPUpTvhVpHmdJ5cc934fqZ3Zq73eWwNK",
-  "txScanned": 2,
-  "attrib": 2,
+  "txScanned": 0,
+  "attrib": 0,
   "lump": 0,
-  "lastBooked": 29.15,
-  "repaired": "redeposit counted as income; corrected 2026-08-22"
+  "lastBooked": 133.68
  },
  "__sigs": []
 }
