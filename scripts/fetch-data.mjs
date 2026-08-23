@@ -962,7 +962,7 @@ function solAttribute(tx, pda, mints, owner){
     return saw?amt:null;
   }catch(e){ return null; }
 }
-async function solCollectedSince(pos, sinceSig, booked){
+async function solCollectedSince(pos, sinceSig, booked, costSink){
   const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0};
   const addr=pos.pda||pos.nftMint, owner=pos.wallet;
   if(!addr||!owner) { out.err='no position address'; return out; }
@@ -988,6 +988,10 @@ async function solCollectedSince(pos, sinceSig, booked){
       catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
       if(!tx||!tx.meta) continue;
       out.scanned++;
+      /* The transaction fee is right here and was being thrown away, so every Solana operation
+         has been costing real money that the monthly ledger recorded as zero. Keyed by
+         signature, so a transaction touching several positions is charged once. */
+      if(costSink && tx.meta.fee!=null) costSink[s.signature]=Number(tx.meta.fee);
       /* Preferred: read this position's own transfers out of the transaction. Exact even when
          several positions were harvested together, so no cross-position guard is needed. */
       const att=solAttribute(tx, addr, mints, owner);
@@ -1157,6 +1161,7 @@ const main=async()=>{
       try{ solPositions=await fetchSolana(solWallets); }
       catch(e){ logErr('sol',e); chainErrs.add('solana'); scanIncomplete.add('sol'); }
     }
+    let solTxFees={};
     // ---- harvest ledger: detect fee collections between snapshots (Solana has no easy event log) ----
     try{
       let ledger={}; try{ ledger=JSON.parse(fs.readFileSync(OUT+'/ledger-'+profile.slug+'.json','utf8')); }catch(e){}
@@ -1165,6 +1170,7 @@ const main=async()=>{
       // Shared across every position this run, and persisted, so a harvest transaction is
       // booked exactly once no matter how many positions it touched or which run reaches it.
       const booked=new Set(Array.isArray(ledger.__sigs)?ledger.__sigs:[]);
+      solTxFees={};        // signature -> lamports, handed to the cost ledger below
       for(const p of solPositions){
         const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
         // Solana has no fee event log, so collectedUsd only ever covers what this bot has
@@ -1176,7 +1182,7 @@ const main=async()=>{
            only the fallback. Never run both for the same position — that double-counts. */
         let txOk=false;
         try{
-          const r=await solCollectedSince(p, L.sig||null, booked);
+          const r=await solCollectedSince(p, L.sig||null, booked, solTxFees);
           if(r.ok){
             txOk=true;
             const first=!L.sig;
@@ -1298,8 +1304,26 @@ const main=async()=>{
       cl.scan=cl.scan||{};
       if(cl.month!==monthKey){
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100}].slice(-12);
-        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.txs={};
+        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.txs={}; cl.solTxs={};
       }
+      /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
+         into a CLMM position pay no pool fee — only a swap does — so for this portfolio the
+         transaction fee IS the Solana cost. Any swap fee remains uncounted and solPartial says so
+         rather than letting the total read as complete. */
+      let solUsd=null;   // SOL_MINT is already defined at module scope
+      for(const sp of solPositions){
+        if(sp.mint0===SOL_MINT && sp.usd0!=null){ solUsd=sp.usd0; break; }
+        if(sp.mint1===SOL_MINT && sp.usd1!=null){ solUsd=sp.usd1; break; }
+      }
+      cl.solTxs=cl.solTxs||{};
+      if(solUsd!=null){
+        for(const sig in solTxFees){
+          if(cl.solTxs[sig]) continue;
+          cl.solTxs[sig]=1;
+          cl.gasUsd+=(solTxFees[sig]/1e9)*solUsd;
+        }
+      }
+      cl.solPartial=true;   // swap fees on Solana are not detected
       const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
       const SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822';
       const TRANSFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
