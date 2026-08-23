@@ -109,6 +109,32 @@
   .cat-live{color:var(--accent);letter-spacing:.1em}
   .cat-cost{color:var(--text-muted);font-size:11px}
   .cat-net{border-top:1px solid var(--line-soft);padding-top:5px}
+  /* Jump strip. Sticks below the header rather than inside it, so the header's own flex
+     layout — and the positional rule that hides the clock and block on small screens — is
+     left completely alone. Heights are measured, never assumed: the header wraps to two or
+     three rows depending on width, and a hardcoded offset would drop sections under it. */
+  #quickNav{
+    position:sticky; top:var(--hdr-h,58px); z-index:49;
+    display:flex; gap:6px; overflow-x:auto; overflow-y:hidden;
+    padding:6px 22px; scrollbar-width:none;
+    background:linear-gradient(180deg,rgba(7,13,22,.97),rgba(7,13,22,.9));
+    border-bottom:1px solid var(--line);
+    -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain;
+  }
+  #quickNav::-webkit-scrollbar{display:none}
+  #quickNav button{
+    flex:0 0 auto; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em;
+    color:var(--text-secondary); background:transparent; border:1px solid var(--line);
+    padding:5px 10px; cursor:pointer; white-space:nowrap;
+    touch-action:manipulation; -webkit-user-select:none; user-select:none;
+    transition:color .15s,border-color .15s;
+  }
+  #quickNav button:hover{color:var(--accent);border-color:var(--accent-dim)}
+  #quickNav button:active{color:var(--accent);border-color:var(--accent)}
+  /* the scroll target clears both sticky bars */
+  .panel{scroll-margin-top:calc(var(--hdr-h,58px) + var(--nav-h,34px) + 10px)}
+  @media(max-width:560px){ #quickNav{padding:5px 12px;gap:5px} #quickNav button{font-size:9px;padding:4px 8px} }
+  @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
   .led.sim{background:var(--status-warning);box-shadow:0 0 8px var(--status-warning)}
@@ -581,6 +607,7 @@
     <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
   </div>
 </header>
+<nav id="quickNav" aria-label="Jump to section"></nav>
 
 <main>
   <div id="quickAdd"><span style="color:var(--accent)">⊕</span><span class="qa-t">TRACK MORE — drop or paste a wallet (0x… / Solana) or a Uniswap position #</span><input id="quickAddInput" placeholder="0x… · So1… · 1338795" spellcheck="false"><button class="hbtn" id="quickAddBtn">ADD</button></div>
@@ -2044,7 +2071,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); if(!$('#quickNav').children.length) buildQuickNav();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -3607,6 +3634,7 @@ function renderSpark(){
   host.append(el('div','flow-title','LAST '+spanTxt.toUpperCase()+' · '+s.length+' samples'
     +(dd!=null?' · <span class="'+(dd>=0?'up':'down')+'">'+fmtPct(dd,2,true)+'</span> over the window':'')));
   host.append(svg);
+  renderCatSplit(host);
 }
 
 /* ================= PLAYBOOK =================
@@ -4046,7 +4074,6 @@ function renderTruth(){
     });
     host.append(wrap);
   }
-  renderCatSplit(host);
 }
 
 /* ----- net by pool type, month by month -----
@@ -4248,6 +4275,42 @@ function wireDrag(container, selector, onOrder){
     item.addEventListener('dragleave',()=>item.classList.remove('drag-over'));
     item.addEventListener('drop',e=>e.preventDefault());
   });
+}
+/* ---- jump-to-section strip ----
+   Built from the DOM, not from a list, because panels are drag-reorderable and a hardcoded
+   order would start lying the first time one is moved. Rebuilt after a reorder for the same
+   reason. A collapsed panel is opened before scrolling — landing on a closed header looks
+   like the button did nothing. */
+function measureChrome(){
+  const h=document.querySelector('header'), n=$('#quickNav');
+  if(h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight+'px');
+  if(n) document.documentElement.style.setProperty('--nav-h', n.offsetHeight+'px');
+}
+function navLabel(panel){
+  const t=panel.querySelector('.phead .t');
+  let txt=(t?t.textContent:panel.dataset.panel||'').trim();
+  txt=txt.split('—')[0].split('·')[0].trim();          // drop the explanatory tail
+  return txt||panel.dataset.panel||'SECTION';
+}
+function buildQuickNav(){
+  const nav=$('#quickNav'); if(!nav) return;
+  const stack=$('#panelStack')||document;
+  const panels=[...stack.querySelectorAll('.panel[data-panel]')];
+  nav.innerHTML='';
+  for(const p of panels){
+    const b=document.createElement('button');
+    b.type='button';
+    b.textContent=navLabel(p);
+    b.title='Jump to '+navLabel(p);
+    b.addEventListener('click',()=>{
+      p.classList.remove('collapsed');                  // never scroll to a closed panel
+      const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+      try{ p.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
+      catch(e){ p.scrollIntoView(); }                   // older WebKit: no options object
+    });
+    nav.append(b);
+  }
+  measureChrome();
 }
 const LAYOUT_VERSION=5;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
@@ -4720,7 +4783,10 @@ async function init(){
   wireSettings();
   wireQuickAdd();
   applyStoredOrders();
-  wireDrag($('#panelStack'), '.panel', ids=>store.set('panelOrder', ids));
+  wireDrag($('#panelStack'), '.panel', ids=>{ store.set('panelOrder', ids); buildQuickNav(); });
+  buildQuickNav();
+  addEventListener('resize', measureChrome, {passive:true});
+  addEventListener('orientationchange', ()=>setTimeout(measureChrome,250), {passive:true});
   document.querySelectorAll('.collapse-btn').forEach(b=>b.addEventListener('click',e=>{
     e.stopPropagation(); b.closest('.panel').classList.toggle('collapsed');
     b.textContent = b.closest('.panel').classList.contains('collapsed')?'▸':'▾';
