@@ -499,13 +499,14 @@
   .verdict.early,.verdict.level{color:var(--text-muted);border-color:var(--line)}
   .arch-adv{font-size:11px;color:var(--text-muted);line-height:1.5}
   .vgrid{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 12px;align-items:baseline;font-size:11.5px;margin:6px 0 2px}
+  .vgrid.vgrid5{grid-template-columns:1fr auto auto auto auto}
   .vgrid .num{font-variant-numeric:tabular-nums;text-align:right}
   .vgrid .vh{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted)}
   .vlead{color:var(--status-good)} .vlag{color:var(--status-warning)}
   @media(max-width:900px){.arch-row{grid-template-columns:1fr 1fr;row-gap:4px}.arch-row.hdr{display:none}.arch-row .num{text-align:left}
     .arch-row>[data-l]::before{content:attr(data-l);display:block;font-size:8px;letter-spacing:.14em;color:var(--text-muted)}
     .arch-row>.arch-pos,.arch-row>.arch-adv{grid-column:1/-1}
-    .vgrid{grid-template-columns:1fr auto auto}.vgrid .vspan{display:none}}
+    .vgrid{grid-template-columns:1fr auto auto}.vgrid.vgrid5{grid-template-columns:1fr auto auto auto}.vgrid .vspan{display:none}}
 
   /* seismograph */
   .vol-chips{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0 4px}
@@ -2991,9 +2992,27 @@ function renderIdle(){
     +(idle.unpriced?' · '+idle.unpriced+' unpriced':'');
   const strip=el('div','econ-strip');
   const pct=(idleUsd+deployed)>0?idleUsd/(idleUsd+deployed)*100:0;
-  strip.innerHTML='<span>IDLE <b>'+fmtUsd(idleUsd,0)+'</b></span><span>DEPLOYED <b>'+fmtUsd(deployed,0)+'</b></span>'
-    +'<span><b>'+pct.toFixed(0)+'%</b> of capital is not earning fees</span>';
+  /* "not earning fees" framed held capital as a deficiency and implied deploying it. Held
+     capital is a position: it takes the price move whole, where an LP sells the winner into
+     strength. Which of the two paid is measurable — lpVsHodlUsd already answers it — so state
+     the split flatly and put the measured answer next to it instead of a verdict. */
+  const evm=ordered().filter(p=>p.lpVsHodlUsd!=null);
+  const vsHodl=evm.reduce((s,p)=>s+p.lpVsHodlUsd,0);
+  const evmBase=evm.reduce((s,p)=>s+(p.costUsd||0),0);
+  strip.innerHTML='<span>HELD <b>'+fmtUsd(idleUsd,0)+'</b></span><span>IN LPs <b>'+fmtUsd(deployed,0)+'</b></span>'
+    +'<span><b>'+pct.toFixed(0)+'%</b> is held rather than pooled</span>';
   host.append(strip);
+  if(evm.length && evmBase>0){
+    const ahead=vsHodl>=0;
+    host.append(el('div','flow-omit',
+      'Held capital is not idle in the sense of doing nothing — it takes the price move whole, while an LP sells the '
+      +'rising side into strength. Which paid better is measured, not assumed: across the '+evm.length+' position'
+      +(evm.length>1?'s':'')+' where a cost basis exists, pooling is currently <b style="color:var(--status-'
+      +(ahead?'good':'critical')+')">'+(ahead?'ahead by ':'behind by ')+fmtUsd(Math.abs(vsHodl))+'</b> versus simply holding the '
+      +'same tokens — '+(Math.abs(vsHodl)/evmBase*100).toFixed(1)+'% of the '+fmtUsd(evmBase,0)+' put in. '
+      +'Solana positions are excluded: no deposit history on free RPC means no cost basis to compare against. '
+      +'Deploying more only pays if the fee income beats that gap.'));
+  }
   const tbl=el('div','idle-tbl');
   for(const r of rows.slice(0,18)){
     const row=el('div','idle-row');
@@ -3909,7 +3928,7 @@ function renderPlaybook(){
       const row=el('div','act-row act-warn');
       row.innerHTML='<span class="act-tag">CONCENTRATION</span><span class="act-body">'
         +'<span class="act-head"><b>'+esc(String(top[0]))+'</b> is '+(top[1]/total*100).toFixed(0)+'% of everything you hold ('
-        +fmtUsd(top[1],0)+' of '+fmtUsd(total,0)+'), and most of it is sitting idle.</span>'
+        +fmtUsd(top[1],0)+' of '+fmtUsd(total,0)+'), and most of it is held rather than pooled.</span>'
         +'<span class="act-sub">Concentration is a position whether or not you chose it — and an LP on that same token is the one thing '
         +'quietly reducing it, by selling into strength. That is what shows up as impermanent loss: the cost of having de-risked. '
         +'Note the marked value assumes you could sell at the feed price; a bag this size relative to on-chain depth would move the price '
@@ -4039,7 +4058,14 @@ function renderTruth(){
         const win =q.chain==='sol'?(q.feesObservedDays??null):(q.ageDays??null);
         const fees=q.feesEverUsd;
         const ok=base!=null&&base>0&&win!=null&&win>=VAR_MIN_DAYS&&fees!=null;
-        return {q,base,win,ok, gross: ok?fees/base*1000/win*30:null};
+        /* Fees are only half the P&L. Divergence is the other half, and showing gross alone
+           systematically flatters the narrow bands — they collect the most per dollar while in
+           range and lose the most when price leaves it. Ranking stays on gross: divergence on
+           an IN-RANGE position is a mark that reverses if price comes back, so ordering by it
+           would just extrapolate the latest move. An out-of-range position is different — its
+           conversion has already happened — and the row says which is which. */
+        const net = (ok && q.lpVsHodlUsd!=null) ? q.lpVsHodlUsd/base*1000/win*30 : null;
+        return {q,base,win,ok, gross: ok?fees/base*1000/win*30:null, net};
       });
       const usable=vrows.filter(r=>r.ok).sort((a,b)=>b.gross-a.gross);
       const young=vrows.length-usable.length;
@@ -4051,16 +4077,26 @@ function renderTruth(){
         box.innerHTML=html; host.append(box); continue;
       }
       const solGroup=usable.some(r=>r.q.chain==='sol');
-      html+='<div class="vgrid"><span class="vh">VARIANT</span><span class="vh vspan">BAND</span>'
-         +'<span class="vh num">DEPLOYED</span><span class="vh num">FEES / $1K / 30D</span>';
+        const anyNet=usable.some(r=>r.net!=null);
+      html+='<div class="vgrid'+(anyNet?' vgrid5':'')+'"><span class="vh">VARIANT</span><span class="vh vspan">BAND</span>'
+         +'<span class="vh num">DEPLOYED</span><span class="vh num">FEES / $1K / 30D</span>'
+         +(anyNet?'<span class="vh num">NET OF IL</span>':'');
       usable.forEach((r,i)=>{
         const cls=i===0?'vlead':(i===usable.length-1?'vlag':'');
-        html+='<span class="'+cls+'">'+esc(r.q.feeLabel||'—')+' '+linkRef(r.q)+'</span>'
+        const netCls=r.net==null?'':(r.net>=0?'vlead':'vlag');
+        html+='<span class="'+cls+'">'+esc(r.q.feeLabel||'—')+' '+linkRef(r.q)
+           +(r.q.inRange?'':' <span class="unit" title="Out of range: the conversion has already happened, so this divergence is settled rather than a mark that can reverse.">exited</span>')+'</span>'
            +'<span class="vspan">'+fmtSpan(spanOf(r.q))+'</span>'
            +'<span class="num">'+fmtUsd(r.base,0)+'</span>'
-           +'<span class="num '+cls+'">'+fmtUsd(r.gross,0)+'</span>';
+           +'<span class="num '+cls+'">'+fmtUsd(r.gross,0)+'</span>'
+           +(anyNet?'<span class="num '+netCls+'">'
+              +(r.net!=null?(r.net<0?'−'+fmtUsd(-r.net,0):fmtUsd(r.net,0)):'<span class="unit">n/a</span>')+'</span>':'');
       });
       html+='</div>';
+      if(anyNet) html+='<div style="margin:2px 0 6px"><span class="unit">FEES is income only. NET OF IL is that income less what '
+        +'divergence took, which is the whole of it. On a position still in range that second figure is a mark and reverses if price '
+        +'comes back; on one marked <b>exited</b> the conversion is done. Ranking here is on fees, because ordering by a mark would '
+        +'just be extrapolating the last move.</span></div>';
       const lead=usable[0], lag=usable[usable.length-1];
       const ratio=lag.gross>0?lead.gross/lag.gross:null;
       const poolKey=q=>String(q.poolId||q.pool||'');
