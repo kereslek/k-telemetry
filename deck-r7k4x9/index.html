@@ -40,7 +40,11 @@
     --sans:system-ui,-apple-system,'Segoe UI',sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
+  /* body must be allowed to grow to the content. At height:100% it is exactly one viewport
+     tall while the page is ~14,700px, and a sticky child can only stick inside its containing
+     block — so the jump strip pinned for the first screen and then scrolled away with the rest.
+     min-height keeps the full-viewport background on short pages without capping the box. */
+  html{height:100%} body{min-height:100%}
   body{
     background:var(--bg);
     color:var(--text-primary);
@@ -113,15 +117,35 @@
      layout — and the positional rule that hides the clock and block on small screens — is
      left completely alone. Heights are measured, never assumed: the header wraps to two or
      three rows depending on width, and a hardcoded offset would drop sections under it. */
+  /* Sticky and scrollable must be two different elements. On iOS an element cannot be both:
+     -webkit-overflow-scrolling:touch on a position:sticky node makes it its own accelerated
+     scroll container and the stickiness silently stops working part-way down the page — which
+     is exactly "they stick then they disappear". The nav sticks; the track inside it scrolls. */
   #quickNav{
-    position:sticky; top:var(--hdr-h,58px); z-index:49;
-    display:flex; gap:6px; overflow-x:auto; overflow-y:hidden;
-    padding:6px 22px; scrollbar-width:none;
-    background:linear-gradient(180deg,rgba(7,13,22,.97),rgba(7,13,22,.9));
+    /* top:0, not below the header: header,main,footer{position:relative} further down
+       overrides the header's own position:sticky, so it scrolls away and there is nothing
+       to sit under. */
+    position:sticky; top:0; z-index:49;
+    padding:6px 22px; display:flex; align-items:flex-start; gap:8px;
+    background:linear-gradient(180deg,rgba(7,13,22,.97),rgba(7,13,22,.94));
     border-bottom:1px solid var(--line);
-    -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain;
   }
-  #quickNav::-webkit-scrollbar{display:none}
+  .qn-track{
+    display:flex; gap:6px; flex:1 1 auto; min-width:0;
+    overflow-x:auto; overflow-y:hidden; scrollbar-width:none;
+    overscroll-behavior-x:contain;
+    /* fade the right edge so it is visible that the row continues */
+    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent);
+            mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent);
+  }
+  .qn-track::-webkit-scrollbar{display:none}
+  #quickNav.expanded .qn-track{flex-wrap:wrap; overflow-x:visible; -webkit-mask-image:none; mask-image:none}
+  .qn-more{
+    flex:0 0 auto; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em;
+    color:var(--accent); background:transparent; border:1px solid var(--accent-dim);
+    padding:5px 8px; cursor:pointer; touch-action:manipulation;
+    -webkit-user-select:none; user-select:none; white-space:nowrap;
+  }
   #quickNav button{
     flex:0 0 auto; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em;
     color:var(--text-secondary); background:transparent; border:1px solid var(--line);
@@ -132,8 +156,12 @@
   #quickNav button:hover{color:var(--accent);border-color:var(--accent-dim)}
   #quickNav button:active{color:var(--accent);border-color:var(--accent)}
   /* the scroll target clears both sticky bars */
-  .panel{scroll-margin-top:calc(var(--hdr-h,58px) + var(--nav-h,34px) + 10px)}
-  @media(max-width:560px){ #quickNav{padding:5px 12px;gap:5px} #quickNav button{font-size:9px;padding:4px 8px} }
+  .panel{scroll-margin-top:calc(var(--nav-h,34px) + 12px)}   /* only the strip is sticky */
+  @media(max-width:560px){
+    #quickNav{padding:5px 10px;gap:6px}
+    #quickNav button{font-size:9px;padding:4px 7px;letter-spacing:.1em}
+    #quickNav.expanded .qn-track{gap:4px}
+  }
   @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
@@ -4286,17 +4314,36 @@ function measureChrome(){
   if(h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight+'px');
   if(n) document.documentElement.style.setProperty('--nav-h', n.offsetHeight+'px');
 }
+/* Short enough that several fit across a phone. Keyed by panel id so the label does not
+   change when a heading is reworded. */
+const NAV_SHORT={action:'PRIORITY',playbook:'PLAYBOOK',rank:'LEADERBOARD',idle:'IDLE',
+  seismo:'SEISMO',truth:'TRUTH',flow:'FLOW',outlook:'OUTLOOK',arch:'RANGES',cosmos:'GALAXY',
+  ops:'DIRECTIVES',radar:'RADAR',compare:'COMPARE',matrix:'MATRIX',telemetry:'HISTORY',
+  positions:'POSITIONS',global:'GLOBAL',intel:'INTEL',log:'LOG'};
 function navLabel(panel){
+  const id=panel.dataset.panel;
+  if(NAV_SHORT[id]) return NAV_SHORT[id];
   const t=panel.querySelector('.phead .t');
-  let txt=(t?t.textContent:panel.dataset.panel||'').trim();
+  let txt=(t?t.textContent:id||'').trim();
   txt=txt.split('—')[0].split('·')[0].trim();          // drop the explanatory tail
-  return txt||panel.dataset.panel||'SECTION';
+  return txt||id||'SECTION';
 }
 function buildQuickNav(){
   const nav=$('#quickNav'); if(!nav) return;
   const stack=$('#panelStack')||document;
   const panels=[...stack.querySelectorAll('.panel[data-panel]')];
   nav.innerHTML='';
+  const track=document.createElement('div'); track.className='qn-track';
+  nav.append(track);
+  /* One row does not fit nineteen sections on a phone, and a row that scrolls sideways hides
+     most of them behind a gesture nobody is told about. ALL opens every section at once. */
+  const more=document.createElement('button');
+  more.type='button'; more.className='qn-more';
+  const setMore=on=>{ nav.classList.toggle('expanded',on); more.textContent=on?'▴ LESS':'▾ ALL';
+                      more.setAttribute('aria-expanded',String(on)); measureChrome(); };
+  more.addEventListener('click',()=>{ const on=!nav.classList.contains('expanded');
+                                      store.set('navOpen',on); setMore(on); });
+  nav.append(more);
   for(const p of panels){
     const b=document.createElement('button');
     b.type='button';
@@ -4308,8 +4355,9 @@ function buildQuickNav(){
       try{ p.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
       catch(e){ p.scrollIntoView(); }                   // older WebKit: no options object
     });
-    nav.append(b);
+    track.append(b);
   }
+  setMore(!!store.get('navOpen',false));
   measureChrome();
 }
 const LAYOUT_VERSION=5;   // bump when the default panel order changes on purpose
