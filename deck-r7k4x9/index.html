@@ -2190,7 +2190,8 @@ function renderTiles(){
   const mk = (k,v,d)=>{const x=el('div','tile');x.append(el('div','k',k),el('div','v',v),el('div','d',d??''));t.append(x);};
   mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
      ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
-     : (state.samples.length>1 ? deltaStr(totalVal) : 'principal currently deployed'));
+     : (state.samples.length>1 ? deltaStr(totalVal)
+        : 'market value of tokens inside your LPs · fees and idle capital not included'));
   const inc=v=>'<span style="color:var(--status-good)">+'+v+'</span>';   // income = green, costs = red
   const outc=v=>'<span style="color:var(--status-critical)">−'+v+'</span>';
   { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
