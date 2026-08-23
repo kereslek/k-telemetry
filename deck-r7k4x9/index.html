@@ -432,12 +432,12 @@
 
   .idle-sym{flex:0 0 120px;font-family:var(--mono);font-size:11px;letter-spacing:.06em}
   .idle-cell:nth-child(even){background:rgba(255,255,255,.02)}
-  .idle-at{padding:0 8px 5px 8px;font-size:10px;color:var(--text-muted);letter-spacing:.02em}
+
   .idle-amt{flex:1;text-align:right;font-size:11.5px;color:var(--text-muted)}
   .idle-usd{flex:0 0 110px;text-align:right;font-size:12px}
   .idle-hdr{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line);background:none!important}
   .idle-hdr .idle-amt,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
-  @media(max-width:560px){ .idle-sym{flex:0 0 96px} .idle-usd{flex:0 0 86px} .idle-amt{font-size:10.5px} .idle-at{font-size:9px} }
+  @media(max-width:560px){ .idle-sym{flex:0 0 96px} .idle-usd{flex:0 0 86px} .idle-amt{font-size:10.5px} }
   /* Below ~360px the three fixed columns no longer fit and the value column was pushed past the
      panel edge, taking the page with it. Let every column shrink and the amount give way first. */
   @media(max-width:359px){
@@ -445,7 +445,6 @@
     .idle-sym{flex:0 1 auto;min-width:0;font-size:10px}
     .idle-amt{flex:1 1 0;min-width:0;font-size:9.5px;overflow:hidden;text-overflow:ellipsis}
     .idle-usd{flex:0 0 auto;font-size:10.5px}
-    .idle-at{font-size:8.5px;padding:0 4px 5px 4px}
   }
   @media(max-width:560px){
     .act-row{flex-wrap:wrap;gap:6px}
@@ -931,7 +930,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v25.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2997,16 +2996,13 @@ function renderIdle(){
   }
   /* One row per token — that is the unit the question is asked in ("how much LCX do I have").
      Splitting by wallet put LCX on five separate lines and CPOOL on five more, interleaved by
-     value, so the holding could not be read off the panel at all. The wallet split is kept, as
-     a sub-line under the total, because "where is it" is the next question and not the first. */
-  const wshort=w=>{ const x=String(w||''); return x.length>10 ? x.slice(-4) : x||'—'; };
+     value, so the holding could not be read off the panel at all. */
   const agg=new Map();
   for(const r of idle.rows){
     const key=(r.symbol||r.addr)+'|'+r.chain+'|'+r.addr;
     const e=agg.get(key)||{sym:r.symbol||(r.addr.slice(0,6)+'…'), chain:r.chain, addr:r.addr,
-                           amount:0, usd:0, priced:r.usd!=null, at:[]};
+                           amount:0, usd:0, priced:r.usd!=null};
     e.amount+=r.amount; e.usd+=(r.usd||0);
-    if(r.amount>0) e.at.push({w:r.wallet, amt:r.amount});
     agg.set(key,e);
   }
   /* Filter on what would actually be shown, not on the raw value. amount>0 kept rows whose
@@ -3068,11 +3064,6 @@ function renderIdle(){
       +'<span class="idle-amt">'+r.amount.toLocaleString(undefined,{maximumFractionDigits:4})+'</span>'
       +'<span class="idle-usd">'+(r.priced?fmtUsd(r.usd,2):'<span class="unit">unpriced</span>')+'</span>';
     cell.append(row);
-    if(r.at.length>1 || (r.at.length===1 && rows.length<=SHOWN)){
-      const split=r.at.slice().sort((a,b)=>b.amt-a.amt)
-        .map(x=>esc(wshort(x.w))+' '+x.amt.toLocaleString(undefined,{maximumFractionDigits:2})).join('  ·  ');
-      cell.append(el('div','idle-at', (r.at.length>1?'across '+r.at.length+' wallets — ':'in ')+split));
-    }
     tbl.append(cell);
   }
   if(rows.length>SHOWN) tbl.append(el('div','flow-omit',(rows.length-SHOWN)+' smaller holdings not listed.'));
