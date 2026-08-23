@@ -1255,6 +1255,15 @@ const main=async()=>{
         fl.month=monthKey; fl.closed=0; fl.catClosed={};
         for(const id in fl.pos) fl.pos[id].m0=fl.pos[id].last;
       }
+      /* August's closes pre-date category stamping: their fees sit in the pooled scalar with no
+         record of where they came from. Seeded here rather than by editing the file, because a
+         run already in flight writes its own copy back and erased exactly that edit twice.
+         In code it is idempotent and cannot be raced. Every August close was an LCX/ETH band of
+         1.86x-2.41x, narrow under the same rule applied above. Fires once: after this the map
+         is non-empty and later closes attribute themselves. */
+      if(fl.month==='2026-08' && (fl.closed||0)>0 && !Object.keys(fl.catClosed||{}).length){
+        fl.catClosed={'evm|LCX / ETH · narrow': Math.round((fl.closed||0)*100)/100};
+      }
       const seen=new Set();
       for(const p of [...evmPositions,...solPositions]){
         const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);
@@ -1353,6 +1362,7 @@ const main=async()=>{
         if(sp.mint1===SOL_MINT && sp.usd1!=null){ solUsd=sp.usd1; break; }
       }
       cl.solTxs=cl.solTxs||{};
+      cl.solGasUsd=cl.solGasUsd||0;   // present at 0, not absent, when nothing was scanned
       if(solUsd!=null){
         for(const sig in solTxFees){
           if(cl.solTxs[sig]) continue;
