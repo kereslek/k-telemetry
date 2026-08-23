@@ -1221,17 +1221,38 @@ const main=async()=>{
       ledger.__sigs=[...booked].slice(-400);   // newest kept; bounded so the file cannot grow forever
       fs.writeFileSync(OUT+'/ledger-'+profile.slug+'.json', JSON.stringify(ledger,null,1));
     }catch(e){ logErr('ledger',e); }
+    let catMtd=null, catMonths=[];
     // ---- monthly fee ledger: MTD earned across ACTIVE + CLOSED LPs, claimed + unclaimed ----
     let feeMonth=null;
     const justClosed=[];   // evm positions that vanished this run — their final close tx still owes gas accounting
     try{
       const monthKey=new Date().toISOString().slice(0,7);
-      let fl={month:monthKey, closed:0, pos:{}, months:[]};
+      /* A position's identity is dropped the moment it closes — only the pooled total survived,
+         which is why August's wide/narrow split had to be reconstructed by hand. The category is
+         now stamped on the entry while the position is still alive, and closes are banked per
+         category as well as into the total. Band width splits a pair only where both kinds exist;
+         everything else is just the pair. */
+      const catKeyOf=q=>{
+        const pair=q.pairLabel||'—';
+        const span=(q.priceLower>0&&q.priceUpper>0)?q.priceUpper/q.priceLower:null;
+        // chain rides in the key so costs, which are only knowable per chain, can be applied
+        // to the right rows without the reader having to know where each pair trades
+        return (q.chain==='sol'?'sol':'evm')+'|'+pair+(span==null?'':(span>5?' · wide':' · narrow'));
+      };
+      let fl={month:monthKey, closed:0, pos:{}, months:[], catClosed:{}};
       try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
       if(fl.month!==monthKey){
         const prevTotal=(fl.closed||0)+Object.values(fl.pos||{}).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
-        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,ilEnd:fl.lastIl??null}].slice(-12);
-        fl.month=monthKey; fl.closed=0;
+        // archive the finished month's split before the counters reset
+        const prevCat={};
+        for(const k in (fl.catClosed||{})) prevCat[k]=(prevCat[k]||0)+fl.catClosed[k];
+        for(const id in (fl.pos||{})){
+          const e=fl.pos[id], a=(e.acc!=null?e.acc:Math.max(0,e.last-e.m0));
+          const k=e.cat||'—'; prevCat[k]=(prevCat[k]||0)+a;
+        }
+        for(const k in prevCat) prevCat[k]=Math.round(prevCat[k]*100)/100;
+        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,ilEnd:fl.lastIl??null,cat:prevCat}].slice(-12);
+        fl.month=monthKey; fl.closed=0; fl.catClosed={};
         for(const id in fl.pos) fl.pos[id].m0=fl.pos[id].last;
       }
       const seen=new Set();
@@ -1256,6 +1277,8 @@ const main=async()=>{
           if(cum>e.hwm){ e.acc=Math.round((e.acc+(cum-e.hwm))*100)/100; e.hwm=Math.round(cum*100)/100; }
           e.last=Math.round(cum*100)/100;
         }
+        // refreshed every run: a position that is re-ranged keeps its id but can change class
+        fl.pos[p.id].cat=catKeyOf(p);
       }
       for(const id of Object.keys(fl.pos)){
         if(!seen.has(String(id))){
@@ -1268,7 +1291,10 @@ const main=async()=>{
             continue;
           }
           const gone=fl.pos[id];
-          fl.closed=(fl.closed||0)+(gone.acc!=null?gone.acc:Math.max(0,gone.last-gone.m0));
+          const goneAmt=(gone.acc!=null?gone.acc:Math.max(0,gone.last-gone.m0));
+          fl.closed=(fl.closed||0)+goneAmt;
+          fl.catClosed=fl.catClosed||{};
+          const gk=gone.cat||'—'; fl.catClosed[gk]=(fl.catClosed[gk]||0)+goneAmt;
           const ck=ckRaw;
           // v25.2: legacy ledger entries have no .ck — a Solana id must never fall through to the EVM scanner
           if(!String(id).startsWith('sol:')&&ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
@@ -1277,6 +1303,16 @@ const main=async()=>{
       }
       fl.closed=Math.round((fl.closed||0)*100)/100;
       const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
+      // live month-to-date split: closed positions keep the category they had when they closed
+      catMtd={};
+      for(const k in (fl.catClosed||{})) catMtd[k]=(catMtd[k]||0)+fl.catClosed[k];
+      for(const id in fl.pos){
+        const e=fl.pos[id], a=(e.acc!=null?e.acc:Math.max(0,e.last-e.m0));
+        const k=e.cat||'—'; catMtd[k]=(catMtd[k]||0)+a;
+      }
+      for(const k in catMtd) catMtd[k]=Math.round(catMtd[k]*100)/100;
+      catMonths=(fl.months||[]).filter(x=>x&&x.cat);
+      fl.catClosed=fl.catClosed||{};
       const nowD=new Date();
       const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
       const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
@@ -1303,8 +1339,9 @@ const main=async()=>{
       try{ cl=JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')); }catch(e){}
       cl.scan=cl.scan||{};
       if(cl.month!==monthKey){
-        cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100}].slice(-12);
-        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.txs={}; cl.solTxs={};
+        cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
+                     solGas:Math.round((cl.solGasUsd||0)*100)/100}].slice(-12);
+        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.txs={}; cl.solTxs={};
       }
       /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
          into a CLMM position pay no pool fee — only a swap does — so for this portfolio the
@@ -1320,7 +1357,8 @@ const main=async()=>{
         for(const sig in solTxFees){
           if(cl.solTxs[sig]) continue;
           cl.solTxs[sig]=1;
-          cl.gasUsd+=(solTxFees[sig]/1e9)*solUsd;
+          // kept apart from EVM gas: a per-pool-type net needs to know which chain paid
+          cl.solGasUsd=(cl.solGasUsd||0)+(solTxFees[sig]/1e9)*solUsd;
         }
       }
       cl.solPartial=true;   // swap fees on Solana are not detected
@@ -1544,7 +1582,7 @@ const main=async()=>{
       console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
     }catch(e){ logErr('balances',e); }
 
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
