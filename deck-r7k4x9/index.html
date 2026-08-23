@@ -3703,6 +3703,7 @@ function renderSpark(){
   host.append(el('div','flow-title','LAST '+spanTxt.toUpperCase()+' · '+s.length+' samples'
     +(dd!=null?' · <span class="'+(dd>=0?'up':'down')+'">'+fmtPct(dd,2,true)+'</span> over the window':'')));
   host.append(svg);
+  renderMonths(host);
   renderCatSplit(host);
 }
 
@@ -4136,30 +4137,44 @@ function renderTruth(){
   } else {
     host.append(el('div',null,'<span style="color:var(--text-muted);font-size:12px">IL analytics arrive with the next relay refresh.</span>'));
   }
-  // ---- month-over-month ledger ----
+}
+
+/* ----- month over month -----
+   Lived in the TRUTH PANEL, which is about LP versus holding, so the month's headline numbers
+   were in a different panel from the month's breakdown and neither was under History. Both are
+   here now, in the order they are read: the month totals, then where they came from. */
+function renderMonths(host){
   const fm=state.feeMonth, cm=state.costMonth;
-  if(fm){
-    const byM={};
-    (fm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].fees=x.total; byM[x.m].ilEnd=x.ilEnd; });
-    (cm?.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0); });
-    const rows=Object.keys(byM).sort().map(m=>({m,...byM[m],cur:false}));
-    rows.push({m:fm.month, fees:fm.mtd, costs:cm?cm.total:null, ilEnd:fm.ilNow, cur:true});
-    const wrap=el('div'); wrap.style.marginTop='16px';
-    wrap.append(el('div','flow-title','MONTH OVER MONTH — grows automatically as months complete'));
-    const hdr=el('div','arch-row hdr');
-    ['MONTH','FEES EARNED','COSTS','NET','PORTFOLIO IL AT MONTH END'].forEach(h=>hdr.append(el('div',null,h)));
-    wrap.append(hdr);
-    rows.forEach(r=>{
-      const row=el('div','arch-row');
-      row.append(el('div',null,'<b>'+mn(r.m)+'</b>'+(r.cur?' <span style="color:var(--accent);font-size:9px">IN PROGRESS · day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+'</span>':'')));
-      row.append(el('div','num',r.fees!=null?g(r.fees):'—'));
-      row.append(el('div','num',r.costs!=null?g(-r.costs):'—'));
-      row.append(el('div','num',(r.fees!=null&&r.costs!=null)?g(r.fees-r.costs):'—'));
-      row.append(el('div','num',r.ilEnd!=null?g(r.ilEnd):'—'));
-      wrap.append(row);
-    });
-    host.append(wrap);
-  }
+  if(!fm) return;
+  const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const mn=k=>MN[Number(String(k).slice(5,7))-1]+' ’'+String(k).slice(2,4);
+  const g=v=>Math.abs(v)<0.005
+    ? '<b style="color:var(--text-muted)">$0.00</b>'
+    : '<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
+  const byM={};
+  (fm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].fees=x.total; byM[x.m].ilEnd=x.ilEnd; });
+  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0); });
+  const rows=Object.keys(byM).sort().map(m=>({m,...byM[m],cur:false}));
+  rows.push({m:fm.month, fees:fm.mtd, costs:cm?cm.total:null, ilEnd:fm.ilNow, cur:true});
+  const wrap=el('div','flow-block');
+  wrap.append(el('div','flow-title','MONTH OVER MONTH — grows automatically as months complete'));
+  const hdr=el('div','arch-row hdr');
+  /* "NET" implied total return. It is fee income less costs and takes no account of divergence,
+     which sits in the column beside it and was -$708 on the EVM side this month. */
+  ['MONTH','FEES EARNED','COSTS','NET FEE INCOME','PORTFOLIO IL AT MONTH END'].forEach(h=>hdr.append(el('div',null,h)));
+  wrap.append(hdr);
+  rows.forEach(r=>{
+    const row=el('div','arch-row');
+    row.append(el('div',null,'<b>'+mn(r.m)+'</b>'+(r.cur?' <span style="color:var(--accent);font-size:9px">IN PROGRESS · day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+'</span>':'')));
+    row.append(el('div','num',r.fees!=null?g(r.fees):'—'));
+    row.append(el('div','num',r.costs!=null?g(-r.costs):'—'));
+    row.append(el('div','num',(r.fees!=null&&r.costs!=null)?g(r.fees-r.costs):'—'));
+    row.append(el('div','num',r.ilEnd!=null?g(r.ilEnd):'—'));
+    wrap.append(row);
+  });
+  wrap.append(el('div','arch-note','NET FEE INCOME is fees less costs. It is not total return — divergence is the column to its '
+    +'right, and it is not subtracted here. Fees are realised income; the IL figure is a mark at that moment and moves with price.'));
+  host.append(wrap);
 }
 
 /* ----- net by pool type, month by month -----
