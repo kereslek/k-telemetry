@@ -3612,6 +3612,21 @@ function renderSpark(){
    the volatility currently being realised. That last figure is NOT a forecast — displacement
    grows with the square root of time, so it says when a move this size stops being unusual,
    and says nothing at all about direction. Drift away is exactly as likely as drift back. */
+/* A pool price like 0.000008990 is not a number anyone can read. When one token is worth far
+   less than the other, the human unit is how many of the cheap one buy the dear one —
+   111,236 LCX per ETH. Inverting also reverses direction, so a fall in ETH-per-LCX is a RISE
+   in LCX-per-ETH; anywhere the inverted figure is shown, the current level is shown beside it
+   so the direction cannot read as a contradiction. */
+function priceUnits(p){
+  const s0=(p.m0&&p.m0.symbol)||'token0', s1=(p.m1&&p.m1.symbol)||'token1';
+  const inv = p.price!=null && p.price>0 && p.price<0.001;
+  const fmt = v => {
+    if(v==null||!(v>0)) return '—';
+    const x = inv ? 1/v : v;
+    return x>=1000 ? Math.round(x).toLocaleString() : x>=1 ? x.toFixed(2) : x.toPrecision(4);
+  };
+  return {inv, label: inv ? (esc(s0)+' per '+esc(s1)) : (esc(s1)+' per '+esc(s0)), fmt};
+}
 function backToRange(p){
   if(p.inRange||p.price==null||!(p.price>0)) return null;
   const above = p.rangePos!=null && p.rangePos>1;
@@ -3627,10 +3642,12 @@ function backToRange(p){
 }
 function backToRangeText(p){
   const b=backToRange(p); if(!b) return '';
-  const lvl = b.targetUsd!=null ? ' (<b>'+fmtUsd(b.targetUsd,5)+'</b>)' : '';
+  const u=priceUnits(p);
   // Bold carries the numbers a decision turns on and nothing else, or it stops meaning anything.
-  let t = esc(String(b.sym))+' must move <b>'+b.pct.toFixed(1)+'% '+(b.above?'down':'up')
-        + '</b> to <b>'+b.target.toPrecision(4)+'</b>'+lvl+' before this earns again';
+  let t = esc(String(b.sym))+' must move <b>'+b.pct.toFixed(1)+'% '+(b.above?'down':'up')+'</b> — to <b>'
+        + (b.targetUsd!=null ? fmtUsd(b.targetUsd,5) : u.fmt(b.target))+'</b>'
+        + ', or <b>'+u.fmt(b.target)+' '+u.label+'</b> from '+u.fmt(p.price)+' now'
+        + ' — before this earns again';
   if(b.days!=null){
     const d=b.days;
     const when = d<0.5 ? 'inside half a day' : d<1.5 ? 'about a day' : d<10 ? 'about '+d.toFixed(1)+' days' : 'roughly '+Math.round(d)+' days';
@@ -3708,15 +3725,18 @@ function renderPlaybook(){
     const days=w=>{ const half=Math.log(w.up/w.lo)/2; return sig>0?Math.pow(half/sig,2):null; };
     const dB=days(b), tight=p.range.suggested.tight, wide=p.range.suggested.wide;
     const usd=v=>eu!=null?fmtUsd(v*eu,5):'—';
+    const u=priceUnits(p);
+    // Inverting reverses which end is which, so order the band by value, not by field name.
+    const band = u.inv ? (u.fmt(b.up)+' – '+u.fmt(b.lo)) : (u.fmt(b.lo)+' – '+u.fmt(b.up));
     const row=el('div','act-row');
     row.innerHTML='<span class="act-tag">BAND SIZE</span><span class="act-body">'
       +'<span class="act-head">'+esc(pair)+' — a new band sized for the volatility being realised now: <b>'
-      +b.lo.toPrecision(4)+' – '+b.up.toPrecision(4)+'</b> ('+usd(b.lo)+' – '+usd(b.up)+' per '+esc(String(p.m0&&p.m0.symbol))+').</span>'
+      +usd(b.lo)+' – '+usd(b.up)+'</b> per '+esc(String(p.m0&&p.m0.symbol))+', i.e. <b>'+band+' '+u.label+'</b>.</span>'
       +'<span class="act-sub">Daily volatility here is <b>'+(sig*100).toFixed(1)+'%</b>. Because price wanders as the square root of '
       +'time, a band survives roughly (half-width ÷ σ)² days — so this one is a <b>~'+(dB!=null?dB.toFixed(0):'—')+' day</b> band, not a '
       +'permanent one. Halving the width does not halve its life, it quarters it. '
-      +'Tighter ('+tight.lo.toPrecision(4)+' – '+tight.up.toPrecision(4)+') earns more per dollar while it holds and needs re-ranging '
-      +'sooner; wider ('+wide.lo.toPrecision(4)+' – '+wide.up.toPrecision(4)+') earns less but survives longer. '
+      +'Tighter ('+usd(tight.lo)+' – '+usd(tight.up)+') earns more per dollar while it holds and needs re-ranging '
+      +'sooner; wider ('+usd(wide.lo)+' – '+usd(wide.up)+') earns less but survives longer. '
       +'These are estimates from recent movement only — they carry no view on direction, and a trend can walk through any of them.</span></span>';
     items.push({el:row,rank:2});
   }
