@@ -163,6 +163,26 @@
     #quickNav.expanded .qn-track{gap:4px}
   }
   @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
+  /* Back to top. z-index sits UNDER the settings scrim (150) so opening the drawer covers it
+     without needing to be told about it. Bottom offset respects the iOS home indicator. */
+  #toTop{
+    position:fixed; z-index:140;
+    right:max(16px, env(safe-area-inset-right)); 
+    bottom:calc(16px + env(safe-area-inset-bottom, 0px));
+    width:42px; height:42px; line-height:1;
+    font-family:var(--mono); font-size:13px;
+    color:var(--accent); background:rgba(7,13,22,.9);
+    border:1px solid var(--accent-dim); border-radius:3px;
+    cursor:pointer; touch-action:manipulation;
+    -webkit-user-select:none; user-select:none;
+    backdrop-filter:blur(3px);
+    opacity:0; transform:translateY(6px); pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease, border-color .15s;
+  }
+  #toTop.show{opacity:.92; transform:none; pointer-events:auto}
+  #toTop:hover{border-color:var(--accent); opacity:1}
+  #toTop:active{transform:translateY(1px)}
+  @media(prefers-reduced-motion:reduce){ #toTop{transition:none} }
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
   .led.sim{background:var(--status-warning);box-shadow:0 0 8px var(--status-warning)}
@@ -636,6 +656,7 @@
   </div>
 </header>
 <nav id="quickNav" aria-label="Jump to section"></nav>
+<button id="toTop" type="button" aria-label="Back to top" title="Back to top" hidden>▲</button>
 
 <main>
   <div id="quickAdd"><span style="color:var(--accent)">⊕</span><span class="qa-t">TRACK MORE — drop or paste a wallet (0x… / Solana) or a Uniswap position #</span><input id="quickAddInput" placeholder="0x… · So1… · 1338795" spellcheck="false"><button class="hbtn" id="quickAddBtn">ADD</button></div>
@@ -4833,6 +4854,22 @@ async function init(){
   applyStoredOrders();
   wireDrag($('#panelStack'), '.panel', ids=>{ store.set('panelOrder', ids); buildQuickNav(); });
   buildQuickNav();
+  /* Back to top: only offered once there is something to come back from, so it does not sit
+     over the header on a page that has not been scrolled. */
+  {
+    const btn=$('#toTop');
+    if(btn){
+      btn.hidden=false;
+      const sync=()=>btn.classList.toggle('show', (window.scrollY||document.documentElement.scrollTop||0) > 400);
+      addEventListener('scroll', sync, {passive:true});
+      sync();
+      btn.addEventListener('click',()=>{
+        const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+        try{ window.scrollTo({top:0, behavior:reduce?'auto':'smooth'}); }
+        catch(e){ window.scrollTo(0,0); }        // older WebKit: no options object
+      });
+    }
+  }
   addEventListener('resize', measureChrome, {passive:true});
   addEventListener('orientationchange', ()=>setTimeout(measureChrome,250), {passive:true});
   document.querySelectorAll('.collapse-btn').forEach(b=>b.addEventListener('click',e=>{
