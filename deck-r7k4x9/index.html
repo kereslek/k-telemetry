@@ -930,7 +930,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v25.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1817,8 +1817,15 @@ function snapSave(){
   try{
     const ps=[...state.positions.values()].map(p=>JSON.parse(JSON.stringify(p,(k,v)=>typeof v==='bigint'?v.toString():v)));
     if(!ps.length) return;
+    /* idle, catMtd and catMonths come ONLY from the relay — the browser cannot scan wallet
+       balances itself. Leaving them out of the snapshot meant a load where the relay failed
+       showed no idle holdings at all, which reads as "the list is gone" rather than "this
+       could not be fetched". */
     store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
-      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth, tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600)});
+      block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth,
+      tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
+      idle:state.idle||null, catMtd:state.catMtd||null, catMonths:state.catMonths||null,
+      solIds:[...state.positions.values()].filter(p=>p.chain==='sol').map(p=>p.id)});
   }catch(e){}
 }
 let scanning = false, scanStartedAt = 0;
@@ -1901,7 +1908,7 @@ async function scanInner(isBoot){
           if(d.tickers) state.tickers = d.tickers;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
-          if(d.idle) state.idle = d.idle;
+          if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); }
           if(d.chainStatus) state.chainStatus = d.chainStatus;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
@@ -1915,6 +1922,34 @@ async function scanInner(isBoot){
     const eth = ethPs ?? [...state.positions.values()].filter(p=>p.chain!=='sol' && !p.demo);
     const sol = solOk ? (state.solPositions||[]) : [...state.positions.values()].filter(p=>p.chain==='sol' && !p.demo);
     state.positions = new Map([...eth, ...sol].map(p=>[p.id,p]));
+    /* On a fresh load with the relay unreachable, ethPs comes back from public RPC while Solana
+       does not — and there is nothing in state to fall back on, so the totals quietly become
+       EVM-only. Unclaimed fees read $68.79 instead of $179.57 with nothing to say half was
+       missing. Compare against the last known snapshot: positions it had that this scan has not
+       are absent because they could not be read, not because they closed. */
+    try{
+      const snap=store.get('lastSnap',null);
+      const known=(snap&&Array.isArray(snap.solIds))?snap.solIds:[];
+      const haveSol=[...state.positions.values()].some(p=>p.chain==='sol');
+      state.missingChain = (known.length && !haveSol) ? 'Solana' : null;
+      if(state.missingChain && !state.warnedMissing){
+        state.warnedMissing=true;
+        log('warning','SOLANA NOT READ this cycle — '+known.length+' position(s) seen previously are missing, so every total on the page is Ethereum-only until the relay returns.');
+      }
+    }catch(e){ state.missingChain=null; }
+    /* Idle wallet balances, the monthly category split and its history exist ONLY in the relay
+       payload. A cycle where the browser's own EVM scan succeeds but the relay does not still
+       lands in this branch, and every one of those panels rendered empty — the token list read
+       as deleted rather than as unavailable. Carry the last snapshot forward and stamp when it
+       was actually read, so the panel says how old it is instead of disappearing. */
+    try{
+      const snap=store.get('lastSnap',null);
+      if(snap){
+        if(!state.idle && snap.idle){ state.idle=snap.idle; state.idleAt=snap.t; }
+        if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
+        if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
+      }
+    }catch(e){}
     if(state.mode!=='live' || state.loggedRpc!==state.lastRpc){
       log('good','LIVE uplink · ETH via '+String(state.lastRpc||'—').replace('https://','')+' · SOL via '+String(state.lastSolRpc||'—').replace('https://',''));
       state.loggedRpc = state.lastRpc;
@@ -1949,6 +1984,9 @@ async function scanInner(isBoot){
       state.tickers=state.tickers??snap.tickers;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
+      if(state.idle==null && snap.idle){ state.idle=snap.idle; state.idleAt=snap.t; }
+      state.catMtd=state.catMtd??snap.catMtd;
+      state.catMonths=state.catMonths??snap.catMonths;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
       setConn('cache');
       if(isBoot) log('warning','NO CONNECTION — showing the LAST KNOWN snapshot from '+Math.round((Date.now()-snap.t)/60000)+' min ago. Values are frozen, not live.');
@@ -2150,7 +2188,11 @@ function renderAll(){
     } else pb.classList.remove('show');
   }
   const banner=$('#simBanner');
-  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline'||state.mode==='cache');
+  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline'||state.mode==='cache'||!!state.missingChain);
+  if(state.missingChain && state.mode!=='sim' && state.mode!=='offline' && state.mode!=='cache'){
+    banner.innerHTML='⚠ '+esc(state.missingChain).toUpperCase()+' COULD NOT BE READ — every total on this page is '
+      +'Ethereum-only right now. Positions held there are not gone, they simply were not fetched this cycle.';
+  }
   if(state.mode==='cache'){
     const age=state.cacheAt?Math.round((Date.now()-state.cacheAt)/60000):null;
     banner.style.borderColor='var(--status-warning)'; banner.style.color='var(--status-warning)';
@@ -2204,15 +2246,18 @@ function renderTiles(){
   const pnl = cost>0 ? ps.reduce((s,p)=>s+((p.roiPct||0)/100)*(p.costUsd||0),0)/cost*100 : null;
   const t = $('#tiles'); t.innerHTML='';
   const mk = (k,v,d)=>{const x=el('div','tile');x.append(el('div','k',k),el('div','v',v),el('div','d',d??''));t.append(x);};
+  const partial = state.missingChain
+    ? '<span style="color:var(--status-warning)">⚠ '+esc(state.missingChain)+' not read — this is Ethereum only</span>' : null;
   mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
      ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
-     : (state.samples.length>1 ? deltaStr(totalVal)
-        : 'market value of tokens inside your LPs · fees and idle capital not included'));
+     : (partial || (state.samples.length>1 ? deltaStr(totalVal)
+        : 'market value of tokens inside your LPs · fees and idle capital not included')));
   const inc=v=>'<span style="color:var(--status-good)">+'+v+'</span>';   // income = green, costs = red
   const outc=v=>'<span style="color:var(--status-critical)">−'+v+'</span>';
   { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
     mk('UNCLAIMED FEES', inc(fmtUsd(totalFees)),
-       (topFee&&topFee.feesUsd>0 ? 'top: <b>'+esc(topFee.pairLabel)+' '+esc(posRef(topFee))+' · '+fmtUsd(topFee.feesUsd)+'</b> · ' : '')+'lifetime: <b>'+fmtUsd(totalEver,0)+'</b>'); }
+       (partial ? partial+' · ' : '')
+       +(topFee&&topFee.feesUsd>0 ? 'top: <b>'+esc(topFee.pairLabel)+' '+esc(posRef(topFee))+' · '+fmtUsd(topFee.feesUsd)+'</b> · ' : '')+'lifetime: <b>'+fmtUsd(totalEver,0)+'</b>'); }
   { const fm=state.feeMonth;
     const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
@@ -2990,8 +3035,16 @@ function renderIdle(){
   host.innerHTML='';
   const idle=state.idle;
   if(!idle||!idle.rows||!idle.rows.length){
-    $('#idleHint').textContent='no balance scan yet';
-    host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No wallet balance scan in this payload yet — the relay publishes it each cycle.</div>';
+    /* Wallet balances are only ever produced by the relay. When its payload does not arrive
+       there is nothing to show — but "no scan yet" reads as though the feature is missing
+       rather than as a fetch that failed, which is what sent someone looking for a list that
+       was never rendered. */
+    $('#idleHint').textContent='not fetched';
+    host.innerHTML='<div style="color:var(--text-muted);font-size:12px">'
+      +'<b style="color:var(--status-warning)">Wallet balances could not be fetched this cycle.</b><br>'
+      +'They are read by the relay, never by your browser, so when its payload does not load there is '
+      +'nothing to list here — your holdings are unaffected. It returns on the next successful refresh; '
+      +'SCAN forces one.</div>';
     return;
   }
   /* One row per token — that is the unit the question is asked in ("how much LCX do I have").
@@ -3026,8 +3079,24 @@ function renderIdle(){
   }
   const deployed=ordered().reduce((s,p)=>s+(p.valueUsd||0),0);
   const idleUsd=idle.totalUsd||0;
-  $('#idleHint').textContent=fmtUsd(idleUsd,0)+' idle vs '+fmtUsd(deployed,0)+' deployed'
-    +(idle.unpriced?' · '+idle.unpriced+' unpriced':'');
+  /* These balances can be older than the rest of the page: the relay is their only source, so
+     a cycle it misses leaves the last read standing. Say so rather than passing stale figures
+     off as current. */
+  const idleAge = state.idleAt ? (Date.now()-state.idleAt)/60000 : null;
+  /* the relay refreshes on a 15-minute cron that GitHub schedules loosely; 45 minutes is three
+     missed cycles, which is a fault rather than jitter. */
+  const idleStale = idleAge!=null && idleAge>45;
+  $('#idleHint').textContent=fmtUsd(idleUsd,0)+' idle'
+    +(state.missingChain?'':' vs '+fmtUsd(deployed,0)+' deployed')
+    +(idle.unpriced?' · '+idle.unpriced+' unpriced':'')
+    +(idleStale?' · '+Math.round(idleAge)+' min old':'');
+  if(idleStale){
+    const w=el('div');
+    w.style.cssText='color:var(--status-warning);font-size:11px;margin-bottom:6px';
+    w.textContent='⚠ Last successful balance read was '+Math.round(idleAge)+' min ago — the relay has not '
+      +'returned since, so these amounts are frozen, not live.';
+    host.appendChild(w);
+  }
   const strip=el('div','econ-strip');
   const pct=(idleUsd+deployed)>0?idleUsd/(idleUsd+deployed)*100:0;
   /* "not earning fees" framed held capital as a deficiency and implied deploying it. Held
@@ -3038,7 +3107,12 @@ function renderIdle(){
   const vsHodl=evm.reduce((s,p)=>s+p.lpVsHodlUsd,0);
   const evmBase=evm.reduce((s,p)=>s+(p.costUsd||0),0);
   strip.innerHTML='<span>HELD <b>'+fmtUsd(idleUsd,0)+'</b></span><span>IN LPs <b>'+fmtUsd(deployed,0)+'</b></span>'
-    +'<span><b>'+pct.toFixed(0)+'%</b> is held rather than pooled</span>';
+    /* the held/pooled ratio compares a complete wallet read against the deployed total. When a
+       chain could not be read the deployed side is short, so the percentage overstates how much
+       is sitting out — drop it rather than print a number that is arithmetically wrong. */
+    +(state.missingChain
+      ? '<span style="color:var(--status-warning)">split unavailable — '+esc(state.missingChain)+' positions not read</span>'
+      : '<span><b>'+pct.toFixed(0)+'%</b> is held rather than pooled</span>');
   host.append(strip);
   if(evm.length && evmBase>0){
     const ahead=vsHodl>=0;
@@ -3964,7 +4038,9 @@ function renderPlaybook(){
   }
 
   /* ---- 5. concentration ---- */
-  const idle=state.idle;
+  /* the share is holding / (holding + deployed). A chain that could not be read shrinks the
+     denominator and inflates every share, so withhold the call rather than raise a false alarm. */
+  const idle=state.missingChain?null:state.idle;
   if(idle&&idle.rows&&idle.rows.length){
     const bySym=new Map();
     for(const r of idle.rows){ if(r.usd==null) continue; bySym.set(r.symbol||r.addr,(bySym.get(r.symbol||r.addr)||0)+r.usd); }
