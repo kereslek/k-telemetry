@@ -28,21 +28,21 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 65.85,
-   "last": 229.49,
+   "last": 229.48,
    "acc": 163.64,
    "hwm": 229.49,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
    "m0": 63.02,
-   "last": 202.76,
+   "last": 202.74,
    "acc": 139.74,
    "hwm": 202.76,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 54.29,
-   "last": 168.62,
+   "last": 168.61,
    "acc": 114.33,
    "hwm": 168.62,
    "cat": "sol|SOL / CPOOL · wide"
@@ -57,6 +57,8 @@
   }
  },
  "months": [],
- "lastIl": -647.77,
- "catClosed": {}
+ "lastIl": -647.72,
+ "catClosed": {
+  "evm|LCX / ETH · narrow": 633.55
+ }
 }
