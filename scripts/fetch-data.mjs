@@ -1456,8 +1456,13 @@ const main=async()=>{
       }
       cl.gasUsd=Math.round(cl.gasUsd*100)/100; cl.swapFeeUsd=Math.round(cl.swapFeeUsd*100)/100;
       const counted=Object.values(cl.txs).filter(v=>v===1).length;
+      /* total carries every chain, because it is what the headline net and the month-over-month
+         costs column subtract. txCount stays EVM-only, and the per-operation average is computed
+         from the EVM figures rather than from total, so the two do not get mixed. */
       costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
-        total:Math.round((cl.gasUsd+cl.swapFeeUsd)*100)/100, txCount:counted, prev:cl.months||[]};
+        solGasUsd:cl.solGasUsd||0, solPartial:!!cl.solPartial,
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd+(cl.solGasUsd||0))*100)/100,
+        txCount:counted, prev:cl.months||[]};
       fs.writeFileSync(OUT+'/costs-'+profile.slug+'.json', JSON.stringify(cl,null,1));
     }catch(e){ logErr('costMonth',e); }
     const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
