@@ -426,14 +426,15 @@
   .act-clear{font-size:12px;color:var(--text-muted);padding:4px 2px}
   .idle-tbl{margin-top:12px;display:flex;flex-direction:column;gap:2px}
   .idle-row{display:flex;align-items:baseline;gap:10px;padding:5px 8px;border-radius:3px}
-  .idle-row:nth-child(odd){background:rgba(255,255,255,.02)}
+
   .idle-sym{flex:0 0 120px;font-family:var(--mono);font-size:11px;letter-spacing:.06em}
-  .idle-wal{flex:0 0 104px;font-size:10.5px;color:var(--text-secondary);white-space:nowrap}
+  .idle-cell:nth-child(even){background:rgba(255,255,255,.02)}
+  .idle-at{padding:0 8px 5px 8px;font-size:10px;color:var(--text-muted);letter-spacing:.02em}
   .idle-amt{flex:1;text-align:right;font-size:11.5px;color:var(--text-muted)}
   .idle-usd{flex:0 0 110px;text-align:right;font-size:12px}
   .idle-hdr{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line);background:none!important}
-  .idle-hdr .idle-amt,.idle-hdr .idle-usd,.idle-hdr .idle-wal{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
-  @media(max-width:560px){ .idle-sym{flex:0 0 76px} .idle-wal{flex:0 0 86px;font-size:9.5px} .idle-usd{flex:0 0 76px} .idle-amt{font-size:10.5px} }
+  .idle-hdr .idle-amt,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
+  @media(max-width:560px){ .idle-sym{flex:0 0 96px} .idle-usd{flex:0 0 86px} .idle-amt{font-size:10.5px} .idle-at{font-size:9px} }
   @media(max-width:560px){
     .act-row{flex-wrap:wrap;gap:6px}
     .act-tag{min-width:0}
@@ -2982,18 +2983,27 @@ function renderIdle(){
     host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No wallet balance scan in this payload yet — the relay publishes it each cycle.</div>';
     return;
   }
-  /* One row per holding per wallet. The payload separates them and this used to sum them
-     away, so "which wallet is this in" — the question you ask before moving anything — could
-     not be answered from the panel at all. */
-  const wshort=w=>{ const x=String(w||''); return x.length>10 ? x.slice(0,4)+'…'+x.slice(-4) : x||'—'; };
+  /* One row per token — that is the unit the question is asked in ("how much LCX do I have").
+     Splitting by wallet put LCX on five separate lines and CPOOL on five more, interleaved by
+     value, so the holding could not be read off the panel at all. The wallet split is kept, as
+     a sub-line under the total, because "where is it" is the next question and not the first. */
+  const wshort=w=>{ const x=String(w||''); return x.length>10 ? x.slice(-4) : x||'—'; };
   const agg=new Map();
   for(const r of idle.rows){
-    const key=(r.symbol||r.addr)+'|'+r.chain+'|'+r.addr+'|'+(r.wallet||'');
+    const key=(r.symbol||r.addr)+'|'+r.chain+'|'+r.addr;
     const e=agg.get(key)||{sym:r.symbol||(r.addr.slice(0,6)+'…'), chain:r.chain, addr:r.addr,
-                           wallet:r.wallet, amount:0, usd:0, priced:r.usd!=null, wallets:1};
-    e.amount+=r.amount; e.usd+=(r.usd||0); agg.set(key,e);
+                           amount:0, usd:0, priced:r.usd!=null, at:[]};
+    e.amount+=r.amount; e.usd+=(r.usd||0);
+    if(r.amount>0) e.at.push({w:r.wallet, amt:r.amount});
+    agg.set(key,e);
   }
-  const rows=[...agg.values()].sort((a,b)=>(b.priced?b.usd:-1)-(a.priced?a.usd:-1));
+  /* Filter on what would actually be shown, not on the raw value. amount>0 kept rows whose
+     balance is 0.00000001 and prints as "0" — four of them were taking listing slots ahead of
+     real holdings while the tail was cut for space. A row earns a line if its amount survives
+     rounding and it is either worth a cent or has no price to judge it by. */
+  const rows=[...agg.values()]
+    .filter(r=>r.amount>=0.00005 && (!r.priced || r.usd>=0.01))
+    .sort((a,b)=>(b.priced?b.usd:-1)-(a.priced?a.usd:-1));
   /* One ticker can be two contracts — LCX is old and new here, and they are not the same asset.
      Where a symbol resolves to more than one address, tag the rows so two lines in the same
      wallet are not silently interchangeable. */
@@ -3035,17 +3045,23 @@ function renderIdle(){
   }
   const tbl=el('div','idle-tbl');
   const hdr=el('div','idle-row idle-hdr');
-  hdr.innerHTML='<span class="idle-sym">TOKEN</span><span class="idle-wal">WALLET</span>'
+  hdr.innerHTML='<span class="idle-sym">TOKEN</span>'
     +'<span class="idle-amt">AMOUNT</span><span class="idle-usd">VALUE</span>';
   tbl.append(hdr);
-  const SHOWN=28;
+  const SHOWN=24;
   for(const r of rows.slice(0,SHOWN)){
+    const cell=el('div','idle-cell');
     const row=el('div','idle-row');
     row.innerHTML='<span class="idle-sym">'+esc(r.sym)+(r.chain==='sol'?' <span class="unit">◎</span>':'')+'</span>'
-      +'<span class="idle-wal" title="'+esc(String(r.wallet||''))+'">'+esc(wshort(r.wallet))+'</span>'
       +'<span class="idle-amt">'+r.amount.toLocaleString(undefined,{maximumFractionDigits:4})+'</span>'
       +'<span class="idle-usd">'+(r.priced?fmtUsd(r.usd,2):'<span class="unit">unpriced</span>')+'</span>';
-    tbl.append(row);
+    cell.append(row);
+    if(r.at.length>1 || (r.at.length===1 && rows.length<=SHOWN)){
+      const split=r.at.slice().sort((a,b)=>b.amt-a.amt)
+        .map(x=>esc(wshort(x.w))+' '+x.amt.toLocaleString(undefined,{maximumFractionDigits:2})).join('  ·  ');
+      cell.append(el('div','idle-at', (r.at.length>1?'across '+r.at.length+' wallets — ':'in ')+split));
+    }
+    tbl.append(cell);
   }
   if(rows.length>SHOWN) tbl.append(el('div','flow-omit',(rows.length-SHOWN)+' smaller holdings not listed.'));
   host.append(tbl);
