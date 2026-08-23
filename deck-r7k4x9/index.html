@@ -930,7 +930,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v25.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1578,7 +1578,7 @@ async function raydiumPoolInfo(ids){
 /* ---- discovery: wallet NFTs -> position PDAs ---- */
 async function discoverSol(){
   const nfts=[];
-  let okCalls=0;
+  let okCalls=0, failed=0;
   for(const w of cfg.solWallets){
     for(const prog of [TOKEN_PROG, TOKEN22_PROG]){
       try{
@@ -1588,45 +1588,66 @@ async function discoverSol(){
           const info=a.account?.data?.parsed?.info;
           if(info?.tokenAmount?.amount==='1' && info?.tokenAmount?.decimals===0) nfts.push({wallet:w, mint:info.mint});
         }
-      }catch(e){ log('warning','Wallet '+w.slice(0,4)+'…'+w.slice(-4)+' token scan: '+esc(e.message||'').slice(0,60)); }
+      }catch(e){ failed++; log('warning','Wallet '+w.slice(0,4)+'…'+w.slice(-4)+' token scan: '+esc(e.message||'').slice(0,60)); }
     }
   }
   if(!okCalls && cfg.solWallets.length) throw new Error('Solana wallet scan failed on all RPCs');
   const out=[];
+  let pdaFail=0;
   for(const c of nfts){
-    try{ const {pda}=await findProgramAddress([new TextEncoder().encode('position'), b58decode(c.mint)], CLMM_PROG); out.push({...c, pda}); }catch(e){}
+    try{ const {pda}=await findProgramAddress([new TextEncoder().encode('position'), b58decode(c.mint)], CLMM_PROG); out.push({...c, pda}); }
+    catch(e){ pdaFail++; }
   }
+  /* One wallet timing out on a free RPC used to leave okCalls>0, so discovery returned the
+     wallets it did reach and the rest of the portfolio simply was not there. Nothing said so,
+     and the truncated catalog was then cached for ten scans. */
+  out.partial = failed>0 || pdaFail>0;
   return out;
 }
 
 /* ---- full Solana scan ---- */
+/* scanSol used to answer a yes/no question with an unconditional yes. Every degraded path —
+   a wallet that timed out, a pool account that came back null, a price feed that answered for
+   two mints out of six — returned `true` with a short or unpriced list, which told the caller
+   the chain had been read. The relay fallback is gated on that answer, so it never fired: the
+   browser's partial view won over a complete server-side one and the totals silently dropped
+   by whatever it had missed. It now reports incomplete as incomplete. */
 async function scanSol(){
+  let partial=false;
+  state.solPartialWhy=null;   // a throw below must not leave last cycle's reason attached
   const pw=profileWallets('solana');
   if(pw.length) cfg.solWallets=pw;
   if(!cfg.solWallets.length){ state.solPositions=[]; return true; }
-  if(!state.solCatalog || (state.scanCount%10===0)) state.solCatalog = await discoverSol();
+  if(!state.solCatalog || state.solCatalogPartial || (state.scanCount%10===0)){
+    state.solCatalog = await discoverSol();
+    state.solCatalogPartial = !!state.solCatalog.partial;   // a short catalog must not be cached for ten scans
+  }
   const cat=state.solCatalog;
-  if(!cat.length){ state.solPositions=[]; return true; }
+  if(state.solCatalogPartial) partial=true;
+  if(!cat.length){ state.solPositions=[]; return !partial; }
   const accs=await solGetMultiple(cat.map(c=>c.pda));
   const found=[];
   accs.forEach((a,i)=>{
-    if(!a || a.owner!==CLMM_PROG) return;
+    if(a===null) return;                       // account genuinely absent — not a defect
+    if(a===undefined){ partial=true; return; } // RPC returned short — we do not know
+    if(a.owner!==CLMM_PROG) return;
     const pp=parsePersonalPosition(b64ToBytes(a.data[0]));
     if(pp.liquidity===0n) return;
     found.push({cat:cat[i], pp});
   });
-  if(!found.length){ state.solPositions=[]; return true; }
+  if(accs.length<cat.length) partial=true;
+  if(!found.length){ state.solPositions=[]; return !partial; }
   const poolIds=[...new Set(found.map(x=>x.pp.poolId))];
   const poolAccs=await solGetMultiple(poolIds);
   const pools=new Map();
-  poolAccs.forEach((a,i)=>{ if(a) pools.set(poolIds[i], parsePoolState(b64ToBytes(a.data[0]))); });
+  poolAccs.forEach((a,i)=>{ if(a) pools.set(poolIds[i], parsePoolState(b64ToBytes(a.data[0]))); else partial=true; });
   const mints=[...new Set([...pools.values()].flatMap(p=>[p.mint0,p.mint1]))];
   await solMeta(mints);
   const prices=await solPrices(mints);
   await raydiumPoolInfo(poolIds);
   const out=[];
   for(const {cat:c, pp} of found){
-    const pool=pools.get(pp.poolId); if(!pool) continue;
+    const pool=pools.get(pp.poolId); if(!pool){ partial=true; continue; }
     const m0=solTokenMeta.get(pool.mint0)||{symbol:'?'}, m1=solTokenMeta.get(pool.mint1)||{symbol:'?'};
     const d0=pool.dec0, d1=pool.dec1;
     const sqrtP=Number(pool.sqrtPriceX64)/Math.pow(2,64);
@@ -1662,9 +1683,16 @@ async function scanSol(){
       feeLabel: rinfo?.feeRate!=null ? (rinfo.feeRate*100).toFixed(rinfo.feeRate*100<1?2:0).replace(/\.00$/,'')+'%' : 'CLMM',
     });
   }
+  /* A position whose mints the price feed skipped carries valueUsd:null, and every total adds
+     it as `p.valueUsd||0` — it is in the list, contributing nothing, looking deliberate. Jupiter
+     answering for SOL but not for the other side of a pool is the ordinary case, not a rare one. */
+  const unpriced=out.filter(p=>p.valueUsd==null).length;
+  if(unpriced) partial=true;
   state.solPositions=out;
   setTimeout(enrichSolAges, 80);
-  return true;
+  if(partial) state.solPartialWhy = (unpriced?unpriced+' position(s) unpriced':'wallet or pool data incomplete');
+  else state.solPartialWhy=null;
+  return !partial;
 }
 
 /* ---- windowed position fee APR (ETH): archive snapshot of collectable fees ---- */
@@ -1821,11 +1849,27 @@ function snapSave(){
        balances itself. Leaving them out of the snapshot meant a load where the relay failed
        showed no idle holdings at all, which reads as "the list is gone" rather than "this
        could not be fetched". */
+    /* The snapshot is what a degraded cycle is measured against, so a degraded cycle must not be
+       allowed to write over it. Saving unconditionally meant one bad scan replaced the known
+       Solana ids with none and dropped the idle list — after which the detector had nothing left
+       to compare to and stayed quiet for good, which is why the warning shipped last time never
+       appeared. Relay-only fields and the Solana id set survive a cycle that could not read them. */
+    const prev=store.get('lastSnap',null)||{};
+    const idsNow = c => [...state.positions.values()]
+      .filter(p=>(c==='sol'?p.chain==='sol':p.chain!=='sol') && p.valueUsd!=null).map(p=>String(p.id));
+    /* Keep what a degraded chain could not confirm; forget what a clean read says is gone —
+       per chain, so a Solana outage cannot freeze the Ethereum id list and vice versa. */
+    const keep = (c, key, degraded) => degraded
+      ? [...new Set([...(prev[key]||[]).map(String), ...idsNow(c)])]
+      : idsNow(c);
+    const solIds = keep('sol','solIds', !!state.solStale);
+    const ethIds = keep('eth','ethIds', !!state.ethStale);
     store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
       block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth,
       tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
-      idle:state.idle||null, catMtd:state.catMtd||null, catMonths:state.catMonths||null,
-      solIds:[...state.positions.values()].filter(p=>p.chain==='sol').map(p=>p.id)});
+      idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
+      catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
+      solIds, ethIds});
   }catch(e){}
 }
 let scanning = false, scanStartedAt = 0;
@@ -1853,7 +1897,11 @@ async function scanInner(isBoot){
   state.scanCount = (state.scanCount||0)+1;
   setConn('sync');
   // ---- Ethereum ----
-  let ethPs = null;
+  /* Same defect as Solana had: a run where two of four positions threw still produced a
+     non-empty `results`, which became the authoritative answer and locked out the relay that
+     could have supplied the rest. Reusing a previous value keeps the card on screen but the
+     number is last cycle's, so that counts as incomplete too. */
+  let ethPs = null, ethPartial = false;
   try{
     await fetchAnchors();
     if(!state.ethCatalog || state.scanCount%10===0) state.ethCatalog = await discoverEthIds();
@@ -1870,6 +1918,7 @@ async function scanInner(isBoot){
           log('info','#'+id+' is closed & empty — dropped. Rescanning your wallets for the replacement LP…');
         }
       }catch(e){
+        ethPartial = true;
         log('warning','#'+id+' fetch failed: '+esc(e.message).slice(0,80));
         state.lastScanErr = '#'+id+': '+String(e.message||e).slice(0,70);
         const prev = state.positions.get(id);
@@ -1877,8 +1926,9 @@ async function scanInner(isBoot){
       }
       await sleep(200);   // pace bursts for rate-limited public endpoints
     }
+    if(results.filter(p=>p.valueUsd==null).length) ethPartial = true;
     if(results.length) ethPs = results;
-  }catch(e){ log('warning','Ethereum scan failed: '+esc(e.message||e).slice(0,80)); state.lastScanErr='ETH: '+String(e.message||e).slice(0,70); }
+  }catch(e){ ethPartial=true; log('warning','Ethereum scan failed: '+esc(e.message||e).slice(0,80)); state.lastScanErr='ETH: '+String(e.message||e).slice(0,70); }
   // ---- Solana ----
   let solOk = false;
   bootMsg('SCANNING SOLANA WALLETS …');
@@ -1887,7 +1937,7 @@ async function scanInner(isBoot){
 
   // ---- Relay fallback: data.json generated server-side by GitHub Actions ----
   state.relayUsed = false;
-  if(!ethPs || !solOk){
+  if(!ethPs || ethPartial || !solOk){
     try{
       const slug=activeProfile()?.slug||'main';
       let rr = await fetch('data-'+slug+'.json?nc='+Date.now(), {cache:'no-store'});
@@ -1896,8 +1946,17 @@ async function scanInner(isBoot){
         const d = await rr.json();
         const ageMin = (Date.now()-d.t)/60000;
         if(ageMin < 120){         // ignore ancient snapshots
-          if(!ethPs && d.eth && d.eth.length){ ethPs = d.eth.map(linifyRangePos); state.relayUsed = true; }
-          if(!solOk && Array.isArray(d.sol)){ state.solPositions = d.sol.map(linifyRangePos); solOk = true; state.relayUsed = true; }
+          /* The relay publishes its own verdict on each chain. Taking its positions while ignoring
+             that verdict just moves the silent-partial problem one hop upstream. */
+          const cs=d.chainStatus||{};
+          if((!ethPs || ethPartial) && d.eth && d.eth.length){
+            ethPs = d.eth.map(linifyRangePos); state.relayUsed = true;
+            ethPartial = !!(cs.ethereum && cs.ethereum!=='ok');
+          }
+          if(!solOk && Array.isArray(d.sol)){
+            state.solPositions = d.sol.map(linifyRangePos); state.relayUsed = true;
+            solOk = !(cs.solana && cs.solana!=='ok');
+          }
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
           if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
@@ -1920,21 +1979,67 @@ async function scanInner(isBoot){
 
   if(ethPs || solOk){
     const eth = ethPs ?? [...state.positions.values()].filter(p=>p.chain!=='sol' && !p.demo);
-    const sol = solOk ? (state.solPositions||[]) : [...state.positions.values()].filter(p=>p.chain==='sol' && !p.demo);
+    /* solOk is now an honest answer, so !solOk means this cycle did not read Solana — the relay
+       did not cover for it either. Show the best thing available (last cycle's values, or the
+       partial read if this is a fresh load) rather than nothing, but remember that it is not
+       fresh: carrying stale values silently is how a number stays wrong for hours. */
+    let sol, solFresh = solOk;
+    if(solOk) sol = state.solPositions||[];
+    else {
+      const held=[...state.positions.values()].filter(p=>p.chain==='sol' && !p.demo);
+      sol = held.length ? held : (state.solPositions||[]);
+    }
     state.positions = new Map([...eth, ...sol].map(p=>[p.id,p]));
     /* On a fresh load with the relay unreachable, ethPs comes back from public RPC while Solana
        does not — and there is nothing in state to fall back on, so the totals quietly become
        EVM-only. Unclaimed fees read $68.79 instead of $179.57 with nothing to say half was
        missing. Compare against the last known snapshot: positions it had that this scan has not
-       are absent because they could not be read, not because they closed. */
+       are absent because they could not be read, not because they closed.
+
+       Chain presence alone was too coarse a test. A read that returned two Solana positions of
+       four, or four with no price on two of them, still "had Solana" — so it passed silently and
+       the page showed $13,056 of a $26,599 portfolio with no warning at all. Compare the actual
+       id sets, and count a position that carries no USD value as absent, because that is exactly
+       how every total already treats it. */
     try{
       const snap=store.get('lastSnap',null);
-      const known=(snap&&Array.isArray(snap.solIds))?snap.solIds:[];
-      const haveSol=[...state.positions.values()].some(p=>p.chain==='sol');
-      state.missingChain = (known.length && !haveSol) ? 'Solana' : null;
+      const chains=[{key:'sol', name:'Solana', fresh:solFresh, known:(snap&&snap.solIds)||[]},
+                    {key:'eth', name:'Ethereum', fresh:!ethPartial, known:(snap&&snap.ethIds)||[]}];
+      const bad=[]; let lostTotal=0;
+      for(const c of chains){
+        /* Only a chain we could NOT read cleanly gets its absences counted. On a clean read an
+           absent position closed — counting those too would raise a warning no later cycle could
+           ever clear, because the warning itself is what keeps the dead id in the snapshot. */
+        if(c.fresh){ c.lost=[]; continue; }
+        const usable=new Set([...state.positions.values()]
+          .filter(p=>(c.key==='sol'?p.chain==='sol':p.chain!=='sol') && p.valueUsd!=null).map(p=>String(p.id)));
+        c.lost=(c.known||[]).map(String).filter(id=>!usable.has(id));
+        bad.push(c); lostTotal+=c.lost.length;
+      }
+      state.solStale = !solFresh; state.ethStale = !!ethPartial;
+      /* Source-agnostic invariant: every position in the set must carry a USD value, because
+         every total adds it as `valueUsd||0`. One that does not is a hole of unknown size sitting
+         inside a figure that looks precise — whoever supplied it, browser or relay. */
+      const unpriced=[...state.positions.values()].filter(p=>!p.demo && p.valueUsd==null);
+      if(unpriced.length){
+        lostTotal+=unpriced.length;
+        for(const u of unpriced){
+          const n = u.chain==='sol' ? 'Solana' : 'Ethereum';
+          if(!bad.some(c=>c.name===n)) bad.push({name:n, lost:[]});
+        }
+      }
+      state.missingChain = bad.length ? bad.map(c=>c.name).join(' and ') : null;
+      state.missingCount = lostTotal;
+      if(!state.missingChain) state.warnedMissing=false;   // re-arm, so a second outage is logged too
       if(state.missingChain && !state.warnedMissing){
         state.warnedMissing=true;
-        log('warning','SOLANA NOT READ this cycle — '+known.length+' position(s) seen previously are missing, so every total on the page is Ethereum-only until the relay returns.');
+        log('warning', lostTotal
+          ? state.missingChain.toUpperCase()+' INCOMPLETE this cycle — '+lostTotal+' position(s) seen previously '
+            +'could not be read or priced'+(state.solPartialWhy?' ('+esc(state.solPartialWhy)+')':'')
+            +', so every total on the page is short by whatever they hold.'
+          : state.missingChain.toUpperCase()+' NOT REFRESHED this cycle'
+            +(state.solPartialWhy?' ('+esc(state.solPartialWhy)+')':'')
+            +' — those positions are showing their last known values, not live ones.');
       }
     }catch(e){ state.missingChain=null; }
     /* Idle wallet balances, the monthly category split and its history exist ONLY in the relay
@@ -1945,7 +2050,7 @@ async function scanInner(isBoot){
     try{
       const snap=store.get('lastSnap',null);
       if(snap){
-        if(!state.idle && snap.idle){ state.idle=snap.idle; state.idleAt=snap.t; }
+        if(!state.idle && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
         if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
         if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
       }
@@ -1984,7 +2089,7 @@ async function scanInner(isBoot){
       state.tickers=state.tickers??snap.tickers;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
-      if(state.idle==null && snap.idle){ state.idle=snap.idle; state.idleAt=snap.t; }
+      if(state.idle==null && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
       state.catMtd=state.catMtd??snap.catMtd;
       state.catMonths=state.catMonths??snap.catMonths;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -2190,8 +2295,13 @@ function renderAll(){
   const banner=$('#simBanner');
   banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline'||state.mode==='cache'||!!state.missingChain);
   if(state.missingChain && state.mode!=='sim' && state.mode!=='offline' && state.mode!=='cache'){
-    banner.innerHTML='⚠ '+esc(state.missingChain).toUpperCase()+' COULD NOT BE READ — every total on this page is '
-      +'Ethereum-only right now. Positions held there are not gone, they simply were not fetched this cycle.';
+    banner.style.borderColor='var(--status-warning)'; banner.style.color='var(--status-warning)';
+    banner.innerHTML = state.missingCount
+      ? '⚠ '+esc(state.missingChain).toUpperCase()+' INCOMPLETE — <b>'+state.missingCount+' position(s)</b> could not be '
+        +'read or priced this cycle'+(state.solPartialWhy?' ('+esc(state.solPartialWhy)+')':'')+', so every total below is '
+        +'short by whatever they hold. They are not gone; the read failed. Hit ⟳ SCAN to retry.'
+      : '⚠ '+esc(state.missingChain).toUpperCase()+' NOT REFRESHED — its positions below are showing their <b>last known '
+        +'values</b>, not live ones'+(state.solPartialWhy?' ('+esc(state.solPartialWhy)+')':'')+'. Hit ⟳ SCAN to retry.';
   }
   if(state.mode==='cache'){
     const age=state.cacheAt?Math.round((Date.now()-state.cacheAt)/60000):null;
@@ -2247,7 +2357,9 @@ function renderTiles(){
   const t = $('#tiles'); t.innerHTML='';
   const mk = (k,v,d)=>{const x=el('div','tile');x.append(el('div','k',k),el('div','v',v),el('div','d',d??''));t.append(x);};
   const partial = state.missingChain
-    ? '<span style="color:var(--status-warning)">⚠ '+esc(state.missingChain)+' not read — this is Ethereum only</span>' : null;
+    ? '<span style="color:var(--status-warning)">⚠ '+(state.missingCount
+        ? 'incomplete — '+state.missingCount+' '+esc(state.missingChain)+' position(s) missing from this figure'
+        : esc(state.missingChain)+' not refreshed — its share of this figure is a last known value')+'</span>' : null;
   mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
      ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
      : (partial || (state.samples.length>1 ? deltaStr(totalVal)
@@ -3111,7 +3223,8 @@ function renderIdle(){
        chain could not be read the deployed side is short, so the percentage overstates how much
        is sitting out — drop it rather than print a number that is arithmetically wrong. */
     +(state.missingChain
-      ? '<span style="color:var(--status-warning)">split unavailable — '+esc(state.missingChain)+' positions not read</span>'
+      ? '<span style="color:var(--status-warning)">split unavailable — '+esc(state.missingChain)+' '
+        +(state.missingCount?state.missingCount+' position(s) unread':'not refreshed')+'</span>'
       : '<span><b>'+pct.toFixed(0)+'%</b> is held rather than pooled</span>');
   host.append(strip);
   if(evm.length && evmBase>0){
