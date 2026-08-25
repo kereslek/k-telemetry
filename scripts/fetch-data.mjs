@@ -3,6 +3,7 @@
    Runs in GitHub Actions (Node 20, no deps). Fetches Uniswap V3 + Raydium CLMM
    position data and writes data.json for the static dashboard to consume. */
 
+import { pathToFileURL } from 'node:url';
 import fs from 'fs';
 const OUT='deck-r7k4x9';
 const CONFIG = JSON.parse(fs.readFileSync(OUT+'/config.json','utf8'));
@@ -1021,6 +1022,71 @@ async function solCollectedSince(pos, sinceSig, booked, costSink){
 }
 
 /* ---------- main ---------- */
+/* ---- daily record: the raw material for "why did the total move" ----
+   Extracted to module scope because two callers build it — the live refresh below, and the
+   backfill that reconstructs past days from committed payloads. Two copies of this arithmetic
+   would drift, and a drifted backfill produces attribution that silently disagrees with itself
+   across the boundary between reconstructed and live days. */
+const sq=x=>Math.sqrt(x);
+/* L from published amounts and range. In range either side gives the same answer, so take
+   the token with the larger balance — the smaller one can be dust whose rounding dominates. */
+const liqOf=p=>{
+  const P=p.price, A=p.priceLower, B=p.priceUpper;
+  if(!(P>0&&A>0&&B>0&&B>A)) return null;
+  const sP=sq(P), sA=sq(A), sB=sq(B);
+  if(P<=A) return (p.amt0>0) ? p.amt0/(1/sA-1/sB) : null;
+  if(P>=B) return (p.amt1>0) ? p.amt1/(sB-sA) : null;
+  const fromX = (p.amt0>0) ? p.amt0/(1/sP-1/sB) : null;
+  const fromY = (p.amt1>0) ? p.amt1/(sP-sA) : null;
+  if(fromX==null) return fromY;
+  if(fromY==null) return fromX;
+  return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fromX : fromY;
+};
+const r6=x=>x==null?null:Number(x.toPrecision(8));
+const r2=x=>x==null?null:Math.round(x*100)/100;
+/* A ticker is not an identity. CPOOL is quoted at $0.0194 on Ethereum and $0.0432 on
+   Solana — a 2.2x gap between two tokens sharing a name — and LCX runs two Ethereum
+   contracts at once. Aggregating a price move by symbol merges assets that demonstrably do
+   not trade together, and then reports the move of one as the move of all of them. Key on
+   chain and contract; carry the symbol only for display. */
+const tkey=(p,which)=>{
+  const ch = p.chain==='sol' ? 'sol' : 'evm';
+  const addr = p.chain==='sol' ? (which?p.mint1:p.mint0) : (which?p.token1:p.token0);
+  return ch+':'+String(addr||(which?p.m1?.symbol:p.m0?.symbol)||'?').toLowerCase();
+};
+const snapOf=p=>({ i:String(p.id), n:p.pairLabel||'', c:p.chain==='sol'?'sol':'evm',
+  s0:p.m0?.symbol||'?', s1:p.m1?.symbol||'?', k0:tkey(p,0), k1:tkey(p,1),
+  v:r2(p.valueUsd), a0:r6(p.amt0), a1:r6(p.amt1), u0:r6(p.usd0), u1:r6(p.usd1),
+  pr:r6(p.price), pl:r6(p.priceLower), pu:r6(p.priceUpper), L:r6(liqOf(p)), r:!!p.inRange });
+/* Wallet holdings, aggregated on the same token key as the LP side. A price move hits both,
+   and answering "what did CPOOL falling cost me" with only the LP half understates it and
+   leaves the reader to do the other half by hand. */
+const walletOf=(idle)=>{
+  const m=new Map();
+  for(const r of (idle?.rows||[])){
+    if(r.usd==null || !(r.amount>0)) continue;
+    const ch=r.chain==='sol'?'sol':'evm';
+    const k=ch+':'+String(r.addr||r.symbol||'?').toLowerCase();
+    const e=m.get(k)||{k, s:r.symbol||'?', a:0, u:null};
+    e.a+=r.amount; if(e.u==null) e.u=r.usd/r.amount;
+    m.set(k,e);
+  }
+  return [...m.values()].filter(e=>e.a*e.u>=1)
+    .map(e=>({k:e.k, s:e.s, a:r6(e.a), u:r6(e.u)}));
+};
+
+/* One record per UTC day, rewritten in place while that day is current, frozen once it is not.
+   A day is the right grain: shorter and the record is noise, longer and a move has too many
+   causes to name. */
+export function dailyRecord(evmPositions, solPositions, idle, tsMs){
+  const all=[...(evmPositions||[]),...(solPositions||[])];
+  return { d:new Date(tsMs).toISOString().slice(0,10), t:tsMs, w:walletOf(idle),
+    v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
+    f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
+    fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
+    ps:all.map(snapOf) };
+}
+
 const main=async()=>{
   try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{},tokMeta:bc.tokMeta||{},depUsd:bc.depUsd||{},blkTs:bc.blkTs||{}}; }catch(e){}
   const blockNums={};
@@ -1610,59 +1676,7 @@ const main=async()=>{
        not. A day is the right grain: shorter and the record is noise, longer and a move has too
        many causes to name. */
     try{
-      const sq=x=>Math.sqrt(x);
-      /* L from published amounts and range. In range either side gives the same answer, so take
-         the token with the larger balance — the smaller one can be dust whose rounding dominates. */
-      const liqOf=p=>{
-        const P=p.price, A=p.priceLower, B=p.priceUpper;
-        if(!(P>0&&A>0&&B>0&&B>A)) return null;
-        const sP=sq(P), sA=sq(A), sB=sq(B);
-        if(P<=A) return (p.amt0>0) ? p.amt0/(1/sA-1/sB) : null;
-        if(P>=B) return (p.amt1>0) ? p.amt1/(sB-sA) : null;
-        const fromX = (p.amt0>0) ? p.amt0/(1/sP-1/sB) : null;
-        const fromY = (p.amt1>0) ? p.amt1/(sP-sA) : null;
-        if(fromX==null) return fromY;
-        if(fromY==null) return fromX;
-        return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fromX : fromY;
-      };
-      const r6=x=>x==null?null:Number(x.toPrecision(8));
-      const r2=x=>x==null?null:Math.round(x*100)/100;
-      /* A ticker is not an identity. CPOOL is quoted at $0.0194 on Ethereum and $0.0432 on
-         Solana — a 2.2x gap between two tokens sharing a name — and LCX runs two Ethereum
-         contracts at once. Aggregating a price move by symbol merges assets that demonstrably do
-         not trade together, and then reports the move of one as the move of all of them. Key on
-         chain and contract; carry the symbol only for display. */
-      const tkey=(p,which)=>{
-        const ch = p.chain==='sol' ? 'sol' : 'evm';
-        const addr = p.chain==='sol' ? (which?p.mint1:p.mint0) : (which?p.token1:p.token0);
-        return ch+':'+String(addr||(which?p.m1?.symbol:p.m0?.symbol)||'?').toLowerCase();
-      };
-      const snapOf=p=>({ i:String(p.id), n:p.pairLabel||'', c:p.chain==='sol'?'sol':'evm',
-        s0:p.m0?.symbol||'?', s1:p.m1?.symbol||'?', k0:tkey(p,0), k1:tkey(p,1),
-        v:r2(p.valueUsd), a0:r6(p.amt0), a1:r6(p.amt1), u0:r6(p.usd0), u1:r6(p.usd1),
-        pr:r6(p.price), pl:r6(p.priceLower), pu:r6(p.priceUpper), L:r6(liqOf(p)), r:!!p.inRange });
-      const all=[...evmPositions,...solPositions];
-      /* Wallet holdings, aggregated on the same token key as the LP side. A price move hits both,
-         and answering "what did CPOOL falling cost me" with only the LP half understates it and
-         leaves the reader to do the other half by hand. */
-      const walletOf=()=>{
-        const m=new Map();
-        for(const r of (idle?.rows||[])){
-          if(r.usd==null || !(r.amount>0)) continue;
-          const ch=r.chain==='sol'?'sol':'evm';
-          const k=ch+':'+String(r.addr||r.symbol||'?').toLowerCase();
-          const e=m.get(k)||{k, s:r.symbol||'?', a:0, u:null};
-          e.a+=r.amount; if(e.u==null) e.u=r.usd/r.amount;
-          m.set(k,e);
-        }
-        return [...m.values()].filter(e=>e.a*e.u>=1)
-          .map(e=>({k:e.k, s:e.s, a:r6(e.a), u:r6(e.u)}));
-      };
-      const rec={ d:new Date().toISOString().slice(0,10), t:Date.now(), w:walletOf(),
-        v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
-        f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
-        fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
-        ps:all.map(snapOf) };
+      const rec=dailyRecord(evmPositions, solPositions, idle, Date.now());
       let daily=[];
       try{ daily=JSON.parse(fs.readFileSync(OUT+'/daily-'+profile.slug+'.json','utf8')); }catch(e){}
       /* Backfill from the 15-minute series for days that predate per-position recording. Those
@@ -1851,4 +1865,7 @@ const main=async()=>{
   }
   try{ fs.writeFileSync(OUT+'/blockcache.json', JSON.stringify(blockCache)); }catch(e){}
 };
-main().catch(e=>{ console.error('FATAL',e); process.exit(1); });
+/* Run only when this file IS the entry point. The backfill imports dailyRecord from here, and
+   an unguarded call would have it fetch the whole portfolio as a side effect of an import. */
+if(process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main().catch(e=>{ console.error('FATAL',e); process.exit(1); });
