@@ -945,7 +945,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v25.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -4450,7 +4450,7 @@ function renderDaily(host){
       drv.append(el('div','num dim pctcol',top.vPrev?((usd/top.vPrev*100>=0?'+':'−')+Math.abs(usd/top.vPrev*100).toFixed(1)+'%'):''));
     };
     for(const tk of (top.tokens||[]))
-      line(esc(tk.s), tk.usd, tk.pct!=null?(tk.pct>=0?'+':'−')+Math.abs(tk.pct).toFixed(1)+'% price':'');
+      line(esc(tk.lbl||tk.s), tk.usd, tk.pct!=null?(tk.pct>=0?'+':'−')+Math.abs(tk.pct).toFixed(1)+'% price':'');
     if(top.exact && Math.abs(top.rebal||0)>=0.5)
       line('range rebalancing', top.rebal, top.rebal<0?'the LPs bought what fell':'the LPs sold what rose');
     if(Math.abs(top.flow||0)>=0.5) line('deposits / withdrawals', top.flow);
@@ -4459,6 +4459,46 @@ function renderDaily(host){
     drv.append(el('div','rule'));
     line('total change in position value', top.dV);
     wrap.append(drv);
+    /* A price that moved on one chain says nothing about the same ticker elsewhere. CPOOL is
+       quoted more than twice as high on Solana as on Ethereum, so reading one line as "CPOOL
+       fell" and applying it to every CPOOL held is exactly the wrong conclusion. Name the
+       holdings the move did not touch. */
+    if((top.elsewhere||[]).length){
+      const seen=new Set(), bits=[];
+      for(const e of top.elsewhere){
+        const k=e.from+'>'+e.to; if(seen.has(k)) continue; seen.add(k);
+        bits.push('<b>'+esc(e.to)+'</b>'+(e.px!=null?' at '+fmtUsd(e.px,e.px<1?5:2):''));
+      }
+      if(bits.length)
+        wrap.append(el('div','arch-note','That move is the quote on the contract those positions actually hold. '
+          +'The same ticker is also held here as '+bits.join(' and ')+' — a separate market that did not move '
+          +'with it. Only holdings on the quoted contract were affected.'));
+    }
+    /* The same price move hits tokens held outside the pools. Position value excludes them by
+       definition, so answering "what did CPOOL falling cost me" from the block above alone
+       understates it — the wallet holds the same contract and took the same move. */
+    if(top.wallet && (top.wallet.tokens||[]).length){
+      wrap.append(el('div','flow-title','THE SAME MOVES ON WHAT YOU HOLD OUTSIDE THE POOLS'));
+      const w=el('div','drv');
+      for(const tk of top.wallet.tokens){
+        w.append(el('div',null,esc(tk.lbl)+(tk.pct!=null?' <span class="dim">'+(tk.pct>=0?'+':'−')
+          +Math.abs(tk.pct).toFixed(1)+'% price</span>':'')));
+        w.append(el('div','num',sgn(tk.usd)));
+        w.append(el('div','num dim pctcol',''));
+      }
+      w.append(el('div','rule'));
+      w.append(el('div',null,'total on wallet holdings'));
+      w.append(el('div','num',sgn(top.wallet.total)));
+      w.append(el('div','num dim pctcol',''));
+      w.append(el('div',null,'<b>position value and wallet together</b> <span class="dim">before fees</span>'));
+      w.append(el('div','num',sgn(top.dV+(top.wallet.total||0))));
+      w.append(el('div','num dim pctcol',''));
+      wrap.append(w);
+      if(Math.abs(top.wallet.transfer||0)>=1)
+        wrap.append(el('div','arch-note','Wallet balances also changed by '+fmtUsd(Math.abs(top.wallet.transfer),0)
+          +' through tokens moving in or out over this span. That is a transfer, not a price move, so it is not '
+          +'in the figures above.'));
+    }
     if(top.dFees!=null && Math.abs(top.dFees)>=0.005)
       wrap.append(el('div','arch-note','Fees earned over the same span: <b style="color:var(--status-good)">+'
         +fmtUsd(top.dFees)+'</b>. Fee income sits outside the figures above — position value is the tokens in '
@@ -4488,7 +4528,7 @@ function renderDaily(host){
     const parts=[], floor=Math.max(1, Math.abs(r.dV)*0.2);
     for(const tk of (r.tokens||[]))
       if(Math.abs(tk.usd) >= floor)
-        parts.push(esc(tk.s)+' '+(tk.pct!=null?(tk.pct>=0?'+':'−')+Math.abs(tk.pct).toFixed(1)+'%':'')
+        parts.push(esc(tk.lbl||tk.s)+' '+(tk.pct!=null?(tk.pct>=0?'+':'−')+Math.abs(tk.pct).toFixed(1)+'%':'')
           +' ('+(tk.usd>=0?'+':'−')+fmtUsd(Math.abs(tk.usd),0)+')');
     if(Math.abs(r.rebal||0) >= floor)
       parts.push('range rebalancing '+(r.rebal>=0?'+':'−')+fmtUsd(Math.abs(r.rebal),0));

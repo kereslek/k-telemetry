@@ -1485,123 +1485,6 @@ const main=async()=>{
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }
-    /* ---- daily snapshot: the raw material for "why did the total move" ----
-       The 15-minute series carries a total and nothing else, so a $3,797 drop over two days can
-       be seen but not explained. Attribution needs, per position, what it held and what those
-       holdings were worth — and the range and liquidity, so the price move can be separated from
-       capital going in or out. Liquidity is not published on the positions, so derive it here
-       from the amounts and the range: for a concentrated position L is exactly recoverable, and
-       storing it once beats every reader re-deriving it.
-
-       One record per UTC day, rewritten in place while that day is current, frozen once it is
-       not. A day is the right grain: shorter and the record is noise, longer and a move has too
-       many causes to name. */
-    try{
-      const sq=x=>Math.sqrt(x);
-      /* L from published amounts and range. In range either side gives the same answer, so take
-         the token with the larger balance — the smaller one can be dust whose rounding dominates. */
-      const liqOf=p=>{
-        const P=p.price, A=p.priceLower, B=p.priceUpper;
-        if(!(P>0&&A>0&&B>0&&B>A)) return null;
-        const sP=sq(P), sA=sq(A), sB=sq(B);
-        if(P<=A) return (p.amt0>0) ? p.amt0/(1/sA-1/sB) : null;
-        if(P>=B) return (p.amt1>0) ? p.amt1/(sB-sA) : null;
-        const fromX = (p.amt0>0) ? p.amt0/(1/sP-1/sB) : null;
-        const fromY = (p.amt1>0) ? p.amt1/(sP-sA) : null;
-        if(fromX==null) return fromY;
-        if(fromY==null) return fromX;
-        return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fromX : fromY;
-      };
-      const r6=x=>x==null?null:Number(x.toPrecision(8));
-      const r2=x=>x==null?null:Math.round(x*100)/100;
-      const snapOf=p=>({ i:String(p.id), n:p.pairLabel||'', c:p.chain==='sol'?'sol':'evm',
-        s0:p.m0?.symbol||'?', s1:p.m1?.symbol||'?',
-        v:r2(p.valueUsd), a0:r6(p.amt0), a1:r6(p.amt1), u0:r6(p.usd0), u1:r6(p.usd1),
-        pr:r6(p.price), pl:r6(p.priceLower), pu:r6(p.priceUpper), L:r6(liqOf(p)), r:!!p.inRange });
-      const all=[...evmPositions,...solPositions];
-      const rec={ d:new Date().toISOString().slice(0,10), t:Date.now(),
-        v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
-        f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
-        fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
-        ps:all.map(snapOf) };
-      let daily=[];
-      try{ daily=JSON.parse(fs.readFileSync(OUT+'/daily-'+profile.slug+'.json','utf8')); }catch(e){}
-      /* Backfill from the 15-minute series for days that predate per-position recording. Those
-         days can carry a total and a change but no attribution, and that is worth saying out
-         loud — a table that starts empty for two days is worse than one that starts honest. */
-      if(!daily.some(x=>x.ps)){
-        const byDay=new Map();
-        for(const h of history){
-          const d=new Date(h.t).toISOString().slice(0,10);
-          if(d===rec.d) continue;                       // today is the live record's job
-          byDay.set(d, {d, t:h.t, v:h.v, f:h.f, ps:null});   // last sample of each day wins
-        }
-        const have=new Set(daily.map(x=>x.d));
-        const seeded=[...byDay.values()].filter(x=>!have.has(x.d));
-        if(seeded.length){
-          daily=[...seeded,...daily].sort((x,y)=>x.d<y.d?-1:1);
-          console.log('daily: backfilled',seeded.length,'value-only day(s) from the history series');
-        }
-      }
-      /* Never overwrite a finished day with a degraded read: a cycle that lost a chain would
-         otherwise rewrite today as if those positions had closed, and the next day's attribution
-         would report a phantom withdrawal followed by a phantom deposit. */
-      const chainsOk=Object.values(chainStatus).every(v=>v==='ok');
-      const last=daily[daily.length-1];
-      if(chainsOk){
-        if(last && last.d===rec.d) daily[daily.length-1]=rec; else daily.push(rec);
-        if(daily.length>120) daily=daily.slice(-120);
-        /* One record per line. This file is committed every 15 minutes and only its last entry
-           changes; as a single line that is a whole-file rewrite in every diff, and at ~2 KB a
-           day the repository pays for that ninety-six times daily. */
-        fs.writeFileSync(OUT+'/daily-'+profile.slug+'.json',
-          '[\n'+daily.map(r=>JSON.stringify(r)).join(',\n')+'\n]\n');
-      }else{
-        console.log('daily: skipped, chainStatus', JSON.stringify(chainStatus));
-      }
-      /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
-         them would more than double a payload that has to reach a phone every 15 minutes. The
-         answers are 300 bytes a day, they are identical for every reader, and computing them
-         once against the full-resolution record beats recomputing them everywhere against a
-         truncated one. The detailed file stays on the server, so this can be recomputed later. */
-      const amtsAt=(L,P,A,B)=>{
-        if(!(L>0&&P>0&&A>0&&B>0&&B>A)) return null;
-        const sP=sq(P), sA=sq(A), sB=sq(B);
-        if(P<=A) return [L*(1/sA-1/sB), 0];
-        if(P>=B) return [0, L*(sB-sA)];
-        return [L*(1/sP-1/sB), L*(sP-sA)];
-      };
-      const attrib=(y,t)=>{
-        const base={ d:t.d, t:t.t, v:t.v, dV:r2((t.v||0)-(y.v||0)),
-                     days:Math.max(1,Math.round((t.t-y.t)/86400000)) };
-        if(!y.ps || !t.ps) return {...base, noDetail:true};
-        const my=new Map(y.ps.map(x=>[x.i,x])), mt=new Map(t.ps.map(x=>[x.i,x]));
-        const tok=new Map(); let price=0, flow=0, exact=true;
-        const opened=[], closed=[];
-        for(const [id,a] of my){
-          const b=mt.get(id);
-          if(!b){ closed.push({n:a.n||id, usd:r2(-(a.v||0))}); continue; }
-          let hyp=amtsAt(a.L, b.pr, a.pl, a.pu);
-          if(!hyp){ hyp=[a.a0,a.a1]; exact=false; }
-          const vHyp=hyp[0]*(b.u0||0)+hyp[1]*(b.u1||0);
-          price += vHyp-(a.v||0);
-          flow  += (b.v||0)-vHyp;
-          const put=(sym,vy,vt)=>{ const e=tok.get(sym)||{vy:0,vt:0}; e.vy+=vy; e.vt+=vt; tok.set(sym,e); };
-          put(a.s0, (a.a0||0)*(a.u0||0), (a.a0||0)*(b.u0||0));
-          put(a.s1, (a.a1||0)*(a.u1||0), (a.a1||0)*(b.u1||0));
-        }
-        for(const [id,b] of mt) if(!my.has(id)) opened.push({n:b.n||id, usd:r2(b.v||0)});
-        const tokens=[...tok.entries()].map(([s2,e])=>({s:s2, usd:r2(e.vt-e.vy),
-            pct:e.vy>0?Math.round((e.vt/e.vy-1)*1000)/10:null}))
-          .filter(x=>Math.abs(x.usd)>=0.5).sort((x,z)=>Math.abs(z.usd)-Math.abs(x.usd));
-        return {...base, tokens, rebal:r2(price-tokens.reduce((s2,x)=>s2+x.usd,0)), flow:r2(flow),
-                opened, closed, exact, vPrev:y.v, dPrev:y.d,
-                dFees:(t.fe!=null&&y.fe!=null)?r2(t.fe-y.fe):null};
-      };
-      const moves=[];
-      for(let i=1;i<daily.length;i++) moves.push(attrib(daily[i-1], daily[i]));
-      profileDaily = moves.slice(-35);
-    }catch(e){ logErr('daily',e); }
     // ---- idle balances: everything held that is NOT in an LP ----
     let idle=null;
     try{
@@ -1715,6 +1598,246 @@ const main=async()=>{
       console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
     }catch(e){ logErr('balances',e); }
 
+    /* ---- daily snapshot: the raw material for "why did the total move" ----
+       The 15-minute series carries a total and nothing else, so a $3,797 drop over two days can
+       be seen but not explained. Attribution needs, per position, what it held and what those
+       holdings were worth — and the range and liquidity, so the price move can be separated from
+       capital going in or out. Liquidity is not published on the positions, so derive it here
+       from the amounts and the range: for a concentrated position L is exactly recoverable, and
+       storing it once beats every reader re-deriving it.
+
+       One record per UTC day, rewritten in place while that day is current, frozen once it is
+       not. A day is the right grain: shorter and the record is noise, longer and a move has too
+       many causes to name. */
+    try{
+      const sq=x=>Math.sqrt(x);
+      /* L from published amounts and range. In range either side gives the same answer, so take
+         the token with the larger balance — the smaller one can be dust whose rounding dominates. */
+      const liqOf=p=>{
+        const P=p.price, A=p.priceLower, B=p.priceUpper;
+        if(!(P>0&&A>0&&B>0&&B>A)) return null;
+        const sP=sq(P), sA=sq(A), sB=sq(B);
+        if(P<=A) return (p.amt0>0) ? p.amt0/(1/sA-1/sB) : null;
+        if(P>=B) return (p.amt1>0) ? p.amt1/(sB-sA) : null;
+        const fromX = (p.amt0>0) ? p.amt0/(1/sP-1/sB) : null;
+        const fromY = (p.amt1>0) ? p.amt1/(sP-sA) : null;
+        if(fromX==null) return fromY;
+        if(fromY==null) return fromX;
+        return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fromX : fromY;
+      };
+      const r6=x=>x==null?null:Number(x.toPrecision(8));
+      const r2=x=>x==null?null:Math.round(x*100)/100;
+      /* A ticker is not an identity. CPOOL is quoted at $0.0194 on Ethereum and $0.0432 on
+         Solana — a 2.2x gap between two tokens sharing a name — and LCX runs two Ethereum
+         contracts at once. Aggregating a price move by symbol merges assets that demonstrably do
+         not trade together, and then reports the move of one as the move of all of them. Key on
+         chain and contract; carry the symbol only for display. */
+      const tkey=(p,which)=>{
+        const ch = p.chain==='sol' ? 'sol' : 'evm';
+        const addr = p.chain==='sol' ? (which?p.mint1:p.mint0) : (which?p.token1:p.token0);
+        return ch+':'+String(addr||(which?p.m1?.symbol:p.m0?.symbol)||'?').toLowerCase();
+      };
+      const snapOf=p=>({ i:String(p.id), n:p.pairLabel||'', c:p.chain==='sol'?'sol':'evm',
+        s0:p.m0?.symbol||'?', s1:p.m1?.symbol||'?', k0:tkey(p,0), k1:tkey(p,1),
+        v:r2(p.valueUsd), a0:r6(p.amt0), a1:r6(p.amt1), u0:r6(p.usd0), u1:r6(p.usd1),
+        pr:r6(p.price), pl:r6(p.priceLower), pu:r6(p.priceUpper), L:r6(liqOf(p)), r:!!p.inRange });
+      const all=[...evmPositions,...solPositions];
+      /* Wallet holdings, aggregated on the same token key as the LP side. A price move hits both,
+         and answering "what did CPOOL falling cost me" with only the LP half understates it and
+         leaves the reader to do the other half by hand. */
+      const walletOf=()=>{
+        const m=new Map();
+        for(const r of (idle?.rows||[])){
+          if(r.usd==null || !(r.amount>0)) continue;
+          const ch=r.chain==='sol'?'sol':'evm';
+          const k=ch+':'+String(r.addr||r.symbol||'?').toLowerCase();
+          const e=m.get(k)||{k, s:r.symbol||'?', a:0, u:null};
+          e.a+=r.amount; if(e.u==null) e.u=r.usd/r.amount;
+          m.set(k,e);
+        }
+        return [...m.values()].filter(e=>e.a*e.u>=1)
+          .map(e=>({k:e.k, s:e.s, a:r6(e.a), u:r6(e.u)}));
+      };
+      const rec={ d:new Date().toISOString().slice(0,10), t:Date.now(), w:walletOf(),
+        v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
+        f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
+        fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
+        ps:all.map(snapOf) };
+      let daily=[];
+      try{ daily=JSON.parse(fs.readFileSync(OUT+'/daily-'+profile.slug+'.json','utf8')); }catch(e){}
+      /* Backfill from the 15-minute series for days that predate per-position recording. Those
+         days can carry a total and a change but no attribution, and that is worth saying out
+         loud — a table that starts empty for two days is worse than one that starts honest. */
+      if(!daily.some(x=>x.ps)){
+        const byDay=new Map();
+        for(const h of history){
+          const d=new Date(h.t).toISOString().slice(0,10);
+          if(d===rec.d) continue;                       // today is the live record's job
+          byDay.set(d, {d, t:h.t, v:h.v, f:h.f, ps:null});   // last sample of each day wins
+        }
+        const have=new Set(daily.map(x=>x.d));
+        const seeded=[...byDay.values()].filter(x=>!have.has(x.d));
+        if(seeded.length){
+          daily=[...seeded,...daily].sort((x,y)=>x.d<y.d?-1:1);
+          console.log('daily: backfilled',seeded.length,'value-only day(s) from the history series');
+        }
+      }
+      /* Never overwrite a finished day with a degraded read: a cycle that lost a chain would
+         otherwise rewrite today as if those positions had closed, and the next day's attribution
+         would report a phantom withdrawal followed by a phantom deposit. */
+      const chainsOk=Object.values(chainStatus).every(v=>v==='ok');
+      const last=daily[daily.length-1];
+      if(chainsOk){
+        if(last && last.d===rec.d) daily[daily.length-1]=rec; else daily.push(rec);
+        if(daily.length>120) daily=daily.slice(-120);
+        /* One record per line. This file is committed every 15 minutes and only its last entry
+           changes; as a single line that is a whole-file rewrite in every diff, and at ~2 KB a
+           day the repository pays for that ninety-six times daily. */
+        fs.writeFileSync(OUT+'/daily-'+profile.slug+'.json',
+          '[\n'+daily.map(r=>JSON.stringify(r)).join(',\n')+'\n]\n');
+      }else{
+        console.log('daily: skipped, chainStatus', JSON.stringify(chainStatus));
+      }
+      /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
+         them would more than double a payload that has to reach a phone every 15 minutes. The
+         answers are 300 bytes a day, they are identical for every reader, and computing them
+         once against the full-resolution record beats recomputing them everywhere against a
+         truncated one. The detailed file stays on the server, so this can be recomputed later. */
+      /* Every place this portfolio touches a ticker: LP positions and wallet balances alike.
+         A symbol reached by more than one contract needs disambiguating wherever it is printed,
+         and the price each one carries is what makes the case that they are not the same asset. */
+      const symKeys=new Map();
+      {
+        const add=(sym,ch,addr,px)=>{
+          if(!sym) return;
+          const k=(ch==='sol'?'sol':'evm')+':'+String(addr||sym).toLowerCase();
+          const list=symKeys.get(sym)||[];
+          const hit=list.find(x=>x.k===k);
+          if(hit){ if(hit.px==null) hit.px=px; } else list.push({k, ch:ch==='sol'?'sol':'evm', addr:String(addr||''), px});
+          symKeys.set(sym,list);
+        };
+        for(const p2 of [...evmPositions,...solPositions]){
+          const sol=p2.chain==='sol';
+          add(p2.m0?.symbol, sol?'sol':'evm', sol?p2.mint0:p2.token0, p2.usd0);
+          add(p2.m1?.symbol, sol?'sol':'evm', sol?p2.mint1:p2.token1, p2.usd1);
+        }
+        for(const r of (idle?.rows||[]))
+          add(r.symbol, r.chain==='sol'?'sol':'evm', r.addr, (r.usd!=null&&r.amount)?r.usd/r.amount:null);
+      }
+      const CHAIN_NAME={sol:'Solana', evm:'Ethereum'};
+      /* Distinguish the tokens the market distinguishes, and no others. Address equality is the
+         wrong test: WETH and native ETH sit at different addresses and are one asset, while
+         Ethereum CPOOL and Solana CPOOL share a ticker and trade 2.2x apart. Price is the test
+         that separates those two cases. */
+      const tokLabel=(k, sym)=>{
+        const list=symKeys.get(sym)||[];
+        if(list.length<2) return sym;
+        const me=list.find(x=>x.k===k);
+        if(!(me&&me.px>0)) return sym;
+        const distinct=list.filter(x=>x.k===k || (x.px>0 && Math.abs(x.px/me.px-1)>0.05));
+        if(distinct.length<2) return sym;
+        const ch=k.split(':')[0], addr=k.slice(ch.length+1);
+        let out=sym;
+        if(new Set(distinct.map(x=>x.ch)).size>1) out+=' ('+(CHAIN_NAME[ch]||ch)+')';
+        /* two genuinely different contracts on one chain still need the address to tell apart */
+        if(distinct.filter(x=>x.ch===ch).length>1 && addr && addr.length>6) out+=' ·'+addr.slice(-4);
+        return out;
+      };
+      const amtsAt=(L,P,A,B)=>{
+        if(!(L>0&&P>0&&A>0&&B>0&&B>A)) return null;
+        const sP=sq(P), sA=sq(A), sB=sq(B);
+        if(P<=A) return [L*(1/sA-1/sB), 0];
+        if(P>=B) return [0, L*(sB-sA)];
+        return [L*(1/sP-1/sB), L*(sP-sA)];
+      };
+      const attrib=(y,t)=>{
+        const base={ d:t.d, t:t.t, v:t.v, dV:r2((t.v||0)-(y.v||0)),
+                     days:Math.max(1,Math.round((t.t-y.t)/86400000)) };
+        if(!y.ps || !t.ps) return {...base, noDetail:true};
+        const my=new Map(y.ps.map(x=>[x.i,x])), mt=new Map(t.ps.map(x=>[x.i,x]));
+        const tok=new Map(); let price=0, flow=0, exact=true;
+        const opened=[], closed=[];
+        for(const [id,a] of my){
+          const b=mt.get(id);
+          if(!b){ closed.push({n:a.n||id, usd:r2(-(a.v||0))}); continue; }
+          let hyp=amtsAt(a.L, b.pr, a.pl, a.pu);
+          if(!hyp){ hyp=[a.a0,a.a1]; exact=false; }
+          const vHyp=hyp[0]*(b.u0||0)+hyp[1]*(b.u1||0);
+          price += vHyp-(a.v||0);
+          flow  += (b.v||0)-vHyp;
+          const put=(key,sym,vy,vt,px)=>{ const e=tok.get(key)||{sym,vy:0,vt:0,px:null};
+            e.vy+=vy; e.vt+=vt; if(e.px==null) e.px=px; tok.set(key,e); };
+          put(a.k0||('?:'+a.s0), a.s0, (a.a0||0)*(a.u0||0), (a.a0||0)*(b.u0||0), b.u0);
+          put(a.k1||('?:'+a.s1), a.s1, (a.a1||0)*(a.u1||0), (a.a1||0)*(b.u1||0), b.u1);
+        }
+        for(const [id,b] of mt) if(!my.has(id)) opened.push({n:b.n||id, usd:r2(b.v||0)});
+        /* Two contracts the feed prices identically collapse to the same label, and two lines
+           reading "LCX" with different numbers is worse than one line reading LCX. Group on the
+           label so what is printed is what was measured. */
+        const byLabel=new Map();
+        for(const [k,e] of tok){
+          const lbl=tokLabel(k, e.sym);
+          const g=byLabel.get(lbl)||{lbl, s:e.sym, k, vy:0, vt:0, px:e.px};
+          g.vy+=e.vy; g.vt+=e.vt; byLabel.set(lbl,g);
+        }
+        const tokens=[...byLabel.values()].map(g=>({s:g.s, lbl:g.lbl, usd:r2(g.vt-g.vy),
+            pct:g.vy>0?Math.round((g.vt/g.vy-1)*1000)/10:null, _k:g.k, _px:g.px}))
+          .filter(x=>Math.abs(x.usd)>=0.5).sort((x,z)=>Math.abs(z.usd)-Math.abs(x.usd));
+        /* State the blast radius. A price that moved on one chain says nothing about the same
+           ticker elsewhere, and the reader needs to know which of their holdings it touched —
+           and which it did not. */
+        const elsewhere=[];
+        for(const t2 of tokens){
+          for(const o of (symKeys.get(t2.s)||[])){
+            if(o.k===t2._k || o.px==null || !(t2._px>0)) continue;
+            /* Only a quote that genuinely differs is worth a warning. Wrapped natives resolve to
+               a different address than the native token and would otherwise be flagged as a
+               separate market — WETH is not a separate market from ETH. Nor are LCX's two
+               contracts while the feed prints one price for both: that ambiguity is real, but it
+               is the playbook's to raise, and repeating it on every daily move is noise. */
+            if(Math.abs(o.px/t2._px-1) <= 0.05) continue;
+            elsewhere.push({s:t2.s, from:t2.lbl, to:tokLabel(o.k,t2.s), px:Number(o.px.toPrecision(5))});
+          }
+        }
+        /* Same arithmetic, applied to what is held rather than pooled: yesterday's balance
+           revalued at today's price. A balance that changed in between is a transfer, not a
+           price move, so report it as unattributed rather than folding it into the token line. */
+        let wallet=null;
+        if(Array.isArray(y.w) && y.w.length){
+          const pxNow=new Map((t.w||[]).map(x=>[x.k,x.u]));
+          for(const [k,e] of tok) if(e.px>0 && !pxNow.has(k)) pxNow.set(k, e.px);
+          const amtNow=new Map((t.w||[]).map(x=>[x.k,x.a]));
+          const rowsW=new Map(); let moved=0, transfer=0;
+          for(const h of y.w){
+            const u2=pxNow.get(h.k);
+            if(u2==null || !(h.u>0)) continue;
+            const usd=h.a*(u2-h.u);
+            moved+=usd;
+            const an=amtNow.get(h.k);
+            if(an!=null) transfer+=(an-h.a)*u2;
+            const lbl=tokLabel(h.k, h.s);
+            const g=rowsW.get(lbl)||{lbl, vy:0, vt:0};
+            g.vy+=h.a*h.u; g.vt+=h.a*u2; rowsW.set(lbl,g);
+          }
+          const tw=[...rowsW.values()].map(g=>({lbl:g.lbl, usd:r2(g.vt-g.vy),
+              pct:g.vy>0?Math.round((g.vt/g.vy-1)*1000)/10:null}))
+            .filter(x=>Math.abs(x.usd)>=0.5).sort((x,z)=>Math.abs(z.usd)-Math.abs(x.usd));
+          if(tw.length) wallet={tokens:tw, total:r2(moved), transfer:r2(transfer)};
+        }
+        for(const t2 of tokens){ delete t2._k; delete t2._px; }
+        return {...base, tokens, elsewhere, wallet, rebal:r2(price-tokens.reduce((s2,x)=>s2+x.usd,0)), flow:r2(flow),
+                opened, closed, exact, vPrev:y.v, dPrev:y.d,
+                dFees:(t.fe!=null&&y.fe!=null)?r2(t.fe-y.fe):null};
+      };
+      const moves=[];
+      for(let i=1;i<daily.length;i++) moves.push(attrib(daily[i-1], daily[i]));
+      /* Only the itemised block reads the wallet breakdown and the divergent-quote note, and it
+         only ever shows the newest day. Carrying both on all 35 would nearly double the payload
+         to render a table row that never looks at them. Three covers the case where the newest
+         day has no detail to itemise. */
+      profileDaily = moves.slice(-35).map((m,i,arr)=>
+        i>=arr.length-3 ? m : (({wallet, elsewhere, ...rest})=>rest)(m));
+    }catch(e){ logErr('daily',e); }
     const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
