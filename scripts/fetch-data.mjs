@@ -1550,8 +1550,12 @@ const main=async()=>{
       const last=daily[daily.length-1];
       if(chainsOk){
         if(last && last.d===rec.d) daily[daily.length-1]=rec; else daily.push(rec);
-        if(daily.length>400) daily=daily.slice(-400);
-        fs.writeFileSync(OUT+'/daily-'+profile.slug+'.json', JSON.stringify(daily));
+        if(daily.length>120) daily=daily.slice(-120);
+        /* One record per line. This file is committed every 15 minutes and only its last entry
+           changes; as a single line that is a whole-file rewrite in every diff, and at ~2 KB a
+           day the repository pays for that ninety-six times daily. */
+        fs.writeFileSync(OUT+'/daily-'+profile.slug+'.json',
+          '[\n'+daily.map(r=>JSON.stringify(r)).join(',\n')+'\n]\n');
       }else{
         console.log('daily: skipped, chainStatus', JSON.stringify(chainStatus));
       }
