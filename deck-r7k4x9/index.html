@@ -434,16 +434,18 @@
   .idle-cell:nth-child(even){background:rgba(255,255,255,.02)}
 
   .idle-amt{flex:1;text-align:right;font-size:11.5px;color:var(--text-muted)}
+  .idle-px{flex:0 0 100px;text-align:right;font-size:11px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
   .idle-usd{flex:0 0 110px;text-align:right;font-size:12px}
   .idle-hdr{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line);background:none!important}
-  .idle-hdr .idle-amt,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
-  @media(max-width:560px){ .idle-sym{flex:0 0 96px} .idle-usd{flex:0 0 86px} .idle-amt{font-size:10.5px} }
+  .idle-hdr .idle-amt,.idle-hdr .idle-px,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
+  @media(max-width:560px){ .idle-sym{flex:0 0 78px} .idle-px{flex:0 0 76px;font-size:10px} .idle-usd{flex:0 0 78px} .idle-amt{font-size:10.5px} }
   /* Below ~360px the three fixed columns no longer fit and the value column was pushed past the
      panel edge, taking the page with it. Let every column shrink and the amount give way first. */
   @media(max-width:359px){
     .idle-row{gap:6px;padding:5px 4px}
     .idle-sym{flex:0 1 auto;min-width:0;font-size:10px}
     .idle-amt{flex:1 1 0;min-width:0;font-size:9.5px;overflow:hidden;text-overflow:ellipsis}
+    .idle-px{flex:0 1 auto;min-width:0;font-size:9.5px}
     .idle-usd{flex:0 0 auto;font-size:10.5px}
   }
   @media(max-width:560px){
@@ -945,7 +947,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v25.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2363,6 +2365,18 @@ function setConn(mode){
     : (mode==='live' && state.relayUsed ? 'LIVE · RELAY' : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…'));
 }
 
+/* The close of the most recent day that is not today — the thing "day over day" is measured
+   against. The newest move compares two days; whether its own day is today decides which end of
+   it is the reference, and if the relay has not written today yet the newer end IS the reference.
+   Returns null rather than guessing, so the tile falls back instead of inventing a baseline. */
+function dayRef(){
+  const mv=state.dayMoves||[];
+  const m=mv[mv.length-1];
+  if(!m) return null;
+  const today=new Date().toISOString().slice(0,10);
+  if(m.d===today) return (m.vPrev!=null && m.dPrev) ? {v:m.vPrev, d:m.dPrev} : null;
+  return m.v!=null ? {v:m.v, d:m.d} : null;
+}
 function renderTiles(){
   const ps = ordered();
   const totalVal = ps.reduce((s,p)=>s+(p.valueUsd||0),0);
@@ -2379,10 +2393,24 @@ function renderTiles(){
     ? '<span style="color:var(--status-warning)">⚠ '+(state.missingCount
         ? 'incomplete — '+state.missingCount+' '+esc(state.missingChain)+' position(s) missing from this figure'
         : esc(state.missingChain)+' not refreshed — its share of this figure is a last known value')+'</span>' : null;
-  mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), state.mode==='sim'
-     ? '<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>'
-     : (partial || (state.samples.length>1 ? deltaStr(totalVal)
-        : 'market value of tokens inside your LPs · fees and idle capital not included')));
+  /* Session delta answered "since you opened this tab", which is rarely the question. Day over
+     day is. A missing chain still wins the line: a delta against a total that is short by a
+     chain measures the outage, not the market. */
+  const dref=dayRef();
+  let valSub;
+  if(state.mode==='sim') valSub='<span style="color:var(--status-warning)">⚠ SYNTHETIC — NOT YOUR DATA</span>';
+  else if(partial) valSub=partial;
+  else if(dref && dref.v>0){
+    const dd=totalVal-dref.v, dp=dd/dref.v*100;
+    const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const lab=Number(dref.d.slice(8,10))+' '+MN[Number(dref.d.slice(5,7))-1];
+    valSub='<b class="'+(dd>=0?'up':'down')+'">'+(dd>=0?'+':'−')+fmtUsd(Math.abs(dd),0)+'</b> '
+      +'<span class="'+(dd>=0?'up':'down')+'">'+(dp>=0?'+':'−')+Math.abs(dp).toFixed(1)+'%</span>'
+      +' <span class="unit">since '+lab+'</span> · fees and idle capital not included';
+  }
+  else if(state.samples.length>1) valSub=deltaStr(totalVal);
+  else valSub='market value of tokens inside your LPs · fees and idle capital not included';
+  mk('TOTAL POSITION VALUE', fmtUsd(totalVal,0), valSub);
   const inc=v=>'<span style="color:var(--status-good)">+'+v+'</span>';   // income = green, costs = red
   const outc=v=>'<span style="color:var(--status-critical)">−'+v+'</span>';
   { const topFee = ps.filter(p=>p.feesUsd!=null).sort((a,b)=>b.feesUsd-a.feesUsd)[0];
@@ -3260,20 +3288,51 @@ function renderIdle(){
   const tbl=el('div','idle-tbl');
   const hdr=el('div','idle-row idle-hdr');
   hdr.innerHTML='<span class="idle-sym">TOKEN</span>'
-    +'<span class="idle-amt">AMOUNT</span><span class="idle-usd">VALUE</span>';
+    +'<span class="idle-amt">AMOUNT</span><span class="idle-px">PRICE</span><span class="idle-usd">VALUE</span>';
   tbl.append(hdr);
   const SHOWN=24;
   for(const r of rows.slice(0,SHOWN)){
     const cell=el('div','idle-cell');
     const row=el('div','idle-row');
+    /* Unit price, at enough decimals to be a number rather than $0.00 — these run from CPOOL at
+       two cents to ETH at four figures, and one fixed precision cannot serve both. */
+    const px = (r.priced && r.amount>0) ? r.usd/r.amount : null;
+    const pxDp = px==null ? 2 : (px<0.001 ? 8 : px<0.1 ? 5 : px<100 ? 4 : 2);
     row.innerHTML='<span class="idle-sym">'+esc(r.sym)+(r.chain==='sol'?' <span class="unit">◎</span>':'')+'</span>'
       +'<span class="idle-amt">'+r.amount.toLocaleString(undefined,{maximumFractionDigits:4})+'</span>'
+      +'<span class="idle-px">'+(px!=null?fmtUsd(px,pxDp):'<span class="unit">—</span>')+'</span>'
       +'<span class="idle-usd">'+(r.priced?fmtUsd(r.usd,2):'<span class="unit">unpriced</span>')+'</span>';
     cell.append(row);
     tbl.append(cell);
   }
   if(rows.length>SHOWN) tbl.append(el('div','flow-omit',(rows.length-SHOWN)+' smaller holdings not listed.'));
   host.append(tbl);
+  /* ◎ is the only thing separating two rows that read the same ticker, and where those rows carry
+     different prices they are different assets — CPOOL is one token on Ethereum and another on
+     Solana, 2.2x apart. Say which ones, from the data, rather than leaving a glyph to carry it. */
+  {
+    const bySym=new Map();
+    for(const r of rows){
+      if(!r.priced || !(r.amount>0)) continue;
+      const sym=r.sym.replace(/ ·\w+$/,'');          // drop the contract tag; the ticker is the question
+      if(!bySym.has(sym)) bySym.set(sym,[]);
+      bySym.get(sym).push({ch:r.chain, px:r.usd/r.amount});
+    }
+    const split=[];
+    for(const [sym,list] of bySym){
+      if(new Set(list.map(x=>x.ch)).size<2) continue;
+      const lo=Math.min(...list.map(x=>x.px)), hi=Math.max(...list.map(x=>x.px));
+      if(lo>0 && hi/lo>1.05){
+        const sol=list.find(x=>x.ch==='sol'), evm=list.find(x=>x.ch!=='sol');
+        split.push('<b>'+esc(sym)+'</b> is '+fmtUsd(evm.px, evm.px<0.1?5:2)+' on Ethereum and '
+          +fmtUsd(sol.px, sol.px<0.1?5:2)+' on Solana');
+      }
+    }
+    if(rows.some(r=>r.chain==='sol'))
+      host.append(el('div','flow-omit','◎ marks a Solana holding.'
+        +(split.length?' The same ticker on two chains can be a different token at a different price: '
+          +split.join('; ')+' — they do not move together.':'')));
+  }
   if(idle.unpriced) host.append(el('div','flow-omit',idle.unpriced+' holding'+(idle.unpriced>1?'s':'')
     +' could not be priced by the feeds and are excluded from the total. A token with no price usually has no market — treat as zero until proven otherwise, and do not interact with unknown mints.'));
 }
