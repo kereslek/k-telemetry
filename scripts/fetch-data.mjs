@@ -1472,6 +1472,7 @@ const main=async()=>{
         : (blockNums[ck]==null||chainErrs.has(ck) ? 'down' : 'ok');
     }
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
+    let profileDaily=[];
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
     {
@@ -1484,6 +1485,119 @@ const main=async()=>{
       if(history.length>3000) history=history.slice(-3000);
       fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
     }
+    /* ---- daily snapshot: the raw material for "why did the total move" ----
+       The 15-minute series carries a total and nothing else, so a $3,797 drop over two days can
+       be seen but not explained. Attribution needs, per position, what it held and what those
+       holdings were worth — and the range and liquidity, so the price move can be separated from
+       capital going in or out. Liquidity is not published on the positions, so derive it here
+       from the amounts and the range: for a concentrated position L is exactly recoverable, and
+       storing it once beats every reader re-deriving it.
+
+       One record per UTC day, rewritten in place while that day is current, frozen once it is
+       not. A day is the right grain: shorter and the record is noise, longer and a move has too
+       many causes to name. */
+    try{
+      const sq=x=>Math.sqrt(x);
+      /* L from published amounts and range. In range either side gives the same answer, so take
+         the token with the larger balance — the smaller one can be dust whose rounding dominates. */
+      const liqOf=p=>{
+        const P=p.price, A=p.priceLower, B=p.priceUpper;
+        if(!(P>0&&A>0&&B>0&&B>A)) return null;
+        const sP=sq(P), sA=sq(A), sB=sq(B);
+        if(P<=A) return (p.amt0>0) ? p.amt0/(1/sA-1/sB) : null;
+        if(P>=B) return (p.amt1>0) ? p.amt1/(sB-sA) : null;
+        const fromX = (p.amt0>0) ? p.amt0/(1/sP-1/sB) : null;
+        const fromY = (p.amt1>0) ? p.amt1/(sP-sA) : null;
+        if(fromX==null) return fromY;
+        if(fromY==null) return fromX;
+        return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fromX : fromY;
+      };
+      const r6=x=>x==null?null:Number(x.toPrecision(8));
+      const r2=x=>x==null?null:Math.round(x*100)/100;
+      const snapOf=p=>({ i:String(p.id), n:p.pairLabel||'', c:p.chain==='sol'?'sol':'evm',
+        s0:p.m0?.symbol||'?', s1:p.m1?.symbol||'?',
+        v:r2(p.valueUsd), a0:r6(p.amt0), a1:r6(p.amt1), u0:r6(p.usd0), u1:r6(p.usd1),
+        pr:r6(p.price), pl:r6(p.priceLower), pu:r6(p.priceUpper), L:r6(liqOf(p)), r:!!p.inRange });
+      const all=[...evmPositions,...solPositions];
+      const rec={ d:new Date().toISOString().slice(0,10), t:Date.now(),
+        v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
+        f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
+        fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
+        ps:all.map(snapOf) };
+      let daily=[];
+      try{ daily=JSON.parse(fs.readFileSync(OUT+'/daily-'+profile.slug+'.json','utf8')); }catch(e){}
+      /* Backfill from the 15-minute series for days that predate per-position recording. Those
+         days can carry a total and a change but no attribution, and that is worth saying out
+         loud — a table that starts empty for two days is worse than one that starts honest. */
+      if(!daily.some(x=>x.ps)){
+        const byDay=new Map();
+        for(const h of history){
+          const d=new Date(h.t).toISOString().slice(0,10);
+          if(d===rec.d) continue;                       // today is the live record's job
+          byDay.set(d, {d, t:h.t, v:h.v, f:h.f, ps:null});   // last sample of each day wins
+        }
+        const have=new Set(daily.map(x=>x.d));
+        const seeded=[...byDay.values()].filter(x=>!have.has(x.d));
+        if(seeded.length){
+          daily=[...seeded,...daily].sort((x,y)=>x.d<y.d?-1:1);
+          console.log('daily: backfilled',seeded.length,'value-only day(s) from the history series');
+        }
+      }
+      /* Never overwrite a finished day with a degraded read: a cycle that lost a chain would
+         otherwise rewrite today as if those positions had closed, and the next day's attribution
+         would report a phantom withdrawal followed by a phantom deposit. */
+      const chainsOk=Object.values(chainStatus).every(v=>v==='ok');
+      const last=daily[daily.length-1];
+      if(chainsOk){
+        if(last && last.d===rec.d) daily[daily.length-1]=rec; else daily.push(rec);
+        if(daily.length>400) daily=daily.slice(-400);
+        fs.writeFileSync(OUT+'/daily-'+profile.slug+'.json', JSON.stringify(daily));
+      }else{
+        console.log('daily: skipped, chainStatus', JSON.stringify(chainStatus));
+      }
+      /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
+         them would more than double a payload that has to reach a phone every 15 minutes. The
+         answers are 300 bytes a day, they are identical for every reader, and computing them
+         once against the full-resolution record beats recomputing them everywhere against a
+         truncated one. The detailed file stays on the server, so this can be recomputed later. */
+      const amtsAt=(L,P,A,B)=>{
+        if(!(L>0&&P>0&&A>0&&B>0&&B>A)) return null;
+        const sP=sq(P), sA=sq(A), sB=sq(B);
+        if(P<=A) return [L*(1/sA-1/sB), 0];
+        if(P>=B) return [0, L*(sB-sA)];
+        return [L*(1/sP-1/sB), L*(sP-sA)];
+      };
+      const attrib=(y,t)=>{
+        const base={ d:t.d, t:t.t, v:t.v, dV:r2((t.v||0)-(y.v||0)),
+                     days:Math.max(1,Math.round((t.t-y.t)/86400000)) };
+        if(!y.ps || !t.ps) return {...base, noDetail:true};
+        const my=new Map(y.ps.map(x=>[x.i,x])), mt=new Map(t.ps.map(x=>[x.i,x]));
+        const tok=new Map(); let price=0, flow=0, exact=true;
+        const opened=[], closed=[];
+        for(const [id,a] of my){
+          const b=mt.get(id);
+          if(!b){ closed.push({n:a.n||id, usd:r2(-(a.v||0))}); continue; }
+          let hyp=amtsAt(a.L, b.pr, a.pl, a.pu);
+          if(!hyp){ hyp=[a.a0,a.a1]; exact=false; }
+          const vHyp=hyp[0]*(b.u0||0)+hyp[1]*(b.u1||0);
+          price += vHyp-(a.v||0);
+          flow  += (b.v||0)-vHyp;
+          const put=(sym,vy,vt)=>{ const e=tok.get(sym)||{vy:0,vt:0}; e.vy+=vy; e.vt+=vt; tok.set(sym,e); };
+          put(a.s0, (a.a0||0)*(a.u0||0), (a.a0||0)*(b.u0||0));
+          put(a.s1, (a.a1||0)*(a.u1||0), (a.a1||0)*(b.u1||0));
+        }
+        for(const [id,b] of mt) if(!my.has(id)) opened.push({n:b.n||id, usd:r2(b.v||0)});
+        const tokens=[...tok.entries()].map(([s2,e])=>({s:s2, usd:r2(e.vt-e.vy),
+            pct:e.vy>0?Math.round((e.vt/e.vy-1)*1000)/10:null}))
+          .filter(x=>Math.abs(x.usd)>=0.5).sort((x,z)=>Math.abs(z.usd)-Math.abs(x.usd));
+        return {...base, tokens, rebal:r2(price-tokens.reduce((s2,x)=>s2+x.usd,0)), flow:r2(flow),
+                opened, closed, exact, vPrev:y.v, dPrev:y.d,
+                dFees:(t.fe!=null&&y.fe!=null)?r2(t.fe-y.fe):null};
+      };
+      const moves=[];
+      for(let i=1;i<daily.length;i++) moves.push(attrib(daily[i-1], daily[i]));
+      profileDaily = moves.slice(-35);
+    }catch(e){ logErr('daily',e); }
     // ---- idle balances: everything held that is NOT in an LP ----
     let idle=null;
     try{
@@ -1597,7 +1711,7 @@ const main=async()=>{
       console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
     }catch(e){ logErr('balances',e); }
 
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));

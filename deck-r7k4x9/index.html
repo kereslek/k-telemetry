@@ -506,6 +506,21 @@
   .verdict.loosen{color:var(--status-serious);border-color:var(--status-serious)}
   .verdict.hold{color:var(--status-good);border-color:var(--status-good)}
   .arch-note{font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6}
+  .dod-row{display:grid;grid-template-columns:104px minmax(80px,1fr) minmax(118px,1fr) 2.4fr;gap:12px;align-items:baseline;
+    padding:9px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
+  .dod-row.hdr{font-size:9.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line)}
+  .dod-row .num{font-variant-numeric:tabular-nums;text-align:right}
+  .dod-row .why{font-size:11px;color:var(--text-muted);line-height:1.45}
+  .drv{display:grid;grid-template-columns:1fr auto auto;gap:5px 16px;font-size:12px;margin:8px 0 2px;align-items:baseline}
+  .drv .num{font-variant-numeric:tabular-nums;text-align:right}
+  .drv .rule{grid-column:1/-1;border-top:1px solid var(--line-soft);margin:4px 0 2px}
+  .drv .dim{color:var(--text-muted)}
+  @media(max-width:640px){ .drv{grid-template-columns:1fr auto} .drv .pctcol{display:none} }
+  @media(max-width:900px){
+    .dod-row{grid-template-columns:1fr 1fr;row-gap:3px}.dod-row.hdr{display:none}.dod-row .num{text-align:left}
+    .dod-row>[data-l]::before{content:attr(data-l);display:block;font-size:8px;letter-spacing:.14em;color:var(--text-muted)}
+    .dod-row>.why{grid-column:1/-1}
+  }
   .plink{color:inherit;text-decoration:none;border-bottom:1px dotted var(--text-muted)}
   .plink:hover{color:var(--accent);border-color:var(--accent)}
   .econ-strip{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border:1px dashed var(--line);font-size:11.5px;color:var(--text-secondary)}
@@ -930,7 +945,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v25.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1869,6 +1884,7 @@ function snapSave(){
       tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
       catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
+      dayMoves:(state.dayMoves&&state.dayMoves.length?state.dayMoves:prev.dayMoves)||null,
       solIds, ethIds});
   }catch(e){}
 }
@@ -1960,6 +1976,7 @@ async function scanInner(isBoot){
           if(state.ethUsd==null) state.ethUsd = d.ethUsd;
           if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
+          if(Array.isArray(d.daily) && d.daily.length) state.dayMoves=d.daily;
           if(d.catMtd) state.catMtd=d.catMtd;
           if(Array.isArray(d.catMonths)) state.catMonths=d.catMonths;
           if(d.feeMonth) state.feeMonth = d.feeMonth;
@@ -2051,6 +2068,7 @@ async function scanInner(isBoot){
       const snap=store.get('lastSnap',null);
       if(snap){
         if(!state.idle && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
+        if(!(state.dayMoves||[]).length && snap.dayMoves) state.dayMoves=snap.dayMoves;
         if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
         if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
       }
@@ -2090,6 +2108,7 @@ async function scanInner(isBoot){
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
       if(state.idle==null && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
+      if(!(state.dayMoves||[]).length && snap.dayMoves) state.dayMoves=snap.dayMoves;
       state.catMtd=state.catMtd??snap.catMtd;
       state.catMonths=state.catMonths??snap.catMonths;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -3936,6 +3955,7 @@ function renderSpark(){
   host.append(el('div','flow-title','LAST '+spanTxt.toUpperCase()+' · '+s.length+' samples'
     +(dd!=null?' · <span class="'+(dd>=0?'up':'down')+'">'+fmtPct(dd,2,true)+'</span> over the window':'')));
   host.append(svg);
+  renderDaily(host);
   renderMonths(host);
   renderCatSplit(host);
 }
@@ -4378,6 +4398,114 @@ function renderTruth(){
    Lived in the TRUTH PANEL, which is about LP versus holding, so the month's headline numbers
    were in a different panel from the month's breakdown and neither was under History. Both are
    here now, in the order they are read: the month totals, then where they came from. */
+/* ----- day over day: what moved the position value, and why -----
+   The 15-minute series shows a total falling without ever saying what pushed it. Two effects are
+   confounded in that one line: the tokens repricing, and the position itself changing shape —
+   either because someone deposited or withdrew, or because a concentrated range mechanically
+   swaps one token for the other as price walks through it.
+
+   The split is computed on the server, where the full per-position daily record lives: hold each
+   position's liquidity and range fixed and revalue at the newer day's price, and that
+   counterfactual is the price effect, with everything else being capital moving. Within the price
+   effect, the part a plain holder would also have taken is the token move; the remainder is what
+   the range did on top — divergence measured over one day rather than asserted in the abstract. */
+function renderDaily(host){
+  const mv=state.dayMoves||[];
+  const wrap=el('div','flow-block');
+  wrap.append(el('div','flow-title','DAY OVER DAY — what moved the position value'));
+  if(!mv.length){
+    wrap.append(el('div','arch-note','No day-over-day records yet. One day is recorded per refresh cycle; '
+      +'the first comparison appears once two days exist.'));
+    host.append(wrap); return;
+  }
+  const sgn=(v,dp)=>Math.abs(v)<0.005 ? '<b style="color:var(--text-muted)">$0.00</b>'
+    : '<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v),dp)+'</b>';
+  const dlab=k=>{ const m=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    return Number(String(k).slice(8,10))+' '+m[Number(String(k).slice(5,7))-1]; };
+  const rows=[...mv].reverse();          // newest first: the question is about the move that just happened
+
+  // ---- the latest move, itemised ----
+  const top=rows.find(r=>!r.noDetail);
+  if(!top){
+    wrap.append(el('div','arch-note','Daily totals are recorded but no per-position detail yet, so changes can be '
+      +'listed without being explained. The first full breakdown appears once two days carry it.'));
+  } else {
+    const head=el('div');
+    head.style.cssText='display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-bottom:2px';
+    const pct=top.vPrev ? top.dV/top.vPrev*100 : null;
+    /* The newest record is rewritten all day, so calling it a finished day would overstate it. */
+    const liveDay = top.d === new Date().toISOString().slice(0,10);
+    head.innerHTML='<span style="font-size:13px"><b>'+dlab(top.d)+'</b>'
+      +(liveDay?' <span style="color:var(--accent);font-size:9px">SO FAR TODAY</span>':'')+' '+fmtUsd(top.v,0)+'</span>'
+      +'<span style="font-size:13px">'+sgn(top.dV)+(pct!=null?' <span style="color:var(--text-muted)">('
+        +(pct>=0?'+':'−')+Math.abs(pct).toFixed(1)+'%)</span>':'')+'</span>'
+      +'<span style="font-size:11px;color:var(--text-muted)">vs '+dlab(top.dPrev)
+        +(top.days>1?' · '+top.days+' days apart':'')+'</span>';
+    wrap.append(head);
+
+    const drv=el('div','drv');
+    const line=(label,usd,note)=>{
+      drv.append(el('div',null,label+(note?' <span class="dim">'+note+'</span>':'')));
+      drv.append(el('div','num',sgn(usd)));
+      drv.append(el('div','num dim pctcol',top.vPrev?((usd/top.vPrev*100>=0?'+':'−')+Math.abs(usd/top.vPrev*100).toFixed(1)+'%'):''));
+    };
+    for(const tk of (top.tokens||[]))
+      line(esc(tk.s), tk.usd, tk.pct!=null?(tk.pct>=0?'+':'−')+Math.abs(tk.pct).toFixed(1)+'% price':'');
+    if(top.exact && Math.abs(top.rebal||0)>=0.5)
+      line('range rebalancing', top.rebal, top.rebal<0?'the LPs bought what fell':'the LPs sold what rose');
+    if(Math.abs(top.flow||0)>=0.5) line('deposits / withdrawals', top.flow);
+    for(const o of (top.opened||[])) line('opened '+esc(String(o.n)), o.usd);
+    for(const c of (top.closed||[])) line('closed '+esc(String(c.n)), c.usd);
+    drv.append(el('div','rule'));
+    line('total change in position value', top.dV);
+    wrap.append(drv);
+    if(top.dFees!=null && Math.abs(top.dFees)>=0.005)
+      wrap.append(el('div','arch-note','Fees earned over the same span: <b style="color:var(--status-good)">+'
+        +fmtUsd(top.dFees)+'</b>. Fee income sits outside the figures above — position value is the tokens in '
+        +'the pool, and fees accrue beside them.'));
+    if(!top.exact)
+      wrap.append(el('div','arch-note','<span style="color:var(--status-warning)">One or more positions had no '
+        +'liquidity figure recorded</span>, so the range\'s own rebalancing could not be separated from the token '
+        +'move for those. Price and capital are still split correctly; only the finer breakdown is coarse.'));
+  }
+
+  // ---- the recent run of days ----
+  const hdr=el('div','dod-row hdr');
+  ['DAY','VALUE','CHANGE','WHAT MOVED IT'].forEach(h=>hdr.append(el('div',null,h)));
+  wrap.append(hdr);
+  const cell=(cls,html,label)=>{ const d=el('div',cls,html); if(label) d.setAttribute('data-l',label); return d; };
+  for(const r of rows.slice(0,14)){
+    const row=el('div','dod-row');
+    row.append(cell(null,'<b>'+dlab(r.d)+'</b>'));
+    row.append(cell('num',fmtUsd(r.v,0),'VALUE'));
+    row.append(cell('num',sgn(r.dV,0),'CHANGE'));   // the run of days is for scanning, not reconciling
+    if(r.noDetail){
+      row.append(cell('why','<span class="dim">recorded before per-position tracking — total only</span>','WHAT MOVED IT'));
+      wrap.append(row); continue;
+    }
+    /* Name the drivers that actually carried the day rather than listing every token: anything
+       under a fifth of the move is noise a reader has to filter out themselves. */
+    const parts=[], floor=Math.max(1, Math.abs(r.dV)*0.2);
+    for(const tk of (r.tokens||[]))
+      if(Math.abs(tk.usd) >= floor)
+        parts.push(esc(tk.s)+' '+(tk.pct!=null?(tk.pct>=0?'+':'−')+Math.abs(tk.pct).toFixed(1)+'%':'')
+          +' ('+(tk.usd>=0?'+':'−')+fmtUsd(Math.abs(tk.usd),0)+')');
+    if(Math.abs(r.rebal||0) >= floor)
+      parts.push('range rebalancing '+(r.rebal>=0?'+':'−')+fmtUsd(Math.abs(r.rebal),0));
+    if(Math.abs(r.flow||0) >= floor)
+      parts.push((r.flow>=0?'deposits +':'withdrawals −')+fmtUsd(Math.abs(r.flow),0));
+    for(const o of (r.opened||[])) parts.push('opened '+esc(String(o.n))+' (+'+fmtUsd(o.usd,0)+')');
+    for(const c of (r.closed||[])) parts.push('closed '+esc(String(c.n))+' (−'+fmtUsd(Math.abs(c.usd),0)+')');
+    row.append(cell('why', parts.length?parts.join(' · '):'<span class="dim">nothing moved enough to name</span>','WHAT MOVED IT'));
+    wrap.append(row);
+  }
+  wrap.append(el('div','arch-note','Each row compares one daily record with the one before it, so a day the relay '
+    +'could not complete is skipped rather than reported as positions closing. Token lines are the move a plain '
+    +'holder of that day\'s balances would also have taken; range rebalancing is what the concentrated ranges did '
+    +'on top, by selling into strength and buying into weakness.'));
+  host.append(wrap);
+}
+
 function renderMonths(host){
   const fm=state.feeMonth, cm=state.costMonth;
   if(!fm) return;
