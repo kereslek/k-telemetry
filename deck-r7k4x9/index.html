@@ -428,30 +428,50 @@
   .act-when{font-family:var(--mono);font-size:10px;color:var(--text-muted);white-space:nowrap;padding-top:3px}
   .act-clear{font-size:12px;color:var(--text-muted);padding:4px 2px}
   .idle-tbl{margin-top:12px;display:flex;flex-direction:column;gap:2px}
-  .idle-row{display:flex;align-items:baseline;gap:10px;padding:5px 8px;border-radius:3px}
-
-  .idle-sym{flex:0 0 120px;font-family:var(--mono);font-size:11px;letter-spacing:.06em}
+  /* Grid, not flex. Five columns of flexible content on a phone is exactly the case flex gets
+     wrong: a long amount widens its own box and shoves the value column off the screen edge, and
+     a header label wider than its column wraps to two lines while the data under it does not, so
+     header and rows drift apart. Grid tracks are declared once and shared by both, minmax(0,…)
+     stops content widening a track, and every cell clips rather than pushes. */
+  .idle-row{display:grid;grid-template-columns:88px minmax(0,1fr) 78px 56px 82px;
+    gap:6px;align-items:baseline;padding:5px 8px;border-radius:3px}
+  .idle-row>span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .idle-sym{font-family:var(--mono);font-size:11px;letter-spacing:.06em}
   .idle-cell:nth-child(even){background:rgba(255,255,255,.02)}
-
-  .idle-amt{flex:1;text-align:right;font-size:11.5px;color:var(--text-muted)}
-  .idle-px{flex:0 0 100px;text-align:right;font-size:11px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
-  .idle-chg{flex:0 0 66px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums;color:var(--text-muted)}
+  .idle-amt{text-align:right;font-size:11.5px;color:var(--text-muted)}
+  .idle-px{text-align:right;font-size:11px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+  .idle-chg{text-align:right;font-size:11px;font-variant-numeric:tabular-nums;color:var(--text-muted)}
   .idle-chg.up{color:var(--status-good)} .idle-chg.down{color:var(--status-critical)}
-  .idle-usd{flex:0 0 110px;text-align:right;font-size:12px}
+  .idle-usd{text-align:right;font-size:12px}
   .idle-hdr{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line);background:none!important}
-  .idle-hdr .idle-amt,.idle-hdr .idle-px,.idle-hdr .idle-chg,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
-  .idle-hdr .idle-chg{color:var(--text-muted)!important}
-  @media(max-width:560px){ .idle-sym{flex:0 0 64px} .idle-px{flex:0 0 68px;font-size:10px}
-    .idle-chg{flex:0 0 52px;font-size:10px} .idle-usd{flex:0 0 72px} .idle-amt{font-size:10.5px} }
-  /* Below ~360px the three fixed columns no longer fit and the value column was pushed past the
-     panel edge, taking the page with it. Let every column shrink and the amount give way first. */
-  @media(max-width:359px){
-    .idle-row{gap:6px;padding:5px 4px}
-    .idle-sym{flex:0 1 auto;min-width:0;font-size:10px}
-    .idle-amt{flex:1 1 0;min-width:0;font-size:9.5px;overflow:hidden;text-overflow:ellipsis}
-    .idle-px{flex:0 1 auto;min-width:0;font-size:9.5px}
-    .idle-chg{flex:0 0 auto;font-size:9.5px}
-    .idle-usd{flex:0 0 auto;font-size:10.5px}
+  .idle-hdr>span{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
+  /* the reference-day header is the longest label in the narrowest column — give it room by
+     spending less on letter-spacing rather than by wrapping it */
+  .idle-hdr .idle-chg{letter-spacing:.04em}
+  @media(max-width:620px){
+    .idle-row{grid-template-columns:76px minmax(0,1fr) 68px 48px 74px;gap:4px;padding:5px 6px}
+    .idle-sym{font-size:10.5px} .idle-amt{font-size:10.5px} .idle-px{font-size:10px}
+    .idle-chg{font-size:10px} .idle-usd{font-size:11.5px}
+    .idle-hdr>span{font-size:8px;letter-spacing:.1em} .idle-hdr .idle-chg{letter-spacing:.02em}
+  }
+  @media(max-width:400px){
+    /* The amount column had slack here and the price column did not: an eight-decimal price is
+       eleven characters, longer than any amount once the decimals scale with magnitude. */
+    .idle-row{grid-template-columns:68px minmax(0,1fr) 66px 44px 62px;gap:3px;padding:5px 3px}
+    .idle-sym{font-size:10px} .idle-amt{font-size:9.5px} .idle-px{font-size:9.5px}
+    .idle-chg{font-size:9.5px} .idle-usd{font-size:10.5px}
+    .idle-hdr>span{font-size:7.5px;letter-spacing:.04em} .idle-hdr .idle-chg{letter-spacing:0}
+  }
+  /* 360px is a real phone (13 mini), so five columns still have to fit there rather than
+     truncate. Below that they cannot without losing a column, and the amount degrades to an
+     ellipsis with the exact figure still on the element. */
+  @media(max-width:370px){
+    .idle-row{grid-template-columns:58px minmax(0,1fr) 62px 42px 62px;gap:2px;padding:5px 2px}
+    /* the longest ticker here is CREAMPIE with a chain mark after it; a half-point smaller is
+       what makes it fit rather than truncate to CREAMPI… */
+    .idle-sym{font-size:9px;letter-spacing:0} .idle-amt{font-size:9px} .idle-px{font-size:9px}
+    .idle-chg{font-size:9px} .idle-usd{font-size:10px}
+    .idle-hdr>span{font-size:7px;letter-spacing:.02em} .idle-hdr .idle-chg{letter-spacing:0}
   }
   @media(max-width:560px){
     .act-row{flex-wrap:wrap;gap:6px}
@@ -952,7 +972,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3315,11 +3335,16 @@ function renderIdle(){
     const px = (r.priced && r.amount>0) ? r.usd/r.amount : null;
     /* Keyed on contract, not ticker: the same key the server measured the change on. A token
        first bought today has no previous close and gets a dash, not a zero. */
+    /* Four decimals on a 703,750 balance is false precision, and it was the single widest thing
+       in the table — enough to squeeze the amount column past what a phone can give it. Scale the
+       decimals to the magnitude; the exact figure stays available on the element itself. */
+    const amtDp = r.amount>=1e6 ? 0 : r.amount>=1e4 ? 2 : r.amount>=1 ? 4 : 6;
     const chgKey=(r.chain==='sol'?'sol':'evm')+':'+String(r.addr||r.sym||'?').toLowerCase();
     const chg = (pxc && pxc.chg && pxc.chg[chgKey]!=null) ? pxc.chg[chgKey] : null;
     const pxDp = px==null ? 2 : (px<0.001 ? 8 : px<0.1 ? 5 : px<100 ? 4 : 2);
     row.innerHTML='<span class="idle-sym">'+esc(r.sym)+(r.chain==='sol'?' <span class="unit">◎</span>':'')+'</span>'
-      +'<span class="idle-amt">'+r.amount.toLocaleString(undefined,{maximumFractionDigits:4})+'</span>'
+      +'<span class="idle-amt" title="'+esc(r.amount.toLocaleString(undefined,{maximumFractionDigits:8}))+'">'
+        +r.amount.toLocaleString(undefined,{maximumFractionDigits:amtDp})+'</span>'
       +'<span class="idle-px">'+(px!=null?fmtUsd(px,pxDp):'<span class="unit">—</span>')+'</span>'
       +'<span class="idle-chg'+(chg==null?'':(chg>=0?' up':' down'))+'">'
         +(chg==null?'<span class="unit">—</span>':(chg>=0?'+':'−')+Math.abs(chg).toFixed(1)+'%')+'</span>'
