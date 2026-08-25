@@ -1538,7 +1538,7 @@ const main=async()=>{
         : (blockNums[ck]==null||chainErrs.has(ck) ? 'down' : 'ok');
     }
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
-    let profileDaily=[];
+    let profileDaily=[], profilePxChg=null;
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
     {
@@ -1855,8 +1855,35 @@ const main=async()=>{
          day has no detail to itemise. */
       profileDaily = moves.slice(-35).map((m,i,arr)=>
         i>=arr.length-3 ? m : (({wallet, elsewhere, ...rest})=>rest)(m));
+
+      /* Per-token day-over-day price change, keyed the same way everything else here is keyed.
+         The idle panel needs it per row, and a row is a contract, not a ticker — CPOOL fell 31%
+         on Solana and 1% on Ethereum on the same day, so one number per symbol would be wrong on
+         one of those lines. Measured from the same reference the value tile uses: the close of
+         the most recent day that is not today. */
+      const baseDay=[...daily].reverse().find(r=>r.d!==rec.d && r.ps);
+      if(baseDay){
+        const then=new Map();
+        for(const h of (baseDay.w||[])) if(h.u>0) then.set(h.k, h.u);
+        for(const q of (baseDay.ps||[])){
+          if(q.u0>0 && !then.has(q.k0)) then.set(q.k0, q.u0);
+          if(q.u1>0 && !then.has(q.k1)) then.set(q.k1, q.u1);
+        }
+        const now=new Map();
+        for(const h of (rec.w||[])) if(h.u>0) now.set(h.k, h.u);
+        for(const q of (rec.ps||[])){
+          if(q.u0>0 && !now.has(q.k0)) now.set(q.k0, q.u0);
+          if(q.u1>0 && !now.has(q.k1)) now.set(q.k1, q.u1);
+        }
+        const chg={};
+        for(const [k,u0] of then){
+          const u1=now.get(k);
+          if(u1>0 && u0>0) chg[k]=Math.round((u1/u0-1)*1000)/10;
+        }
+        if(Object.keys(chg).length) profilePxChg={from:baseDay.d, chg};
+      }
     }catch(e){ logErr('daily',e); }
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));

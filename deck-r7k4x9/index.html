@@ -435,10 +435,14 @@
 
   .idle-amt{flex:1;text-align:right;font-size:11.5px;color:var(--text-muted)}
   .idle-px{flex:0 0 100px;text-align:right;font-size:11px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+  .idle-chg{flex:0 0 66px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums;color:var(--text-muted)}
+  .idle-chg.up{color:var(--status-good)} .idle-chg.down{color:var(--status-critical)}
   .idle-usd{flex:0 0 110px;text-align:right;font-size:12px}
   .idle-hdr{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);border-bottom:1px solid var(--line);background:none!important}
-  .idle-hdr .idle-amt,.idle-hdr .idle-px,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
-  @media(max-width:560px){ .idle-sym{flex:0 0 78px} .idle-px{flex:0 0 76px;font-size:10px} .idle-usd{flex:0 0 78px} .idle-amt{font-size:10.5px} }
+  .idle-hdr .idle-amt,.idle-hdr .idle-px,.idle-hdr .idle-chg,.idle-hdr .idle-usd{color:var(--text-muted);font-size:8.5px;letter-spacing:.16em}
+  .idle-hdr .idle-chg{color:var(--text-muted)!important}
+  @media(max-width:560px){ .idle-sym{flex:0 0 64px} .idle-px{flex:0 0 68px;font-size:10px}
+    .idle-chg{flex:0 0 52px;font-size:10px} .idle-usd{flex:0 0 72px} .idle-amt{font-size:10.5px} }
   /* Below ~360px the three fixed columns no longer fit and the value column was pushed past the
      panel edge, taking the page with it. Let every column shrink and the amount give way first. */
   @media(max-width:359px){
@@ -446,6 +450,7 @@
     .idle-sym{flex:0 1 auto;min-width:0;font-size:10px}
     .idle-amt{flex:1 1 0;min-width:0;font-size:9.5px;overflow:hidden;text-overflow:ellipsis}
     .idle-px{flex:0 1 auto;min-width:0;font-size:9.5px}
+    .idle-chg{flex:0 0 auto;font-size:9.5px}
     .idle-usd{flex:0 0 auto;font-size:10.5px}
   }
   @media(max-width:560px){
@@ -947,7 +952,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v25.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1887,6 +1892,7 @@ function snapSave(){
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
       catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
       dayMoves:(state.dayMoves&&state.dayMoves.length?state.dayMoves:prev.dayMoves)||null,
+      pxChg:state.pxChg||prev.pxChg||null,
       solIds, ethIds});
   }catch(e){}
 }
@@ -1979,6 +1985,7 @@ async function scanInner(isBoot){
           if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(Array.isArray(d.daily) && d.daily.length) state.dayMoves=d.daily;
+          if(d.pxChg) state.pxChg=d.pxChg;
           if(d.catMtd) state.catMtd=d.catMtd;
           if(Array.isArray(d.catMonths)) state.catMonths=d.catMonths;
           if(d.feeMonth) state.feeMonth = d.feeMonth;
@@ -2071,6 +2078,7 @@ async function scanInner(isBoot){
       if(snap){
         if(!state.idle && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
         if(!(state.dayMoves||[]).length && snap.dayMoves) state.dayMoves=snap.dayMoves;
+        if(!state.pxChg && snap.pxChg) state.pxChg=snap.pxChg;
         if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
         if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
       }
@@ -2111,6 +2119,7 @@ async function scanInner(isBoot){
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
       if(state.idle==null && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
       if(!(state.dayMoves||[]).length && snap.dayMoves) state.dayMoves=snap.dayMoves;
+      if(!state.pxChg && snap.pxChg) state.pxChg=snap.pxChg;
       state.catMtd=state.catMtd??snap.catMtd;
       state.catMonths=state.catMonths??snap.catMonths;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -3287,8 +3296,15 @@ function renderIdle(){
   }
   const tbl=el('div','idle-tbl');
   const hdr=el('div','idle-row idle-hdr');
+  /* The reference day is named in the header rather than left implicit: "24H" would be a lie —
+     this is measured against a daily close, so the window is between 0 and 24 hours wide. */
+  const pxc=state.pxChg||null;
+  const chgHdr=pxc&&pxc.from
+    ? 'VS '+Number(pxc.from.slice(8,10))+' '+['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][Number(pxc.from.slice(5,7))-1]
+    : 'CHANGE';
   hdr.innerHTML='<span class="idle-sym">TOKEN</span>'
-    +'<span class="idle-amt">AMOUNT</span><span class="idle-px">PRICE</span><span class="idle-usd">VALUE</span>';
+    +'<span class="idle-amt">AMOUNT</span><span class="idle-px">PRICE</span>'
+    +'<span class="idle-chg">'+chgHdr+'</span><span class="idle-usd">VALUE</span>';
   tbl.append(hdr);
   const SHOWN=24;
   for(const r of rows.slice(0,SHOWN)){
@@ -3297,10 +3313,16 @@ function renderIdle(){
     /* Unit price, at enough decimals to be a number rather than $0.00 — these run from CPOOL at
        two cents to ETH at four figures, and one fixed precision cannot serve both. */
     const px = (r.priced && r.amount>0) ? r.usd/r.amount : null;
+    /* Keyed on contract, not ticker: the same key the server measured the change on. A token
+       first bought today has no previous close and gets a dash, not a zero. */
+    const chgKey=(r.chain==='sol'?'sol':'evm')+':'+String(r.addr||r.sym||'?').toLowerCase();
+    const chg = (pxc && pxc.chg && pxc.chg[chgKey]!=null) ? pxc.chg[chgKey] : null;
     const pxDp = px==null ? 2 : (px<0.001 ? 8 : px<0.1 ? 5 : px<100 ? 4 : 2);
     row.innerHTML='<span class="idle-sym">'+esc(r.sym)+(r.chain==='sol'?' <span class="unit">◎</span>':'')+'</span>'
       +'<span class="idle-amt">'+r.amount.toLocaleString(undefined,{maximumFractionDigits:4})+'</span>'
       +'<span class="idle-px">'+(px!=null?fmtUsd(px,pxDp):'<span class="unit">—</span>')+'</span>'
+      +'<span class="idle-chg'+(chg==null?'':(chg>=0?' up':' down'))+'">'
+        +(chg==null?'<span class="unit">—</span>':(chg>=0?'+':'−')+Math.abs(chg).toFixed(1)+'%')+'</span>'
       +'<span class="idle-usd">'+(r.priced?fmtUsd(r.usd,2):'<span class="unit">unpriced</span>')+'</span>';
     cell.append(row);
     tbl.append(cell);
