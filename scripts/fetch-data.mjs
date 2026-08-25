@@ -1751,7 +1751,11 @@ const main=async()=>{
         return [L*(1/sP-1/sB), L*(sP-sA)];
       };
       const attrib=(y,t)=>{
-        const base={ d:t.d, t:t.t, v:t.v, dV:r2((t.v||0)-(y.v||0)),
+        /* vPrev/dPrev belong to every move, not only the ones that can be itemised. The value
+           tile measures the day's change against them, and a day whose breakdown is missing still
+           has a perfectly good previous close — leaving them off the no-detail branch silently
+           cost the tile its day-over-day line. */
+        const base={ d:t.d, t:t.t, v:t.v, dV:r2((t.v||0)-(y.v||0)), vPrev:y.v, dPrev:y.d,
                      days:Math.max(1,Math.round((t.t-y.t)/86400000)) };
         if(!y.ps || !t.ps) return {...base, noDetail:true};
         const my=new Map(y.ps.map(x=>[x.i,x])), mt=new Map(t.ps.map(x=>[x.i,x]));
@@ -1826,7 +1830,7 @@ const main=async()=>{
         }
         for(const t2 of tokens){ delete t2._k; delete t2._px; }
         return {...base, tokens, elsewhere, wallet, rebal:r2(price-tokens.reduce((s2,x)=>s2+x.usd,0)), flow:r2(flow),
-                opened, closed, exact, vPrev:y.v, dPrev:y.d,
+                opened, closed, exact,
                 dFees:(t.fe!=null&&y.fe!=null)?r2(t.fe-y.fe):null};
       };
       const moves=[];
