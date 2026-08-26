@@ -1087,6 +1087,16 @@ export function dailyRecord(evmPositions, solPositions, idle, tsMs){
     ps:all.map(snapOf) };
 }
 
+/* The build stamp of the page as it exists in the repository. Published so a browser holding a
+   cached copy can notice it is behind: the payload is fetched with cache:'no-store' and always
+   arrives fresh, while index.html can sit in a phone's cache long after a deploy — which looks
+   exactly like a feature that was never shipped. */
+function readUiBuild(){
+  try{
+    const m=fs.readFileSync(OUT+'/index.html','utf8').match(/const BUILD\s*=\s*'([^']+)'/);
+    return m ? m[1] : null;
+  }catch(e){ return null; }
+}
 const main=async()=>{
   try{ const bc=JSON.parse(fs.readFileSync(OUT+'/blockcache.json','utf8')); blockCache={mint:bc.mint||{},tscan:bc.tscan||{},evh:bc.evh||{},mintInfo:bc.mintInfo||{},tokMeta:bc.tokMeta||{},depUsd:bc.depUsd||{},blkTs:bc.blkTs||{}}; }catch(e){}
   const blockNums={};
@@ -1538,6 +1548,7 @@ const main=async()=>{
         : (blockNums[ck]==null||chainErrs.has(ck) ? 'down' : 'ok');
     }
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
+    const uiBuild=readUiBuild();
     let profileDaily=[], profilePxChg=null;
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
@@ -1883,7 +1894,7 @@ const main=async()=>{
         if(Object.keys(chg).length) profilePxChg={from:baseDay.d, chg};
       }
     }catch(e){ logErr('daily',e); }
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));

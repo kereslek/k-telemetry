@@ -975,7 +975,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1983,8 +1983,19 @@ async function scanInner(isBoot){
   catch(e){ log('warning','Solana scan failed: '+esc(e.message||e).slice(0,80)); state.lastScanErr='SOL: '+String(e.message||e).slice(0,70); }
 
   // ---- Relay fallback: data.json generated server-side by GitHub Actions ----
+  /* The relay was fetched only when a scan had failed — but it is the ONLY source of idle wallet
+     balances, the day-over-day moves and their drivers, the per-token price changes and the
+     monthly split. The browser cannot compute any of those. So on a cycle where both chains read
+     cleanly, every one of those panels had nothing to render and the day's drivers simply were
+     not there — intermittently, depending on whether a free RPC happened to answer. Fetch it when
+     positions need it, and otherwise whenever what it alone carries has gone stale.
+
+     Staleness is measured from when we last FETCHED, not from the payload's own timestamp: the
+     relay writes every fifteen minutes, so a payload is routinely ten minutes old the moment it
+     arrives and judging it by that would re-fetch on every cycle. */
   state.relayUsed = false;
-  if(!ethPs || ethPartial || !solOk){
+  const relayStale = !state.relayFetchedAt || (Date.now()-state.relayFetchedAt) > 600000;
+  if(!ethPs || ethPartial || !solOk || relayStale){
     try{
       const slug=activeProfile()?.slug||'main';
       let rr = await fetch('data-'+slug+'.json?nc='+Date.now(), {cache:'no-store'});
@@ -2009,6 +2020,21 @@ async function scanInner(isBoot){
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(Array.isArray(d.daily) && d.daily.length) state.dayMoves=d.daily;
           if(d.pxChg) state.pxChg=d.pxChg;
+          /* The payload never comes from cache; index.html can, for as long as a phone feels
+             like it. When the two disagree the page a reader is looking at is not the page that
+             was deployed, and every "that change isn't there" is explained by it. Reload once per
+             version, guarded so a version that never deploys cannot put the page in a loop. */
+          if(d.uiBuild && d.uiBuild!==BUILD){
+            state.staleBuild=d.uiBuild;
+            let tried=null;
+            try{ tried=sessionStorage.getItem('lphud:reloadedFor'); }catch(e){}
+            if(tried!==d.uiBuild){
+              try{ sessionStorage.setItem('lphud:reloadedFor', d.uiBuild); }catch(e){}
+              log('warning','This page is '+esc(BUILD)+' but '+esc(d.uiBuild)+' is deployed — reloading once to pick it up.');
+              setTimeout(()=>{ try{ location.replace(location.pathname+'?b='+encodeURIComponent(d.uiBuild)); }
+                               catch(e){ location.reload(); } }, 600);
+            }
+          } else if(d.uiBuild){ state.staleBuild=null; }
           if(d.catMtd) state.catMtd=d.catMtd;
           if(Array.isArray(d.catMonths)) state.catMonths=d.catMonths;
           if(d.feeMonth) state.feeMonth = d.feeMonth;
@@ -2020,6 +2046,7 @@ async function scanInner(isBoot){
           if(d.chainStatus) state.chainStatus = d.chainStatus;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
+          state.relayFetchedAt = Date.now();
           if(state.relayUsed) log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
         }
       }
@@ -2346,7 +2373,8 @@ function renderAll(){
     } else pb.classList.remove('show');
   }
   const banner=$('#simBanner');
-  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline'||state.mode==='cache'||!!state.missingChain);
+  banner.classList.toggle('show', state.mode==='sim'||state.mode==='offline'||state.mode==='cache'
+    ||!!state.missingChain||!!state.staleBuild);
   if(state.missingChain && state.mode!=='sim' && state.mode!=='offline' && state.mode!=='cache'){
     banner.style.borderColor='var(--status-warning)'; banner.style.color='var(--status-warning)';
     banner.innerHTML = state.missingCount
@@ -2369,6 +2397,15 @@ function renderAll(){
   } else if(state.mode==='sim'){
     banner.style.borderColor=''; banner.style.color='';
     banner.innerHTML='⚠ DEMO MODE — synthetic showcase data (URL contains ?demo). Remove ?demo from the URL for live mode.';
+  }
+  /* Last, so it wins: a page that is not the deployed page makes every other message on it
+     suspect, including the ones above. Placed here rather than returning early, which would have
+     skipped the line below. */
+  if(state.staleBuild && state.mode!=='sim'){
+    banner.style.borderColor='var(--status-warning)'; banner.style.color='var(--status-warning)';
+    banner.innerHTML='⚠ THIS PAGE IS OUT OF DATE — you are running <b>'+esc(BUILD)+'</b> and <b>'
+      +esc(state.staleBuild)+'</b> is deployed. Your browser is serving a cached copy, so recent changes '
+      +'are not here. <button type="button" class="tile-why" data-reload="1">reload now</button>';
   }
   $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% OF RANGE WIDTH FROM EDGE';
 }
@@ -4947,6 +4984,10 @@ function navLabel(panel){
    would be thrown away with it. Reuses the quick-nav's own jump behaviour rather than
    reimplementing it, so a collapsed panel still opens before being scrolled to. */
 document.addEventListener('click', e=>{
+  if(e.target.closest && e.target.closest('[data-reload]')){
+    try{ location.replace(location.pathname+'?b='+Date.now()); }catch(err){ location.reload(); }
+    return;
+  }
   const b=e.target.closest && e.target.closest('.tile-why[data-jump]');
   if(!b) return;
   const p=document.querySelector('.panel[data-panel="'+b.getAttribute('data-jump')+'"]');
