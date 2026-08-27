@@ -963,8 +963,17 @@ function solAttribute(tx, pda, mints, owner){
     return saw?amt:null;
   }catch(e){ return null; }
 }
-async function solCollectedSince(pos, sinceSig, booked, costSink){
-  const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0};
+/* `ceil` is the fee that had actually accrued to this position at the previous read, per mint,
+   in token units. Nothing here may book more than that.
+
+   Both of the ways this function finds money are blind to WHY tokens moved. A withdrawal returns
+   principal to the same owner, through the same vault, inside a transaction that names the same
+   position — identical in shape to a harvest. On 2026-08-27 a withdraw-and-harvest booked $840.70
+   of "fees" against a position that was owed $84.02: its own fees, the other position's fees, and
+   ~$700 of returned principal. The discriminator that does not require guessing at instruction
+   layouts is the one fact we already hold: fees owed cannot exceed fees accrued. */
+async function solCollectedSince(pos, sinceSig, costSink, ceil){
+  const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0, clamped:0};
   const addr=pos.pda||pos.nftMint, owner=pos.wallet;
   if(!addr||!owner) { out.err='no position address'; return out; }
   try{
@@ -978,12 +987,13 @@ async function solCollectedSince(pos, sinceSig, booked, costSink){
     const mints=[pos.mint0,pos.mint1].filter(Boolean);
     for(const s of sigs.slice(0,8)){             // cap the work per position per run
       if(s.err) continue;
-      /* One harvest can collect from several of this wallet's positions in a single
-         transaction, and that transaction then appears in EVERY one of their signature lists.
-         The delta measured below is the WALLET's, not this position's, so without this guard
-         each position books the full combined amount and the same dollars land in MTD two or
-         three times. Whoever reaches the transaction first books it; the rest skip it. */
-      if(booked && booked.has(s.signature)){ out.shared++; continue; }
+      /* This used to skip any transaction another position had already claimed — the guard
+         against a shared harvest being counted twice. It cost more than it saved: one tx
+         harvested two positions, the first reached it, booked the WALLET's whole delta, and
+         claimed it; the second skipped it, booked nothing, and advanced its checkpoint past the
+         harvest so it could never be recovered. Its $54.28 vanished and lifetime fees went DOWN.
+         The ceiling below is the better guard: each position books at most what it was owed, so
+         two positions can both take their share of one transaction without overlapping. */
       let tx=null;
       try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); }
       catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
@@ -995,6 +1005,12 @@ async function solCollectedSince(pos, sinceSig, booked, costSink){
       if(costSink && tx.meta.fee!=null) costSink[s.signature]=Number(tx.meta.fee);
       /* Preferred: read this position's own transfers out of the transaction. Exact even when
          several positions were harvested together, so no cross-position guard is needed. */
+      /* Neither path may book without a ceiling. Attribution is the accurate one, but accurate
+         about WHICH position moved tokens — not about whether those tokens were fees. On a
+         withdrawal it returns principal just as readily. A position with no recorded owed is
+         either brand new, in which case `sinceSig` has already declined to book, or it has never
+         accrued anything, in which case there is nothing legitimate to find. */
+      if(!ceil){ out.err=out.err||'no fee ceiling — nothing booked this pass'; await sleep(60); continue; }
       const att=solAttribute(tx, addr, mints, owner);
       if(att){
         for(const m in att) out.amt[m]=(out.amt[m]||0)+att[m];
@@ -1014,8 +1030,17 @@ async function solCollectedSince(pos, sinceSig, booked, costSink){
       }
       // Claim the signature only if value was actually taken from it. A zero-delta read must
       // not lock another position out of booking a transaction that did pay it.
-      if(got>0){ out.lump++; if(booked) booked.add(s.signature); }
+      if(got>0){ out.lump++; }
       await sleep(60);
+    }
+    /* Applied to the window total, not per transaction: several harvests between two reads are
+       all drawing on the same accrued balance. The caller has already widened these for whatever
+       accrued between the last read and the harvest itself. */
+    if(ceil){
+      for(const m in out.amt){
+        const cap=ceil[m]!=null?Number(ceil[m]):0;
+        if(out.amt[m]>cap){ out.clamped+=out.amt[m]-cap; out.amt[m]=cap; }
+      }
     }
   }catch(e){ out.err=String((e&&e.message)||e).slice(0,80); }
   return out;
@@ -1245,7 +1270,7 @@ const main=async()=>{
       const prevSol=new Map((prev&&prev.sol||[]).map(p=>[p.id,p]));
       // Shared across every position this run, and persisted, so a harvest transaction is
       // booked exactly once no matter how many positions it touched or which run reaches it.
-      const booked=new Set(Array.isArray(ledger.__sigs)?ledger.__sigs:[]);
+
       solTxFees={};        // signature -> lamports, handed to the cost ledger below
       for(const p of solPositions){
         const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
@@ -1258,7 +1283,28 @@ const main=async()=>{
            only the fallback. Never run both for the same position — that double-counts. */
         let txOk=false;
         try{
-          const r=await solCollectedSince(p, L.sig||null, booked, solTxFees);
+          /* The ceiling is what this position was owed at the PREVIOUS read. After a harvest
+             p.f0/p.f1 are back near zero, so the current read cannot supply it — it has to have
+             been carried forward. A position with no recorded owed (first sight, or one that has
+             never accrued) gets no ceiling, and the wallet-delta path then declines to book. */
+          /* Widen the ceiling by what could plausibly have accrued between the last read and
+             the harvest. A flat multiplier was the first attempt and it was too blunt: doubling
+             still admitted $168 against $84 owed. Both terms needed are already here — the fee
+             rate this position has actually run at, and how long ago it was last read — so the
+             headroom can be the real number instead of a guess. The 10% floor absorbs error in
+             the rate estimate; the 3x cap stops a stale readAt from opening it wide. */
+          let ceil=null;
+          if(L.owed0!=null||L.owed1!=null){
+            const obsDays=(Date.now()-(L.since||Date.now()))/86400000;
+            const owedUsd=(L.owed0||0)*(p.usd0||0)+(L.owed1||0)*(p.usd1||0);
+            const rateUsd=obsDays>0.5 ? (L.collectedUsd+(p.feesUsd||0))/obsDays : 0;
+            const gapDays=L.readAt ? Math.max(0,(Date.now()-L.readAt)/86400000) : 0;
+            let factor=1.1;
+            if(rateUsd>0 && owedUsd>0) factor=Math.max(1.1, Math.min(3, 1+(rateUsd*gapDays)/owedUsd));
+            ceil={[p.mint0]:(L.owed0||0)*factor, [p.mint1]:(L.owed1||0)*factor};
+            L.ceilFactor=Math.round(factor*1000)/1000;
+          }
+          const r=await solCollectedSince(p, L.sig||null, solTxFees, ceil);
           if(r.ok){
             txOk=true;
             const first=!L.sig;
@@ -1272,6 +1318,13 @@ const main=async()=>{
             L.txScanned=r.scanned;
             if(r.shared) L.sharedTx=r.shared; else delete L.sharedTx;
             L.attrib=r.attributed||0; L.lump=r.lump||0;
+            /* Surfaced rather than swallowed: a clamp that binds means something moved tokens
+               out of this position that was not a fee, and that is worth seeing. */
+            if(r.clamped>0){
+              L.clampedTokens=Math.round(r.clamped*1e6)/1e6;
+              logErr('solFees', new Error('#'+String(p.id).slice(4,14)+' booking exceeded accrued fees by '
+                +L.clampedTokens+' token(s) — capped. Likely a withdrawal returning principal.'));
+            } else delete L.clampedTokens;
           }
           if(r.err) L.txErr=r.err; else delete L.txErr;
         }catch(e){ /* fall through to the snapshot method */ }
@@ -1283,6 +1336,11 @@ const main=async()=>{
             if(drop>0.5 && valStable) L.collectedUsd+=drop;   // pending fees fell without the position changing → harvested
           }
         }
+        /* Carried for the next run's ceiling. Written every cycle, after any booking, so it is
+           always the owed balance as of this read. */
+        L.owed0 = p.f0!=null ? p.f0 : 0;
+        L.owed1 = p.f1!=null ? p.f1 : 0;
+        L.readAt = Date.now();
         p.feeSource = txOk ? 'tx' : 'snapshot';
         p.feesCollectedUsd=L.collectedUsd;
         p.feesEverUsd=L.collectedUsd+(p.feesUsd||0);
@@ -1294,7 +1352,9 @@ const main=async()=>{
         if(obsDays>0.5 && p.valueUsd>0) p.feeAprPct=(p.feesEverUsd/p.valueUsd)*(365/obsDays)*100;
         else p.feeAprPct=null;
       }
-      ledger.__sigs=[...booked].slice(-400);   // newest kept; bounded so the file cannot grow forever
+      /* __sigs recorded which transactions had been "claimed" by a position so no other could
+         book them. That guard is gone — the fee ceiling replaces it and does not lock anyone out
+         — so the list is left as it stands rather than grown: it is history, not state. */
       fs.writeFileSync(OUT+'/ledger-'+profile.slug+'.json', JSON.stringify(ledger,null,1));
     }catch(e){ logErr('ledger',e); }
     let catMtd=null, catMonths=[];

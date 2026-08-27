@@ -9,23 +9,24 @@
   "lastBooked": 73.52
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
-  "collectedUsd": 995.8845631281865,
+  "collectedUsd": 239.20108849626564,
   "since": 1786804445105,
   "sig": "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7",
   "txScanned": 2,
   "lastBooked": 840.7,
   "attrib": 1,
-  "lump": 1
+  "lump": 1,
+  "repaired": "withdrawn principal and the other position's fees booked as income; corrected 2026-08-27"
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
-  "collectedUsd": 137.88285688733882,
+  "collectedUsd": 192.16427252756827,
   "since": 1786804445105,
   "sig": "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7",
   "txScanned": 0,
   "lastBooked": 30.36,
   "attrib": 0,
   "lump": 0,
-  "sharedTx": 1
+  "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27"
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
   "collectedUsd": 0
