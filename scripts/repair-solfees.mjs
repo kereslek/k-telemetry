@@ -44,6 +44,34 @@ for(const [id,f] of Object.entries(FIX)){
     changed++;
   }
 }
+/* The monthly ledger keeps a high-water mark per position, because lifetime fees normally only
+   rise and a transient short read must not look like a loss of income. That guard also freezes a
+   corrected value: repairing the position ledger left the month still deriving its accumulated
+   figure from the corrupted peak, so August read $2,175 when it should read $1,418. The mark has
+   to come down with the correction. */
+const FEES='deck-r7k4x9/fees-main.json';
+const FEEFIX={
+  'sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF': {hwm:239.20108849626564, fromHwm:995.8845631281865},
+};
+let feesChanged=0;
+try{
+  const fee=JSON.parse(fs.readFileSync(FEES,'utf8'));
+  for(const [id,f] of Object.entries(FEEFIX)){
+    const e=fee.pos&&fee.pos[id];
+    if(!e){ console.log('MISSING '+id+' in '+FEES); continue; }
+    if(Math.abs(e.hwm-f.fromHwm)>0.005){
+      console.log('SKIP hwm '+id.slice(0,14)+'… — expected '+f.fromHwm.toFixed(2)+', found '+Number(e.hwm).toFixed(2));
+      continue;
+    }
+    const accNew=Math.round((f.hwm-(e.m0||0))*100)/100;
+    console.log((WRITE?'FIX  ':'would fix ')+'month '+id.slice(0,14)+'…  hwm $'+Number(e.hwm).toFixed(2)+' -> $'+f.hwm.toFixed(2)
+      +',  acc $'+Number(e.acc).toFixed(2)+' -> $'+accNew.toFixed(2));
+    if(WRITE){ e.hwm=f.hwm; e.acc=accNew; feesChanged++; }
+  }
+  if(WRITE && feesChanged){ fs.writeFileSync(FEES, JSON.stringify(fee,null,1)); }
+}catch(e){ console.log('could not read '+FEES+': '+e.message); }
+
 if(!WRITE){ console.log('\n(dry run — pass --write)'); process.exit(0); }
 if(changed){ fs.writeFileSync(FILE, JSON.stringify(led,null,1)); console.log('\nwrote '+FILE); }
-else console.log('\nnothing to change');
+if(feesChanged) console.log('wrote '+FEES);
+if(!changed && !feesChanged) console.log('\nnothing to change');
