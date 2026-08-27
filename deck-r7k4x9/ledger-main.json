@@ -6,7 +6,10 @@
   "txScanned": 0,
   "attrib": 0,
   "lump": 0,
-  "lastBooked": 73.52
+  "lastBooked": 73.52,
+  "owed0": 0.237046571,
+  "owed1": 913.463534982,
+  "readAt": 1787836884149
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
   "collectedUsd": 239.20108849626564,
@@ -16,7 +19,10 @@
   "lastBooked": 840.7,
   "attrib": 0,
   "lump": 0,
-  "repaired": "withdrawn principal and the other position's fees booked as income; corrected 2026-08-27"
+  "repaired": "withdrawn principal and the other position's fees booked as income; corrected 2026-08-27",
+  "owed0": 0,
+  "owed1": 0,
+  "readAt": 1787836884771
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
   "collectedUsd": 192.16427252756827,
@@ -26,7 +32,10 @@
   "lastBooked": 30.36,
   "attrib": 0,
   "lump": 0,
-  "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27"
+  "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
+  "owed0": 0,
+  "owed1": 0,
+  "readAt": 1787836885072
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
   "collectedUsd": 0
@@ -45,7 +54,10 @@
   "attrib": 0,
   "lump": 0,
   "lastBooked": 133.68,
-  "repaired": "redeposit counted as income; corrected 2026-08-23"
+  "repaired": "redeposit counted as income; corrected 2026-08-23",
+  "owed0": 0.099273616,
+  "owed1": 382.552797845,
+  "readAt": 1787836884491
  },
  "__sigs": [
   "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7"
