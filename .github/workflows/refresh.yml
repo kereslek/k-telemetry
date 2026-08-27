@@ -36,6 +36,10 @@ jobs:
           ok=0
           for i in $(seq 1 $PASSES); do
             echo "::group::pass $i/$PASSES"
+            # Reset onto the current remote BEFORE generating, so cumulative files (ledger,
+            # daily, hist) are read from the newest state rather than from a copy taken when
+            # this job checked out — which for a fifty-minute loop can be very stale.
+            git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
             if node scripts/fetch-data.mjs && bash scripts/commit-data.sh; then
               ok=$((ok+1)); echo "pass $i ok"
             else
