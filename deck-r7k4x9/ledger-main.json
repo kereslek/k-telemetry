@@ -9,22 +9,23 @@
   "lastBooked": 73.52
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
-  "collectedUsd": 155.18071745576066,
+  "collectedUsd": 995.8845631281865,
   "since": 1786804445105,
-  "sig": "6192NTormEsTe3rpDRhECJ3LjWkqyQn2sgcygZtmn82sRkmTh6J6NeiHXiFrHg8i4U1dd3yminqgDGFrmWokDhkT",
-  "txScanned": 0,
-  "lastBooked": 30.36,
-  "attrib": 0,
-  "lump": 0
+  "sig": "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7",
+  "txScanned": 2,
+  "lastBooked": 840.7,
+  "attrib": 1,
+  "lump": 1
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
   "collectedUsd": 137.88285688733882,
   "since": 1786804445105,
-  "sig": "6192NTormEsTe3rpDRhECJ3LjWkqyQn2sgcygZtmn82sRkmTh6J6NeiHXiFrHg8i4U1dd3yminqgDGFrmWokDhkT",
+  "sig": "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7",
   "txScanned": 0,
   "lastBooked": 30.36,
   "attrib": 0,
-  "lump": 0
+  "lump": 0,
+  "sharedTx": 1
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
   "collectedUsd": 0
@@ -38,12 +39,14 @@
  "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
   "collectedUsd": 29.15,
   "since": 1786864626363,
-  "sig": "5HdwJTHYv6upbr7Aenb8vPWSdmYXL93WRpRojyGZU3WPZUKwA1wEP9k9qPUpTvhVpHmdJ5cc934fqZ3Zq73eWwNK",
-  "txScanned": 0,
+  "sig": "4EHK4Cv28yUtAnjuo3pGDCcNnXqEwoSRoaZdeav7Z8eYm8ogPLfuSanpooHrQ4dfMYC3se4Ue8gZbdAwvYfXACrT",
+  "txScanned": 1,
   "attrib": 0,
   "lump": 0,
   "lastBooked": 133.68,
   "repaired": "redeposit counted as income; corrected 2026-08-23"
  },
- "__sigs": []
+ "__sigs": [
+  "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7"
+ ]
 }
