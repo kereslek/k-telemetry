@@ -14,54 +14,35 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Fetch on-chain data
-        run: node scripts/fetch-data.mjs
-      - name: Commit data.json
+      # One firing, several refreshes. GitHub throttles scheduled workflows: against a
+      # 15-minute cron the observed gaps ran 47, 95, 185 and finally 305 minutes in a single
+      # day. A phone that cannot reach an RPC directly then has nothing current to read. Each
+      # firing now refreshes four times over roughly fifty minutes, so a sparse schedule still
+      # produces reasonably fresh data.
+      #
+      # A failing pass must not end the loop — a rate-limited RPC on one pass says nothing about
+      # the next. The job fails only if every pass failed, which is the case that means the
+      # refresh is genuinely broken rather than merely unlucky.
+      - name: Refresh, repeatedly
         run: |
-          git config user.name "lp-hud-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add deck-r7k4x9/data*.json deck-r7k4x9/ledger*.json deck-r7k4x9/hist*.json deck-r7k4x9/fees*.json deck-r7k4x9/costs*.json
-          git add deck-r7k4x9/balances-*.json 2>/dev/null || true
-          # daily-*.json is the per-position day record the attribution is computed from. It is
-          # cumulative, not regenerated, so a run that fails to commit it loses that day for good.
-          git add deck-r7k4x9/daily-*.json 2>/dev/null || true
-          # blockcache.json persists mint blocks + the wallet transfer-scan checkpoint.
-          # Tolerant add: the script writes it inside a try/catch, so a missing file
-          # must never fail the data commit.
-          git add deck-r7k4x9/blockcache.json 2>/dev/null || true
-          if git diff --cached --quiet; then exit 0; fi
-          # Do NOT rebase. Every file here is regenerated from chain on each run, and
-          # hist-main.json is an append-only series: two runs each append a different point
-          # to the same line, so a rebase hits a textual conflict it can never resolve. The
-          # retry loop then replayed the identical conflict three times and failed the job,
-          # which is exactly what happened on run 32285427734.
-          # Instead: keep what this run produced, reset onto whatever the remote now has, put
-          # our files back, and commit on top. Our data is the newer read in every case. The
-          # only loss is a concurrent run's single history point, which the next run replaces.
-          # Save only what this run generated. config.json is hand-edited and must never be
-          # copied back over a newer remote version — a reset that restored a stale config
-          # would silently revert a wallet the owner had just added.
-          OUT=$(mktemp -d)
-          # An "if", not "[ x = y ] && continue": Actions runs this under bash -e, where a
-          # false test as the last command of an && list aborts the whole job.
-          for f in deck-r7k4x9/*.json; do
-            if [ "$(basename "$f")" != "config.json" ]; then cp "$f" "$OUT"/; fi
+          PASSES=4
+          SPACING=840          # 14 min between passes; four passes span ~50 min of the hour
+          ok=0
+          for i in $(seq 1 $PASSES); do
+            echo "::group::pass $i/$PASSES"
+            if node scripts/fetch-data.mjs && bash scripts/commit-data.sh; then
+              ok=$((ok+1)); echo "pass $i ok"
+            else
+              echo "pass $i failed (continuing)"
+            fi
+            echo "::endgroup::"
+            if [ "$i" -lt "$PASSES" ]; then sleep $SPACING; fi
           done
-          for attempt in 1 2 3; do
-            git fetch origin gh-pages
-            git reset --hard origin/gh-pages
-            cp "$OUT"/*.json deck-r7k4x9/
-            git add deck-r7k4x9/*.json
-            if git diff --cached --quiet; then echo "nothing new after reset"; exit 0; fi
-            git commit -m "data refresh $(date -u +%FT%TZ)"
-            if git push origin gh-pages; then exit 0; fi
-            echo "push attempt $attempt lost a race — retrying"
-            sleep $((attempt * 5))
-          done
-          echo "could not push data refresh after 3 attempts"
-          exit 1
+          echo "$ok of $PASSES passes succeeded"
+          if [ "$ok" -eq 0 ]; then echo "every pass failed"; exit 1; fi

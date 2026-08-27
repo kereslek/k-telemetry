@@ -975,7 +975,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2003,7 +2003,13 @@ async function scanInner(isBoot){
       if(rr.ok){
         const d = await rr.json();
         const ageMin = (Date.now()-d.t)/60000;
-        if(ageMin < 120){         // ignore ancient snapshots
+        /* The relay is meant to write every fifteen minutes, but GitHub throttles scheduled
+           workflows hard — observed gaps of 47, 95, 185 and 305 minutes in one day. A two-hour
+           cutoff meant that on a phone which cannot reach an RPC directly, anything past the
+           second missed run was rejected and the page fell back to a FROZEN SNAPSHOT that was
+           older still: six hours stale instead of three. Refusing real data in favour of older
+           copies of the same data helps nobody. Take it, and say plainly how old it is. */
+        if(ageMin < 720){
           /* The relay publishes its own verdict on each chain. Taking its positions while ignoring
              that verdict just moves the silent-partial problem one hop upstream. */
           const cs=d.chainStatus||{};
@@ -2047,7 +2053,15 @@ async function scanInner(isBoot){
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
           state.relayFetchedAt = Date.now();
-          if(state.relayUsed) log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
+          /* Anything beyond three missed writes is no longer "live via relay" and must not be
+             labelled as such — the numbers are real but they are not current. */
+          state.relayLate = ageMin > 45 ? Math.round(ageMin) : 0;
+          if(state.relayUsed){
+            if(state.relayLate) log('warning','RELAY IS BEHIND — the server-side refresh last wrote '
+              +state.relayLate+' min ago (it aims for 15). Figures are real but not current; GitHub '
+              +'throttles scheduled jobs and delays like this come from there, not from your wallets.');
+            else log('good','RELAY uplink — data via GitHub-hosted refresh ('+ageMin.toFixed(0)+' min old). Your browser only talked to '+location.host+'.');
+          }
         }
       }
     }catch(e){}
@@ -2431,7 +2445,9 @@ function setConn(mode){
     return;
   }
   lab.textContent = mode==='live' && (state.partialChains||[]).length ? 'LIVE · PARTIAL'
-    : (mode==='live' && state.relayUsed ? 'LIVE · RELAY' : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…'));
+    : (mode==='live' && state.relayUsed
+        ? (state.relayLate ? 'RELAY · '+(state.relayLate<120?state.relayLate+'m':(state.relayLate/60).toFixed(1)+'h')+' BEHIND' : 'LIVE · RELAY')
+        : ({live:'LIVE · MAINNET', sim:'DEMO DATA', err:'OFFLINE', sync:'SYNCING…'}[mode]||'…'));
 }
 
 /* The close of the most recent day that is not today — the thing "day over day" is measured
