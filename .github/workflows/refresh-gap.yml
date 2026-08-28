@@ -1,0 +1,52 @@
+# Independent backup route for the data refresh.
+#
+# refresh.yml carries the load, but its schedule is at GitHub's discretion and GitHub has been
+# firing it about twice a day against a fifteen-minute cron. A single schedule is therefore a
+# single point of failure with no recourse. This workflow is scheduled separately, so it is
+# subject to its own throttling rather than the same decision, and it fills gaps the primary
+# leaves.
+#
+# It is deliberately cheap. The first step reads the published payload's own timestamp and stops
+# the job when the data is already fresh, which is the normal case and costs a few seconds of
+# runner time. Only genuinely stale data causes it to do any work.
+#
+# Its concurrency group is its own: sharing the primary's would mean queueing behind a job that
+# runs for five hours, which is exactly the situation it exists to rescue.
+name: refresh-gap
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: refresh-gap
+  cancel-in-progress: false
+jobs:
+  gapfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Refresh only if the data has gone stale
+        run: |
+          STALE_MIN=45
+          AGE=$(node -e "
+            const fs=require('fs');
+            try{
+              const d=JSON.parse(fs.readFileSync('deck-r7k4x9/data-main.json','utf8'));
+              console.log(Math.round((Date.now()-d.t)/60000));
+            }catch(e){ console.log(99999); }   // unreadable payload counts as stale
+          ")
+          echo "published payload is ${AGE} min old (threshold ${STALE_MIN})"
+          if [ "$AGE" -lt "$STALE_MIN" ]; then
+            echo "primary refresh is keeping up — nothing to do"
+            exit 0
+          fi
+          echo "filling the gap"
+          git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
+          node scripts/fetch-data.mjs
+          bash scripts/commit-data.sh

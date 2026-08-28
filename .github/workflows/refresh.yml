@@ -14,31 +14,36 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # A job may run six hours. Using most of that is the only lever that helps here: GitHub is
+    # firing this schedule roughly twice a day, so what matters is how much of each gap one
+    # firing can cover, not how quickly it finishes.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # One firing, several refreshes. GitHub throttles scheduled workflows: against a
-      # 15-minute cron the observed gaps ran 47, 95, 185 and finally 305 minutes in a single
-      # day. A phone that cannot reach an RPC directly then has nothing current to read. Each
-      # firing now refreshes four times over roughly fifty minutes, so a sparse schedule still
-      # produces reasonably fresh data.
+      # One firing, many refreshes, spread over hours.
+      #
+      # The schedule says every fifteen minutes. GitHub fires it about twice a day — gaps of 745,
+      # 666, 567 and 685 minutes are all in the record, and they predate anything done here, so
+      # this is not something the workflow can argue with. What it can do is cover more of each
+      # gap: twenty-two passes at fifteen-minute spacing hold the data fresh for five and a half
+      # hours after every firing, instead of fifty minutes.
       #
       # A failing pass must not end the loop — a rate-limited RPC on one pass says nothing about
       # the next. The job fails only if every pass failed, which is the case that means the
       # refresh is genuinely broken rather than merely unlucky.
       - name: Refresh, repeatedly
         run: |
-          PASSES=4
-          SPACING=840          # 14 min between passes; four passes span ~50 min of the hour
+          PASSES=22
+          SPACING=900
           ok=0
           for i in $(seq 1 $PASSES); do
             echo "::group::pass $i/$PASSES"
             # Reset onto the current remote BEFORE generating, so cumulative files (ledger,
             # daily, hist) are read from the newest state rather than from a copy taken when
-            # this job checked out — which for a fifty-minute loop can be very stale.
+            # this job checked out — which over five hours would be very stale indeed.
             git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
             if node scripts/fetch-data.mjs && bash scripts/commit-data.sh; then
               ok=$((ok+1)); echo "pass $i ok"
