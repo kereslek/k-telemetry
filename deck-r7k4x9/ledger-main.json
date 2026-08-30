@@ -9,7 +9,7 @@
   "lastBooked": 73.52,
   "owed0": 0.378053412,
   "owed1": 987.859707749,
-  "readAt": 1788092971974,
+  "readAt": 1788094065268,
   "ceilFactor": 1.1
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
@@ -21,9 +21,9 @@
   "attrib": 0,
   "lump": 0,
   "repaired": "withdrawn principal and the other position's fees booked as income; corrected 2026-08-27",
-  "owed0": 0.100795293,
+  "owed0": 0.111541235,
   "owed1": 152.138662173,
-  "readAt": 1788092972607,
+  "readAt": 1788094065871,
   "ceilFactor": 1.1
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
@@ -35,9 +35,9 @@
   "attrib": 0,
   "lump": 0,
   "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
-  "owed0": 0.077522458,
+  "owed0": 0.085787247,
   "owed1": 117.011050214,
-  "readAt": 1788092972942,
+  "readAt": 1788094066092,
   "ceilFactor": 1.1
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
@@ -60,7 +60,7 @@
   "repaired": "redeposit counted as income; corrected 2026-08-23",
   "owed0": 0.19852262,
   "owed1": 434.917250331,
-  "readAt": 1788092972322,
+  "readAt": 1788094065575,
   "ceilFactor": 1.1
  },
  "__sigs": [
