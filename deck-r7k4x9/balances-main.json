@@ -1,5 +1,5 @@
 {
- "t": 1788047599139,
+ "t": 1788048683166,
  "rows": [
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -9,7 +9,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 14768.17
+   "usd": 14752.09
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -18,7 +18,7 @@
    "amount": 420000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 10506.12
+   "usd": 10322.72
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -27,7 +27,7 @@
    "amount": 293040.42769753374,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 7330.28
+   "usd": 7202.32
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -36,7 +36,7 @@
    "amount": 110000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 2751.6
+   "usd": 2703.57
   },
   {
    "addr": "native",
@@ -46,7 +46,7 @@
    "native": true,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 1020.48
+   "usd": 1023.44
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -55,7 +55,7 @@
    "amount": 38556.63689299626,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 964.48
+   "usd": 947.64
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -83,7 +83,7 @@
    "native": true,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 216.07
+   "usd": 216.69
   },
   {
    "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -93,7 +93,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Clearpool",
-   "usd": 200.5
+   "usd": 200.86
   },
   {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -103,7 +103,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 162.46
+   "usd": 161.76
   },
   {
    "addr": "native",
@@ -113,7 +113,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 117.42
+   "usd": 117.05
   },
   {
    "addr": "native",
@@ -123,7 +123,7 @@
    "native": true,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 98.08
+   "usd": 98.37
   },
   {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -133,7 +133,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 83.64
+   "usd": 83.28
   },
   {
    "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -143,7 +143,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Clearpool",
-   "usd": 54.14
+   "usd": 54.23
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -161,7 +161,7 @@
    "amount": 710.065012086321,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 17.76
+   "usd": 17.45
   },
   {
    "addr": "3yD9LmPa14aWUDwZusws5MioY9whXVJjUyg7EwxZihUU",
@@ -181,7 +181,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 10.6
+   "usd": 10.57
   },
   {
    "addr": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
@@ -191,7 +191,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Zcash",
-   "usd": 8.43
+   "usd": 8.39
   },
   {
    "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
@@ -201,7 +201,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Jupiter Perps",
-   "usd": 4.49
+   "usd": 4.48
   },
   {
    "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
@@ -211,7 +211,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Perps",
-   "usd": 4.49
+   "usd": 4.48
   },
   {
    "addr": "Cmn4v2wipYV41dkakDvCgFJpxhtaaKt11NyWV8pjSE8A",
@@ -622,11 +622,11 @@
    "usd": null
   }
  ],
- "totalUsd": 39143.35,
+ "totalUsd": 38753.53,
  "unpriced": 30,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
-   "supply": "4302968.29542364",
+   "supply": "4303515.059842936",
    "decimals": 9,
    "mintAuthority": "EMjuABxELpYWYEwjkKmQKBNCwdaFAy4QYAs6W9bDQDNw",
    "freezeAuthority": null,
@@ -634,18 +634,18 @@
    "symbol": "JupSOL",
    "verified": true,
    "tags": [
+    "community",
+    "lst",
     "original-lst",
     "strict",
     "verified",
-    "yield",
-    "community",
-    "lst"
+    "yield"
    ],
-   "holders": 33109,
-   "at": 1787962186397
+   "holders": 33107,
+   "at": 1788048679223
   },
   "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
-   "supply": "76722843480.504735",
+   "supply": "76722843458.360864",
    "decimals": 6,
    "mintAuthority": null,
    "freezeAuthority": null,
@@ -659,8 +659,8 @@
     "verified",
     "meme"
    ],
-   "holders": 547485,
-   "at": 1787962186722
+   "holders": 547901,
+   "at": 1788048679907
   },
   "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg": {
    "supply": "3581764.892056255",
@@ -673,8 +673,8 @@
    "tags": [
     "unknown"
    ],
-   "holders": 1247,
-   "at": 1787962186561
+   "holders": 1254,
+   "at": 1788048679564
   },
   "RZRyr758BfvKcQTVp1XQoCe9BH2t724XQkLJkiikQ5f": {
    "supply": "770802425.611799236",
@@ -688,7 +688,7 @@
     "unknown"
    ],
    "holders": 904,
-   "at": 1787962186897
+   "at": 1788048680251
   },
   "apySoLhdVa6QbvNyEjXCbET3FdUm9cCdEvYyjCU7icM": {
    "supply": "577.447487652",
@@ -699,20 +699,20 @@
    "symbol": "apySOL",
    "verified": true,
    "tags": [
+    "lst",
     "original-lst",
     "verified",
-    "yield",
-    "lst"
+    "yield"
    ],
    "holders": 125,
-   "at": 1787962187072
+   "at": 1788048680593
   },
   "2wU245PELvg34UZTPZzMWMLh9z6yYmS5NWtZTecVVTV1": {
    "supply": "89232",
    "decimals": 0,
    "mintAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
    "freezeAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
-   "at": 1787962187303
+   "at": 1788048680940
   },
   "445e6tWwcA8WTbMqoVxMLkbxdgq9re8x4Y3g3zhkhbBc": {
    "supply": "3511517.3485",
@@ -726,7 +726,7 @@
     "unknown"
    ],
    "holders": null,
-   "at": 1787962187486
+   "at": 1788048681287
   },
   "4mkNVHv8GvnTL9AhBMgmApTAwUHEMAVkFURmAmgURqBb": {
    "supply": "9707385.9978",
@@ -740,7 +740,7 @@
     "unknown"
    ],
    "holders": 5,
-   "at": 1787962187668
+   "at": 1788048681638
   },
   "5Dq4uDjh1YDanWt4fVDjsZxcsTGNJv4HeLUCE6DJAQ8n": {
    "supply": "9919019.74",
@@ -754,7 +754,7 @@
     "unknown"
    ],
    "holders": 11,
-   "at": 1787962187849
+   "at": 1788048681989
   },
   "5GXSUz7mCWHdACpFNs7iUCcSbk4gAGxXTUiCpaMzRda4": {
    "supply": "18446744040063554.615",
@@ -768,17 +768,21 @@
     "unknown"
    ],
    "holders": 3,
-   "at": 1787962188033
+   "at": 1788048682338
   },
   "75skRPMmz2j9PE6cTokWm7kky8S8pPGbJPr14PnLPGWe": {
+   "supply": "2855",
+   "decimals": 0,
    "mintAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
    "freezeAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
-   "at": 1787962188335
+   "at": 1788048682687
   },
   "7HSpjyQR6mxk7WxycsD7KZCZHtxVuE4upSMyWErR1Eyj": {
+   "supply": "13816",
+   "decimals": 0,
    "mintAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
    "freezeAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
-   "at": 1787962188622
+   "at": 1788048683046
   },
   "9gAnqUPPt1cQW8j86fBQLdcoidEuhurKL6Q9YhX5bA31": {
    "supply": "9722309.59",
