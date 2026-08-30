@@ -535,6 +535,17 @@
   .tile-why{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;
     border-bottom:1px dotted var(--accent);letter-spacing:inherit}
   .tile-why:hover{opacity:.75}
+  .cc-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.2fr);
+    gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
+  .cc-row.hdr{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);border-bottom:1px solid var(--line)}
+  .cc-row .num{font-variant-numeric:tabular-nums;text-align:right}
+  .cc-row>span,.cc-row>div{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  @media(max-width:760px){
+    .cc-row{grid-template-columns:1fr 1fr;row-gap:3px}
+    .cc-row.hdr{display:none} .cc-row .num{text-align:left}
+    .cc-row>[data-l]::before{content:attr(data-l);display:block;font-size:8px;letter-spacing:.14em;color:var(--text-muted)}
+    .cc-row>div:first-child{grid-column:1/-1}
+  }
   .arch-note{font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6}
   .dod-row{display:grid;grid-template-columns:104px minmax(80px,1fr) minmax(118px,1fr) 2.4fr;gap:12px;align-items:baseline;
     padding:9px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
@@ -975,7 +986,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -4147,6 +4158,7 @@ function renderSpark(){
   renderDaily(host);
   renderMonths(host);
   renderCatSplit(host);
+  renderContractCompare(host);
 }
 
 /* ================= PLAYBOOK =================
@@ -4778,6 +4790,126 @@ function renderMonths(host){
    while it is alive, so a position that closes mid-month still lands in the right row instead
    of vanishing into a pooled total. Costs are knowable per chain but not per position, so they
    are applied to the chain's rows as one line and never split further than the evidence allows. */
+/* ----- same pair, two contracts: which pool actually pays -----
+   LCX runs an old contract and a new one, each with its own Uniswap pool, and the question of
+   which to deploy into cannot be answered by comparing their APRs. APR is fees over capital, and
+   capital buys different amounts of liquidity at different range widths — a narrow position shows
+   a high APR on the same underlying pool simply because it concentrated. Comparing two pools that
+   way measures the ranges chosen, not the pools.
+
+   What a pool actually pays is fees per unit of LIQUIDITY: in a concentrated AMM a position earns
+   in proportion to the liquidity it has in range, so the same L in either pool is the like-for-
+   like test, and the answer is independent of how wide anyone chose to go.
+
+   The self-check is the point of the panel. Two positions in the SAME pool must show the same
+   rate per unit of liquidity. When they do, the number opposite them is trustworthy; when they
+   do not, something has moved that the window cannot see — usually a deposit part-way through
+   it, which divides fees earned at one size by a liquidity figure taken at another. */
+function poolLiquidity(p){
+  const P=p.price, A=p.priceLower, B=p.priceUpper;
+  if(!(P>0&&A>0&&B>0&&B>A)) return null;
+  const sq=Math.sqrt, sP=sq(P), sA=sq(A), sB=sq(B);
+  if(P<=A) return p.amt0>0 ? p.amt0/(1/sA-1/sB) : null;
+  if(P>=B) return p.amt1>0 ? p.amt1/(sB-sA) : null;
+  const fx=p.amt0>0 ? p.amt0/(1/sP-1/sB) : null;
+  const fy=p.amt1>0 ? p.amt1/(sP-sA) : null;
+  if(fx==null) return fy;
+  if(fy==null) return fx;
+  return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fx : fy;
+}
+function renderContractCompare(host){
+  const ps=[...state.positions.values()].filter(p=>p.chain!=='sol' && !p.demo && p.token0 && p.valueUsd!=null);
+  /* Group by pair, then by the contract on each side. Only a pair reached through more than one
+     contract has anything to compare. */
+  const byPair=new Map();
+  for(const p of ps){
+    const k=p.pairLabel||'?';
+    if(!byPair.has(k)) byPair.set(k,new Map());
+    const g=byPair.get(k);
+    const c=String(p.token0).toLowerCase();
+    if(!g.has(c)) g.set(c,[]);
+    g.get(c).push(p);
+  }
+  for(const [pair,groups] of byPair){
+    if(groups.size<2) continue;
+    const rateOf=(p,win)=>{
+      const apr=(p.aprW||{})[win], L=poolLiquidity(p);
+      if(apr==null || !(L>0) || p.valueUsd==null) return null;
+      return (p.valueUsd*apr/100/365)/L;          // dollars per unit of liquidity per day
+    };
+    const sides=[...groups.entries()].map(([c,list])=>{
+      const r1=list.map(p=>rateOf(p,'d1')).filter(x=>x!=null);
+      const r7=list.map(p=>rateOf(p,'d7')).filter(x=>x!=null);
+      const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+      const spread=a=>a.length>1?Math.max(...a)/Math.min(...a):null;
+      return {c, tag:'·'+c.slice(-4), n:list.length, list,
+              d1:mean(r1), d7:mean(r7), s1:spread(r1), s7:spread(r7),
+              value:list.reduce((s2,p)=>s2+(p.valueUsd||0),0)};
+    }).filter(x=>x.d1!=null).sort((a,b)=>b.d1-a.d1);
+    if(sides.length<2) continue;
+
+    const wrap=el('div','flow-block');
+    wrap.append(el('div','flow-title','SAME PAIR, TWO CONTRACTS — '+esc(pair)+', matched on liquidity'));
+    const hdr=el('div','cc-row hdr');
+    ['CONTRACT','DEPLOYED','PER UNIT OF LIQUIDITY · 24H','· 7D','SAME-POOL AGREEMENT'].forEach(h=>hdr.append(el('div',null,h)));
+    wrap.append(hdr);
+    const cell=(cls,html,label)=>{ const dv=el('div',cls,html); if(label) dv.setAttribute('data-l',label); return dv; };
+    const best=sides[0].d1;
+    for(const sd of sides){
+      const row=el('div','cc-row');
+      row.append(cell(null,'<b>'+esc(pair.split(' / ')[0])+' '+esc(sd.tag)+'</b>'
+        +' <span class="unit">'+sd.n+' position'+(sd.n>1?'s':'')+'</span>'));
+      row.append(cell('num',fmtUsd(sd.value,0),'DEPLOYED'));
+      row.append(cell('num','<b>$'+sd.d1.toFixed(5)+'</b>','PER L · 24H'));
+      /* The 7-day figure gets its own agreement test, because it can be unreliable while the
+         24-hour one beside it is sound — a deposit made yesterday contaminates a week-long
+         window and leaves a day-long one untouched. Flagging the row on the strength of the
+         24-hour check alone would vouch for a number that has not been checked. */
+      const d7bad = sd.s7!=null && sd.s7>1.1;
+      row.append(cell('num', sd.d7!=null
+        ? (d7bad ? '<span style="color:var(--status-warning)" title="the positions in this pool disagree by '
+                   +sd.s7.toFixed(2)+'x over 7 days — capital moved mid-window">$'+sd.d7.toFixed(5)+' ⚠</span>'
+                 : '$'+sd.d7.toFixed(5))
+        : '—','PER L · 7D'));
+      /* A single position has nothing to agree with; say so rather than implying it checked out. */
+      row.append(cell('num', sd.s1!=null
+        ? (sd.s1<1.05?'<span style="color:var(--status-good)">'+sd.s1.toFixed(3)+'x</span>'
+                     :'<span style="color:var(--status-warning)">'+sd.s1.toFixed(2)+'x apart</span>')
+        : '<span class="unit">one position</span>', 'AGREEMENT'));
+      wrap.append(row);
+    }
+    const lead=sides[0], lag=sides[sides.length-1];
+    const mult=lag.d1>0 ? lead.d1/lag.d1 : null;
+    if(mult!=null){
+      /* The ratio is width-independent, which is the whole point — but a multiple is easier to
+         act on with a concrete sum attached to it, so anchor it to a real position's width. */
+      const ref=lag.list[0];
+      const L1000 = (()=>{
+        const P=ref.price, A=ref.priceLower, B=ref.priceUpper;
+        if(!(P>0&&A>0&&B>0&&B>A)) return null;
+        const sq=Math.sqrt, sP=sq(P), sA=sq(A), sB=sq(B);
+        const usdPerL=(1/sP-1/sB)*(ref.usd0||0)+(sP-sA)*(ref.usd1||0);
+        return usdPerL>0 ? 1000/usdPerL : null;
+      })();
+      const strip=el('div','econ-strip');
+      strip.innerHTML='<span><b>'+esc(pair.split(' / ')[0])+' '+esc(lead.tag)+'</b> pays <b style="color:var(--status-good)">'
+        +mult.toFixed(1)+'x</b> per unit of liquidity</span>'
+        +(L1000!=null?'<span>$1,000 at the '+esc(lag.tag)+' range width: <b>'+fmtUsd(L1000*lag.d1,2)+'</b>/day there vs <b style="color:var(--status-good)">'
+          +fmtUsd(L1000*lead.d1,2)+'</b>/day on '+esc(lead.tag)+'</span>':'');
+      wrap.append(strip);
+    }
+    wrap.append(el('div','arch-note','Fee APR cannot answer this: it divides fees by capital, and the same capital '
+      +'buys more liquidity in a narrow range than a wide one, so an APR comparison measures the ranges chosen rather '
+      +'than the pools. Fees accrue in proportion to liquidity held in range, so matching on liquidity is what makes '
+      +'the two comparable — and the ratio then holds at any width you pick.'
+      +'<br>The agreement column is the check on all of it: two positions in one pool must earn the same rate per unit '
+      +'of liquidity. A figure near 1.000x means the window is clean. A wider one usually means capital moved into or '
+      +'out of a position part-way through, which divides fees earned at one size by a liquidity figure taken at '
+      +'another — the 7-day column is the more exposed of the two to that.'));
+    host.append(wrap);
+  }
+}
+
 function renderCatSplit(host){
   const cur=state.catMtd, arch=state.catMonths||[], cm=state.costMonth, fm=state.feeMonth;
   if((!cur||!Object.keys(cur).length) && !arch.length) return;
