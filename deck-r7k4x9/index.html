@@ -986,7 +986,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -4850,6 +4850,29 @@ function renderContractCompare(host){
 
     const wrap=el('div','flow-block');
     wrap.append(el('div','flow-title','SAME PAIR, TWO CONTRACTS — '+esc(pair)+', matched on liquidity'));
+    /* The table below answers the question in a form that has to be read. This answers it in a
+       form that does not. It is derived, not fixed: if the old contract ever pays more, this says
+       so, and while the two are close it declines to pick — a 4x gap and a 5% one do not deserve
+       the same sentence. */
+    {
+      const a0=sides[0], b0=sides[sides.length-1];
+      const m=b0.d1>0 ? a0.d1/b0.d1 : null;
+      const sym=esc(pair.split(' / ')[0]);
+      const line=el('div');
+      line.style.cssText='margin:2px 0 10px;font-size:13px;line-height:1.5';
+      if(m==null || m<1.10){
+        line.innerHTML='<span class="verdict level">EITHER</span> The two contracts are paying within '
+          +((m!=null?(m-1)*100:0).toFixed(0))+'% of each other per unit of liquidity. On fees alone there is '
+          +'nothing to choose between them — decide on which contract you would rather hold.';
+      } else {
+        line.innerHTML='<span class="verdict '+(m>=1.25?'hold':'early')+'">DEPLOY '+esc(a0.tag)+'</span> '
+          +'New LP capital for <b>'+sym+' / ETH</b> belongs on <b>'+sym+' '+esc(a0.tag)+'</b>'
+          +(a0.tag==='·ae7e'?' — the new contract':'')+'. It pays <b style="color:var(--status-good)">'
+          +m.toFixed(1)+'x</b> what '+esc(b0.tag)+' pays for the same liquidity'
+          +(m<1.25?', though the margin is slim enough to keep watching':'')+'.';
+      }
+      wrap.append(line);
+    }
     const hdr=el('div','cc-row hdr');
     ['CONTRACT','DEPLOYED','PER UNIT OF LIQUIDITY · 24H','· 7D','SAME-POOL AGREEMENT'].forEach(h=>hdr.append(el('div',null,h)));
     wrap.append(hdr);
