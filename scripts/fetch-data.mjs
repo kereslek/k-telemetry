@@ -1378,18 +1378,54 @@ const main=async()=>{
       let fl={month:monthKey, closed:0, pos:{}, months:[], catClosed:{}};
       try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
       if(fl.month!==monthKey){
-        const prevTotal=(fl.closed||0)+Object.values(fl.pos||{}).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
+        /* The cut lands at midnight, not at whenever the old month was last read. Runs can be
+           hours apart when the schedule is throttled, and everything earned in that gap would
+           otherwise be credited to the wrong month. feesMonthStartUsd is an archive read at the
+           first block of the NEW month and is already computed every run, so the fees between the
+           last reading and the boundary can be given back to the month that earned them. Solana
+           has no such read and falls back to the last reading.
+
+           Measured first, before anything is archived or reset — the totals and the split both
+           have to carry it, and they are computed from figures this loop is about to overwrite. */
+        const msAt={};
+        for(const q of [...evmPositions,...solPositions])
+          if(q && q.feesMonthStartUsd!=null) msAt[String(q.id)]=q.feesMonthStartUsd;
+        const tailOf={};
+        for(const id in (fl.pos||{})){
+          const e=fl.pos[id], ms=msAt[id];
+          if(ms!=null && ms>(e.hwm||0)) tailOf[id]=Math.round((ms-(e.hwm||0))*100)/100;
+        }
+
+        let tail=0;
+        for(const id in tailOf) tail+=tailOf[id];
+        const prevTotal=(fl.closed||0)
+          +Object.values(fl.pos||{}).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0)
+          +tail;
         // archive the finished month's split before the counters reset
         const prevCat={};
         for(const k in (fl.catClosed||{})) prevCat[k]=(prevCat[k]||0)+fl.catClosed[k];
         for(const id in (fl.pos||{})){
-          const e=fl.pos[id], a=(e.acc!=null?e.acc:Math.max(0,e.last-e.m0));
+          const e=fl.pos[id], a=(e.acc!=null?e.acc:Math.max(0,e.last-e.m0))+(tailOf[id]||0);
           const k=e.cat||'—'; prevCat[k]=(prevCat[k]||0)+a;
         }
         for(const k in prevCat) prevCat[k]=Math.round(prevCat[k]*100)/100;
-        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,ilEnd:fl.lastIl??null,cat:prevCat}].slice(-12);
+        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,
+                                       ilEnd:fl.lastIl??null,cat:prevCat}].slice(-12);
         fl.month=monthKey; fl.closed=0; fl.catClosed={};
-        for(const id in fl.pos) fl.pos[id].m0=fl.pos[id].last;
+
+        /* Both counters reset, not just the baseline. The month's figure is read from `acc`
+           whenever it is present — and it always is after a month of accruing — so moving m0
+           alone would have opened the new month at the old one's total and gone up from there.
+           `hwm` deliberately survives: it is a high-water mark against LIFETIME fees, which do
+           not reset at a month boundary, and zeroing it would re-book every fee the position has
+           ever earned into the new month. Where the boundary read exists it becomes both the new
+           baseline and the new mark, so the first accrual measures from midnight. */
+        for(const id in fl.pos){
+          const e=fl.pos[id], ms=msAt[id];
+          if(ms!=null && ms>=(e.hwm||0)){ e.hwm=Math.round(ms*100)/100; e.m0=e.hwm; }
+          else { e.m0=e.last; }
+          e.acc=0;
+        }
       }
       /* August's closes pre-date category stamping: their fees sit in the pooled scalar with no
          record of where they came from. Seeded here rather than by editing the file, because a
@@ -1487,6 +1523,7 @@ const main=async()=>{
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
                      solGas:Math.round((cl.solGasUsd||0)*100)/100}].slice(-12);
         cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.txs={}; cl.solTxs={};
+        cl.solPartial=false;
       }
       /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
          into a CLMM position pay no pool fee — only a swap does — so for this portfolio the
