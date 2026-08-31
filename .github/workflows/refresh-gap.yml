@@ -17,6 +17,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '37 * * * *'
+    # and one just after the month boundary, on this route too — the two schedules are throttled
+    # independently, so a second ask is a second chance at a tight cut
+    - cron: '8 0 * * *'
 permissions:
   contents: write
 concurrency:

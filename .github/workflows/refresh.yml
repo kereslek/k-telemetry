@@ -6,6 +6,13 @@ on:
     paths: ['scripts/**', '.github/workflows/**', 'deck-r7k4x9/config.json']
   schedule:
     - cron: '*/15 * * * *'
+    # Two entries either side of the UTC month boundary. Every fee has to land in one month or
+    # the other, and the closer a reading sits to midnight the less of the interval has to be
+    # estimated rather than measured. GitHub honours these no more reliably than the rest, so
+    # they are an improved chance and not a guarantee — the proration at the cut is what makes
+    # the figures right when they are ignored.
+    - cron: '52 23 * * *'
+    - cron: '4 0 * * *'
 permissions:
   contents: write
 concurrency:

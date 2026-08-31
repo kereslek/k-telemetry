@@ -1387,14 +1387,39 @@ const main=async()=>{
 
            Measured first, before anything is archived or reset — the totals and the split both
            have to carry it, and they are computed from figures this loop is about to overwrite. */
-        const msAt={};
-        for(const q of [...evmPositions,...solPositions])
-          if(q && q.feesMonthStartUsd!=null) msAt[String(q.id)]=q.feesMonthStartUsd;
-        const tailOf={};
+        const msAt={}, cumAt={};
+        for(const q of [...evmPositions,...solPositions]){
+          if(!q) continue;
+          if(q.feesMonthStartUsd!=null) msAt[String(q.id)]=q.feesMonthStartUsd;
+          const c=q.feesEverUsd ?? q.feesUsd;
+          if(c!=null) cumAt[String(q.id)]=c;
+        }
+        /* Solana has no archive read, so its share of the boundary cannot be measured — only
+           estimated. What IS known is when the ledger was last read and what has accrued since,
+           and the boundary falls somewhere inside that interval. Splitting the accrual across it
+           in proportion to time is not exact, but it is far better than the alternative, which is
+           to hand the whole interval to whichever month happened to be read second. Solana is
+           $680 of August's $1,551 and runs at $0.94 an hour; an eleven-hour gap between the last
+           August read and the first September one would otherwise misplace about $10. */
+        const nowMs=Date.now();
+        const boundary=Date.parse(monthKey+'-01T00:00:00Z');
+        const lastRead=fl.readAt||null;
+        let beforeFrac=0;
+        if(lastRead && nowMs>lastRead)
+          beforeFrac=Math.max(0,Math.min(1,(boundary-lastRead)/(nowMs-lastRead)));
+        const tailOf={}; let prorated=0;
         for(const id in (fl.pos||{})){
           const e=fl.pos[id], ms=msAt[id];
-          if(ms!=null && ms>(e.hwm||0)) tailOf[id]=Math.round((ms-(e.hwm||0))*100)/100;
+          if(ms!=null && ms>(e.hwm||0)){
+            tailOf[id]=Math.round((ms-(e.hwm||0))*100)/100;      // exact, from the archive read
+          } else if(ms==null && beforeFrac>0 && cumAt[id]!=null){
+            const grew=cumAt[id]-(e.hwm||0);
+            if(grew>0){ tailOf[id]=Math.round(grew*beforeFrac*100)/100; prorated+=tailOf[id]; }
+          }
         }
+        if(prorated>0) console.log('month cut: $'+prorated.toFixed(2)
+          +' prorated into '+fl.month+' across a '+((nowMs-lastRead)/3600000).toFixed(1)
+          +'h reading gap ('+(beforeFrac*100).toFixed(0)+'% of it fell before the boundary)');
 
         let tail=0;
         for(const id in tailOf) tail+=tailOf[id];
@@ -1423,7 +1448,12 @@ const main=async()=>{
         for(const id in fl.pos){
           const e=fl.pos[id], ms=msAt[id];
           if(ms!=null && ms>=(e.hwm||0)){ e.hwm=Math.round(ms*100)/100; e.m0=e.hwm; }
-          else { e.m0=e.last; }
+          else {
+            /* Whatever was prorated into the old month must not also be available to the new one,
+               so the mark moves up by exactly the amount handed back. */
+            e.hwm=Math.round(((e.hwm||0)+(tailOf[id]||0))*100)/100;
+            e.m0=e.hwm;
+          }
           e.acc=0;
         }
       }
@@ -1482,6 +1512,9 @@ const main=async()=>{
           delete fl.pos[id];
         }
       }
+      /* Stamped every run: the next month boundary needs to know how long the interval it lands
+         inside actually was. */
+      fl.readAt=Date.now();
       fl.closed=Math.round((fl.closed||0)*100)/100;
       const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
       // live month-to-date split: closed positions keep the category they had when they closed
