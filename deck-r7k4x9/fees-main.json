@@ -4,15 +4,15 @@
  "pos": {
   "1355331": {
    "m0": 0,
-   "last": 15.46,
-   "hwm": 15.51,
-   "acc": 15.51,
+   "last": 15.57,
+   "hwm": 15.57,
+   "acc": 15.57,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "1355336": {
    "m0": 0,
-   "last": 90.51,
+   "last": 91.01,
    "hwm": 92.2,
    "acc": 92.2,
    "ck": "ethereum",
@@ -20,15 +20,15 @@
   },
   "1355918": {
    "m0": 0,
-   "last": 38.83,
-   "hwm": 38.93,
-   "acc": 38.93,
+   "last": 39.06,
+   "hwm": 39.06,
+   "acc": 39.06,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 65.85,
-   "last": 299.75,
+   "last": 299.76,
    "acc": 235.97,
    "hwm": 301.82,
    "cat": "sol|SOL / CPOOL · wide"
@@ -42,7 +42,7 @@
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 54.29,
-   "last": 216.13,
+   "last": 216.14,
    "acc": 161.96,
    "hwm": 216.25,
    "cat": "sol|SOL / CPOOL · wide"
@@ -57,9 +57,9 @@
   }
  },
  "months": [],
- "lastIl": -101.69,
+ "lastIl": -92.32,
  "catClosed": {
   "evm|LCX / ETH · narrow": 731.0999999999999
  },
- "readAt": 1788214893297
+ "readAt": 1788215925253
 }
