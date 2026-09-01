@@ -1279,9 +1279,31 @@ const main=async()=>{
         // position's full age understates it by the ratio of the two (a 289-day position
         // seen for 12 days reads ~23x too low).
         if(!L.since) L.since=Date.now();
+        /* The harvest of 1 September 2026, credited after the fact. Every Solana position was
+           emptied in one pass and the booking found only part of it: $52.22 of $95.46 owed on
+           4j7p, and the same shortfall on the other three. Lifetime fees fell by $96.93, which
+           is not a display problem — the month's accrual is measured against a high-water mark
+           on lifetime, so all four positions were frozen until they earned the gap back, about
+           three weeks of September fees that would never have appeared. The owed balances were
+           already overwritten with zero by the time this was found, so the general rule below
+           cannot reach it; these are the differences between each position's mark and where it
+           landed. Guarded on the exact figures and marked, so it applies once. */
+        {
+          const fix={'sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM':[261.9825121921253,43.24],
+                     'sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF':[256.0448454434065,17.32],
+                     'sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s':[205.11893942015055,13.32],
+                     'sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6':[55.09669269659453,23.05]};
+          const f=fix[p.id];
+          if(f && !L.harvestRepair && Math.abs((L.collectedUsd||0)-f[0])<0.01){
+            L.collectedUsd=(L.collectedUsd||0)+f[1];
+            L.harvestRepair='1 Sep harvest booked short by $'+f[1].toFixed(2)+'; credited 2026-09-01';
+            console.log('credited unbooked harvest on',p.id.slice(4,14),'$'+f[1].toFixed(2));
+          }
+        }
         /* Transaction history is authoritative when it can be read; the snapshot diff below is
            only the fallback. Never run both for the same position — that double-counts. */
         let txOk=false;
+        let bookedThisRun=0;
         try{
           /* The ceiling is what this position was owed at the PREVIOUS read. After a harvest
              p.f0/p.f1 are back near zero, so the current read cannot supply it — it has to have
@@ -1314,7 +1336,7 @@ const main=async()=>{
               const px = m===p.mint0 ? p.usd0 : (m===p.mint1 ? p.usd1 : null);
               if(px!=null) add += r.amt[m]*px;
             }
-            if(!first && add>0){ L.collectedUsd+=add; L.lastBooked=Math.round(add*100)/100; }
+            if(!first && add>0){ L.collectedUsd+=add; L.lastBooked=Math.round(add*100)/100; bookedThisRun=add; }
             L.txScanned=r.scanned;
             if(r.shared) L.sharedTx=r.shared; else delete L.sharedTx;
             L.attrib=r.attributed||0; L.lump=r.lump||0;
@@ -1333,9 +1355,31 @@ const main=async()=>{
           if(pv && pv.feesUsd!=null && p.feesUsd!=null){
             const drop=pv.feesUsd-p.feesUsd;
             const valStable=Math.abs((pv.valueUsd||0)-(p.valueUsd||0)) < Math.max(50,(p.valueUsd||1)*0.5);
-            if(drop>0.5 && valStable) L.collectedUsd+=drop;   // pending fees fell without the position changing → harvested
+            if(drop>0.5 && valStable){ L.collectedUsd+=drop; bookedThisRun=drop; }   // pending fees fell without the position changing → harvested
           }
         }
+        /* A harvest empties the owed balance in a single transaction. When the booking above
+           accounts for less than that balance was worth, the difference is not fees un-earned —
+           it is a harvest the scanner could only partly read, and dropping it makes lifetime
+           fees fall. That is worse than a wrong display: the month's accrual is measured against
+           a high-water mark on lifetime, so a permanent step down freezes the month until the
+           position earns the gap back.
+
+           The owed balance at the previous read is the ceiling on what the harvest could have
+           paid, and revaluing it at today's prices rather than trusting the old dollar figure
+           keeps a price move out of the comparison. The 80% collapse test is what separates a
+           harvest from a repricing: a price move takes the owed balance down proportionally,
+           it does not empty it. */
+        const prevOwedUsd=(L.owed0||0)*(p.usd0||0)+(L.owed1||0)*(p.usd1||0);
+        if(prevOwedUsd>1 && (p.feesUsd||0) < prevOwedUsd*0.2){
+          const gap=Math.round((prevOwedUsd-bookedThisRun)*100)/100;
+          if(gap>0.01){
+            L.collectedUsd+=gap;
+            L.harvestGap=gap;
+            logErr('solFees', new Error('#'+String(p.id).slice(4,14)+' harvest booked $'+bookedThisRun.toFixed(2)
+              +' of $'+prevOwedUsd.toFixed(2)+' owed — credited the $'+gap.toFixed(2)+' difference'));
+          } else delete L.harvestGap;
+        } else delete L.harvestGap;
         /* Carried for the next run's ceiling. Written every cycle, after any booking, so it is
            always the owed balance as of this read. */
         L.owed0 = p.f0!=null ? p.f0 : 0;
