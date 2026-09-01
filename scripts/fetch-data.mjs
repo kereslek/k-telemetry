@@ -1466,6 +1466,35 @@ const main=async()=>{
       if(fl.month==='2026-08' && (fl.closed||0)>0 && !Object.keys(fl.catClosed||{}).length){
         fl.catClosed={'evm|LCX / ETH · narrow': Math.round((fl.closed||0)*100)/100};
       }
+      /* Two errors in that seeded bucket, both found by replaying this file's own git history,
+         where every change to `closed` names the position that vanished with it.
+
+         $38.72 counted twice. At 08-21 07:28 #1347571 and #1351948 both disappeared from a scan
+         that reported itself clean; their month accrual was banked ($32.74 + $5.98) and their
+         entries dropped. Both were back forty minutes later on a fresh entry baselined at the
+         month start, so the same fees accrued again — and when each closed for real (#1347571
+         at 13:10 with $36.04, #1351948 the next morning with $41.18) the amount booked already
+         contained what the false close had banked. The two-strike rule below is what stops it
+         happening again; this undoes the instance that already happened.
+
+         $0.55 on the wrong pair. A Solana cbBTC / JLP position closed on 08-07, before entries
+         carried a category, so its fees sat in the pooled scalar and were seeded above as
+         LCX / ETH. Its band was 1.22x, so narrow is right — the pair and the chain were not.
+
+         The rest of the bucket checks out: all twelve EVM closes in August were LCX / ETH at
+         1.62x-2.41x, narrow under the >5x rule applied above.
+
+         In code rather than as an edit to the file, for the same reason as the seed above. */
+      {
+        const aug=(fl.months||[]).find(m=>m&&m.m==='2026-08'), NK='evm|LCX / ETH · narrow';
+        const near=(a,b)=>Math.abs(a-b)<0.005;
+        if(aug && aug.cat && near(aug.cat[NK]||0, 731.10) && near(aug.total||0, 1569.21)){
+          aug.cat[NK]=r2(aug.cat[NK]-38.72-0.55);
+          aug.cat['sol|cbBTC / JLP · narrow']=r2((aug.cat['sol|cbBTC / JLP · narrow']||0)+0.55);
+          aug.total=r2(Object.values(aug.cat).reduce((s,v)=>s+v,0));
+          console.log('repaired August split — narrow $'+aug.cat[NK].toFixed(2)+', total $'+aug.total.toFixed(2));
+        }
+      }
       const seen=new Set();
       for(const p of [...evmPositions,...solPositions]){
         const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);
@@ -1490,6 +1519,7 @@ const main=async()=>{
         }
         // refreshed every run: a position that is re-ranged keeps its id but can change class
         fl.pos[p.id].cat=catKeyOf(p);
+        delete fl.pos[p.id].miss;   // present again — any earlier absence was a blip, not a close
       }
       for(const id of Object.keys(fl.pos)){
         if(!seen.has(String(id))){
@@ -1499,6 +1529,17 @@ const main=async()=>{
           // irreversible here (fees banked, baseline dropped), so defer to a clean run.
           if(scanIncomplete.has(chainKey)){
             console.log('deferring close verdict for',id,'— scan incomplete on',chainKey);
+            continue;
+          }
+          /* A scan can report itself clean and still come back short. On 2026-08-21 two live
+             EVM positions vanished from one such read, were banked as closed, and were back
+             forty minutes later on a fresh entry that re-counted the month from its start —
+             $38.72 booked twice. A close is irreversible here, so require the absence to
+             survive a second clean read before acting on it. The cost is one cycle of delay
+             on a real close; the alternative is silently inflating the month. */
+          const e=fl.pos[id];
+          if((e.miss=(e.miss||0)+1)<2){
+            console.log('position',id,'absent on a clean read — waiting for a second before booking the close');
             continue;
           }
           const gone=fl.pos[id];
