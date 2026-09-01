@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 17.26,
+   "last": 17.24,
    "hwm": 17.36,
    "acc": 0.77,
    "ck": "ethereum",
@@ -12,7 +12,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 94.07,
+   "last": 93.98,
    "hwm": 94.59,
    "acc": 2.39,
    "ck": "ethereum",
@@ -20,7 +20,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 43.99,
+   "last": 43.95,
    "hwm": 44.24,
    "acc": 3.62,
    "ck": "ethereum",
@@ -59,16 +59,17 @@
  "months": [
   {
    "m": "2026-08",
-   "total": 1569.21,
+   "total": 1530.49,
    "ilEnd": -85.76,
    "cat": {
-    "evm|LCX / ETH · narrow": 731.1,
+    "evm|LCX / ETH · narrow": 691.83,
     "evm|LCX / ETH · wide": 149.41,
-    "sol|SOL / CPOOL · wide": 688.7
+    "sol|SOL / CPOOL · wide": 688.7,
+    "sol|cbBTC / JLP · narrow": 0.55
    }
   }
  ],
- "lastIl": -93.77,
+ "lastIl": -92.59,
  "catClosed": {},
- "readAt": 1788248141992
+ "readAt": 1788249166970
 }
