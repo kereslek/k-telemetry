@@ -998,7 +998,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v26.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3408,7 +3408,9 @@ function renderIdle(){
   strip.innerHTML='<span>HELD <b>'+fmtUsd(idleUsd,0)+'</b></span><span>IN LPs <b>'+fmtUsd(deployed,0)+'</b></span>'
     /* the held/pooled ratio compares a complete wallet read against the deployed total. When a
        chain could not be read the deployed side is short, so the percentage overstates how much
-       is sitting out — drop it rather than print a number that is arithmetically wrong. */
+       is sitting out — drop it rather than print a number that is arithmetically wrong. The
+       total is the same sum and fails the same way, so it goes with it. */
+    +(state.missingChain?'':'<span>TOTAL <b>'+fmtUsd(idleUsd+deployed,0)+'</b></span>')
     +(state.missingChain
       ? '<span style="color:var(--status-warning)">split unavailable — '+esc(state.missingChain)+' '
         +(state.missingCount?state.missingCount+' position(s) unread':'not refreshed')+'</span>'
