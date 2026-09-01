@@ -998,7 +998,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v26.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v27.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -5003,45 +5003,60 @@ function poolLiquidity(p){
   return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fx : fy;
 }
 function renderCatSplit(host){
+  /* Whole dollars once a figure is big enough for a dollar to be noise, cents below that — a
+     55c row rounded to "$1" reads as a dollar that was never earned. */
+  const catDp=v=>Math.abs(v)<10?2:0;
   const cur=state.catMtd, arch=state.catMonths||[], cm=state.costMonth, fm=state.feeMonth;
   if((!cur||!Object.keys(cur).length) && !arch.length) return;
   const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const mn=k=>MN[Number(String(k).slice(5,7))-1]+' ’'+String(k).slice(2,4);
-  const cols=[...arch.map(a=>({m:a.m,cat:a.cat,evm:(a.gas||0)+(a.swapFee||0),sol:a.solGas||0,cur:false}))];
+  /* Costs live in their own ledger and are archived there, not on the fee-month entry — which
+     is why every archived column read as costless and the NET row printed the gross figure for
+     any month but the current one. Joined on the month key; a column with no cost record is
+     marked unknown rather than treated as zero, because zero is a claim and absence is not. */
+  const cprev={}; ((cm&&cm.prev)||[]).forEach(c=>{ if(c&&c.m) cprev[c.m]=c; });
+  const cols=[...arch.map(a=>{ const c=cprev[a.m];
+    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)):null, sol:c?(c.solGas||0):null, cur:false}; })];
   if(cur&&Object.keys(cur).length)
-    cols.push({m:(fm&&fm.month)||'', cat:cur, evm:((cm&&cm.gasUsd)||0)+((cm&&cm.swapFeeUsd)||0),
-               sol:(cm&&cm.solGasUsd)||0, cur:true});
+    cols.push({m:(fm&&fm.month)||'', cat:cur, evm:cm?((cm.gasUsd||0)+(cm.swapFeeUsd||0)):null,
+               sol:cm?(cm.solGasUsd||0):null, cur:true});
   if(!cols.length) return;
   const keys=[...new Set(cols.flatMap(c=>Object.keys(c.cat||{})))].sort();
   const wrap=el('div','flow-block');
   wrap.append(el('div','flow-title','NET BY POOL TYPE — grows as months complete'));
   const scroll=el('div','cat-scroll');
   const grid=el('div','cat-grid');
-  grid.style.gridTemplateColumns='minmax(150px,1.5fr) repeat('+cols.length+',minmax(88px,1fr))';
+  /* max-content, not a fixed floor: the label column holds whatever the longest pool name needs
+     and the wrapper scrolls when that overflows a phone. A 150px floor clipped names instead. */
+  grid.style.gridTemplateColumns='minmax(max-content,1.5fr) repeat('+cols.length+',minmax(88px,1fr))';
   const cell=(txt,cls)=>{ const d=el('div',cls||null,txt); grid.append(d); return d; };
   cell('POOL TYPE','cat-h');
   cols.forEach(c=>cell(mn(c.m)+(c.cur?' <span class="cat-live">MTD</span>':''),'cat-h num'));
   for(const k of keys){
     const [ck,label]=k.includes('|')?[k.slice(0,k.indexOf('|')),k.slice(k.indexOf('|')+1)]:['',k];
     cell(esc(label)+(ck==='sol'?' <span class="unit">◎</span>':''),'cat-name');
-    cols.forEach(c=>{ const v=(c.cat||{})[k]; cell(v!=null?fmtUsd(v,0):'—','num'); });
+    cols.forEach(c=>{ const v=(c.cat||{})[k]; cell(v!=null?fmtUsd(v,catDp(v)):'—','num'); });
   }
   // costs, per chain, because that is as far as attribution actually reaches
   const anyEvm=cols.some(c=>c.evm>0), anySol=cols.some(c=>c.sol>0);
   if(anyEvm){ cell('gas + swap fees, Ethereum','cat-cost');
-    cols.forEach(c=>cell(c.evm?'−'+fmtUsd(c.evm,0):'—','num cat-cost')); }
+    cols.forEach(c=>cell(c.evm?'−'+fmtUsd(c.evm,catDp(c.evm)):'—','num cat-cost')); }
   if(anySol){ cell('tx fees, Solana <span class="unit">◎</span>','cat-cost');
     cols.forEach(c=>cell(c.sol?'−'+fmtUsd(c.sol,2):'—','num cat-cost')); }
   cell('<b>NET</b>','cat-net');
+  let costGap=false;
   cols.forEach(c=>{
     const gross=Object.values(c.cat||{}).reduce((s,v)=>s+(v||0),0);
-    cell('<b>'+fmtUsd(gross-(c.evm||0)-(c.sol||0),0)+'</b>','num cat-net');
+    if(c.evm==null&&c.sol==null){ costGap=true; cell('—','num cat-net'); return; }
+    const net=gross-(c.evm||0)-(c.sol||0);
+    cell('<b>'+fmtUsd(net,catDp(net))+'</b>','num cat-net');
   });
   scroll.append(grid); wrap.append(scroll);
   const notes=[];
   if(cols.some(c=>c.cur)) notes.push('The current month is running and moves with every scan.');
   if(cm&&cm.solPartial) notes.push('Solana costs cover transaction fees; a swap fee there, if one is ever paid, is not detected.');
   notes.push('Costs are recorded per chain, not per position, so they sit on one line rather than being divided between the rows above them.');
+  if(costGap) notes.push('A month with no cost record shows no net figure — the gross is known, what it cost is not.');
   wrap.append(el('div','arch-note',notes.join(' ')));
   host.append(wrap);
 }
