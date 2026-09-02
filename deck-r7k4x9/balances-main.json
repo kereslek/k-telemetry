@@ -1,5 +1,5 @@
 {
- "t": 1788333839756,
+ "t": 1788334828694,
  "rows": [
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -9,7 +9,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 14002.71
+   "usd": 13990.78
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -18,7 +18,7 @@
    "amount": 485874.74779663596,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 11268.66
+   "usd": 11221.77
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -27,7 +27,7 @@
    "amount": 314349.7031482276,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 7290.56
+   "usd": 7260.23
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -36,7 +36,7 @@
    "amount": 45000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 1043.66
+   "usd": 1039.32
   },
   {
    "addr": "native",
@@ -55,7 +55,7 @@
    "amount": 19361.09167739699,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 449.03
+   "usd": 447.16
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -103,7 +103,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 149.3
+   "usd": 149.18
   },
   {
    "addr": "native",
@@ -113,7 +113,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 141.57
+   "usd": 141.54
   },
   {
    "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -143,7 +143,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 76.87
+   "usd": 76.8
   },
   {
    "addr": "native",
@@ -153,7 +153,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 71.68
+   "usd": 71.66
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -165,23 +165,13 @@
    "usd": 54.83
   },
   {
-   "addr": "3yD9LmPa14aWUDwZusws5MioY9whXVJjUyg7EwxZihUU",
-   "symbol": "SCHWAB",
-   "decimals": 2,
-   "amount": 709015711.32,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Schwab Token (Wormhole)",
-   "usd": 16.94
-  },
-  {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "symbol": "LCX",
    "decimals": 18,
    "amount": 710.065012086321,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 16.47
+   "usd": 16.4
   },
   {
    "addr": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
@@ -191,7 +181,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Zcash",
-   "usd": 8.37
+   "usd": 8.36
   },
   {
    "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
@@ -447,6 +437,16 @@
    "usd": null
   },
   {
+   "addr": "3yD9LmPa14aWUDwZusws5MioY9whXVJjUyg7EwxZihUU",
+   "symbol": "SCHWAB",
+   "decimals": 2,
+   "amount": 709015711.32,
+   "chain": "sol",
+   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
+   "name": "Schwab Token (Wormhole)",
+   "usd": null
+  },
+  {
    "addr": "445e6tWwcA8WTbMqoVxMLkbxdgq9re8x4Y3g3zhkhbBc",
    "symbol": "TEST989",
    "decimals": 4,
@@ -622,8 +622,8 @@
    "usd": null
   }
  ],
- "totalUsd": 37107.95,
- "unpriced": 30,
+ "totalUsd": 36995.33,
+ "unpriced": 31,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
    "supply": "4293055.70662747",
@@ -931,6 +931,20 @@
    ],
    "holders": 19832,
    "at": 1788263302308
+  },
+  "3yD9LmPa14aWUDwZusws5MioY9whXVJjUyg7EwxZihUU": {
+   "supply": "11236582004.48",
+   "decimals": 2,
+   "mintAuthority": "BCD75RNBHrJJpW4dXVagL5mPjzRLnVZq4YirJdjEYMV7",
+   "freezeAuthority": null,
+   "name": "Schwab Token (Wormhole)",
+   "symbol": "SCHWAB",
+   "verified": null,
+   "tags": [
+    "unknown"
+   ],
+   "holders": 26,
+   "at": 1788334828574
   }
  }
 }
