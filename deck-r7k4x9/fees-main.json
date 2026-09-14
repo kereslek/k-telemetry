@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 36.56,
+   "last": 36.61,
    "hwm": 36.62,
    "acc": 20.03,
    "ck": "ethereum",
@@ -12,44 +12,44 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 177.35,
-   "hwm": 177.67,
-   "acc": 85.47,
+   "last": 177.72,
+   "hwm": 177.72,
+   "acc": 85.52,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "1355918": {
    "m0": 40.62,
-   "last": 177.39,
-   "hwm": 177.7,
-   "acc": 137.08,
+   "last": 177.82,
+   "hwm": 177.82,
+   "acc": 137.2,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 384.11,
+   "last": 382.75,
    "acc": 80.31,
    "hwm": 384.19,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
    "m0": 272.64,
-   "last": 347.74,
+   "last": 347.32,
    "acc": 75.18,
    "hwm": 347.82,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 275.64,
+   "last": 275.32,
    "acc": 57.82,
    "hwm": 275.7,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 133.67,
+   "last": 132.71,
    "hwm": 133.73,
    "acc": 56.26,
    "ck": "sol",
@@ -69,7 +69,7 @@
    }
   }
  ],
- "lastIl": -84.14,
+ "lastIl": -87.69,
  "catClosed": {},
- "readAt": 1789413288086
+ "readAt": 1789414330205
 }
