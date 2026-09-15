@@ -1,5 +1,5 @@
 {
- "t": 1789437493701,
+ "t": 1789438717101,
  "rows": [
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -9,7 +9,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 14340.79
+   "usd": 14334.31
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -55,7 +55,7 @@
    "amount": 20024.78592219995,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 576.43
+   "usd": 586.35
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -64,7 +64,7 @@
    "amount": 19820.024403132807,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 570.54
+   "usd": 580.35
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -113,7 +113,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 126.82
+   "usd": 127.42
   },
   {
    "addr": "native",
@@ -132,7 +132,7 @@
    "amount": 2801.0801619336767,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 80.63
+   "usd": 82.02
   },
   {
    "addr": "native",
@@ -142,7 +142,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 73.4
+   "usd": 73.27
   },
   {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -152,7 +152,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 65.29
+   "usd": 65.6
   },
   {
    "addr": "native",
@@ -162,7 +162,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 62.49
+   "usd": 62.38
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -181,7 +181,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Zcash",
-   "usd": 11.64
+   "usd": 11.67
   },
   {
    "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
@@ -622,11 +622,11 @@
    "usd": null
   }
  ],
- "totalUsd": 40138.15,
+ "totalUsd": 40153.49,
  "unpriced": 31,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
-   "supply": "4278392.348716317",
+   "supply": "4278734.592637533",
    "decimals": 9,
    "mintAuthority": "EMjuABxELpYWYEwjkKmQKBNCwdaFAy4QYAs6W9bDQDNw",
    "freezeAuthority": null,
@@ -634,18 +634,18 @@
    "symbol": "JupSOL",
    "verified": true,
    "tags": [
-    "strict",
-    "verified",
-    "yield",
     "community",
     "lst",
-    "original-lst"
+    "original-lst",
+    "strict",
+    "verified",
+    "yield"
    ],
-   "holders": 33041,
-   "at": 1789351239333
+   "holders": 33065,
+   "at": 1789438713147
   },
   "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": {
-   "supply": "76722831777.802558",
+   "supply": "76722831430.006431",
    "decimals": 6,
    "mintAuthority": null,
    "freezeAuthority": null,
@@ -653,14 +653,14 @@
    "symbol": "PENGU",
    "verified": true,
    "tags": [
+    "moonshot-verified",
+    "verified",
     "meme",
     "birdeye-trending",
-    "community",
-    "moonshot-verified",
-    "verified"
+    "community"
    ],
-   "holders": 556595,
-   "at": 1789351239689
+   "holders": 556803,
+   "at": 1789438713854
   },
   "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg": {
    "supply": "3581764.892056255",
@@ -673,8 +673,8 @@
    "tags": [
     "unknown"
    ],
-   "holders": 1276,
-   "at": 1789351239494
+   "holders": 1290,
+   "at": 1789438713525
   },
   "RZRyr758BfvKcQTVp1XQoCe9BH2t724XQkLJkiikQ5f": {
    "supply": "770802161.464599572",
@@ -688,7 +688,7 @@
     "unknown"
    ],
    "holders": 903,
-   "at": 1789351239855
+   "at": 1789438714213
   },
   "apySoLhdVa6QbvNyEjXCbET3FdUm9cCdEvYyjCU7icM": {
    "supply": "577.447487652",
@@ -705,14 +705,14 @@
     "yield"
    ],
    "holders": 125,
-   "at": 1789351240024
+   "at": 1789438714576
   },
   "2wU245PELvg34UZTPZzMWMLh9z6yYmS5NWtZTecVVTV1": {
-   "supply": "89166",
+   "supply": "89165",
    "decimals": 0,
    "mintAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
    "freezeAuthority": "5xPG3dAuW1F4gRL6s7e8L8PHu7k8A8nDKpARPqPGnAKL",
-   "at": 1789351240200
+   "at": 1789438714943
   },
   "445e6tWwcA8WTbMqoVxMLkbxdgq9re8x4Y3g3zhkhbBc": {
    "supply": "3511517.3485",
@@ -726,9 +726,11 @@
     "unknown"
    ],
    "holders": null,
-   "at": 1789351240377
+   "at": 1789438715284
   },
   "4mkNVHv8GvnTL9AhBMgmApTAwUHEMAVkFURmAmgURqBb": {
+   "supply": "9707385.9978",
+   "decimals": 4,
    "mintAuthority": null,
    "freezeAuthority": null,
    "name": "DragonX 2024 NewYear",
@@ -738,9 +740,11 @@
     "unknown"
    ],
    "holders": 5,
-   "at": 1789351240876
+   "at": 1789438715626
   },
   "5Dq4uDjh1YDanWt4fVDjsZxcsTGNJv4HeLUCE6DJAQ8n": {
+   "supply": "9919019.74",
+   "decimals": 2,
    "mintAuthority": null,
    "freezeAuthority": null,
    "name": "Fox Wif Sox",
@@ -750,9 +754,11 @@
     "unknown"
    ],
    "holders": 11,
-   "at": 1789351241210
+   "at": 1789438715963
   },
   "5GXSUz7mCWHdACpFNs7iUCcSbk4gAGxXTUiCpaMzRda4": {
+   "supply": "18446744040019554.615",
+   "decimals": 3,
    "mintAuthority": "HuRZEzxiPwXneFLGrwskchSr7zzTwaxSqu7Dm3RkBtP1",
    "freezeAuthority": "HuRZEzxiPwXneFLGrwskchSr7zzTwaxSqu7Dm3RkBtP1",
    "name": "BXDX.XYZ 🔸CLAIM",
@@ -761,18 +767,22 @@
    "tags": [
     "unknown"
    ],
-   "holders": 3,
-   "at": 1789351241502
+   "holders": 11,
+   "at": 1789438716307
   },
   "75skRPMmz2j9PE6cTokWm7kky8S8pPGbJPr14PnLPGWe": {
+   "supply": "2855",
+   "decimals": 0,
    "mintAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
    "freezeAuthority": "CwRt7v9EikJCiDQ5HbhfTvNRUowTfLiLEp1bwjC5YKfD",
-   "at": 1789351241806
+   "at": 1789438716647
   },
   "7HSpjyQR6mxk7WxycsD7KZCZHtxVuE4upSMyWErR1Eyj": {
+   "supply": "13800",
+   "decimals": 0,
    "mintAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
    "freezeAuthority": "5325kaAJFkVSiDk3gXMABjYGQQ3B3Bt1FcCo8YCzc7M9",
-   "at": 1789351242132
+   "at": 1789438716980
   },
   "9gAnqUPPt1cQW8j86fBQLdcoidEuhurKL6Q9YhX5bA31": {
    "supply": "9722309.59",
