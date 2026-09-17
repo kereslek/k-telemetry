@@ -241,12 +241,20 @@ async function walletPositionIds(ck,wallet,tip){
   try{ bal=Number(BigInt(await evmCall(ck,C.npm,SEL2.balanceOf+wp))); }
   catch(e){ logErr('balanceOf '+ck+' '+wallet.slice(0,8),e); }
   const ids=new Set();
-  for(let i=0;i<bal && i<80;i++){
+  /* Walk the owner's token list from the END, not the start. The enumerator is capped at 80
+     indices to bound run time, and this wallet holds 228 position NFTs — so from the start the
+     cap spends every call on the oldest eighty, which are closed positions that fetchEvmPosition
+     then throws away, and never reaches a freshly minted one sitting at index 227. A mint is
+     appended at the end, so the live positions are the tail. The transfer-log fallback below
+     still covers whatever the window misses; this just stops discovery depending on it. */
+  const ENUM_CAP=80;
+  const first=Math.max(0, bal-ENUM_CAP);
+  for(let i=bal-1;i>=first;i--){
     try{ ids.add(Number(BigInt(await evmCall(ck,C.npm,SEL2.tokenOfOwnerByIndex+wp+pad32(i.toString(16)))))); }
     catch(e){ logErr('enum '+ck+' '+wallet.slice(0,8)+'['+i+']',e); }
     await sleep(100);
   }
-  if(ids.size<bal){
+  if(ids.size<bal){   // the wallet holds more than the window read — go to the logs for the rest
     // fallback: NFT Transfer logs into this wallet, then verify current ownership.
     // v25.2: chunked + checkpointed — first run backfills 60 days, later runs scan only the delta.
     try{
