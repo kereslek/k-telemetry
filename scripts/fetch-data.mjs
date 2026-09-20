@@ -282,7 +282,24 @@ async function walletPositionIds(ck,wallet,tip){
 async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const C=CHAINS[ck];
   const idHex=pad32(id.toString(16));
-  const pos=await evmCall(ck,C.npm,SEL.positions+idHex);
+  /* Every read here is pinned to the same block the event scan ends at, because a position's
+     state and its history have to describe the same moment or the arithmetic between them is
+     nonsense. Reading state at the head while scanning logs to a block captured minutes earlier
+     is what made a harvest look like a loss: positions() already showed owed fees at zero while
+     the collect that zeroed them was past the end of the log window, so lifetime fees — which
+     are collected plus owed — dropped by the whole harvest until the next pass caught up.
+     blockNum is at most a few minutes old, well inside any node's recent-state window. */
+  const atBlk='0x'+blockNum.toString(16);
+  let pos;
+  try{ pos=await evmCall(ck,C.npm,SEL.positions+idHex,atBlk); }
+  catch(e){
+    /* Minted after the block this run pinned itself to — younger than the snapshot, not closed
+       and not an error. Skipping it leaves one absence, and booking a close needs two in a row,
+       so nothing downstream mistakes it for a position that went away. The next pass is pinned
+       past its mint and picks it up. */
+    if(RPC_REVERT.test(String((e&&e.message)||e))) return null;
+    throw e;
+  }
   const token0='0x'+word(pos,2).slice(-40), token1='0x'+word(pos,3).slice(-40);
   const fee=Number(BigInt(word(pos,4)));
   const tickLower=Number(toSigned(BigInt(word(pos,5)),24)), tickUpper=Number(toSigned(BigInt(word(pos,6)),24));
@@ -293,8 +310,8 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   // Everyone's liquidity standing at the current tick, this position's included — the figure
   // that says what fraction of every swap fee lands here rather than with someone else.
   let poolLiq=null;
-  try{ poolLiq=BigInt(await evmCall(ck,pool,SEL.poolLiquidity)); }catch(e){}
-  const slot0=await evmCall(ck,pool,SEL.slot0);
+  try{ poolLiq=BigInt(await evmCall(ck,pool,SEL.poolLiquidity,atBlk)); }catch(e){}
+  const slot0=await evmCall(ck,pool,SEL.slot0,atBlk);
   const sqrtPriceX96=BigInt(word(slot0,0));
   const tick=Number(toSigned(BigInt(word(slot0,1)),24));
   const MAX='f'.repeat(32).padStart(64,'0');
@@ -304,7 +321,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
     const r=await evmCall(ck,C.npm,collectData,blk,owner||undefined);
     return { f0:bigToFloat(BigInt(word(r,0)),m0.decimals), f1:bigToFloat(BigInt(word(r,1)),m1.decimals) };
   };
-  try{ const now=await feesOwedAt('latest'); f0=now.f0; f1=now.f1; }catch(e){}
+  try{ const now=await feesOwedAt(atBlk); f0=now.f0; f1=now.f1; }catch(e){}
   if(liquidity===0n && f0===0 && f1===0) return null;    // closed & empty — skip
   const d0=m0.decimals,d1=m1.decimals, scale=10**(d0-d1);
   const sp=Number(sqrtPriceX96)/Q96, sa=tickToSqrt(tickLower), sb=tickToSqrt(tickUpper);
@@ -890,14 +907,16 @@ async function erc20Candidates(ck,wallet,tip){
 }
 async function evmWalletBalances(ck,wallet,tip){
   const C=CHAINS[ck], rows=[];
+  // Same block as the positions, so wallet and pool holdings describe one moment rather than two
+  const atBlk='0x'+tip.toString(16);
   try{
-    const wei=BigInt(await evm(ck,'eth_getBalance',['0x'+wallet,'latest']));
+    const wei=BigInt(await evm(ck,'eth_getBalance',['0x'+wallet,atBlk]));
     if(wei>0n) rows.push({addr:'native',symbol:C.tag==='ETH'?'ETH':'native',decimals:18,amount:bigToFloat(wei,18),native:true});
   }catch(e){ logErr('nativeBal '+ck+' '+wallet.slice(0,8),e); }
   const cands=await erc20Candidates(ck,wallet,tip);
   for(const addr of cands){
     try{
-      const raw=await evmCall(ck,addr,SEL2.balanceOf+pad32(wallet));
+      const raw=await evmCall(ck,addr,SEL2.balanceOf+pad32(wallet),atBlk);
       const bal=BigInt(raw);
       if(bal<=0n) continue;
       const m=await meta(ck,addr);
