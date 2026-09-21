@@ -30,9 +30,9 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26028062,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26028062,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26028062
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26028159,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26028159,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26028159
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
@@ -53,7 +53,7 @@
   "u1WH4FyPmEKziyVq72Z7tpAgHhivBS3sobHKp2ZguMD83XxHBM8KMM1S99z7xaD1z1FcK4PoUF9wrc8kAPTe6wu": 1,
   "9gu9zggrFeuyLThtv5HTZAWoXdmgmzneeAYxg7jctLTfg9ha8Ezb2nh8cjQKaeUxHw5CurhX9sg2xvp9eQjbfPY": 1
  },
- "solPartial": true,
+ "solPartial": false,
  "solGasUsd": 0.037436130544172296,
  "solOpenUsd": 18.51,
  "solOpenPend": {},
@@ -63,5 +63,6 @@
  },
  "solWalletTx": {},
  "solSwapUsd": 4.74,
- "solUnattributed": 1
+ "solUnattributed": 0,
+ "solSwapOwnUsd": 0
 }
