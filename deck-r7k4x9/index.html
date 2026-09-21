@@ -542,6 +542,20 @@
     gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
   .cc-row.hdr{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);border-bottom:1px solid var(--line)}
   .cc-row .num{font-variant-numeric:tabular-nums;text-align:right}
+  .tok-total{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px 18px;
+    padding:0 0 10px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+  .tok-total-n{font-size:22px;font-variant-numeric:tabular-nums;color:var(--text-primary);margin-right:9px}
+  .tok-total-l{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted)}
+  .tok-total-split{display:flex;gap:16px;font-size:11.5px;color:var(--text-secondary);flex-wrap:wrap}
+  .tok-sub{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--text-secondary);margin:5px 0 2px}
+  .tok-badge{color:var(--accent);letter-spacing:.04em}
+  .tok-warn{font-size:11px;color:var(--status-warning);margin:5px 0 2px;line-height:1.45}
+  .tok-cap{font-size:10.5px;color:var(--text-muted);margin:-2px 0 7px}
+  .tok-cap .k{display:inline-block;width:14px;height:7px;vertical-align:middle;border-radius:1px}
+  .tok-cap .k.lp{background:var(--accent)}
+  .tok-cap .k.id{background:repeating-linear-gradient(135deg,var(--text-muted) 0 2px,transparent 2px 5px);
+    border:1px solid var(--line)}
+  .tok-bar i.idle{background:repeating-linear-gradient(135deg,var(--text-muted) 0 2px,transparent 2px 5px)}
   .tok-card{border:1px solid var(--line);padding:11px 13px;margin-bottom:10px}
   .tok-head{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;gap:8px 12px;align-items:baseline}
   .tok-sym{font-size:15px;color:var(--text-primary);font-weight:600;letter-spacing:.02em}
@@ -1049,7 +1063,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3439,6 +3453,7 @@ function buildTokenBook(){
     if(!(r.amount>0)) continue;
     const key=tokKey(r.chain, r.native?(r.chain==='sol'?WSOL_ADDR:WETH_ADDR):r.addr);
     const t=get(key, r.native?(r.chain==='sol'?'SOL':'ETH'):r.symbol, r.chain);
+    if(!t.addr) t.addr=r.native?null:r.addr;
     t.idle+=r.amount;
     if(r.usd!=null){ t.idleUsd=(t.idleUsd||0)+r.usd; t.usd=r.usd/r.amount; } else t.unpriced=true;
   }
@@ -3448,8 +3463,15 @@ function buildTokenBook(){
     const a0=tokKey(p.chain, p.chain==='sol'?p.mint0:p.token0);
     const a1=tokKey(p.chain, p.chain==='sol'?p.mint1:p.token1);
     const t0=get(a0,(p.m0||{}).symbol,p.chain), t1=get(a1,(p.m1||{}).symbol,p.chain);
+    if(!t0.addr) t0.addr=p.chain==='sol'?p.mint0:p.token0;
+    if(!t1.addr) t1.addr=p.chain==='sol'?p.mint1:p.token1;
     if(p.usd0!=null) t0.usd=p.usd0;
     if(p.usd1!=null) t1.usd=p.usd1;
+    /* What this token's own pool says it is worth, kept beside the feed price. They normally
+       agree; when they do not, one of them is wrong about a real holding and the reader should
+       be told rather than shown a single confident number. */
+    if(p.usd1!=null && p.price>0) t0.poolPx=Math.max(t0.poolPx||0, p.price*p.usd1);
+    if(p.usd0!=null && p.price>0) t1.poolPx=Math.max(t1.poolPx||0, p.usd0/p.price);
     t0.legs.push({p,side:0,amt:p.amt0||0,L});
     t1.legs.push({p,side:1,amt:p.amt1||0,L});
   }
@@ -3499,29 +3521,82 @@ function renderTokens(){
   if(!book.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No holdings to show yet — this builds from the relay’s wallet read and your open positions.</div>'; return; }
   const shown=book.filter(t=>(t.value??0)>=25 || t.pooled>0);
   const rest=book.filter(t=>!shown.includes(t));
+  /* A ticker is not an identity. LCX exists here as two contracts and CPOOL as two chains, and
+     they trade at different prices, so the chain is always named and the contract is named too
+     whenever the ticker alone would be ambiguous. */
+  const bySym={}; book.forEach(t=>{ (bySym[t.sym]=bySym[t.sym]||[]).push(t); });
+  const chainName=c=>c==='sol'?'Solana':(c==='ethereum'?'Ethereum':String(c||'').toUpperCase());
+  const era=t=>{ for(const p of ordered()){
+      const k0=tokKey(p.chain,p.chain==='sol'?p.mint0:p.token0), k1=tokKey(p.chain,p.chain==='sol'?p.mint1:p.token1);
+      if((k0===t.key||k1===t.key) && badgeOf(p) && /^(OLD|NEW)/.test(badgeOf(p))) return badgeOf(p);
+    } return null; };
+  /* The chain already separates CPOOL-on-Solana from CPOOL-on-Ethereum, so a contract suffix
+     there is noise. Only a ticker duplicated WITHIN one chain — LCX's two contracts — needs the
+     contract naming it. */
+  const qualify=t=>{
+    const sameChain=(bySym[t.sym]||[]).filter(x=>x.chain===t.chain).length>1;
+    return { chain:chainName(t.chain),
+             badge: sameChain ? (era(t) || (t.addr?'·'+String(t.addr).slice(-4):'')) : '' };
+  };
+  /* The total counts every priced holding, including the small ones the cards below leave out,
+     so it reconciles against the rest of the dashboard rather than against this panel's cut-off.
+     Checked: the pooled half equals the sum of every position's valueUsd to the cent, and the
+     idle half equals the wallet read's own total. */
+  const grand=book.reduce((s2,t)=>s2+(t.value||0),0);
+  const pooledUsd=book.reduce((s2,t)=>s2+(t.usd!=null?t.pooled*t.usd:0),0);
+  const idleUsd=grand-pooledUsd;
   const hint=$('#tokenHint');
-  if(hint) hint.textContent=shown.length+' tokens · '+fmtUsd(shown.reduce((s,t)=>s+(t.value||0),0),0);
+  if(hint) hint.textContent=book.length+' tokens · '+fmtUsd(grand,0)+' · '+(grand>0?Math.round(pooledUsd/grand*100):0)+'% pooled';
+  const tot=el('div','tok-total');
+  tot.innerHTML='<div><span class="tok-total-n">'+fmtUsd(grand,0)+'</span>'
+    +'<span class="tok-total-l">TOTAL ACROSS EVERY TOKEN</span></div>'
+    +'<div class="tok-total-split"><span><b>'+fmtUsd(pooledUsd,0)+'</b> in LPs</span>'
+    +'<span><b>'+fmtUsd(idleUsd,0)+'</b> idle in wallets</span>'
+    +'<span class="dim">'+(grand>0?Math.round(pooledUsd/grand*100):0)+'% pooled</span></div>';
+  host.append(tot);
 
   for(const t of shown){
     const card=el('div','tok-card');
     // ---- header: what it is, how many, what it is worth
+    const q=qualify(t);
     const head=el('div','tok-head');
     head.innerHTML='<span class="tok-sym">'+esc(t.sym)+'</span>'
-      +'<span class="tok-chain">'+(t.chain==='sol'?'◎ SOL':'ETH')+'</span>'
-      +'<span class="tok-n">'+fmtTok(t.total)+'</span>'
+      +'<span class="tok-chain">'+esc(q.chain)+(q.badge?' <b class="tok-badge">'+esc(q.badge)+'</b>':'')+'</span>'
+      +'<span class="tok-n">'+fmtTok(t.total)+' <span class="dim">total</span></span>'
       +'<span class="tok-px">'+(t.usd!=null?fmtPrice(t.usd):'<span class="dim">unpriced</span>')+'</span>'
       +'<span class="tok-v">'+(t.value!=null?fmtUsd(t.value,0):'—')+'</span>';
     card.append(head);
+    /* The headline count is everything you own of this token. These are its two halves, because
+       "how many do I have" and "how many are exposed to the LP curve" are different questions
+       and the card answers both above the fold. */
+    const sub=el('div','tok-sub');
+    sub.innerHTML='<span><b>'+fmtTok(t.pooled)+'</b> in LPs'
+      +(t.usd!=null?' <span class="dim">'+fmtUsd(t.pooled*t.usd,0)+'</span>':'')+'</span>'
+      +'<span><b>'+fmtTok(t.idle)+'</b> idle in wallets'
+      +(t.usd!=null?' <span class="dim">'+fmtUsd(t.idle*t.usd,0)+'</span>':'')+'</span>'
+      +'<span class="dim">'+(t.total>0?(t.pooled/t.total*100).toFixed(0):0)+'% pooled</span>';
+    card.append(sub);
+    /* Where the feed price and this token's own pool disagree by more than a few percent, one of
+       them is wrong about real money. Say so rather than printing a single confident figure. */
+    if(t.usd!=null && t.poolPx>0 && Math.abs(t.poolPx/t.usd-1)>0.03)
+      card.append(el('div','tok-warn','Priced at '+fmtPrice(t.usd)+' from the price feed, but its own pool marks it at '
+        +fmtPrice(t.poolPx)+' — '+((t.poolPx/t.usd-1)*100).toFixed(0)+'% apart. Every dollar figure on this card uses the feed, '
+        +'so it understates this holding by about '+fmtUsd(Math.abs(t.total*(t.poolPx-t.usd)),0)+' if the pool is the better mark.'));
     // ---- where it sits: one bar, pooled legs then idle
     const segs=[...t.legs.map(l=>({lab:pairShort(l.p)+' '+posRef(l.p), amt:l.amt, p:l.p, leg:l})),
                 ...(t.idle>0?[{lab:'idle in wallets', amt:t.idle, p:null}]:[])]
                .filter(x=>x.amt>0).sort((a,b)=>b.amt-a.amt);
+    /* The whole bar is the whole holding. Idle was painted in the track colour, which made a
+       wallet-heavy token look like a half-empty bar instead of a full one — hatched now, so
+       "mostly idle" and "mostly pooled" are told apart without reading the numbers. */
     const bar=el('div','tok-bar');
-    segs.forEach((s2,i)=>{ const d2=el('i'); d2.style.width=(s2.amt/t.total*100)+'%';
-      d2.style.background=s2.p?seriesColor(cIdx(s2.p)):'var(--line)';
+    segs.forEach(s2=>{ const d2=el('i'); d2.style.width=(s2.amt/t.total*100)+'%';
+      if(s2.p) d2.style.background=seriesColor(cIdx(s2.p)); else d2.className='idle';
       d2.title=s2.lab+' — '+fmtTok(s2.amt)+' ('+(s2.amt/t.total*100).toFixed(1)+'%)';
       bar.append(d2); });
     card.append(bar);
+    card.append(el('div','tok-cap','full bar = all '+fmtTok(t.total)+' '+esc(t.sym)
+      +' &nbsp;·&nbsp; <i class="k lp"></i> one block per LP &nbsp;·&nbsp; <i class="k id"></i> idle in wallets'));
     // ---- the legs themselves, with where the price sits in each range
     const legs=el('div','tok-legs');
     for(const s2 of segs){
@@ -3578,8 +3653,9 @@ function renderTokens(){
     host.append(card);
   }
   if(rest.length)
-    host.append(el('div','arch-note',rest.length+' smaller holding'+(rest.length>1?'s':'')+' not shown: '
-      +rest.slice(0,12).map(t=>esc(t.sym)).join(', ')+(rest.length>12?'…':'')+'.'));
+    host.append(el('div','arch-note','Counted in the total above but too small for a card: '+rest.length+' holding'+(rest.length>1?'s':'')+' — '
+      +rest.slice(0,12).map(t=>esc(t.sym)).join(', ')+(rest.length>12?'…':'')+'. Anything with no price at all is '
+      +'excluded from every figure here rather than counted at zero.'));
   host.append(el('div','arch-note','Each ladder moves one token and holds the other side of every pool still, '
     +'because that is the question you can actually act on. Wrapped forms are folded into the native token — '
     +'WETH is ETH, wrapped SOL is SOL — and everything else is keyed by contract rather than ticker, which is '
