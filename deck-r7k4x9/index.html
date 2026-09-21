@@ -542,6 +542,33 @@
     gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
   .cc-row.hdr{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);border-bottom:1px solid var(--line)}
   .cc-row .num{font-variant-numeric:tabular-nums;text-align:right}
+  .tok-card{border:1px solid var(--line);padding:11px 13px;margin-bottom:10px}
+  .tok-head{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;gap:8px 12px;align-items:baseline}
+  .tok-sym{font-size:15px;color:var(--text-primary);font-weight:600;letter-spacing:.02em}
+  .tok-chain{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted)}
+  .tok-n{font-size:14px;font-variant-numeric:tabular-nums;text-align:right;color:var(--text-primary)}
+  .tok-px,.tok-v{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-secondary);white-space:nowrap}
+  .tok-v{color:var(--text-primary)}
+  .tok-bar{display:flex;height:7px;margin:8px 0 6px;background:var(--line);overflow:hidden;border-radius:1px}
+  .tok-bar i{display:block;height:100%;min-width:1px}
+  .tok-legs{display:grid;grid-template-columns:minmax(0,1.5fr) auto auto minmax(54px,.8fr) auto;
+    gap:3px 10px;align-items:center;font-size:11.5px}
+  .tok-legs .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tok-leg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tok-leg .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .tok-rng{position:relative;height:4px;background:var(--line);border-radius:1px}
+  .tok-rng i{position:absolute;top:-2px;width:2px;height:8px;background:var(--accent)}
+  .tok-edge{font-size:10.5px;white-space:nowrap;text-align:right}
+  .tok-ladder{display:grid;gap:3px 10px;align-items:baseline;font-size:11.5px;min-width:min-content;margin-top:9px}
+  .tok-ladder .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tok-ladder .h{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);white-space:nowrap;
+    padding-bottom:3px;border-bottom:1px solid var(--line)}
+  .tok-now{color:var(--accent)}
+  .tok-up{color:var(--status-good)}
+  .tok-dn{color:var(--status-critical)}
+  @media (max-width:760px){ .tok-head{grid-template-columns:auto minmax(0,1fr) auto;row-gap:2px}
+    .tok-chain{display:none} .tok-legs{grid-template-columns:minmax(0,1.3fr) auto auto;font-size:11px}
+    .tok-rng,.tok-edge{display:none} }
   .cmp-bar{position:relative;height:9px;background:var(--line);border-radius:1px;overflow:hidden;margin:4px 0 2px}
   .cmp-bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);min-width:2px}
   .cmp-pool{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:4px 14px;align-items:baseline;
@@ -870,6 +897,12 @@
       <div class="pbody"><div class="cards" id="cards"></div></div>
     </section>
 
+    <section class="panel" data-panel="tokens" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">TOKEN EXPOSURE</span><span class="hint" id="tokenHint">how many you hold, where they sit, and what price does to the count</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="tokenBody"></div>
+    </section>
+
     <section class="panel" data-panel="global" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">GLOBAL SCOPE — TOP REALISTIC POOLS RIGHT NOW</span><span class="hint">25 volatile pairs · no stables · Uniswap · Pancake · Aerodrome · Raydium · Orca · Meteora &amp; more · 8 chains</span><button class="collapse-btn">▾</button></div>
@@ -1016,7 +1049,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v27.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2428,7 +2461,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); if(!$('#quickNav').children.length) buildQuickNav();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); if(!$('#quickNav').children.length) buildQuickNav();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -3363,6 +3396,196 @@ function bufferDays(p){
 /* Idle capital, aggregated by token across every wallet. Deployed vs idle is the number
    that actually frames "should I pool more" — and an unpriced token is shown as unpriced,
    never folded into the total at zero, because a token with no price usually has no market. */
+/* ================= TOKEN EXPOSURE =================
+   The position modules answer "how is this LP doing". This one answers the question that
+   actually drives decisions: for a token — SOL, CPOOL, LCX, ETH — how many do I own, where
+   are they sitting, and what does a price move do to the count?
+
+   That last part is the whole point, and it is not intuitive. A concentrated position is a
+   standing order to sell whatever rises and buy whatever falls, so the number of tokens you
+   own is a function of price, not a constant. The ladder below is that function, evaluated:
+   hold the other side of each pool still, move this token, and read off how many you end up
+   with. Tokens sitting in a wallet do not move, which is exactly why they are shown alongside
+   rather than merged in — the contrast between the two is the exposure decision.
+
+   Wrapped forms are folded into the native token: WETH is ETH and wrapped SOL is SOL, because
+   nobody holds a view on the wrapper. Everything else is keyed by contract, never by ticker,
+   so CPOOL on Ethereum and CPOOL on Solana stay apart — they are separate markets and have
+   traded 3x apart. */
+const WETH_ADDR='0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+const WSOL_ADDR='So11111111111111111111111111111111111111112';
+const tokKey=(chain,addr)=>{
+  const ch=chain==='sol'?'sol':(chain||'ethereum');
+  if(ch==='sol') return 'sol:'+(addr===WSOL_ADDR?'native':addr);
+  const a=String(addr||'').toLowerCase();
+  return ch+':'+(a===WETH_ADDR?'native':a);
+};
+/* amounts a concentrated position holds at an arbitrary price — the same identity the cards
+   use, clamped at the bounds so an out-of-range position reads as fully converted */
+function amtsAt(L,P,Pa,Pb,d0,d1){
+  if(!(L>0&&Pa>0&&Pb>Pa)) return null;
+  const p=Math.max(Pa,Math.min(Pb,P)), s=Math.sqrt;
+  return { a0:L*(1/s(p)-1/s(Pb))/10**d0, a1:L*(s(p)-s(Pa))/10**d1 };
+}
+function buildTokenBook(){
+  const T=new Map();
+  const get=(key,sym,chain)=>{
+    let t=T.get(key);
+    if(!t){ t={key,sym:sym||'?',chain,idle:0,idleUsd:null,legs:[],usd:null,unpriced:false}; T.set(key,t); }
+    if(sym && t.sym==='?') t.sym=sym;
+    return t;
+  };
+  for(const r of (state.idle&&state.idle.rows)||[]){
+    if(!(r.amount>0)) continue;
+    const key=tokKey(r.chain, r.native?(r.chain==='sol'?WSOL_ADDR:WETH_ADDR):r.addr);
+    const t=get(key, r.native?(r.chain==='sol'?'SOL':'ETH'):r.symbol, r.chain);
+    t.idle+=r.amount;
+    if(r.usd!=null){ t.idleUsd=(t.idleUsd||0)+r.usd; t.usd=r.usd/r.amount; } else t.unpriced=true;
+  }
+  for(const p of ordered()){
+    const L=p.liq?Number(p.liq):null;
+    if(!(L>0)||!(p.priceLower>0)||!(p.priceUpper>p.priceLower)) continue;
+    const a0=tokKey(p.chain, p.chain==='sol'?p.mint0:p.token0);
+    const a1=tokKey(p.chain, p.chain==='sol'?p.mint1:p.token1);
+    const t0=get(a0,(p.m0||{}).symbol,p.chain), t1=get(a1,(p.m1||{}).symbol,p.chain);
+    if(p.usd0!=null) t0.usd=p.usd0;
+    if(p.usd1!=null) t1.usd=p.usd1;
+    t0.legs.push({p,side:0,amt:p.amt0||0,L});
+    t1.legs.push({p,side:1,amt:p.amt1||0,L});
+  }
+  return [...T.values()].map(t=>{
+    const pooled=t.legs.reduce((s,l)=>s+l.amt,0);
+    return {...t, pooled, total:pooled+t.idle,
+            value:t.usd!=null?(pooled+t.idle)*t.usd:null};
+  }).filter(t=>t.total>0)
+    .sort((a,b)=>(b.value??-1)-(a.value??-1));
+}
+/* Hold every other token still and move this one: a position whose token0 is the one moving
+   sees its pool price move with it, and one whose token1 is moving sees the inverse. */
+const LADDER=[0.5,0.75,1,1.5,2,3];
+/* How far THIS token can move before the position stops earning — in the token's own frame,
+   not the pool's. For a pool's token0 the two move together, but for token1 they are inverses:
+   CPOOL rising is the SOL/CPOOL price falling, so the range edge that CPOOL rises into is the
+   pool's LOWER bound. Printing the pool's own −94% / +239% against a CPOOL row says the
+   opposite of the truth, which is worse than saying nothing. */
+function tokEdges(l){
+  const P=l.p.price, Pa=l.p.priceLower, Pb=l.p.priceUpper;
+  if(!(P>0&&Pa>0&&Pb>Pa)) return null;
+  return l.side===0 ? {dn:(Pa/P-1)*100, up:(Pb/P-1)*100}
+                    : {dn:(P/Pb-1)*100, up:(P/Pa-1)*100};
+}
+function tokenAtMult(t,m){
+  let n=t.idle;
+  for(const l of t.legs){
+    const P=l.side===0 ? l.p.price*m : l.p.price/m;
+    const a=amtsAt(l.L,P,l.p.priceLower,l.p.priceUpper,l.p.d0,l.p.d1);
+    if(!a) { n+=l.amt; continue; }
+    n+=(l.side===0?a.a0:a.a1);
+  }
+  return n;
+}
+function fmtTok(v){
+  const a=Math.abs(v);
+  if(a>=1e6) return (v/1e6).toFixed(2)+'M';
+  if(a>=1e4) return Math.round(v).toLocaleString('en');
+  if(a>=1)   return v.toLocaleString('en',{maximumFractionDigits:2});
+  if(a>=0.001) return v.toFixed(4);
+  return v>0?v.toExponential(2):'0';
+}
+function renderTokens(){
+  const host=$('#tokenBody'); if(!host) return;
+  host.innerHTML='';
+  const book=buildTokenBook();
+  if(!book.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No holdings to show yet — this builds from the relay’s wallet read and your open positions.</div>'; return; }
+  const shown=book.filter(t=>(t.value??0)>=25 || t.pooled>0);
+  const rest=book.filter(t=>!shown.includes(t));
+  const hint=$('#tokenHint');
+  if(hint) hint.textContent=shown.length+' tokens · '+fmtUsd(shown.reduce((s,t)=>s+(t.value||0),0),0);
+
+  for(const t of shown){
+    const card=el('div','tok-card');
+    // ---- header: what it is, how many, what it is worth
+    const head=el('div','tok-head');
+    head.innerHTML='<span class="tok-sym">'+esc(t.sym)+'</span>'
+      +'<span class="tok-chain">'+(t.chain==='sol'?'◎ SOL':'ETH')+'</span>'
+      +'<span class="tok-n">'+fmtTok(t.total)+'</span>'
+      +'<span class="tok-px">'+(t.usd!=null?fmtPrice(t.usd):'<span class="dim">unpriced</span>')+'</span>'
+      +'<span class="tok-v">'+(t.value!=null?fmtUsd(t.value,0):'—')+'</span>';
+    card.append(head);
+    // ---- where it sits: one bar, pooled legs then idle
+    const segs=[...t.legs.map(l=>({lab:pairShort(l.p)+' '+posRef(l.p), amt:l.amt, p:l.p, leg:l})),
+                ...(t.idle>0?[{lab:'idle in wallets', amt:t.idle, p:null}]:[])]
+               .filter(x=>x.amt>0).sort((a,b)=>b.amt-a.amt);
+    const bar=el('div','tok-bar');
+    segs.forEach((s2,i)=>{ const d2=el('i'); d2.style.width=(s2.amt/t.total*100)+'%';
+      d2.style.background=s2.p?seriesColor(cIdx(s2.p)):'var(--line)';
+      d2.title=s2.lab+' — '+fmtTok(s2.amt)+' ('+(s2.amt/t.total*100).toFixed(1)+'%)';
+      bar.append(d2); });
+    card.append(bar);
+    // ---- the legs themselves, with where the price sits in each range
+    const legs=el('div','tok-legs');
+    for(const s2 of segs){
+      const pct=(s2.amt/t.total*100);
+      if(s2.p){
+        const rp=Math.max(0,Math.min(1,dispRangePos(s2.p)));
+        legs.append(el('div','tok-leg',
+          '<span class="dot" style="background:'+seriesColor(cIdx(s2.p))+'"></span>'
+          +esc(pairShort(s2.p))));
+        legs.append(el('div','num',fmtTok(s2.amt)));
+        legs.append(el('div','num dim',pct.toFixed(1)+'%'));
+        legs.append(el('div','tok-rng','<i style="left:'+(rp*100).toFixed(1)+'%"></i>'));
+        const ed=tokEdges(s2.leg);
+        legs.append(el('div','dim tok-edge', !s2.p.inRange ? 'out of range'
+          : (ed ? esc(t.sym)+' '+(ed.dn<=-99.5?'to zero':(ed.dn).toFixed(0)+'%')+' … +'
+                  +(ed.up>=1000?Math.round(ed.up/100)/10+'k%':ed.up.toFixed(0)+'%')
+                : '—')));
+      }else{
+        legs.append(el('div','tok-leg','<span class="dot" style="background:var(--line)"></span>idle in wallets'));
+        legs.append(el('div','num',fmtTok(s2.amt)));
+        legs.append(el('div','num dim',pct.toFixed(1)+'%'));
+        legs.append(el('div','tok-rng dim','—'));
+        legs.append(el('div','dim tok-edge','price moves it 1:1'));
+      }
+    }
+    card.append(legs);
+    // ---- the ladder: how many of these you own at other prices
+    if(t.legs.length && t.usd!=null){
+      const sc=el('div','cat-scroll');
+      const g=el('div','tok-ladder');
+      g.style.gridTemplateColumns='minmax(max-content,auto) repeat('+LADDER.length+',minmax(64px,1fr))';
+      g.append(el('div','h','IF '+esc(t.sym)+' MOVES'));
+      LADDER.forEach(m=>g.append(el('div','h num',m===1?'now':((m>1?'+':'−')+Math.abs(Math.round((m-1)*100))+'%'))));
+      g.append(el('div','dim','its price'));
+      LADDER.forEach(m=>g.append(el('div','num dim',fmtPrice(t.usd*m))));
+      g.append(el('div',null,'<b>you hold</b>'));
+      const base=tokenAtMult(t,1);
+      LADDER.forEach(m=>{ const n=tokenAtMult(t,m);
+        g.append(el('div','num'+(m===1?' tok-now':''),'<b>'+fmtTok(n)+'</b>')); });
+      g.append(el('div','dim','change'));
+      LADDER.forEach(m=>{ const n=tokenAtMult(t,m), c=base>0?(n/base-1)*100:0;
+        g.append(el('div','num '+(Math.abs(c)<0.05?'dim':(c>0?'tok-up':'tok-dn')),
+          Math.abs(c)<0.05?'—':((c>0?'+':'−')+Math.abs(c).toFixed(0)+'%')) ); });
+      sc.append(g); card.append(sc);
+      const up=tokenAtMult(t,2), dn=tokenAtMult(t,0.5);
+      card.append(el('div','flow-omit',
+        'Double the price of '+esc(t.sym)+' against the other side of its pools and you are left holding '
+        +fmtTok(up)+' of them — the pools sell '+fmtTok(Math.max(0,base-up))+' on the way up. Halve it and you '
+        +'end up with '+fmtTok(dn)+', having bought '+fmtTok(Math.max(0,dn-base))+' on the way down. '
+        +(t.idle>0?'The '+fmtTok(t.idle)+' sitting in wallets does neither.':'')));
+    } else if(!t.legs.length){
+      card.append(el('div','flow-omit','Not in any pool — this one just tracks its own price.'));
+    }
+    host.append(card);
+  }
+  if(rest.length)
+    host.append(el('div','arch-note',rest.length+' smaller holding'+(rest.length>1?'s':'')+' not shown: '
+      +rest.slice(0,12).map(t=>esc(t.sym)).join(', ')+(rest.length>12?'…':'')+'.'));
+  host.append(el('div','arch-note','Each ladder moves one token and holds the other side of every pool still, '
+    +'because that is the question you can actually act on. Wrapped forms are folded into the native token — '
+    +'WETH is ETH, wrapped SOL is SOL — and everything else is keyed by contract rather than ticker, which is '
+    +'why CPOOL appears twice: the Ethereum and Solana versions are separate markets.'));
+}
+
 function renderIdle(){
   const host=$('#idleBody'); if(!host) return;
   host.innerHTML='';
@@ -5632,7 +5855,7 @@ function buildQuickNav(){
   setMore(!!store.get('navOpen',false));
   measureChrome();
 }
-const LAYOUT_VERSION=5;   // bump when the default panel order changes on purpose
+const LAYOUT_VERSION=6;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
   // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
   // reach anyone who has dragged a panel. Drop the stored order once per version bump.
