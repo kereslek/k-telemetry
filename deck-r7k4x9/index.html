@@ -1063,7 +1063,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2129,7 +2129,13 @@ async function scanInner(isBoot){
              like it. When the two disagree the page a reader is looking at is not the page that
              was deployed, and every "that change isn't there" is explained by it. Reload once per
              version, guarded so a version that never deploys cannot put the page in a loop. */
-          if(d.uiBuild && d.uiBuild!==BUILD){
+          /* Only OLDER is stale. uiBuild is the build the relay saw deployed when it last ran,
+             so for the twenty minutes between shipping a page and the next data refresh the
+             browser is legitimately ahead of the payload — and the first cut of this check read
+             that as the page being behind, told the reader to reload, and reloading could not
+             change it because nothing was wrong. Compare the versions; a page ahead of the
+             record is normal and says nothing. */
+          if(d.uiBuild && cmpBuild(BUILD,d.uiBuild)<0){
             state.staleBuild=d.uiBuild;
             let tried=null;
             try{ tried=sessionStorage.getItem('lphud:reloadedFor'); }catch(e){}
@@ -5930,6 +5936,19 @@ function buildQuickNav(){
   }
   setMore(!!store.get('navOpen',false));
   measureChrome();
+}
+/* vMAJOR.MINOR, compared numerically so v28.10 sorts after v28.9 rather than before it.
+   Anything that does not parse falls back to plain inequality, which is the older behaviour and
+   errs towards warning rather than towards silence. */
+function cmpBuild(a,b){
+  const pa=String(a||'').replace(/^v/i,'').split('.'), pb=String(b||'').replace(/^v/i,'').split('.');
+  const ok=x=>x.length&&x.every(v=>/^\d+$/.test(v));
+  if(!ok(pa)||!ok(pb)) return a===b?0:-1;
+  for(let i=0;i<Math.max(pa.length,pb.length);i++){
+    const d=(Number(pa[i])||0)-(Number(pb[i])||0);
+    if(d) return d<0?-1:1;
+  }
+  return 0;
 }
 const LAYOUT_VERSION=6;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
