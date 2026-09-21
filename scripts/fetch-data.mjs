@@ -2242,7 +2242,7 @@ const main=async()=>{
                      solOpen:Math.round((cl.solOpenUsd||0)*100)/100,
                      solSwap:Math.round((cl.solSwapUsd||0)*100)/100}].slice(-12);
         cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0;
-        cl.solSwapUsd=0; cl.solSwapOwnUsd=0;
+        cl.solSwapUsd=0; cl.solSwapOwnUsd=0; cl.solUnattributed=0;
         cl.txs={}; cl.solTxs={}; cl.solOpenPend={}; cl.solWalletTx={};
         /* cl.solScan is deliberately NOT cleared. It is how far the wallet history has been
            walked, not a figure for the month; resetting it at a month boundary would send the
@@ -2317,7 +2317,11 @@ const main=async()=>{
         /* Only the pools are worth keeping. Every other account a swap touches — token accounts,
            programs, sysvars — is cached as "not a pool" for the run and then dropped, because
            storing them would grow this file without end to save a call that is made anyway. */
-        blockCache.solPools=Object.fromEntries(Object.entries(poolCache).filter(([,v])=>v));
+        /* Only current-version pools are kept. An entry written by an older rule is re-read the
+           next time its account turns up, but one that never turns up again would otherwise sit
+           in the file being wrong for ever. */
+        blockCache.solPools=Object.fromEntries(
+          Object.entries(poolCache).filter(([,v])=>v && v.v===SOL_POOL_CACHE_V));
       }catch(e){ logErr('solWalletCosts',e); }
       /* A swap fee that could not be traced to a pool is the only thing still missing, so the
          claim is made per run instead of standing as a permanent disclaimer. */
@@ -2338,9 +2342,15 @@ const main=async()=>{
         }
       }
       /* A swap fee that could not be traced to a pool is the only thing still missing, so the
-         claim is made per run instead of standing as a permanent disclaimer. */
-      cl.solPartial=solUnattributed>0;
-      cl.solUnattributed=solUnattributed;
+         claim is made from what the month has actually seen rather than standing as a permanent
+         disclaimer.
+
+         It has to ACCUMULATE. Written per run, it read 1 on the pass that walked the swap and 0
+         on the next one — which walked no transactions at all, having nothing new to walk — and
+         the page went from naming a gap to claiming there was none. A run that looked at nothing
+         has found nothing, which is not the same as there being nothing to find. */
+      cl.solUnattributed=(cl.solUnattributed||0)+solUnattributed;
+      cl.solPartial=(cl.solUnattributed||0)>0;
       if(solWalletScanned) console.log('sol wallet txs scanned:',solWalletScanned,
         '· swap fees $'+(Math.round((cl.solSwapUsd||0)*100)/100),
         solUnattributed?('· '+solUnattributed+' swap(s) not attributable to a readable pool'):'· all attributed');
