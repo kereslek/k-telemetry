@@ -2714,9 +2714,18 @@ function renderTiles(){
                into the total the net is struck against. */
             +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
-            +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?' · projected net ≈ <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'
-              +fmtUsd(fm.proj-cm.total/fm.elapsedDays*fm.daysInMonth,0)+'</b> by '+mName+' '+fm.daysInMonth
-              +' <span class="unit">(costs extrapolated from this month\'s pace)</span>':'')
+            /* Gas and swap fees recur, so a rate times the month is the right shape for them.
+               Creating a pool is paid once. Extrapolating it made a $18 fee project as $26 of
+               cost that will never be charged, so it is held out of the rate and added back
+               whole. */
+            +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?(()=>{
+                const once=cm.solOpenUsd||0, rec=cm.total-once;
+                const projCost=rec/fm.elapsedDays*fm.daysInMonth+once, pn=fm.proj-projCost;
+                return ' · projected net ≈ <b style="color:var(--status-'+(pn>=0?'good':'critical')+')">'
+                  +fmtUsd(pn,0)+'</b> by '+mName+' '+fm.daysInMonth
+                  +' <span class="unit">(recurring costs extrapolated from this month\'s pace'
+                  +(once>0.005?'; setup counted once':'')+')</span>';
+              })():'')
             +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
           : 'gas + rebalance swap fees · starts with the next relay refresh'); }
   { /* Pinned to the last 24 hours regardless of the header timeframe. This tile answers
