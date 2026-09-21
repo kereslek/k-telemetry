@@ -1112,7 +1112,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2769,7 +2769,11 @@ function renderTiles(){
             /* Creating a pool is a one-off of a different order to a transaction fee — tens of
                dollars against fractions of a cent — so it is named rather than folded silently
                into the total the net is struck against. */
-            +((cm.solSwapUsd||0)>0.005?' · Solana swap fees <b>'+fmtUsd(cm.solSwapUsd)+'</b> <span class="unit">◎</span>':'')
+            +((cm.solSwapUsd||0)>0.005?' · Solana swap fees <b>'+fmtUsd(cm.solSwapUsd)+'</b> <span class="unit">◎</span>'
+              /* Routed through a pool you are the only LP in, the fee is charged and returned in
+                 the same breath. Still a cost, but not a loss, and the difference is worth a
+                 clause. */
+              +((cm.solSwapOwnUsd||0)>0.005?' <span class="unit">('+fmtUsd(cm.solSwapOwnUsd)+' of it paid to your own pools, and back to you as LP fees)</span>':''):'')
             +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             /* Gas and swap fees recur, so a rate times the month is the right shape for them.
