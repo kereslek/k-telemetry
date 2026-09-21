@@ -819,6 +819,7 @@ async function fetchSolana(SOL_WALLETS){
       symbols[m]=(Array.isArray(js)?js.find(t=>t.id===m):null)?.symbol||m.slice(0,4)+'…'; }
     catch(e){ symbols[m]=m.slice(0,4)+'…'; }
   }
+  const poolFirstSig=new Map();   // poolId -> its first signature, or null when the pool predates us
   let ray={}; try{
     const js=await getJson('https://api-v3.raydium.io/pools/info/ids?ids='+poolIds.join(','));
     for(const d of (js.data||[])) if(d&&d.id) ray[d.id]={aprDay:d.day?.apr??null,aprWeek:d.week?.apr??null,aprMonth:d.month?.apr??null,feeRate:d.feeRate??null,
@@ -841,18 +842,38 @@ async function fetchSolana(SOL_WALLETS){
     const inRange=tick>=pp.tickLower&&tick<pp.tickUpper;
     const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
     const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
-    let mintTs=null;
+    let mintTs=null, openSig=null, openExact=false, poolOpenSig=null;
     try{
       let before,oldest=null,pages=0;
       while(pages<3){
         const sigs=await sol('getSignaturesForAddress',[pd,{limit:1000,...(before?{before}:{})}]);
         if(!sigs||!sigs.length) break;
         oldest=sigs[sigs.length-1];
-        if(sigs.length<1000) break;
+        /* Reaching the end of the history is what makes the oldest signature the OPENING one.
+           A position with more than three pages is cut off short of its own beginning, and the
+           date read off that cut is not the date it was opened — so it is marked inexact and
+           nothing downstream may treat it as an open. */
+        if(sigs.length<1000){ openExact=true; break; }
         before=oldest.signature; pages++;
       }
       if(oldest?.blockTime) mintTs=oldest.blockTime*1000;
+      if(oldest?.signature) openSig=oldest.signature;
     }catch(e){}
+    /* Creating a pool and opening the first position in it can be one transaction or two, and
+       when it is two the pool creation fee sits on the one the position account never sees.
+       Looked up only for a position young enough to still be worth charging, and only one page
+       deep: a pool with a full page of history is not one we just made, and settling that costs
+       a single call. */
+    if(openExact && mintTs && Date.now()-mintTs < 45*86400000){
+      try{
+        if(!poolFirstSig.has(pp.poolId)){
+          const psigs=await sol('getSignaturesForAddress',[pp.poolId,{limit:1000}]);
+          poolFirstSig.set(pp.poolId, (Array.isArray(psigs)&&psigs.length&&psigs.length<1000)
+            ? psigs[psigs.length-1].signature : null);
+        }
+        poolOpenSig=poolFirstSig.get(pp.poolId);
+      }catch(e){}
+    }
     const rinfo=ray[pp.poolId]||{};
     out.push({ id:'sol:'+pp.nftMint, chain:'sol', relay:true, wallet:c.wallet, nftMint:pp.nftMint, poolId:pp.poolId, pda:pd,
       liq:pp.liquidity.toString(), poolLiq:pool.liquidity!=null?pool.liquidity.toString():null,
@@ -863,7 +884,7 @@ async function fetchSolana(SOL_WALLETS){
       feesUsd:(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null,
       feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
       poolAprPct:rinfo.aprDay??null, poolAprDay:rinfo.aprDay??null, poolAprWeek:rinfo.aprWeek??null, poolAprMonth:rinfo.aprMonth??null,
-      mintTs, ageDays:mintTs?(Date.now()-mintTs)/86400000:null,
+      mintTs, ageDays:mintTs?(Date.now()-mintTs)/86400000:null, openSig, openExact, poolOpenSig,
       inRange, rangePos, dLow, dUp, nearestEdge:dLow<dUp?'lower':'upper',
       edgeDist:inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
       pairLabel:symbols[pool.mint0]+' / '+symbols[pool.mint1],
@@ -1020,6 +1041,54 @@ function solAttribute(tx, pda, mints, owner){
    of "fees" against a position that was owed $84.02: its own fees, the other position's fees, and
    ~$700 of returned principal. The discriminator that does not require guessing at instruction
    layouts is the one fact we already hold: fees owed cannot exceed fees accrued. */
+/* ---------- what a Solana position cost to open ----------
+
+   Raydium charges a flat protocol fee to create a CLMM pool — the order of 0.15 SOL, tens of
+   dollars — and every account the transaction opens on top of that (pool state, observation,
+   the two vaults, tick arrays, the position NFT) is funded with rent from the same wallet.
+   None of it is a transaction fee, so the ledger's meta.fee reading sees about five thousand
+   lamports of a spend three thousand times larger. The rest simply left the portfolio with
+   nothing to account for it: idle SOL fell, no cost was recorded, and the month's net read
+   better than it was.
+
+   Measured rather than assumed. What the wallet gave up in the transaction, less the part of
+   that which became an asset it still holds. SOL going into the pool's vaults is liquidity;
+   SOL going anywhere else is spent. Where the pair contains no SOL at all the second term is
+   zero and the whole outlay is cost, which is the case this was written for.
+
+   Returns lamports, or null when the transaction cannot be read or the wallet is not in it —
+   booking nothing is always preferable to booking a number of unknown provenance. */
+async function solOpenSpend(sig, owner){
+  if(!sig||!owner) return null;
+  let tx=null;
+  try{ tx=await sol('getTransaction',[sig,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); }
+  catch(e){ return null; }
+  if(!tx||!tx.meta||tx.meta.err) return null;
+  const keys=((tx.transaction||{}).message||{}).accountKeys||[];
+  const idx=keys.findIndex(k=>(typeof k==='string'?k:(k&&k.pubkey))===owner);
+  const pre=tx.meta.preBalances||[], post=tx.meta.postBalances||[];
+  if(idx<0||pre[idx]==null||post[idx]==null) return null;
+  const ptb=tx.meta.preTokenBalances||[], stb=tx.meta.postTokenBalances||[];
+  const raw=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i);
+    return e&&e.uiTokenAmount?Number(e.uiTokenAmount.amount||0):0; };
+  const seen=new Set();
+  let ownerWsolDown=0, elsewhereWsolUp=0;
+  for(const r of [...ptb,...stb]){
+    if(r.mint!==SOL_MINT||seen.has(r.accountIndex)) continue;
+    seen.add(r.accountIndex);
+    const d=raw(stb,r.accountIndex)-raw(ptb,r.accountIndex);
+    if(r.owner===owner){ if(d<0) ownerWsolDown+=-d; }      // wrapped and handed over
+    else if(d>0) elsewhereWsolUp+=d;                        // landed in a vault: a deposit, not a cost
+  }
+  const spent=(pre[idx]-post[idx])+ownerWsolDown-elsewhereWsolUp;
+  if(!(spent>0)) return 0;
+  /* A reading this size is far likelier to be a transaction shape this did not anticipate than
+     a real outlay, and a wrong cost on the books is worse than a missing one. */
+  if(spent>2e9){ logErr('solOpen', new Error(sig.slice(0,10)+' read as '+(spent/1e9).toFixed(3)
+    +' SOL of opening cost — too large to trust, booked nothing')); return 0; }
+  return Math.round(spent);
+}
+
 async function solCollectedSince(pos, sinceSig, costSink, ceil){
   const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0, clamped:0};
   const addr=pos.pda||pos.nftMint, owner=pos.wallet;
@@ -1208,6 +1277,7 @@ async function buildCompetition(evmPositions, solPositions){
       const sibs=await evmSiblingPools(g.ck, g.focus);
       const want=[g.focus.toLowerCase(), ...new Set(sibs.map(x=>x.quote.toLowerCase()))];
       await llamaPrices(want.map(a=>C.llama+':'+a));
+      const minePools=new Set(mineRows.map(x=>String(x.addr).toLowerCase()));
       const rows=[];
       for(const sp of sibs){
         try{
@@ -1217,7 +1287,10 @@ async function buildCompetition(evmPositions, solPositions){
           const tvl=(p0!=null&&p1!=null)?b0*p0+b1*p1:null;
           let liq=null;
           if(!sp.v2){ try{ liq=BigInt(await evmCall(g.ck,sp.addr,SEL.poolLiquidity)).toString(); }catch(e){} }
-          if(tvl!=null && tvl<200) continue;         // an empty shell of a pool is not competition
+          /* An empty shell of a pool is not competition — but a pool I am standing in is part of
+             the market whatever its size, and dropping it here while my side of it still counts
+             towards my own total is how a share climbs above 100%. */
+          if(tvl!=null && tvl<200 && !minePools.has(String(sp.addr).toLowerCase())) continue;
           rows.push({addr:sp.addr, venue:sp.venue, pairLabel:(g.sym||'?')+' / '+sp.quoteSym,
                      feeLabel:sp.v2?'0.3%':(sp.fee/10000)+'%', tvlUsd:r2(tvl), poolLiq:liq, v2:!!sp.v2});
         }catch(e){}
@@ -1225,11 +1298,15 @@ async function buildCompetition(evmPositions, solPositions){
       }
       /* The scan finds the pools I am already in as well. They belong in the market total —
          they are part of the market — but calling them competition would be nonsense. */
-      const minePools=new Set(mineRows.map(x=>String(x.addr).toLowerCase()));
       for(const r of rows) if(minePools.has(String(r.addr).toLowerCase())) r.mine=true;
       rows.sort((a,b)=>(b.tvlUsd??-1)-(a.tvlUsd??-1));
       const myTvl=mineRows.reduce((s,x)=>s+(x.myUsd||0),0);
-      const mktTvl=rows.reduce((s,x)=>s+(x.tvlUsd||0),0);
+      /* Two independent readings of the same pool — our own position maths against the venue's
+         published TVL — differ by a fraction of a percent, and where I am the only liquidity in
+         a pool that fraction is enough to put my share of it above 100%. A position cannot be
+         worth more than the pool holding it, so the pool's total is floored at mine. */
+      const myByPool=new Map(mineRows.map(x=>[String(x.addr).toLowerCase(), x.myUsd||0]));
+      const mktTvl=rows.reduce((s,x)=>s+Math.max(x.tvlUsd||0, myByPool.get(String(x.addr).toLowerCase())||0),0);
       arenas.push({key:k, chain:g.ck, chainTag:CHAINS[g.ck].tag, sym:g.sym||'?', token:g.focus,
         scope:'Uniswap v3, Uniswap v2 and SushiSwap on '+CHAINS[g.ck].tag,
         mine:mineRows, rivals:rows.slice(0,8), rivalCount:rows.length,
@@ -1270,7 +1347,10 @@ async function buildCompetition(evmPositions, solPositions){
       let rows=[], scope='Raydium pools on Solana';
       blockCache.rivals=blockCache.rivals||{};
       const ck2='sol:'+focus, hit=blockCache.rivals[ck2];
-      if(hit && Date.now()-hit.at<RIVAL_TTL) rows=hit.pools;
+      /* Copied, not aliased: this list is marked up below with which pools are mine and has my
+         own unlisted pools appended, and the cache is written back to disk at the end of the
+         run. Handing out the stored array would let those edits accumulate in it. */
+      if(hit && Date.now()-hit.at<RIVAL_TTL) rows=(hit.pools||[]).map(x=>({...x}));
       else{
         try{
           const js=await getJson('https://api-v3.raydium.io/pools/info/mint?mint1='+focus
@@ -1289,8 +1369,33 @@ async function buildCompetition(evmPositions, solPositions){
       }
       const minePoolsS=new Set(mineRows.map(x=>String(x.addr)));
       for(const r of rows) if(minePoolsS.has(String(r.addr))) r.mine=true;
+      /* A pool created an hour ago is not in the index yet, and one that is cached is not in the
+         copy we are holding. Either way my own position in it still counted towards my total,
+         and the share came out at 106% — a number that cannot be true and so tells the reader
+         nothing except that something is wrong. A pool I am in belongs in the market by
+         definition, so it is added here with the TVL its own pool record reports. */
+      const listed=new Set(rows.map(r=>String(r.addr)));
+      let addedMine=0;
+      for(const m of mineRows){
+        if(listed.has(String(m.addr))) continue;
+        rows.push({addr:m.addr, venue:m.venue, pairLabel:m.pairLabel, feeLabel:m.feeLabel,
+                   tvlUsd:m.tvlUsd??r2(m.myUsd), vol24Usd:m.vol24Usd??null, mine:true,
+                   unlisted:true});
+        addedMine++;
+      }
+      if(addedMine){
+        rows.sort((a,b)=>(b.tvlUsd??-1)-(a.tvlUsd??-1));
+        notes.push('A pool of yours is too new for the Raydium index to list yet, so it is counted '
+          +'in the market total from its own pool record. Other people\u2019s pools that new are not '
+          +'counted at all, which makes the market figure a floor rather than a reading.');
+      }
       const myTvl=mineRows.reduce((s,x)=>s+(x.myUsd||0),0);
-      const mktTvl=rows.reduce((s,x)=>s+(x.tvlUsd||0),0);
+      /* Two independent readings of the same pool — our own position maths against the venue's
+         published TVL — differ by a fraction of a percent, and where I am the only liquidity in
+         a pool that fraction is enough to put my share of it above 100%. A position cannot be
+         worth more than the pool holding it, so the pool's total is floored at mine. */
+      const myByPoolS=new Map(mineRows.map(x=>[String(x.addr), x.myUsd||0]));
+      const mktTvl=rows.reduce((s,x)=>s+Math.max(x.tvlUsd||0, myByPoolS.get(String(x.addr))||0),0);
       arenas.push({key:'sol:'+focus, chain:'sol', chainTag:'SOL', sym:g.sym||'?', token:focus, scope,
         mine:mineRows, rivals:rows.slice(0,8), rivalCount:rows.length,
         myTvlUsd:r2(myTvl), marketTvlUsd:r2(mktTvl),
@@ -1518,7 +1623,7 @@ const main=async()=>{
       try{ solPositions=await fetchSolana(solWallets); }
       catch(e){ logErr('sol',e); chainErrs.add('solana'); scanIncomplete.add('sol'); }
     }
-    let solTxFees={};
+    let solTxFees={}, solOpenLam={};
     // ---- harvest ledger: detect fee collections between snapshots (Solana has no easy event log) ----
     try{
       let ledger={}; try{ ledger=JSON.parse(fs.readFileSync(OUT+'/ledger-'+profile.slug+'.json','utf8')); }catch(e){}
@@ -1528,6 +1633,7 @@ const main=async()=>{
       // booked exactly once no matter how many positions it touched or which run reaches it.
 
       solTxFees={};        // signature -> lamports, handed to the cost ledger below
+      solOpenLam={};       // signature -> lamports spent opening a position, same destination
       for(const p of solPositions){
         const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
         // Solana has no fee event log, so collectedUsd only ever covers what this bot has
@@ -1535,6 +1641,32 @@ const main=async()=>{
         // position's full age understates it by the ratio of the two (a 289-day position
         // seen for 12 days reads ~23x too low).
         if(!L.since) L.since=Date.now();
+        /* What this position cost to open, read once and never again. Only positions opened in
+           the month being counted are measured: an older one's outlay belongs to a month that
+           has already been archived, and re-reading it every run would buy nothing. A position
+           whose opening date could not be established exactly is left alone entirely rather
+           than charged against a date that is only the edge of what was scanned. */
+        if(L.openCost===undefined && p.chain==='sol'){
+          const opened=(p.openExact&&p.mintTs)?new Date(p.mintTs).toISOString().slice(0,7):null;
+          if(opened && opened===new Date().toISOString().slice(0,7)){
+            try{
+              const sigs=[...new Set([p.openSig,p.poolOpenSig].filter(Boolean))];
+              let lam=0, got=0;
+              for(const sg of sigs){
+                const v=await solOpenSpend(sg, p.wallet);
+                if(v==null) continue;
+                got++;
+                if(solOpenLam[sg]==null){ solOpenLam[sg]=v; lam+=v; }
+              }
+              if(got===sigs.length && sigs.length){
+                L.openCost={lamports:lam, sigs};
+                console.log('open cost', String(p.id).slice(4,14), (lam/1e9).toFixed(5), 'SOL over', sigs.length, 'tx');
+              }
+            }catch(e){ logErr('solOpen',e); }
+          } else if(opened){
+            L.openCost={skip:'opened '+opened+', before the month being counted'};
+          }
+        }
         /* The harvest of 1 September 2026, credited after the fact. Every Solana position was
            emptied in one pass and the booking found only part of it: $52.22 of $95.46 owed on
            4j7p, and the same shortfall on the other three. Lifetime fees fell by $96.93, which
@@ -1895,8 +2027,10 @@ const main=async()=>{
       cl.scan=cl.scan||{};
       if(cl.month!==monthKey){
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
-                     solGas:Math.round((cl.solGasUsd||0)*100)/100}].slice(-12);
-        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.txs={}; cl.solTxs={};
+                     solGas:Math.round((cl.solGasUsd||0)*100)/100,
+                     solOpen:Math.round((cl.solOpenUsd||0)*100)/100}].slice(-12);
+        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0;
+        cl.txs={}; cl.solTxs={}; cl.solOpenPend={};
         cl.solPartial=false;
       }
       /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
@@ -1910,7 +2044,23 @@ const main=async()=>{
       }
       cl.solTxs=cl.solTxs||{};
       cl.solGasUsd=cl.solGasUsd||0;   // present at 0, not absent, when nothing was scanned
+      cl.solOpenUsd=cl.solOpenUsd||0;
+      /* Held in lamports until a SOL price is available. A position is measured once and only
+         once, so a run that priced nothing would otherwise lose the reading for good — the
+         ledger entry saying "already measured" outlives the run that measured it. */
+      cl.solOpenPend=cl.solOpenPend||{};
+      for(const sig in solOpenLam) if(!cl.solTxs[sig]) cl.solOpenPend[sig]=solOpenLam[sig];
       if(solUsd!=null){
+        for(const sig in cl.solOpenPend){
+          const lam=cl.solOpenPend[sig];
+          delete cl.solOpenPend[sig];
+          if(cl.solTxs[sig]) continue;
+          cl.solTxs[sig]=1;
+          /* Opening costs are claimed before transaction fees, and share the same seen-set: the
+             fee is already inside the figure above, so a signature that is both must not pay
+             twice. */
+          cl.solOpenUsd+=(lam/1e9)*solUsd;
+        }
         for(const sig in solTxFees){
           if(cl.solTxs[sig]) continue;
           cl.solTxs[sig]=1;
@@ -2006,9 +2156,10 @@ const main=async()=>{
       /* total carries every chain, because it is what the headline net and the month-over-month
          costs column subtract. txCount stays EVM-only, and the per-operation average is computed
          from the EVM figures rather than from total, so the two do not get mixed. */
+      cl.solOpenUsd=Math.round((cl.solOpenUsd||0)*100)/100;
       costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
-        solGasUsd:cl.solGasUsd||0, solPartial:!!cl.solPartial,
-        total:Math.round((cl.gasUsd+cl.swapFeeUsd+(cl.solGasUsd||0))*100)/100,
+        solGasUsd:cl.solGasUsd||0, solOpenUsd:cl.solOpenUsd||0, solPartial:!!cl.solPartial,
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd+(cl.solGasUsd||0)+(cl.solOpenUsd||0))*100)/100,
         txCount:counted, prev:cl.months||[]};
       fs.writeFileSync(OUT+'/costs-'+profile.slug+'.json', JSON.stringify(cl,null,1));
     }catch(e){ logErr('costMonth',e); }
