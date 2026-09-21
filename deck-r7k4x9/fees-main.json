@@ -4,56 +4,56 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 56.99,
+   "last": 57.05,
    "hwm": 60.78,
    "acc": 44.19,
    "ck": "ethereum",
-   "cat": "evm|LCX / ETH \u00b7 wide"
+   "cat": "evm|LCX / ETH · wide"
   },
   "1355336": {
    "m0": 92.2,
-   "last": 289.14,
+   "last": 289.46,
    "hwm": 292.04,
    "acc": 199.84,
    "ck": "ethereum",
-   "cat": "evm|LCX / ETH \u00b7 wide"
+   "cat": "evm|LCX / ETH · wide"
   },
   "1355918": {
    "m0": 40.62,
-   "last": 326.38,
+   "last": 326.73,
    "hwm": 331.79,
    "acc": 291.17,
    "ck": "ethereum",
-   "cat": "evm|LCX / ETH \u00b7 wide"
+   "cat": "evm|LCX / ETH · wide"
   },
   "1366332": {
    "m0": 0,
-   "last": 79.87,
-   "hwm": 79.87,
-   "acc": 79.87,
+   "last": 79.96,
+   "hwm": 79.96,
+   "acc": 79.96,
    "ck": "ethereum",
-   "cat": "evm|LCX / ETH \u00b7 wide"
+   "cat": "evm|LCX / ETH · wide"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
    "last": 501.53,
    "acc": 197.65,
    "hwm": 501.53,
-   "cat": "sol|SOL / CPOOL \u00b7 wide"
+   "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
    "m0": 272.64,
    "last": 489.07,
    "acc": 216.43,
    "hwm": 489.07,
-   "cat": "sol|SOL / CPOOL \u00b7 wide"
+   "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
    "last": 384.33,
    "acc": 166.45,
    "hwm": 384.33,
-   "cat": "sol|SOL / CPOOL \u00b7 wide"
+   "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
@@ -61,7 +61,7 @@
    "hwm": 216.32,
    "acc": 138.85,
    "ck": "sol",
-   "cat": "sol|SOL / CPOOL \u00b7 wide"
+   "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:bMaDGpGGKzCjCiSm21pJjya9pzsyBKRyWL16gQT4tjF": {
    "m0": 0,
@@ -69,7 +69,7 @@
    "hwm": 0,
    "acc": 0,
    "ck": "sol",
-   "cat": "sol|CPOOL / USDT \u00b7 wide"
+   "cat": "sol|CPOOL / USDT · wide"
   }
  },
  "months": [
@@ -78,14 +78,14 @@
    "total": 1530.49,
    "ilEnd": -85.76,
    "cat": {
-    "evm|LCX / ETH \u00b7 narrow": 691.83,
-    "evm|LCX / ETH \u00b7 wide": 149.41,
-    "sol|SOL / CPOOL \u00b7 wide": 688.7,
-    "sol|cbBTC / JLP \u00b7 narrow": 0.55
+    "evm|LCX / ETH · narrow": 691.83,
+    "evm|LCX / ETH · wide": 149.41,
+    "sol|SOL / CPOOL · wide": 688.7,
+    "sol|cbBTC / JLP · narrow": 0.55
    }
   }
  ],
- "lastIl": -67.95,
+ "lastIl": -68.75,
  "catClosed": {},
- "readAt": 1790017214692
+ "readAt": 1790018435017
 }
