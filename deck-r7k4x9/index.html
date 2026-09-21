@@ -1112,7 +1112,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2709,6 +2709,10 @@ function renderTiles(){
     mk('COSTS · '+mName,
        cm?outc(fmtUsd(cm.total)):'—',
        cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd)+'</b> · '+cm.txCount+' LP tx'
+            /* Creating a pool is a one-off of a different order to a transaction fee — tens of
+               dollars against fractions of a cent — so it is named rather than folded silently
+               into the total the net is struck against. */
+            +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?' · projected net ≈ <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'
               +fmtUsd(fm.proj-cm.total/fm.elapsedDays*fm.daysInMonth,0)+'</b> by '+mName+' '+fm.daysInMonth
@@ -3588,10 +3592,16 @@ let scnPx={};                 // token key -> price the reader has dragged it to
    named ceiling gets twice its current price instead, so the handle never starts pinned. */
 const SCN_CEIL={LCX:0.40, CPOOL:0.50, ETH:5000, SOL:350};
 const isStakedSol=t=>t.chain==='sol' && /sol$/i.test(t.sym||'') && (t.sym||'').toUpperCase()!=='SOL';
+/* A dollar stablecoin has no price to drag. Pooling against USDT put one in the book, and the
+   generic rule — no named ceiling, so eight times today — would have handed it a slider topping
+   out at $8 and let the reader build a scenario out of a broken peg. Both tests have to pass:
+   the ticker has to say dollar and the market has to agree, so a token that merely happens to
+   trade near a dollar keeps its slider and a depegged one loses its peg treatment. */
+const isPeg=t=>/usd|^dai$/i.test(t.sym||'') && t.usd>0 && Math.abs(t.usd-1)<0.05;
 function scnDrivers(book){
   /* Worth a slider if it is in a pool, or big enough that repricing it changes the answer.
      Staked-SOL derivatives are driven by the SOL slider instead of getting one of their own. */
-  return book.filter(t=>t.usd>0 && !isStakedSol(t) && (t.pooled>0 || (t.value||0)>=400))
+  return book.filter(t=>t.usd>0 && !isStakedSol(t) && !isPeg(t) && (t.pooled>0 || (t.value||0)>=400))
              .sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,6);
 }
 function scnLivePrices(book){ const m={}; for(const t of book) if(t.usd!=null) m[t.key]=t.usd; return m; }
@@ -3854,7 +3864,16 @@ function renderTokens(){
     }
     card.append(legs);
     // ---- the ladder: how many of these you own at other prices
-    if(t.legs.length && t.usd!=null){
+    if(t.legs.length && t.usd!=null && isPeg(t)){
+      /* The arithmetic would run, and it would be correct, and it would be read as a claim that
+         a dollar stablecoin might trade at three dollars. The useful reading of this side of the
+         pool is on the other token's card. */
+      const other=[...new Set(t.legs.map(l=>(l.side===0?(l.p.m1||{}).symbol:(l.p.m0||{}).symbol)).filter(Boolean))];
+      card.append(el('div','flow-omit','Pegged to the dollar, so there is no price ladder to walk here. '
+        +'What moves this balance is the other side of its pool'+(other.length?' — '+other.map(esc).join(', '):'')
+        +': the pool buys '+esc(t.sym)+' as that falls and sells it as that rises. The ladder on '
+        +(other.length===1?'the '+esc(other[0])+' card':'those cards')+' is the same trade read from the side that moves.'));
+    } else if(t.legs.length && t.usd!=null){
       const sc=el('div','cat-scroll');
       const g=el('div','tok-ladder');
       g.style.gridTemplateColumns='minmax(max-content,auto) repeat('+LADDER.length+',minmax(64px,1fr))';
@@ -5384,7 +5403,7 @@ function renderMonths(host){
     : '<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
   const byM={};
   (fm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].fees=x.total; byM[x.m].ilEnd=x.ilEnd; });
-  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0); });
+  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0)+(x.solOpen||0); });
   const rows=Object.keys(byM).sort().map(m=>({m,...byM[m],cur:false}));
   rows.push({m:fm.month, fees:fm.mtd, costs:cm?cm.total:null, ilEnd:fm.ilNow, cur:true});
   const wrap=el('div','flow-block');
@@ -5885,10 +5904,10 @@ function renderCatSplit(host){
      marked unknown rather than treated as zero, because zero is a claim and absence is not. */
   const cprev={}; ((cm&&cm.prev)||[]).forEach(c=>{ if(c&&c.m) cprev[c.m]=c; });
   const cols=[...arch.map(a=>{ const c=cprev[a.m];
-    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)):null, sol:c?(c.solGas||0):null, cur:false}; })];
+    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)):null, sol:c?((c.solGas||0)+(c.solOpen||0)):null, cur:false}; })];
   if(cur&&Object.keys(cur).length)
     cols.push({m:(fm&&fm.month)||'', cat:cur, evm:cm?((cm.gasUsd||0)+(cm.swapFeeUsd||0)):null,
-               sol:cm?(cm.solGasUsd||0):null, cur:true});
+               sol:cm?((cm.solGasUsd||0)+(cm.solOpenUsd||0)):null, cur:true});
   if(!cols.length) return;
   const keys=[...new Set(cols.flatMap(c=>Object.keys(c.cat||{})))].sort();
   const wrap=el('div','flow-block');
@@ -5910,7 +5929,8 @@ function renderCatSplit(host){
   const anyEvm=cols.some(c=>c.evm>0), anySol=cols.some(c=>c.sol>0);
   if(anyEvm){ cell('gas + swap fees, Ethereum','cat-cost');
     cols.forEach(c=>cell(c.evm?'−'+fmtUsd(c.evm,catDp(c.evm)):'—','num cat-cost')); }
-  if(anySol){ cell('tx fees, Solana <span class="unit">◎</span>','cat-cost');
+  const anyOpen=(cm&&(cm.solOpenUsd||0)>0.005)||((cm&&cm.prev)||[]).some(x=>(x.solOpen||0)>0.005);
+  if(anySol){ cell('tx fees'+(anyOpen?' + pool setup':'')+', Solana <span class="unit">◎</span>','cat-cost');
     cols.forEach(c=>cell(c.sol?'−'+fmtUsd(c.sol,2):'—','num cat-cost')); }
   cell('<b>NET</b>','cat-net');
   let costGap=false;
@@ -5923,7 +5943,8 @@ function renderCatSplit(host){
   scroll.append(grid); wrap.append(scroll);
   const notes=[];
   if(cols.some(c=>c.cur)) notes.push('The current month is running and moves with every scan.');
-  if(cm&&cm.solPartial) notes.push('Solana costs cover transaction fees; a swap fee there, if one is ever paid, is not detected.');
+  if(cm&&cm.solPartial) notes.push('Solana costs cover transaction fees and what a new pool or position cost to open, '
+    +'read from the opening transaction itself; a swap fee there is still not detected.');
   notes.push('Costs are recorded per chain, not per position, so they sit on one line rather than being divided between the rows above them.');
   if(costGap) notes.push('A month with no cost record shows no net figure — the gross is known, what it cost is not.');
   wrap.append(el('div','arch-note',notes.join(' ')));
