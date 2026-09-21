@@ -1,16 +1,6 @@
 {
- "t": 1790014830558,
+ "t": 1790017248774,
  "rows": [
-  {
-   "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
-   "symbol": "JupSOL",
-   "decimals": 9,
-   "amount": 116,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Jupiter Staked SOL",
-   "usd": 16495.8
-  },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "symbol": "LCX",
@@ -18,7 +8,7 @@
    "amount": 505000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 14504.19
+   "usd": 14495.83
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -27,16 +17,7 @@
    "amount": 322000,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 9248.22
-  },
-  {
-   "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
-   "symbol": "LCX",
-   "decimals": 18,
-   "amount": 19148.063654348774,
-   "chain": "ethereum",
-   "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 549.95
+   "usd": 9242.88
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -45,7 +26,7 @@
    "amount": 20024.78592219995,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 548.02
+   "usd": 557.76
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -54,7 +35,16 @@
    "amount": 19820.024403132807,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 542.42
+   "usd": 552.06
+  },
+  {
+   "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
+   "symbol": "LCX",
+   "decimals": 18,
+   "amount": 19148.063654348774,
+   "chain": "ethereum",
+   "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
+   "usd": 549.64
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -63,17 +53,7 @@
    "amount": 10000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 287.21
-  },
-  {
-   "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
-   "symbol": "PENGU",
-   "decimals": 6,
-   "amount": 17791.047632,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Pudgy Penguins",
-   "usd": 154.8
+   "usd": 287.05
   },
   {
    "addr": "native",
@@ -83,7 +63,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 123.81
+   "usd": 124.19
   },
   {
    "addr": "native",
@@ -96,33 +76,13 @@
    "usd": 109.98
   },
   {
-   "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
-   "symbol": "CPOOL",
-   "decimals": 9,
-   "amount": 1000,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Clearpool",
-   "usd": 80.37
-  },
-  {
-   "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
-   "symbol": "PENGU",
-   "decimals": 6,
-   "amount": 9159.742999,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Pudgy Penguins",
-   "usd": 79.7
-  },
-  {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
    "symbol": "CPOOL",
    "decimals": 18,
    "amount": 2801.0801619336767,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 76.66
+   "usd": 78.02
   },
   {
    "addr": "native",
@@ -145,32 +105,13 @@
    "usd": 48.44
   },
   {
-   "addr": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-   "symbol": "USDT",
-   "decimals": 6,
-   "amount": 20.725082,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 20.72
-  },
-  {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "symbol": "LCX",
    "decimals": 18,
    "amount": 710.065012086321,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 20.39
-  },
-  {
-   "addr": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
-   "symbol": "ZEC",
-   "decimals": 8,
-   "amount": 0.01,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Zcash",
-   "usd": 14.8
+   "usd": 20.38
   },
   {
    "addr": "native",
@@ -180,67 +121,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 9.03
-  },
-  {
-   "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
-   "symbol": "CPOOL",
-   "decimals": 9,
-   "amount": 100.000000022,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Clearpool",
-   "usd": 8.04
-  },
-  {
-   "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
-   "symbol": "JLP",
-   "decimals": 6,
-   "amount": 1,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Jupiter Perps",
-   "usd": 4.84
-  },
-  {
-   "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
-   "symbol": "JLP",
-   "decimals": 6,
-   "amount": 1,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Jupiter Perps",
-   "usd": 4.84
-  },
-  {
-   "addr": "Cmn4v2wipYV41dkakDvCgFJpxhtaaKt11NyWV8pjSE8A",
-   "symbol": "jlUSDT",
-   "decimals": 6,
-   "amount": 0.982805,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Jupiter Lend USDT",
-   "usd": 1.03
-  },
-  {
-   "addr": "FeKmTunVrXDKEoDJbuTwZi8vfFFw3MHzpPB79JD8ARYU",
-   "symbol": "FIW",
-   "decimals": 6,
-   "amount": 16854.433007,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "777FuckIlluminatiWorldwide",
-   "usd": 0.92
-  },
-  {
-   "addr": "5yaJTKau21oWZcVnE4LxZDwLA7Vdx1FK6CAt8Amgjrc",
-   "symbol": "CREAMPIE",
-   "decimals": 6,
-   "amount": 10000,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Inside-her Trading",
-   "usd": 0.05
+   "usd": 9.05
   },
   {
    "addr": "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -249,25 +130,6 @@
    "amount": 0.01,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 0.01
-  },
-  {
-   "addr": "CcEk8s8HDhvUMdr5EPfetCeLBv1Dh81z589NBrxGQ7Cn",
-   "symbol": "NUDE",
-   "decimals": 9,
-   "amount": 1000,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "NudeHer AI",
-   "usd": 0.01
-  },
-  {
-   "addr": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-   "symbol": "USDC",
-   "decimals": 6,
-   "amount": 0.0122,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "usd": 0.01
   },
   {
@@ -295,35 +157,6 @@
    "amount": 1,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 0
-  },
-  {
-   "addr": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-   "symbol": "USDC",
-   "decimals": 6,
-   "amount": 0.0022,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 0
-  },
-  {
-   "addr": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
-   "symbol": "cbBTC",
-   "decimals": 8,
-   "amount": 2e-8,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Coinbase Wrapped BTC",
-   "usd": 0
-  },
-  {
-   "addr": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
-   "symbol": "WBTC",
-   "decimals": 8,
-   "amount": 1e-8,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Wrapped BTC (Portal)",
    "usd": 0
   },
   {
@@ -406,224 +239,10 @@
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
    "usd": null
-  },
-  {
-   "addr": "RZRyr758BfvKcQTVp1XQoCe9BH2t724XQkLJkiikQ5f",
-   "symbol": "RZR",
-   "decimals": 9,
-   "amount": 2522.317505306,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "RZR token",
-   "usd": null
-  },
-  {
-   "addr": "apySoLhdVa6QbvNyEjXCbET3FdUm9cCdEvYyjCU7icM",
-   "symbol": "apySOL",
-   "decimals": 9,
-   "amount": 0.01,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "apySOL",
-   "usd": null
-  },
-  {
-   "addr": "2wU245PELvg34UZTPZzMWMLh9z6yYmS5NWtZTecVVTV1",
-   "symbol": null,
-   "decimals": 0,
-   "amount": 6,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": null
-  },
-  {
-   "addr": "3yD9LmPa14aWUDwZusws5MioY9whXVJjUyg7EwxZihUU",
-   "symbol": "SCHWAB",
-   "decimals": 2,
-   "amount": 709015711.32,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Schwab Token (Wormhole)",
-   "usd": null
-  },
-  {
-   "addr": "445e6tWwcA8WTbMqoVxMLkbxdgq9re8x4Y3g3zhkhbBc",
-   "symbol": "TEST989",
-   "decimals": 4,
-   "amount": 3500000,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Test token 989 (Wormhole)",
-   "usd": null
-  },
-  {
-   "addr": "4mkNVHv8GvnTL9AhBMgmApTAwUHEMAVkFURmAmgURqBb",
-   "symbol": "DRAGONX",
-   "decimals": 4,
-   "amount": 7644006.1147,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "DragonX 2024 NewYear",
-   "usd": null
-  },
-  {
-   "addr": "5Dq4uDjh1YDanWt4fVDjsZxcsTGNJv4HeLUCE6DJAQ8n",
-   "symbol": "FSOX",
-   "decimals": 2,
-   "amount": 100,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Fox Wif Sox",
-   "usd": null
-  },
-  {
-   "addr": "5GXSUz7mCWHdACpFNs7iUCcSbk4gAGxXTUiCpaMzRda4",
-   "symbol": "GIFT",
-   "decimals": 3,
-   "amount": 16000,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "BXDX.XYZ 🔸CLAIM",
-   "usd": null
-  },
-  {
-   "addr": "75skRPMmz2j9PE6cTokWm7kky8S8pPGbJPr14PnLPGWe",
-   "symbol": null,
-   "decimals": 0,
-   "amount": 5,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": null
-  },
-  {
-   "addr": "7HSpjyQR6mxk7WxycsD7KZCZHtxVuE4upSMyWErR1Eyj",
-   "symbol": null,
-   "decimals": 0,
-   "amount": 4,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": null
-  },
-  {
-   "addr": "9gAnqUPPt1cQW8j86fBQLdcoidEuhurKL6Q9YhX5bA31",
-   "symbol": "CLTBANG",
-   "decimals": 2,
-   "amount": 100,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Cillit Bang",
-   "usd": null
-  },
-  {
-   "addr": "AaXWsF4eUfwHJsMdMyMtV61ud4UuezUyUKFvxV32eurv",
-   "symbol": "CWC",
-   "decimals": 3,
-   "amount": 100,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Cat wif Cap",
-   "usd": null
-  },
-  {
-   "addr": "BnamFecufoS7ue8EDDHeNaJSMc1PsEBpjswNetcXij9e",
-   "symbol": "ㅤ",
-   "decimals": 6,
-   "amount": 670703.629403,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Pudgy Penguins",
-   "usd": null
-  },
-  {
-   "addr": "D6ZPU3hSzJWi5Sgd13YoPgBtT5USGH96k2K24k3DLi5i",
-   "symbol": null,
-   "decimals": 9,
-   "amount": 2e-9,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": null
-  },
-  {
-   "addr": "DHcd33qt3BecX1B1igfRbKbf67F6XJSpXjPvKer2wAeC",
-   "symbol": "FRG",
-   "decimals": 0,
-   "amount": 1,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Frogana #3033",
-   "usd": null
-  },
-  {
-   "addr": "J8Rd5GoyCr2zj1xy4SnogJsdx4ensKPzFy5nmrgwEa5o",
-   "symbol": "MWT",
-   "decimals": 2,
-   "amount": 100,
-   "chain": "sol",
-   "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "name": "Mice Wif Ties",
-   "usd": null
-  },
-  {
-   "addr": "35C8yTPmiiLhx3B7HjJjXKKnAMkAFYKXrCEgSvXmxMqr",
-   "symbol": "JitoSOL",
-   "decimals": 6,
-   "amount": 88.211154,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": " Jito Stakde SOL",
-   "usd": null
-  },
-  {
-   "addr": "95zkX1riMRBUWKcctUgton5t8G1mvgsp3UFU7X1YkxfG",
-   "symbol": "Orbix",
-   "decimals": 9,
-   "amount": 100,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Orbix",
-   "usd": null
-  },
-  {
-   "addr": "ADpPRLazHxnzjw5mbcRwFBPyJqPNbhRWsiAHszE7wxJ4",
-   "symbol": null,
-   "decimals": 0,
-   "amount": 1,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": null
-  },
-  {
-   "addr": "DY9pUK6GuuQXNPcRHgCgZHph4iXFdUgsPty5H3vByz3x",
-   "symbol": "ETF",
-   "decimals": 9,
-   "amount": 255.89,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "ETF",
-   "usd": null
-  },
-  {
-   "addr": "EN3Ma8HeYKsvtrq6xTwRpdnM9nscwcSp7WiuXKa1aqcb",
-   "symbol": null,
-   "decimals": 0,
-   "amount": 1,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": null
-  },
-  {
-   "addr": "HKgFY3Abd1GR1keLypcoFp2H4yX5fNcCZsjpgWLzHGg3",
-   "symbol": "MCㅤ",
-   "decimals": 6,
-   "amount": 205294.024999,
-   "chain": "sol",
-   "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "name": "Zcash",
-   "usd": null
   }
  ],
- "totalUsd": 43004.47,
- "unpriced": 31,
+ "totalUsd": 26145.5,
+ "unpriced": 9,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
    "supply": "4264835.918129585",
