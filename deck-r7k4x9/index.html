@@ -1112,7 +1112,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3634,89 +3634,117 @@ function scnCompute(book, px){
   return {lpNow, lpNew, idNow, idNew, pos,
           now:lpNow+idNow, next:lpNew+idNew, holdNow, holdNew};
 }
+let scnDragging=false, scnRaf=0, scnRepaint=null;
 function renderScenario(host, book, nameOf){
   const drv=scnDrivers(book);
-  if(!drv.length) return;
+  if(!drv.length){ scnRepaint=null; return; }
   const wrap=el('div','scn');
   const head=el('div','scn-head');
   head.innerHTML='<span class="scn-t">PRICE SCENARIO</span>'
     +'<span class="scn-sub">drag a price — every position re-solves on its own curve, and a range the '
     +'scenario leaves converts and stops earning</span>';
   wrap.append(head);
-  const px=scnPrices(book), live=scnLivePrices(book);
-  const rowsBox=el('div','scn-rows');
+  const live=scnLivePrices(book);
+  const rowsBox=el('div','scn-rows'), ctl=[];
   for(const t of drv){
     const named=SCN_CEIL[(t.sym||'').toUpperCase()];
     const ceil=named ? (live[t.key]<named ? named : live[t.key]*2) : live[t.key]*8;
-    const cur=px[t.key], mult=live[t.key]>0?cur/live[t.key]:1;
-    const r=el('div','scn-row');
     const nm=nameOf ? nameOf(t) : {chain:t.chain==='sol'?'Solana':'Ethereum', badge:''};
+    const r=el('div','scn-row');
     const lab=el('div','scn-lab'); lab.innerHTML='<b>'+esc(t.sym)+'</b> <span class="dim">'
       +esc(nm.chain)+'</span>'+(nm.badge?' <b class="tok-badge">'+esc(nm.badge)+'</b>':'');
     const sl=el('input'); sl.type='range'; sl.min='0'; sl.max='1000'; sl.step='1';
-    sl.value=String(Math.round(Math.min(1,cur/ceil)*1000));
     sl.className='scn-sl'; sl.setAttribute('aria-label',(t.sym||'')+' price');
+    sl.value=String(Math.round(Math.min(1,(scnPx[t.key]??live[t.key])/ceil)*1000));
     const val=el('div','scn-val');
-    val.innerHTML=fmtPrice(cur)+' <span class="dim">'+(Math.abs(mult-1)<0.005?'live':(mult>=1?'×':'÷')+(mult>=1?mult:1/mult).toFixed(2))+'</span>';
-    sl.addEventListener('input',()=>{ scnPx[t.key]=Number(sl.value)/1000*ceil; renderTokens(); });
+    /* The handler must not rebuild the control it is attached to. The first cut called
+       renderTokens() on every input event, which replaced the slider mid-drag — the browser
+       loses the element it was tracking, so the drag dies and has to be restarted, and at
+       pointer rate it was rebuilding eight cards and their ladders sixty times a second. Now
+       the sliders are built once and only the figures they drive are repainted, at most once
+       per frame. */
+    sl.addEventListener('input',()=>{
+      scnPx[t.key]=Number(sl.value)/1000*ceil;
+      if(!scnRaf) scnRaf=requestAnimationFrame(()=>{ scnRaf=0; if(scnRepaint) scnRepaint(); });
+    });
+    /* The release is listened for on the window, and on cancel and blur too: a pointerup that
+       lands outside the control — or a gesture the browser takes over — would otherwise leave
+       the flag set and block every later refresh of this panel. */
+    const down=()=>{scnDragging=true;}, up=()=>{scnDragging=false;};
+    sl.addEventListener('pointerdown',down); sl.addEventListener('touchstart',down,{passive:true});
+    for(const ev of ['pointerup','pointercancel','touchend','touchcancel','blur'])
+      window.addEventListener(ev,up,{passive:true});
+    ctl.push({t,sl,val,ceil});
     r.append(lab,sl,val);
     rowsBox.append(r);
   }
   wrap.append(rowsBox);
-  const touched=Object.keys(scnPx).length>0;
   const acts=el('div','scn-acts');
-  const rb=el('button','tile-why', touched?'back to live prices':'sliders start at today’s prices');
-  rb.type='button'; rb.disabled=!touched;
-  rb.addEventListener('click',()=>{ scnPx={}; renderTokens(); });
+  const rb=el('button','tile-why','');
+  rb.type='button';
+  rb.addEventListener('click',()=>{ scnPx={};
+    for(const c of ctl) c.sl.value=String(Math.round(Math.min(1,live[c.t.key]/c.ceil)*1000));
+    if(scnRepaint) scnRepaint(); });
   acts.append(rb);
   wrap.append(acts);
+  const outBox=el('div','scn-out'), noteBox=el('div'), posBox=el('div','scn-pos');
+  wrap.append(outBox,noteBox,posBox);
 
-  // ---- the answer
-  const c=scnCompute(book,px);
-  const d=c.next-c.now, dp=c.now>0?d/c.now*100:0;
-  const out=el('div','scn-out');
-  const line=(k,a,b2,strong)=>{
-    const dd=b2-a;
-    out.append(el('div',strong?'b':null,k),
-      el('div','num dim',fmtUsd(a,0)),
-      el('div','num',(strong?'<b>':'')+fmtUsd(b2,0)+(strong?'</b>':'')),
-      el('div','num '+(Math.abs(dd)<0.5?'dim':(dd>0?'tok-up':'tok-dn')),
-         (Math.abs(dd)<0.5?'—':(dd>0?'+':'−')+fmtUsd(Math.abs(dd),0))));
+  scnRepaint=function(){
+    const px=scnPrices(book), c=scnCompute(book,px);
+    const touched=Object.keys(scnPx).some(k=>live[k]==null||Math.abs(scnPx[k]-live[k])>live[k]*1e-6);
+    for(const cc of ctl){
+      const cur=px[cc.t.key], m=live[cc.t.key]>0?cur/live[cc.t.key]:1;
+      cc.val.innerHTML=fmtPrice(cur)+' <span class="dim">'
+        +(Math.abs(m-1)<0.005?'live':(m>=1?'×'+m.toFixed(2):'÷'+(1/m).toFixed(2)))+'</span>';
+    }
+    rb.textContent = touched ? 'back to live prices' : 'sliders start at today’s prices';
+    rb.disabled = !touched;
+    outBox.innerHTML='';
+    const line=(k,a,b2,strong)=>{
+      const dd=b2-a;
+      outBox.append(el('div',strong?'b':null,k),
+        el('div','num dim',fmtUsd(a,0)),
+        el('div','num',(strong?'<b>':'')+fmtUsd(b2,0)+(strong?'</b>':'')),
+        el('div','num '+(Math.abs(dd)<0.5?'dim':(dd>0?'tok-up':'tok-dn')),
+           (Math.abs(dd)<0.5?'—':(dd>0?'+':'−')+fmtUsd(Math.abs(dd),0))));
+    };
+    outBox.append(el('div','h',''),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h num','CHANGE'));
+    line('in LPs', c.lpNow, c.lpNew);
+    line('idle in wallets', c.idNow, c.idNew);
+    line('TOTAL', c.now, c.next, true);
+    noteBox.innerHTML='';
+    if(touched){
+      const drag=c.holdNew-c.next;
+      noteBox.append(el('div','flow-omit','Holding the same tokens untouched would be '+fmtUsd(c.holdNew,0)+' — '
+        +(Math.abs(drag)<1 ? 'the same, at these prices.'
+          : drag>0 ? fmtUsd(drag,0)+' more than the pools deliver, because a position sells whatever is rising.'
+                   : fmtUsd(-drag,0)+' less, because the pools bought into what fell.')));
+      const outs=c.pos.filter(x=>x.state!=='in');
+      if(outs.length) noteBox.append(el('div','scn-warn','At these prices '+outs.length+' position'+(outs.length>1?'s':'')
+        +' would be out of range and earning nothing: '
+        +outs.map(x=>esc(pairShort(x.p))+' '+esc(posRef(x.p))).join(', ')+'.'));
+    }
+    posBox.innerHTML='';
+    posBox.append(el('div','h','POSITION'),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h','AT THESE PRICES'));
+    for(const x of c.pos.slice().sort((a,b)=>b.vNew-a.vNew)){
+      posBox.append(el('div',null,'<span class="dot" style="background:'+seriesColor(cIdx(x.p))+'"></span>'
+        +esc(pairShort(x.p))+' <span class="unit">'+esc(posRef(x.p))+'</span>'));
+      posBox.append(el('div','num dim',fmtUsd(x.vNow,0)));
+      posBox.append(el('div','num',fmtUsd(x.vNew,0)));
+      posBox.append(el('div','dim scn-st', x.state==='in'
+        ? 'in range · '+fmtTok(x.a0)+' '+esc((x.p.m0||{}).symbol||'')+' + '+fmtTok(x.a1)+' '+esc((x.p.m1||{}).symbol||'')
+        : (x.state==='low' ? 'out — all '+esc((x.p.m0||{}).symbol||'') : 'out — all '+esc((x.p.m1||{}).symbol||''))));
+    }
   };
-  out.append(el('div','h',''),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h num','CHANGE'));
-  line('in LPs', c.lpNow, c.lpNew);
-  line('idle in wallets', c.idNow, c.idNew);
-  line('TOTAL', c.now, c.next, true);
-  wrap.append(out);
-  if(touched){
-    const drag=c.holdNew-c.next;
-    wrap.append(el('div','flow-omit','Holding the same tokens untouched would be '+fmtUsd(c.holdNew,0)+' — '
-      +(Math.abs(drag)<1 ? 'the same, at these prices.'
-        : drag>0 ? fmtUsd(drag,0)+' more than the pools deliver, because a position sells whatever is rising.'
-                 : fmtUsd(-drag,0)+' less, because the pools bought into what fell.')));
-    const outs=c.pos.filter(x=>x.state!=='in');
-    if(outs.length) wrap.append(el('div','scn-warn','At these prices '+outs.length+' position'+(outs.length>1?'s':'')
-      +' would be out of range and earning nothing: '
-      +outs.map(x=>esc(pairShort(x.p))+' '+esc(posRef(x.p))).join(', ')+'.'));
-  }
-  // ---- what each position does
-  const pg=el('div','scn-pos');
-  pg.append(el('div','h','POSITION'),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h','AT THESE PRICES'));
-  for(const x of c.pos.sort((a,b)=>b.vNew-a.vNew)){
-    pg.append(el('div',null,'<span class="dot" style="background:'+seriesColor(cIdx(x.p))+'"></span>'
-      +esc(pairShort(x.p))+' <span class="unit">'+esc(posRef(x.p))+'</span>'));
-    pg.append(el('div','num dim',fmtUsd(x.vNow,0)));
-    pg.append(el('div','num',fmtUsd(x.vNew,0)));
-    pg.append(el('div','dim scn-st', x.state==='in'
-      ? 'in range · '+fmtTok(x.a0)+' '+esc((x.p.m0||{}).symbol||'')+' + '+fmtTok(x.a1)+' '+esc((x.p.m1||{}).symbol||'')
-      : (x.state==='low' ? 'out — all '+esc((x.p.m0||{}).symbol||'') : 'out — all '+esc((x.p.m1||{}).symbol||''))));
-  }
-  wrap.append(pg);
+  scnRepaint();
   host.append(wrap);
 }
 
 function renderTokens(){
   const host=$('#tokenBody'); if(!host) return;
+  // a 15-minute refresh landing mid-drag would replace the slider and kill the gesture
+  if(scnDragging) return;
   host.innerHTML='';
   const book=buildTokenBook();
   if(!book.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No holdings to show yet — this builds from the relay’s wallet read and your open positions.</div>'; return; }
