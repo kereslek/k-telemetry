@@ -176,7 +176,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -1105,6 +1105,163 @@ async function solOpenSpend(sig, owner){
   return Math.round(spent);
 }
 
+/* ---------- Solana swap fees, read from the pools the swap actually went through ----------
+
+   "Solana costs cover transaction fees; a swap fee there, if one is ever paid, is not detected"
+   has been on the page since the cost ledger was written, and it was never true that none were
+   paid. Every rebalance on Solana pays the pool it routes through, the same as on Ethereum,
+   where the fee has been counted from the start. September's costs were understated by whatever
+   those swaps came to, and nothing on the page could say by how much.
+
+   Nothing here parses an instruction. Two facts already in the transaction are enough:
+
+   Which accounts are pools — read them and keep the ones the CLMM or Whirlpool program owns.
+   An address that a swap program owns is a pool whoever built the route and whatever they
+   called the instruction, so Jupiter, a direct swap and an aggregator nobody has heard of all
+   come out the same.
+
+   Which of those pools were swapped through — a swap moves one vault up and the other down.
+   A deposit raises both (or one, single-sided), a withdrawal and a harvest lower them. Only
+   the one-up-one-down shape is a trade, which is what keeps a deposit from being billed as a
+   swap, and a zap that does both in one transaction fails the test and is reported as
+   unattributed rather than guessed at.
+
+   The fee is then the rate on what went in, and the rate comes from the pool: Orca stores it in
+   the account, Raydium publishes it per pool id. A hop through a venue neither covers is
+   counted and named, so the total says how much of itself it is sure of. */
+const CPMM='CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
+function txAccountKeys(tx){
+  const msg=(tx.transaction||{}).message||{};
+  const keys=(msg.accountKeys||[]).map(k=>typeof k==='string'?k:(k&&k.pubkey));
+  /* Versioned transactions keep most of their accounts in lookup tables. Some nodes fold them
+     into accountKeys and some hand them back separately; the token-balance indexes run past the
+     end of the list when they were not folded in, which is the test. */
+  const la=(tx.meta||{}).loadedAddresses||{};
+  const need=Math.max(0,...[...(tx.meta.preTokenBalances||[]),...(tx.meta.postTokenBalances||[])]
+    .map(x=>x.accountIndex+1));
+  if(keys.length<need) keys.push(...(la.writable||[]),...(la.readonly||[]));
+  return keys;
+}
+/* token-account balance change per account index, in raw units */
+function tokenDeltas(tx){
+  const pre=tx.meta.preTokenBalances||[], post=tx.meta.postTokenBalances||[];
+  const raw=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i);
+    return e&&e.uiTokenAmount?BigInt(e.uiTokenAmount.amount||'0'):0n; };
+  const out=new Map();
+  for(const r of [...pre,...post]){
+    if(out.has(r.accountIndex)) continue;
+    out.set(r.accountIndex,{mint:r.mint, owner:r.owner, dec:r.uiTokenAmount?r.uiTokenAmount.decimals:0,
+                            delta:raw(post,r.accountIndex)-raw(pre,r.accountIndex)});
+  }
+  return out;
+}
+/* Pools this run has already identified, so a route taken twice is read once. Persisted
+   through blockCache: what program owns an address does not change. */
+async function solPoolsIn(keys, cache){
+  const unknown=keys.filter(k=>k&&cache[k]===undefined);
+  for(let i=0;i<unknown.length;i+=100){
+    const slice=unknown.slice(i,i+100);
+    let res=null;
+    try{ res=await sol('getMultipleAccounts',[slice,{encoding:'base64'}]); }
+    catch(e){ return null; }               // could not look: attribute nothing rather than guess
+    (res.value||[]).forEach((a,j)=>{
+      const k=slice[j];
+      if(!a){ cache[k]=null; return; }
+      if(a.owner===CLMM){ const b=b64(a.data[0]);
+        cache[k]={venue:'raydium', vaultA:pk(b,137), vaultB:pk(b,169), rate:null}; }
+      else if(a.owner===ORCA){ const b=b64(a.data[0]);
+        // feeRate sits beside the liquidity offset this file already validates, in millionths
+        cache[k]={venue:'orca', vaultA:pk(b,133), vaultB:pk(b,213), rate:leU16(b,45)/1e6}; }
+      else if(a.owner===CPMM){ cache[k]={venue:'cpmm', vaultA:null, vaultB:null, rate:null}; }
+      else cache[k]=null;
+    });
+    await sleep(60);
+  }
+  const seen=new Set(), pools=[];
+  for(const k of keys){
+    const v=cache[k];
+    if(!v||seen.has(k)) continue;
+    seen.add(k); pools.push({...v, addr:k});
+  }
+  return pools;
+}
+/* What a wallet's transactions cost, for transactions no position account ever sees.
+
+   Returns per signature: the lamports it paid, the swap fee it paid the pools it routed
+   through, and whether any leg of it could not be attributed. */
+async function solWalletCosts(wallet, sinceSig, poolCache, priceOf, monthStartSec){
+  const out={newest:null, txs:{}, scanned:0, unattributed:0, err:null};
+  let sigs=null;
+  try{ sigs=await sol('getSignaturesForAddress',[wallet,{limit:100,...(sinceSig?{until:sinceSig}:{})}]); }
+  catch(e){ out.err=String((e&&e.message)||e).slice(0,60); return out; }
+  if(!Array.isArray(sigs)||!sigs.length) return out;
+  out.newest=sigs[0].signature;
+  /* With no checkpoint this is the first sight of the wallet. Walking its whole history would
+     bill months that are closed, so the reach is this month and a bounded number of
+     transactions; after that the checkpoint makes every run incremental. */
+  let work=sigs.filter(x=>!x.err);
+  work = sinceSig ? work.slice(0,14)
+                  : work.filter(x=>x.blockTime && x.blockTime>=monthStartSec).slice(0,40);
+  for(const s of work){
+    let tx=null;
+    try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); }
+    catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
+    if(!tx||!tx.meta||tx.meta.err) continue;
+    out.scanned++;
+    const rec={lamports:Number(tx.meta.fee||0), swapUsd:0};
+    try{
+      const keys=txAccountKeys(tx);
+      const deltas=tokenDeltas(tx);
+      // did the wallet end up holding less of one thing and more of another?
+      const net={};
+      for(const [,d] of deltas) if(d.owner===wallet) net[d.mint]=(net[d.mint]||0n)+d.delta;
+      const lost=Object.keys(net).filter(m=>net[m]<0n), gained=Object.keys(net).filter(m=>net[m]>0n);
+      const swapLike=lost.length>0 && gained.length>0 && lost.some(m=>!gained.includes(m));
+      const pools=await solPoolsIn(keys, poolCache);
+      if(pools===null){ if(swapLike) out.unattributed++; out.txs[s.signature]=rec; await sleep(60); continue; }
+      const byAddr=new Map(keys.map((k,i)=>[k,i]));
+      let attributed=0;
+      for(const p of pools){
+        if(!p.vaultA||!p.vaultB) continue;                       // venue we cannot read
+        const ia=byAddr.get(p.vaultA), ib=byAddr.get(p.vaultB);
+        if(ia==null||ib==null) continue;
+        const da=deltas.get(ia), db=deltas.get(ib);
+        if(!da||!db) continue;
+        // one vault up and the other down is a trade; anything else is a deposit, a
+        // withdrawal or a harvest, and billing those as swaps is exactly the mistake
+        const inSide = (da.delta>0n && db.delta<0n) ? da : ((db.delta>0n && da.delta<0n) ? db : null);
+        if(!inSide) continue;
+        let rate=p.rate;
+        if(rate==null) rate=await rayFeeRate(p.addr);
+        if(rate==null) continue;
+        const px=await priceOf(inSide.mint);
+        if(px==null) continue;
+        const amt=Number(inSide.delta)/Math.pow(10,inSide.dec);
+        rec.swapUsd+=amt*px*rate;
+        attributed++;
+      }
+      if(swapLike && !attributed) out.unattributed++;
+    }catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); }
+    rec.swapUsd=Math.round(rec.swapUsd*1e6)/1e6;
+    out.txs[s.signature]=rec;
+    await sleep(70);
+  }
+  return out;
+}
+/* Raydium publishes the trade fee per pool id. The rate does not move, so a miss is cached as
+   a miss and the endpoint is asked once per pool per run at most. */
+const RAY_RATE={};
+async function rayFeeRate(poolId){
+  if(RAY_RATE[poolId]!==undefined) return RAY_RATE[poolId];
+  RAY_RATE[poolId]=null;
+  try{
+    const js=await getJson('https://api-v3.raydium.io/pools/info/ids?ids='+poolId, 15000);
+    const arr=Array.isArray(js&&js.data)?js.data:[];
+    const hit=arr.find(d=>d&&d.id===poolId);
+    if(hit&&hit.feeRate!=null) RAY_RATE[poolId]=Number(hit.feeRate);
+  }catch(e){}
+  return RAY_RATE[poolId];
+}
 async function solCollectedSince(pos, sinceSig, costSink, ceil){
   const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0, clamped:0};
   const addr=pos.pda||pos.nftMint, owner=pos.wallet;
@@ -2056,9 +2213,13 @@ const main=async()=>{
       if(cl.month!==monthKey){
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
                      solGas:Math.round((cl.solGasUsd||0)*100)/100,
-                     solOpen:Math.round((cl.solOpenUsd||0)*100)/100}].slice(-12);
-        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0;
-        cl.txs={}; cl.solTxs={}; cl.solOpenPend={};
+                     solOpen:Math.round((cl.solOpenUsd||0)*100)/100,
+                     solSwap:Math.round((cl.solSwapUsd||0)*100)/100}].slice(-12);
+        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0; cl.solSwapUsd=0;
+        cl.txs={}; cl.solTxs={}; cl.solOpenPend={}; cl.solWalletTx={};
+        /* cl.solScan is deliberately NOT cleared. It is how far the wallet history has been
+           walked, not a figure for the month; resetting it at a month boundary would send the
+           next run back through everything it has already accounted for. */
         cl.solPartial=false;
       }
       /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
@@ -2096,7 +2257,63 @@ const main=async()=>{
           cl.solGasUsd=(cl.solGasUsd||0)+(solTxFees[sig]/1e9)*solUsd;
         }
       }
-      cl.solPartial=true;   // swap fees on Solana are not detected
+      /* ---- wallet transactions: swap fees, and the transaction fees of everything that never
+             touches a position account ---- */
+      let solUnattributed=0, solWalletScanned=0;
+      try{
+        cl.solScan=cl.solScan||{};                 // wallet -> newest signature already accounted
+        cl.solWalletTx=cl.solWalletTx||{};         // signature -> {lamports, swapUsd}, this month
+        const poolCache=Object.assign({}, blockCache.solPools||{});
+        const pxMemo={};
+        const priceOf=async m=>{
+          if(pxMemo[m]!==undefined) return pxMemo[m];
+          pxMemo[m]=null;
+          /* The position side already priced every mint it holds; anything else is a token this
+             portfolio swapped through and has to be asked about once. */
+          for(const sp of solPositions){
+            if(sp.mint0===m && sp.usd0!=null){ pxMemo[m]=sp.usd0; return pxMemo[m]; }
+            if(sp.mint1===m && sp.usd1!=null){ pxMemo[m]=sp.usd1; return pxMemo[m]; }
+          }
+          try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+m, 12000);
+               if(js && js[m] && js[m].usdPrice!=null) pxMemo[m]=Number(js[m].usdPrice); }catch(e){}
+          return pxMemo[m];
+        };
+        const monthStartSec=Math.floor(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),1)/1000);
+        for(const w of (profile.wallets||[]).filter(x=>x.chain==='solana')){
+          const r=await solWalletCosts(w.address, cl.solScan[w.address]||null, poolCache, priceOf, monthStartSec);
+          if(r.err) logErr('solWalletCost '+w.address.slice(0,6), new Error(r.err));
+          solWalletScanned+=r.scanned; solUnattributed+=r.unattributed;
+          for(const sig in r.txs) if(!cl.solWalletTx[sig]) cl.solWalletTx[sig]=r.txs[sig];
+          if(r.newest) cl.solScan[w.address]=r.newest;
+        }
+        /* Only the pools are worth keeping. Every other account a swap touches — token accounts,
+           programs, sysvars — is cached as "not a pool" for the run and then dropped, because
+           storing them would grow this file without end to save a call that is made anyway. */
+        blockCache.solPools=Object.fromEntries(Object.entries(poolCache).filter(([,v])=>v));
+      }catch(e){ logErr('solWalletCosts',e); }
+      /* A swap fee that could not be traced to a pool is the only thing still missing, so the
+         claim is made per run instead of standing as a permanent disclaimer. */
+      /* Swap fees are already in dollars — they were priced against the pool the swap went
+         through, at the time it was read. Only the lamports need a SOL price, so both wait on
+         one and the entry is kept until it can be banked. */
+      cl.solSwapUsd=cl.solSwapUsd||0;
+      if(solUsd!=null){
+        for(const sig in cl.solWalletTx){
+          const t=cl.solWalletTx[sig];
+          delete cl.solWalletTx[sig];
+          if(cl.solTxs[sig]) continue;
+          cl.solTxs[sig]=1;
+          cl.solGasUsd+=((t.lamports||0)/1e9)*solUsd;
+          cl.solSwapUsd+=t.swapUsd||0;
+        }
+      }
+      /* A swap fee that could not be traced to a pool is the only thing still missing, so the
+         claim is made per run instead of standing as a permanent disclaimer. */
+      cl.solPartial=solUnattributed>0;
+      cl.solUnattributed=solUnattributed;
+      if(solWalletScanned) console.log('sol wallet txs scanned:',solWalletScanned,
+        '· swap fees $'+(Math.round((cl.solSwapUsd||0)*100)/100),
+        solUnattributed?('· '+solUnattributed+' swap(s) not attributable to a readable pool'):'· all attributed');
       const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
       const SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822';
       const TRANSFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
@@ -2185,9 +2402,11 @@ const main=async()=>{
          costs column subtract. txCount stays EVM-only, and the per-operation average is computed
          from the EVM figures rather than from total, so the two do not get mixed. */
       cl.solOpenUsd=Math.round((cl.solOpenUsd||0)*100)/100;
+      cl.solSwapUsd=Math.round((cl.solSwapUsd||0)*100)/100;
       costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
-        solGasUsd:cl.solGasUsd||0, solOpenUsd:cl.solOpenUsd||0, solPartial:!!cl.solPartial,
-        total:Math.round((cl.gasUsd+cl.swapFeeUsd+(cl.solGasUsd||0)+(cl.solOpenUsd||0))*100)/100,
+        solGasUsd:cl.solGasUsd||0, solOpenUsd:cl.solOpenUsd||0, solSwapUsd:cl.solSwapUsd||0,
+        solPartial:!!cl.solPartial, solUnattributed:cl.solUnattributed||0,
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd+(cl.solGasUsd||0)+(cl.solOpenUsd||0)+(cl.solSwapUsd||0))*100)/100,
         txCount:counted, prev:cl.months||[]};
       fs.writeFileSync(OUT+'/costs-'+profile.slug+'.json', JSON.stringify(cl,null,1));
     }catch(e){ logErr('costMonth',e); }
