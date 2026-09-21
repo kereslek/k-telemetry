@@ -1112,7 +1112,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2377,6 +2377,53 @@ function rangeFracLog(p){
   const f=Math.log(p.price/p.priceLower)/Math.log(p.priceUpper/p.priceLower);
   return Math.min(Math.max(f,0),1);
 }
+/* ---- a range order is not a position drifting out of range ----
+
+   A one-sided range order is opened at the edge of a very wide band on purpose: it holds one
+   token and converts it to the other as price crosses the band, which is a limit order built
+   out of liquidity. Read as an ordinary LP it looks like a disaster — the CPOOL/USDT ladder
+   sits 3% into its range in log terms and reads EDGE CRITICAL, with the panel advising a widen.
+   That advice is wrong for it. Widening a ladder defeats the ladder; falling back through the
+   near edge is the order resting unfilled, not a position that needs rescuing.
+
+   Two tests, both measured, neither about intent: nearly all of one token, in a band wide
+   enough that it cannot be a range anyone chose to earn fees in the middle of. A position that
+   merely drifted to one side of a tight band fails the second and keeps its ordinary alarms. */
+const LADDER_SKEW=0.90, LADDER_WIDTH=10;
+function ladderOf(p){
+  if(!(p.priceLower>0&&p.priceUpper>p.priceLower&&p.price>0)) return null;
+  if(p.priceUpper/p.priceLower < LADDER_WIDTH) return null;
+  const v0=(p.amt0||0)*(p.usd0||0), v1=(p.amt1||0)*(p.usd1||0), tot=v0+v1;
+  if(!(tot>0)) return null;
+  const side = v0/tot>=LADDER_SKEW ? 0 : (v1/tot>=LADDER_SKEW ? 1 : null);
+  if(side===null) return null;
+  /* Token0 is sold as the pool price rises, token1 as it falls, so the heavy side says which
+     way the ladder fills and therefore which bound completes it. */
+  const sqrt=Math.sqrt, Pa=p.priceLower, Pb=p.priceUpper, P=Math.min(Pb,Math.max(Pa,p.price));
+  const L=p.liq?Number(p.liq):null;
+  let sold=null;
+  if(L>0){
+    const d0=Math.pow(10,p.d0??18), d1=Math.pow(10,p.d1??18);
+    if(side===0){ const max=L*(1/sqrt(Pa)-1/sqrt(Pb))/d0, now=L*(1/sqrt(P)-1/sqrt(Pb))/d0;
+                  if(max>0) sold=1-now/max; }
+    else        { const max=L*(sqrt(Pb)-sqrt(Pa))/d1, now=L*(sqrt(P)-sqrt(Pa))/d1;
+                  if(max>0) sold=1-now/max; }
+  }
+  return {
+    side,
+    sellSym: side===0?(p.m0||{}).symbol:(p.m1||{}).symbol,
+    getSym:  side===0?(p.m1||{}).symbol:(p.m0||{}).symbol,
+    sellAmt: side===0?(p.amt0||0):(p.amt1||0),
+    gotAmt:  side===0?(p.amt1||0):(p.amt0||0),
+    filled:  sold!=null?Math.min(1,Math.max(0,sold)):null,
+    // what the rest of the climb averages, in the units the range is quoted in
+    avgLeft: side===0 ? sqrt(P*Pb) : 1/sqrt(P*Pa),
+    donePx:  side===0?Pb:Pa,
+    restPx:  side===0?Pa:Pb,
+    // how far price must move the wrong way before it stops filling
+    restMovePct: side===0 ? (Pa/p.price-1)*100 : (Pb/p.price-1)*100,
+  };
+}
 function severityOf(p){
   if(!p.inRange) return 'critical';
   // distance to nearest edge as % of RANGE WIDTH, in log space (adapts to tight & wide alike)
@@ -2395,6 +2442,16 @@ const SEV_ICON = {good:'✓', warning:'▲', serious:'◆', critical:'✕'};
 function evaluateAlerts(){
   for(const p of state.positions.values()){
     const sev = severityOf(p);
+    /* A ladder sitting at its near bound would otherwise fire CRITICAL on every load and, once
+       it fills through, OUT OF RANGE — both describing the order working as designed. It is
+       announced once, when it actually stops filling. */
+    const lad = ladderOf(p);
+    if(lad && p.inRange){
+      if(state.alertsSeen[p.id]!=='ladder'){ state.alertsSeen[p.id]='ladder';
+        log('info', p.pairLabel+' '+posRef(p)+' is a range order'
+          +(lad.filled!=null?' — '+fmtPct(lad.filled*100,lad.filled<0.01?2:0)+' filled':'')+'.'); }
+      continue;
+    }
     const prev = state.alertsSeen[p.id];
     if(prev !== sev){
       state.alertsSeen[p.id] = sev;
@@ -2712,6 +2769,7 @@ function renderTiles(){
             /* Creating a pool is a one-off of a different order to a transaction fee — tens of
                dollars against fractions of a cent — so it is named rather than folded silently
                into the total the net is struck against. */
+            +((cm.solSwapUsd||0)>0.005?' · Solana swap fees <b>'+fmtUsd(cm.solSwapUsd)+'</b> <span class="unit">◎</span>':'')
             +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             /* Gas and swap fees recur, so a rate times the month is the right shape for them.
@@ -4109,7 +4167,7 @@ function renderActions(){
   const WATCH_MIN=6;
   const ranked=ps.map(p=>{
     const e=edgeMove(p), sev=severityOf(p), bd=bufferDays(p), sole=isSoleLp(p);
-    return {p, sev, bd, sole, move:(e?e.pct:(p.inRange?Infinity:0))};
+    return {p, sev, bd, sole, lad:ladderOf(p), move:(e?e.pct:(p.inRange?Infinity:0))};
   }).sort((a,b)=>a.move-b.move);
   let watchShown=0;
   for(const x of ranked){
@@ -4121,6 +4179,27 @@ function renderActions(){
     // a 2% drift on $400, and the panel used to present them as equals.
     const sizeTag = p.valueUsd!=null ? ' <span class="act-size">· '+fmtK(p.valueUsd)+'</span>' : '';
     const ref=esc(pairName(p))+' '+linkRef(p)+sizeTag+ageTag;
+    /* A ladder is read on its own terms before the range alarms get to it: what it has sold,
+       what it is still holding, and what the rest of the fill averages. The only thing worth
+       flagging is the near bound, and the honest description of crossing it is that the order
+       stops filling — not that a position needs rescuing. */
+    if(x.lad){
+      const L=x.lad, near=Math.abs(L.restMovePct);
+      const filled=L.filled!=null?(L.filled*100):null;
+      const crit=near<=10;
+      items.push({r:crit?2.5:6.5, cls:crit?'warn':'watch', tag:'RANGE ORDER',
+        head:ref+' — '+(filled!=null?'<b>'+filled.toFixed(filled<1?2:0)+'% filled</b>':'<b>a one-sided ladder</b>'),
+        sub:'Selling '+esc(String(L.sellSym||'?'))+' for '+esc(String(L.getSym||'?'))+' as the price climbs; '
+          +fmtTok(L.sellAmt)+' '+esc(String(L.sellSym||''))+' still to go, '+fmtTok(L.gotAmt)+' '
+          +esc(String(L.getSym||''))+' taken so far. A full fill from here averages <b>'+fmtPrice(L.avgLeft)+' '
+          +esc(String(L.getSym||''))+'</b> per '+esc(String(L.sellSym||''))+', and completes at '
+          +fmtPrice(L.donePx)+'. '
+          +'A '+near.toFixed(1)+'% fall takes it back through '+fmtPrice(L.restPx)+', where it stops filling and '
+          +'waits in '+esc(String(L.sellSym||''))+' — the order resting, not a range to widen.',
+        when:'—'});
+      if(watchShown<WATCH_MIN) watchShown++;
+      continue;
+    }
     if(x.sev==='critical'){
       const owed=p.feesUsd||0;
       const owedTxt = owed>1 ? ' It also holds <b>'+fmtUsd(owed)+'</b> in uncollected fees — <b>safe where they are, free to leave</b>, '
@@ -4667,7 +4746,14 @@ function renderOps(){
   const best=aprs.length?Math.max(...aprs):null;
   for(const p of ps){
     const sev=severityOf(p), ref='<b>'+esc(pairName(p))+' '+esc(posRef(p))+'</b>';
-    if(!p.inRange){
+    const lad=ladderOf(p);
+    if(lad && p.inRange){
+      out.push({pri:'watch',ic:'◈',msg:ref+' is a <b>range order</b>'
+        +(lad.filled!=null?', <b>'+(lad.filled*100).toFixed(lad.filled<0.01?2:0)+'% filled</b>':'')
+        +'. Nothing to rebalance: it fills as '+esc(String(lad.sellSym||''))+' rises and rests below '
+        +fmtPrice(lad.restPx)+'. Leave it.'});
+    }
+    else if(!p.inRange){
       const rc = p.chain==='sol' ? 0.05 : gasCostUsd(REBALANCE_GAS);
       const df = dailyFeeUsd(p);
       out.push({pri:'critical',ic:'⟳',msg:ref+' is <b>OUT OF RANGE — earning $0</b>. Full re-range costs ≈ <b>'+(rc!=null?fmtUsd(rc):'—')+'</b> (withdraw+collect+mint)'+(df!=null&&rc!=null&&df>0?' → paid back by fees in ≈ <b>'+Math.ceil(rc/df)+' days</b> at its recent rate':'')+'.'});
@@ -5412,7 +5498,7 @@ function renderMonths(host){
     : '<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
   const byM={};
   (fm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].fees=x.total; byM[x.m].ilEnd=x.ilEnd; });
-  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0)+(x.solOpen||0); });
+  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0)+(x.solOpen||0)+(x.solSwap||0); });
   const rows=Object.keys(byM).sort().map(m=>({m,...byM[m],cur:false}));
   rows.push({m:fm.month, fees:fm.mtd, costs:cm?cm.total:null, ilEnd:fm.ilNow, cur:true});
   const wrap=el('div','flow-block');
@@ -5913,10 +5999,11 @@ function renderCatSplit(host){
      marked unknown rather than treated as zero, because zero is a claim and absence is not. */
   const cprev={}; ((cm&&cm.prev)||[]).forEach(c=>{ if(c&&c.m) cprev[c.m]=c; });
   const cols=[...arch.map(a=>{ const c=cprev[a.m];
-    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)):null, sol:c?((c.solGas||0)+(c.solOpen||0)):null, cur:false}; })];
+    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)):null,
+            sol:c?((c.solGas||0)+(c.solOpen||0)+(c.solSwap||0)):null, cur:false}; })];
   if(cur&&Object.keys(cur).length)
     cols.push({m:(fm&&fm.month)||'', cat:cur, evm:cm?((cm.gasUsd||0)+(cm.swapFeeUsd||0)):null,
-               sol:cm?((cm.solGasUsd||0)+(cm.solOpenUsd||0)):null, cur:true});
+               sol:cm?((cm.solGasUsd||0)+(cm.solOpenUsd||0)+(cm.solSwapUsd||0)):null, cur:true});
   if(!cols.length) return;
   const keys=[...new Set(cols.flatMap(c=>Object.keys(c.cat||{})))].sort();
   const wrap=el('div','flow-block');
@@ -5939,7 +6026,9 @@ function renderCatSplit(host){
   if(anyEvm){ cell('gas + swap fees, Ethereum','cat-cost');
     cols.forEach(c=>cell(c.evm?'−'+fmtUsd(c.evm,catDp(c.evm)):'—','num cat-cost')); }
   const anyOpen=(cm&&(cm.solOpenUsd||0)>0.005)||((cm&&cm.prev)||[]).some(x=>(x.solOpen||0)>0.005);
-  if(anySol){ cell('tx fees'+(anyOpen?' + pool setup':'')+', Solana <span class="unit">◎</span>','cat-cost');
+  const anySwap=(cm&&(cm.solSwapUsd||0)>0.005)||((cm&&cm.prev)||[]).some(x=>(x.solSwap||0)>0.005);
+  const solBits=['tx fees',...(anySwap?['swap fees']:[]),...(anyOpen?['pool setup']:[])];
+  if(anySol){ cell(solBits.join(' + ')+', Solana <span class="unit">◎</span>','cat-cost');
     cols.forEach(c=>cell(c.sol?'−'+fmtUsd(c.sol,2):'—','num cat-cost')); }
   cell('<b>NET</b>','cat-net');
   let costGap=false;
@@ -5952,8 +6041,15 @@ function renderCatSplit(host){
   scroll.append(grid); wrap.append(scroll);
   const notes=[];
   if(cols.some(c=>c.cur)) notes.push('The current month is running and moves with every scan.');
-  if(cm&&cm.solPartial) notes.push('Solana costs cover transaction fees and what a new pool or position cost to open, '
-    +'read from the opening transaction itself; a swap fee there is still not detected.');
+  /* This used to be a standing disclaimer that no Solana swap fee was detected. They are now
+     read from the pools each swap routed through, so the only thing left to declare is a swap
+     whose venue could not be read — and that is a count, not a permanent caveat. */
+  if(cm&&cm.solPartial) notes.push('Solana costs cover transaction fees, what a new pool or position cost to open, '
+    +'and the fee each swap paid the pools it routed through. '+(cm.solUnattributed||0)+' swap'
+    +((cm.solUnattributed||0)===1?'':'s')+' went through a venue that could not be read, so that '
+    +'much is missing from the figure.');
+  else if(cm&&(cm.solSwapUsd||0)>0.005) notes.push('Solana costs cover transaction fees, pool and position setup, '
+    +'and the fee every swap paid the pools it routed through — each one traced to the pool that took it.');
   notes.push('Costs are recorded per chain, not per position, so they sit on one line rather than being divided between the rows above them.');
   if(costGap) notes.push('A month with no cost record shows no net figure — the gross is known, what it cost is not.');
   wrap.append(el('div','arch-note',notes.join(' ')));
