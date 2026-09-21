@@ -600,17 +600,27 @@ const b64=s=>Uint8Array.from(Buffer.from(s,'base64'));
 
 async function fetchSolana(SOL_WALLETS){
   const out=[];
+  /* Positions are discovered by listing the wallet's token accounts, so a wallet that would not
+     answer contributes nothing — indistinguishable, downstream, from a wallet that holds nothing.
+     On 2026-09-21 both wallets returned HTTP 400, every Solana position disappeared from a scan
+     that then reported itself healthy, and all five were one repeat away from being booked as
+     closed with September's accrual banked. Marked here so the caller can refuse to draw any
+     conclusion from an absence it could not have observed. */
+  out.incomplete=false;
   const cat=[];
   for(const w of SOL_WALLETS){
+    let okForWallet=0;
     for(const prog of [TOKEN_PROG,TOKEN22]){
       try{
         const res=await sol('getTokenAccountsByOwner',[w,{programId:prog},{encoding:'jsonParsed'}]);
+        okForWallet++;
         for(const a of res.value){
           const info=a.account?.data?.parsed?.info;
           if(info?.tokenAmount?.amount==='1'&&info?.tokenAmount?.decimals===0) cat.push({wallet:w,mint:info.mint});
         }
       }catch(e){ logErr('solWallet '+w.slice(0,6),e); }
     }
+    if(!okForWallet) out.incomplete=true;
   }
   const pdas=[], orcaPdas=[];
   for(const c of cat){
@@ -947,13 +957,19 @@ async function evmWalletBalances(ck,wallet,tip){
   }
   return rows;
 }
+/* An RPC that will not answer and a wallet that is genuinely empty produce the same empty
+   array, and publishing the second when it was the first is how $16,859 of holdings vanished
+   from the idle total at 19:00 on 2026-09-21 — recorded in the history series and in that day's
+   record as a real loss. The caller cannot tell them apart from the rows alone, so the failure
+   is carried out on the array itself. */
 async function solWalletBalances(wallet){
   const rows=[];
+  rows.failed=false;
   try{
     const r=await sol('getBalance',[wallet]);
     const lam=Number(r?.value ?? r ?? 0);
     if(lam>0) rows.push({addr:'native',symbol:'SOL',decimals:9,amount:lam/1e9,native:true});
-  }catch(e){ logErr('solBal '+wallet.slice(0,6),e); }
+  }catch(e){ logErr('solBal '+wallet.slice(0,6),e); rows.failed=true; }
   try{
     const r=await sol('getTokenAccountsByOwner',[wallet,{programId:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'},{encoding:'jsonParsed'}]);
     for(const acc of (r?.value||[])){
@@ -962,7 +978,7 @@ async function solWalletBalances(wallet){
       if(!(amt>0)) continue;
       rows.push({addr:info.mint,symbol:SOL_KNOWN[info.mint]||null,decimals:info.tokenAmount.decimals,amount:amt});
     }
-  }catch(e){ logErr('solTokens '+wallet.slice(0,6),e); }
+  }catch(e){ logErr('solTokens '+wallet.slice(0,6),e); rows.failed=true; }
   return rows;
 }
 
@@ -1554,7 +1570,10 @@ const main=async()=>{
     const evmPositions=[];
     for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana')){
       const ck=w.chain in CHAINS ? w.chain : 'ethereum';
-      if(blockNums[ck]==null) continue;
+      /* No block number means the chain would not answer at all, so this wallet was never
+         looked at. Skipping quietly left its positions looking absent, and absence is one
+         repeat away from being booked as a close. */
+      if(blockNums[ck]==null){ chainErrs.add(ck); scanIncomplete.add(ck); continue; }
       try{
         const ids=await walletPositionIds(ck, w.address.toLowerCase().replace(/^0x/,''), blockNums[ck]);
         console.log(profile.slug, ck, w.address.slice(0,8), '→', ids.length, 'NFTs');
@@ -1620,7 +1639,16 @@ const main=async()=>{
     let solPositions=[];
     const solWallets=(profile.wallets||[]).filter(w=>w.chain==='solana').map(w=>w.address);
     if(solWallets.length){
-      try{ solPositions=await fetchSolana(solWallets); }
+      try{
+        solPositions=await fetchSolana(solWallets);
+        /* A throw was the only thing that used to reach this branch, and the wallet listing does
+           not throw — it logs and returns short. Same verdict either way: the scan did not see
+           Solana, so nothing may be closed on its say-so and the chain reports itself down. */
+        if(solPositions.incomplete){
+          logErr('sol', new Error('a wallet listing failed — Solana positions not verified this pass'));
+          chainErrs.add('solana'); scanIncomplete.add('sol');
+        }
+      }
       catch(e){ logErr('sol',e); chainErrs.add('solana'); scanIncomplete.add('sol'); }
     }
     let solTxFees={}, solOpenLam={};
@@ -2175,23 +2203,35 @@ const main=async()=>{
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
     {
-      const totV=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.valueUsd||0),0);
-      const totF=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.feesUsd||0),0);
-      // g: gas price at this sample. Without a stored series there is nothing to call a gas
-      // price high or low AGAINST, and a gauge with no distribution behind it is decoration.
-      history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100,
-                    g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null});
-      if(history.length>3000) history=history.slice(-3000);
-      fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
+      /* The daily record already refuses a degraded cycle; the fifteen-minute series did not, and
+         the pass that lost Solana wrote $9,376 into it against $36,267 either side. That point is
+         not a reading of anything — it is the shape of an outage — and every chart, day-change
+         and drawdown figure drawn from the series inherits it. */
+      const chainsOkForHist=Object.values(chainStatus).every(v=>v==='ok');
+      if(chainsOkForHist){
+        const totV=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.valueUsd||0),0);
+        const totF=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.feesUsd||0),0);
+        // g: gas price at this sample. Without a stored series there is nothing to call a gas
+        // price high or low AGAINST, and a gauge with no distribution behind it is decoration.
+        history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100,
+                      g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null});
+        if(history.length>3000) history=history.slice(-3000);
+        fs.writeFileSync(OUT+'/hist-'+profile.slug+'.json', JSON.stringify(history));
+      }else{
+        console.log('history: sample skipped, chainStatus', JSON.stringify(chainStatus));
+      }
     }
     // ---- idle balances: everything held that is NOT in an LP ----
     let idle=null;
     try{
       const rows=[];
+      const balFailed=[];                 // wallets whose balance read did not come back
       for(const w of (profile.wallets||[])){
         const addr=w.address;
         if(w.chain==='solana'){
-          for(const r of await solWalletBalances(addr)) rows.push({...r, chain:'sol', wallet:addr});
+          const got=await solWalletBalances(addr);
+          if(got.failed) balFailed.push(addr);
+          for(const r of got) rows.push({...r, chain:'sol', wallet:addr});
         }else{
           const ck=w.chain in CHAINS ? w.chain : 'ethereum';
           if(blockNums[ck]==null) continue;
@@ -2291,10 +2331,26 @@ const main=async()=>{
         await sleep(120);
       }
       blockCache.mintInfo=mintInfo;
-      idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
-             unpriced:rows.filter(r=>r.usd==null).length, mintInfo };
-      fs.writeFileSync(OUT+'/balances-'+profile.slug+'.json', JSON.stringify(idle,null,1));
-      console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
+      /* A wallet that would not answer is not a wallet that holds nothing. Publishing the short
+         read as the reading is what took the idle total from $43,004 to $26,146 in one pass and
+         wrote the difference into the day's record as a loss. The last complete read is kept
+         instead, with its own timestamp, so the figure is old rather than wrong and the page can
+         say how old. */
+      if(balFailed.length){
+        let prevIdle=null;
+        try{ prevIdle=JSON.parse(fs.readFileSync(OUT+'/balances-'+profile.slug+'.json','utf8')); }catch(e){}
+        logErr('balances', new Error(balFailed.length+' wallet(s) would not answer — holding the '
+          +(prevIdle?'last complete read from '+new Date(prevIdle.t).toISOString().slice(11,16)+' UTC':'reading back')));
+        if(prevIdle && Array.isArray(prevIdle.rows) && prevIdle.rows.length){
+          idle={...prevIdle, stale:true, staleWallets:balFailed.length};
+        }
+        console.log('idle balances: held back —',balFailed.length,'wallet(s) unreadable');
+      }else{
+        idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
+               unpriced:rows.filter(r=>r.usd==null).length, mintInfo };
+        fs.writeFileSync(OUT+'/balances-'+profile.slug+'.json', JSON.stringify(idle,null,1));
+        console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
+      }
     }catch(e){ logErr('balances',e); }
 
     /* ---- daily snapshot: the raw material for "why did the total move" ----
@@ -2332,7 +2388,10 @@ const main=async()=>{
       /* Never overwrite a finished day with a degraded read: a cycle that lost a chain would
          otherwise rewrite today as if those positions had closed, and the next day's attribution
          would report a phantom withdrawal followed by a phantom deposit. */
-      const chainsOk=Object.values(chainStatus).every(v=>v==='ok');
+      /* Wallet balances are half of what a day record explains, so a carried-forward idle read
+         disqualifies the day just as a lost chain does — otherwise today is frozen against
+         yesterday's wallets and tomorrow reports the catch-up as a deposit. */
+      const chainsOk=Object.values(chainStatus).every(v=>v==='ok') && !(idle&&idle.stale);
       const last=daily[daily.length-1];
       if(chainsOk){
         if(last && last.d===rec.d) daily[daily.length-1]=rec; else daily.push(rec);
