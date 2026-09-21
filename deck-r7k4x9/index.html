@@ -542,6 +542,55 @@
     gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
   .cc-row.hdr{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);border-bottom:1px solid var(--line)}
   .cc-row .num{font-variant-numeric:tabular-nums;text-align:right}
+  .scn{border:1px solid var(--line);padding:11px 13px;margin-bottom:14px}
+  .scn-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:9px}
+  .scn-t{font-size:9px;letter-spacing:.18em;color:var(--accent)}
+  .scn-sub{font-size:10.5px;color:var(--text-muted);flex:1 1 220px;line-height:1.45}
+  .scn-rows{display:grid;gap:6px 12px}
+  .scn-row{display:grid;grid-template-columns:minmax(96px,auto) minmax(0,1fr) minmax(104px,auto);
+    gap:10px;align-items:center;font-size:11.5px}
+  .scn-lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .scn-val{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .scn-sl{-webkit-appearance:none;appearance:none;width:100%;height:3px;background:var(--line);
+    border-radius:2px;outline:none;margin:0}
+  .scn-sl::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--accent);cursor:pointer;border:0}
+  .scn-sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--accent);cursor:pointer;border:0}
+  .scn-acts{margin:8px 0 2px;font-size:11px}
+  .scn-acts button[disabled]{color:var(--text-muted);cursor:default}
+  .scn-out{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,minmax(72px,auto));gap:3px 12px;
+    align-items:baseline;font-size:12px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line-soft)}
+  .scn-out .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .scn-out .h{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted)}
+  .scn-out .b{color:var(--text-primary)}
+  .scn-warn{font-size:11px;color:var(--status-warning);margin-top:7px;line-height:1.45}
+  .scn-pos{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(64px,auto) minmax(64px,auto) minmax(0,1.5fr);
+    gap:3px 12px;align-items:baseline;font-size:11px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line-soft)}
+  .scn-pos .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .scn-pos .h{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted)}
+  .scn-pos .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .scn-st{font-size:10.5px}
+  /* On a phone the slider gets its own full-width row and a bigger thumb — squeezed beside a
+     label it was 82px of travel, which is not a control anyone can set a price with. The number
+     columns are sized to their content rather than to what the label leaves them, because at
+     360px a 1fr label was starving them into clipping their own figures. */
+  @media (max-width:760px){
+    .scn-row{grid-template-columns:minmax(0,1fr) auto;row-gap:4px;padding-bottom:4px}
+    .scn-lab{grid-row:1;grid-column:1}
+    .scn-val{grid-row:1;grid-column:2;text-align:right}
+    .scn-sl{grid-row:2;grid-column:1 / -1;height:5px}
+    .scn-sl::-webkit-slider-thumb{width:20px;height:20px}
+    .scn-sl::-moz-range-thumb{width:20px;height:20px}
+    .scn-out{grid-template-columns:minmax(0,1fr) repeat(3,max-content);gap:3px 8px;font-size:11.5px}
+    .scn-pos{grid-template-columns:minmax(0,1fr) max-content max-content;gap:3px 8px}
+    .scn-pos .h:last-child,.scn-st{display:none} }
+  /* Under ~420px even content-sized columns do not fit, so the "now" column goes. The change
+     column already carries it, and a clipped figure is worse than an absent one. */
+  @media (max-width:420px){
+    .scn-out{grid-template-columns:minmax(0,1fr) repeat(2,max-content)}
+    .scn-out > *:nth-child(4n+2){display:none}
+    .scn-pos{grid-template-columns:minmax(0,1fr) max-content}
+    .scn-pos > *:nth-child(4n+2){display:none} }
   .tok-total{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px 18px;
     padding:0 0 10px;margin-bottom:12px;border-bottom:1px solid var(--line)}
   .tok-total-n{font-size:22px;font-variant-numeric:tabular-nums;color:var(--text-primary);margin-right:9px}
@@ -1063,7 +1112,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3520,6 +3569,152 @@ function fmtTok(v){
   if(a>=0.001) return v.toFixed(4);
   return v>0?v.toExponential(2):'0';
 }
+/* ---- price scenario: drag a token's price and watch every LP re-solve ----------------------
+   The cards above answer "what does a move in THIS token do". This answers the portfolio
+   question: move several at once and read the total. It is the same arithmetic — each position
+   is re-solved on the CLMM curve at the new pool price and clamped at its bounds, so a range
+   the scenario walks out of converts fully and stops there, which is exactly the cut-off that
+   makes a naive "price x 5" estimate wrong.
+
+   Two details that matter. A pool's own price is used as the basis rather than the feed's, and
+   only the RELATIVE move is applied to it — so the 4% CPOOL pool, which sits a few percent off
+   the feed, keeps that offset instead of being silently re-based. And staked-SOL tokens follow
+   SOL: JupSOL is the second largest holding here, and leaving it flat while SOL triples would
+   understate the answer badly enough to be useless. */
+let scnPx={};                 // token key -> price the reader has dragged it to; empty = live
+/* The top of each slider. These are the levels to reason about, not a multiple of today's
+   price — a ceiling of 8x today would put SOL at $940 and make the interesting part of the
+   travel a thumb's width wide. Anything not named here gets 8x. A token already above its
+   named ceiling gets twice its current price instead, so the handle never starts pinned. */
+const SCN_CEIL={LCX:0.40, CPOOL:0.50, ETH:5000, SOL:350};
+const isStakedSol=t=>t.chain==='sol' && /sol$/i.test(t.sym||'') && (t.sym||'').toUpperCase()!=='SOL';
+function scnDrivers(book){
+  /* Worth a slider if it is in a pool, or big enough that repricing it changes the answer.
+     Staked-SOL derivatives are driven by the SOL slider instead of getting one of their own. */
+  return book.filter(t=>t.usd>0 && !isStakedSol(t) && (t.pooled>0 || (t.value||0)>=400))
+             .sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,6);
+}
+function scnLivePrices(book){ const m={}; for(const t of book) if(t.usd!=null) m[t.key]=t.usd; return m; }
+function scnPrices(book){
+  const live=scnLivePrices(book), out={...live};
+  for(const k in scnPx) if(out[k]!=null) out[k]=scnPx[k];
+  const solTok=book.find(t=>t.chain==='sol'&&(t.sym||'').toUpperCase()==='SOL');
+  if(solTok && live[solTok.key]>0){
+    const f=out[solTok.key]/live[solTok.key];
+    for(const t of book) if(isStakedSol(t) && live[t.key]!=null) out[t.key]=live[t.key]*f;
+  }
+  return out;
+}
+function scnCompute(book, px){
+  const live=scnLivePrices(book);
+  const keyOf=p=>[tokKey(p.chain,p.chain==='sol'?p.mint0:p.token0), tokKey(p.chain,p.chain==='sol'?p.mint1:p.token1)];
+  const pos=[];
+  let lpNow=0, lpNew=0;
+  for(const p of ordered()){
+    const L=p.liq?Number(p.liq):null;
+    if(!(L>0)||!(p.priceLower>0)||!(p.priceUpper>p.priceLower)){ continue; }
+    const [k0,k1]=keyOf(p);
+    const u0=px[k0]??p.usd0, u1=px[k1]??p.usd1;
+    const l0=live[k0]??p.usd0, l1=live[k1]??p.usd1;
+    // the pool's own mark, moved by the RELATIVE change in the two sides
+    const P2=(l0>0&&l1>0&&u0>0&&u1>0) ? p.price*(u0/l0)/(u1/l1) : p.price;
+    const a=amtsAt(L,P2,p.priceLower,p.priceUpper,p.d0,p.d1);
+    const vNow=p.valueUsd||0, vNew=a?(a.a0*u0+a.a1*u1):vNow;
+    lpNow+=vNow; lpNew+=vNew;
+    pos.push({p, vNow, vNew, a0:a?a.a0:p.amt0, a1:a?a.a1:p.amt1,
+      state: P2<=p.priceLower ? 'low' : (P2>=p.priceUpper ? 'high' : 'in')});
+  }
+  let idNow=0, idNew=0, holdNow=0, holdNew=0;
+  for(const t of book){
+    if(t.usd==null) continue;
+    const u=px[t.key]??t.usd;
+    idNow+=t.idle*t.usd; idNew+=t.idle*u;
+    holdNow+=t.total*t.usd; holdNew+=t.total*u;   // the same tokens, never rebalanced
+  }
+  return {lpNow, lpNew, idNow, idNew, pos,
+          now:lpNow+idNow, next:lpNew+idNew, holdNow, holdNew};
+}
+function renderScenario(host, book, nameOf){
+  const drv=scnDrivers(book);
+  if(!drv.length) return;
+  const wrap=el('div','scn');
+  const head=el('div','scn-head');
+  head.innerHTML='<span class="scn-t">PRICE SCENARIO</span>'
+    +'<span class="scn-sub">drag a price — every position re-solves on its own curve, and a range the '
+    +'scenario leaves converts and stops earning</span>';
+  wrap.append(head);
+  const px=scnPrices(book), live=scnLivePrices(book);
+  const rowsBox=el('div','scn-rows');
+  for(const t of drv){
+    const named=SCN_CEIL[(t.sym||'').toUpperCase()];
+    const ceil=named ? (live[t.key]<named ? named : live[t.key]*2) : live[t.key]*8;
+    const cur=px[t.key], mult=live[t.key]>0?cur/live[t.key]:1;
+    const r=el('div','scn-row');
+    const nm=nameOf ? nameOf(t) : {chain:t.chain==='sol'?'Solana':'Ethereum', badge:''};
+    const lab=el('div','scn-lab'); lab.innerHTML='<b>'+esc(t.sym)+'</b> <span class="dim">'
+      +esc(nm.chain)+'</span>'+(nm.badge?' <b class="tok-badge">'+esc(nm.badge)+'</b>':'');
+    const sl=el('input'); sl.type='range'; sl.min='0'; sl.max='1000'; sl.step='1';
+    sl.value=String(Math.round(Math.min(1,cur/ceil)*1000));
+    sl.className='scn-sl'; sl.setAttribute('aria-label',(t.sym||'')+' price');
+    const val=el('div','scn-val');
+    val.innerHTML=fmtPrice(cur)+' <span class="dim">'+(Math.abs(mult-1)<0.005?'live':(mult>=1?'×':'÷')+(mult>=1?mult:1/mult).toFixed(2))+'</span>';
+    sl.addEventListener('input',()=>{ scnPx[t.key]=Number(sl.value)/1000*ceil; renderTokens(); });
+    r.append(lab,sl,val);
+    rowsBox.append(r);
+  }
+  wrap.append(rowsBox);
+  const touched=Object.keys(scnPx).length>0;
+  const acts=el('div','scn-acts');
+  const rb=el('button','tile-why', touched?'back to live prices':'sliders start at today’s prices');
+  rb.type='button'; rb.disabled=!touched;
+  rb.addEventListener('click',()=>{ scnPx={}; renderTokens(); });
+  acts.append(rb);
+  wrap.append(acts);
+
+  // ---- the answer
+  const c=scnCompute(book,px);
+  const d=c.next-c.now, dp=c.now>0?d/c.now*100:0;
+  const out=el('div','scn-out');
+  const line=(k,a,b2,strong)=>{
+    const dd=b2-a;
+    out.append(el('div',strong?'b':null,k),
+      el('div','num dim',fmtUsd(a,0)),
+      el('div','num',(strong?'<b>':'')+fmtUsd(b2,0)+(strong?'</b>':'')),
+      el('div','num '+(Math.abs(dd)<0.5?'dim':(dd>0?'tok-up':'tok-dn')),
+         (Math.abs(dd)<0.5?'—':(dd>0?'+':'−')+fmtUsd(Math.abs(dd),0))));
+  };
+  out.append(el('div','h',''),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h num','CHANGE'));
+  line('in LPs', c.lpNow, c.lpNew);
+  line('idle in wallets', c.idNow, c.idNew);
+  line('TOTAL', c.now, c.next, true);
+  wrap.append(out);
+  if(touched){
+    const drag=c.holdNew-c.next;
+    wrap.append(el('div','flow-omit','Holding the same tokens untouched would be '+fmtUsd(c.holdNew,0)+' — '
+      +(Math.abs(drag)<1 ? 'the same, at these prices.'
+        : drag>0 ? fmtUsd(drag,0)+' more than the pools deliver, because a position sells whatever is rising.'
+                 : fmtUsd(-drag,0)+' less, because the pools bought into what fell.')));
+    const outs=c.pos.filter(x=>x.state!=='in');
+    if(outs.length) wrap.append(el('div','scn-warn','At these prices '+outs.length+' position'+(outs.length>1?'s':'')
+      +' would be out of range and earning nothing: '
+      +outs.map(x=>esc(pairShort(x.p))+' '+esc(posRef(x.p))).join(', ')+'.'));
+  }
+  // ---- what each position does
+  const pg=el('div','scn-pos');
+  pg.append(el('div','h','POSITION'),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h','AT THESE PRICES'));
+  for(const x of c.pos.sort((a,b)=>b.vNew-a.vNew)){
+    pg.append(el('div',null,'<span class="dot" style="background:'+seriesColor(cIdx(x.p))+'"></span>'
+      +esc(pairShort(x.p))+' <span class="unit">'+esc(posRef(x.p))+'</span>'));
+    pg.append(el('div','num dim',fmtUsd(x.vNow,0)));
+    pg.append(el('div','num',fmtUsd(x.vNew,0)));
+    pg.append(el('div','dim scn-st', x.state==='in'
+      ? 'in range · '+fmtTok(x.a0)+' '+esc((x.p.m0||{}).symbol||'')+' + '+fmtTok(x.a1)+' '+esc((x.p.m1||{}).symbol||'')
+      : (x.state==='low' ? 'out — all '+esc((x.p.m0||{}).symbol||'') : 'out — all '+esc((x.p.m1||{}).symbol||''))));
+  }
+  wrap.append(pg);
+  host.append(wrap);
+}
+
 function renderTokens(){
   const host=$('#tokenBody'); if(!host) return;
   host.innerHTML='';
@@ -3560,6 +3755,7 @@ function renderTokens(){
     +'<span><b>'+fmtUsd(idleUsd,0)+'</b> idle in wallets</span>'
     +'<span class="dim">'+(grand>0?Math.round(pooledUsd/grand*100):0)+'% pooled</span></div>';
   host.append(tot);
+  renderScenario(host, book, qualify);
 
   for(const t of shown){
     const card=el('div','tok-card');
