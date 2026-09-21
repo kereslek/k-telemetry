@@ -30,9 +30,9 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26027967,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26027967,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26027967
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26028062,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26028062,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26028062
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
@@ -40,10 +40,28 @@
   "LDzpTBrRdgmnxYqw8Jwdfr2f7fHTpKWeDvMA4bPEjk52DguNiXG9PiZCSL5XpXMdcRhdAyL6qNB9jAb2pxMzAcF": 1,
   "nZwKrNKzMcyCgLiQ1h9BYBwrigyY5EbyKFiF7FTwRoHjph7oA5mVrQHkwtcwqZW6hu2W5eoZY8BnwgMjM5fC5kU": 1,
   "442wHqGt8Cwhrn9jkdoGQ3KLdEqiX48rdRohPrGWW3Usqm4v8mRJrLicoLifjQinYgi4UXApXGx36i5hBDzAjxaG": 1,
-  "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj": 1
+  "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj": 1,
+  "3k36wrcwmDaWBQg1oeR79ZWTksGPePSWcVcE4PTAW8j7tQeR4R4aPkn5vhjwtcwN7bWK8CBaYAPXAyDXS5PDx6tu": 1,
+  "4bQqtS9BdTP47XTBZvM8gCcCWR6FJkmEstupXJ2WFvucAUeJSS3EcokNGx2343gBABuSXsGFjTGkZv8xQR1jxJXg": 1,
+  "5jvGZ6qCkCfdatzstr4o5Ru7pEaP3eZfi7KX5xD8Ma2epKSEwZZh4KDAEnovMrGtKWnGDnJ7M37bmcioZ6HyAZdu": 1,
+  "88hQGYD7D9w2WU61Abg7ndpszrEebCaozpifboNttCCDRutoAQY7Ptg55knN3ighLGBjjJJGT24m3HBFqcRTrCs": 1,
+  "3YEnidAbPGVGTwkGvKo6QP3vsKRBEHrfCCM4EvPnSjt9mTXosV9CuF43T3ufXSqNVuQNnwx5PZ7cAyg7eSRTvxot": 1,
+  "2HiFe7uosHs7cyASxjpsKTcfBpJWrq3BFXe3WuwRe6VPQTcDHYCeuTuitxUzvPuyyPGi4BC2njtbv4XpZuL5Ne7N": 1,
+  "2uGKuBoGCKrZBqx2yHNAqPdKhm4ZQDQmjkLsGjR9oo9pB38mU64J4kPXigTxRwctHYuZ1yeP2zcc6RxdeEk2spJS": 1,
+  "2FSSdqBFfU2hPQLuVzDW2eXxVFFGewNPTHRFtd5gjt1Cd5o7eErUFwmtxes73zvb2cTTQimzRYdLbp6HShDNwrFz": 1,
+  "56DygpJsCF9gtkepDmAyWVN8XrxvKU3tMc5CctND4n6BEQcpzr8dWniMCCtETQriGRUdeKsgLcZuTBqVZoP4dc16": 1,
+  "u1WH4FyPmEKziyVq72Z7tpAgHhivBS3sobHKp2ZguMD83XxHBM8KMM1S99z7xaD1z1FcK4PoUF9wrc8kAPTe6wu": 1,
+  "9gu9zggrFeuyLThtv5HTZAWoXdmgmzneeAYxg7jctLTfg9ha8Ezb2nh8cjQKaeUxHw5CurhX9sg2xvp9eQjbfPY": 1
  },
  "solPartial": true,
- "solGasUsd": 0.009669110835792702,
+ "solGasUsd": 0.037436130544172296,
  "solOpenUsd": 18.51,
- "solOpenPend": {}
+ "solOpenPend": {},
+ "solScan": {
+  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj",
+  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "2HiFe7uosHs7cyASxjpsKTcfBpJWrq3BFXe3WuwRe6VPQTcDHYCeuTuitxUzvPuyyPGi4BC2njtbv4XpZuL5Ne7N"
+ },
+ "solWalletTx": {},
+ "solSwapUsd": 4.74,
+ "solUnattributed": 1
 }
