@@ -564,12 +564,15 @@
   .scn-out .h{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted)}
   .scn-out .b{color:var(--text-primary)}
   .scn-warn{font-size:11px;color:var(--status-warning);margin-top:7px;line-height:1.45}
-  .scn-pos{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(64px,auto) minmax(64px,auto) minmax(0,1.5fr);
-    gap:3px 12px;align-items:baseline;font-size:11px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line-soft)}
+  .scn-pos{display:grid;grid-template-columns:minmax(0,1fr) minmax(64px,auto) minmax(64px,auto);
+    gap:6px 12px;align-items:baseline;font-size:11px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line-soft)}
   .scn-pos .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .scn-pos .h{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted)}
   .scn-pos .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .scn-st{font-size:10.5px}
+  /* The converted balance, under the name it belongs to rather than in a column a phone drops.
+     It wraps freely — the numbers beside it are nowrap, this is prose. */
+  .scn-bal{font-size:10.5px;color:var(--text-secondary);margin:1px 0 0 11px;line-height:1.35}
+  .scn-bal.out{color:var(--status-warning)}
   /* On a phone the slider gets its own full-width row and a bigger thumb — squeezed beside a
      label it was 82px of travel, which is not a control anyone can set a price with. The number
      columns are sized to their content rather than to what the label leaves them, because at
@@ -582,20 +585,16 @@
     .scn-sl::-webkit-slider-thumb{width:20px;height:20px}
     .scn-sl::-moz-range-thumb{width:20px;height:20px}
     .scn-out{grid-template-columns:minmax(0,1fr) repeat(3,max-content);gap:3px 8px;font-size:11.5px}
-    .scn-pos{grid-template-columns:minmax(0,1fr) max-content max-content;gap:3px 8px}
-    /* The fourth header, not the last child of the grid. :last-child only matched it when the
-       table had no rows under it — the moment there were positions it stayed visible, so the
-       header row carried four cells into a three-column grid and every cell after it landed one
-       place to the left. That is what made POSITION / NOW / SCENARIO / AT THESE PRICES read as
-       loose words down the page on a phone. Its body cells (.scn-st) go with it. */
-    .scn-pos .h:nth-child(4),.scn-st{display:none} }
+    .scn-pos{grid-template-columns:minmax(0,1fr) max-content max-content;gap:6px 8px} }
   /* Under ~420px even content-sized columns do not fit, so the "now" column goes. The change
      column already carries it, and a clipped figure is worse than an absent one. */
   @media (max-width:420px){
     .scn-out{grid-template-columns:minmax(0,1fr) repeat(2,max-content)}
     .scn-out > *:nth-child(4n+2){display:none}
+    /* Three cells to a row now, so the NOW column is every third child starting at the second —
+       which is also the NOW header. The scenario figure is the one worth keeping. */
     .scn-pos{grid-template-columns:minmax(0,1fr) max-content}
-    .scn-pos > *:nth-child(4n+2){display:none} }
+    .scn-pos > *:nth-child(3n+2){display:none} }
   .tok-total{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px 18px;
     padding:0 0 10px;margin-bottom:12px;border-bottom:1px solid var(--line)}
   .tok-total-n{font-size:22px;font-variant-numeric:tabular-nums;color:var(--text-primary);margin-right:9px}
@@ -1117,7 +1116,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2408,11 +2407,12 @@ function ladderOf(p){
   const L=p.liq?Number(p.liq):null;
   let sold=null;
   if(L>0){
-    const d0=Math.pow(10,p.d0??18), d1=Math.pow(10,p.d1??18);
-    if(side===0){ const max=L*(1/sqrt(Pa)-1/sqrt(Pb))/d0, now=L*(1/sqrt(P)-1/sqrt(Pb))/d0;
-                  if(max>0) sold=1-now/max; }
-    else        { const max=L*(sqrt(Pb)-sqrt(Pa))/d1, now=L*(sqrt(P)-sqrt(Pa))/d1;
-                  if(max>0) sold=1-now/max; }
+    // through amtsAt rather than repeating the identity: one place to be right about decimals
+    const full=amtsAt(L,side===0?Pa:Pb,Pa,Pb,p.d0,p.d1), now=amtsAt(L,P,Pa,Pb,p.d0,p.d1);
+    if(full&&now){
+      const max=side===0?full.a0:full.a1, cur=side===0?now.a0:now.a1;
+      if(max>0) sold=1-cur/max;
+    }
   }
   return {
     side,
@@ -3569,12 +3569,20 @@ const tokKey=(chain,addr)=>{
   const a=String(addr||'').toLowerCase();
   return ch+':'+(a===WETH_ADDR?'native':a);
 };
-/* amounts a concentrated position holds at an arbitrary price — the same identity the cards
-   use, clamped at the bounds so an out-of-range position reads as fully converted */
+/* Amounts a concentrated position holds at an arbitrary price — the same identity the cards
+   use, clamped at the bounds so an out-of-range position reads as fully converted.
+
+   Liquidity is denominated in raw token units, so the identity takes the RAW price: token1
+   base units per token0 base unit. The price carried on a position is the human one, scaled by
+   10^(d0-d1) to be readable, and feeding that straight in was wrong by a factor of the square
+   root of that scale. It went unseen because every position here had matched decimals, where
+   the scale is 1 and the two prices are the same number — until a pool with 9 and 6 turned up,
+   and 18,771 CPOOL + 108 USDT re-solved as 594 CPOOL + 3.4m USDT. */
 function amtsAt(L,P,Pa,Pb,d0,d1){
   if(!(L>0&&Pa>0&&Pb>Pa)) return null;
-  const p=Math.max(Pa,Math.min(Pb,P)), s=Math.sqrt;
-  return { a0:L*(1/s(p)-1/s(Pb))/10**d0, a1:L*(s(p)-s(Pa))/10**d1 };
+  const k=Math.pow(10,(d0??18)-(d1??18));
+  const s=Math.sqrt, p=Math.max(Pa,Math.min(Pb,P))/k, pa=Pa/k, pb=Pb/k;
+  return { a0:L*(1/s(p)-1/s(pb))/10**d0, a1:L*(s(p)-s(pa))/10**d1 };
 }
 function buildTokenBook(){
   const T=new Map();
@@ -3720,6 +3728,19 @@ function scnCompute(book, px){
   return {lpNow, lpNew, idNow, idNew, pos,
           now:lpNow+idNow, next:lpNew+idNew, holdNow, holdNew};
 }
+/* What a position earns in fees per day.
+
+   Deliberately the same definition the relay uses for feeMonth.dayRate, which the fee tile
+   prints as "open positions currently run at $X/day" — the one-day window on EVM, the pool's
+   24h rate on Solana, applied to the position's value. A steadier seven-day window would read
+   better in isolation and would have put a second, different "per day" figure on the same page
+   for the reader to arbitrate between. Sharing the definition makes the NOW column of the fee
+   row equal the tile exactly, which is a claim that can be checked rather than a judgement
+   call. A position with no rate is left out of the total rather than counted as zero. */
+function scnFeeDay(p){
+  const a = p.chain==='sol' ? (p.poolAprDay ?? null) : (p.aprW ? (p.aprW.d1 ?? null) : null);
+  return (a!=null && p.valueUsd>0) ? p.valueUsd*a/100/365 : null;
+}
 let scnDragging=false, scnRaf=0, scnRepaint=null;
 function renderScenario(host, book, nameOf){
   const drv=scnDrivers(book);
@@ -3787,18 +3808,26 @@ function renderScenario(host, book, nameOf){
     rb.textContent = touched ? 'back to live prices' : 'sliders start at today’s prices';
     rb.disabled = !touched;
     outBox.innerHTML='';
-    const line=(k,a,b2,strong)=>{
-      const dd=b2-a;
+    const line=(k,a,b2,strong,dp,eps)=>{
+      const d=dp||0, e=eps||0.5, dd=b2-a;
       outBox.append(el('div',strong?'b':null,k),
-        el('div','num dim',fmtUsd(a,0)),
-        el('div','num',(strong?'<b>':'')+fmtUsd(b2,0)+(strong?'</b>':'')),
-        el('div','num '+(Math.abs(dd)<0.5?'dim':(dd>0?'tok-up':'tok-dn')),
-           (Math.abs(dd)<0.5?'—':(dd>0?'+':'−')+fmtUsd(Math.abs(dd),0))));
+        el('div','num dim',fmtUsd(a,d)),
+        el('div','num',(strong?'<b>':'')+fmtUsd(b2,d)+(strong?'</b>':'')),
+        el('div','num '+(Math.abs(dd)<e?'dim':(dd>0?'tok-up':'tok-dn')),
+           (Math.abs(dd)<e?'—':(dd>0?'+':'−')+fmtUsd(Math.abs(dd),d))));
     };
     outBox.append(el('div','h',''),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h num','CHANGE'));
     line('in LPs', c.lpNow, c.lpNew);
     line('idle in wallets', c.idNow, c.idNew);
     line('TOTAL', c.now, c.next, true);
+    /* The balance answers what the portfolio is worth at these prices. This answers the other
+       half of the question, which is what it stops earning: a position the scenario walks out of
+       converts, sits there and pays nothing until price comes back. Fee rates are held where
+       they are today — only the positions that stop earning are taken out — because a rate is a
+       function of volume and liquidity share, not of the price you dragged the slider to. */
+    const feeNow=c.pos.reduce((s2,x)=>s2+(scnFeeDay(x.p)||0),0);
+    const feeNew=c.pos.reduce((s2,x)=>s2+(x.state==='in'?(scnFeeDay(x.p)||0):0),0);
+    if(feeNow>0) line('fee income · per day', feeNow, feeNew, false, 2, 0.005);
     noteBox.innerHTML='';
     if(touched){
       const drag=c.holdNew-c.next;
@@ -3807,20 +3836,40 @@ function renderScenario(host, book, nameOf){
           : drag>0 ? fmtUsd(drag,0)+' more than the pools deliver, because a position sells whatever is rising.'
                    : fmtUsd(-drag,0)+' less, because the pools bought into what fell.')));
       const outs=c.pos.filter(x=>x.state!=='in');
-      if(outs.length) noteBox.append(el('div','scn-warn','At these prices '+outs.length+' position'+(outs.length>1?'s':'')
-        +' would be out of range and earning nothing: '
-        +outs.map(x=>esc(pairShort(x.p))+' '+esc(posRef(x.p))).join(', ')+'.'));
+      if(outs.length){
+        const rated=outs.filter(x=>scnFeeDay(x.p)!=null);
+        const lost=rated.reduce((s2,x)=>s2+scnFeeDay(x.p),0);
+        noteBox.append(el('div','scn-warn','At these prices '+outs.length+' position'+(outs.length>1?'s':'')
+          +' would be out of range and earning nothing: '
+          +outs.map(x=>esc(pairShort(x.p))+' '+esc(posRef(x.p))).join(', ')+'.'
+          +(lost>0 ? ' Between them they run at <b>'+fmtUsd(lost,2)+' a day</b> — '+fmtUsd(lost*30,0)
+              +' over a month — and that is what stops'
+              +(rated.length<outs.length?' ('+rated.length+' of '+outs.length+' have a measured rate)':'')+'.'
+            : '')
+          +' Their balances below are what they convert to, fully.'));
+      }
     }
     posBox.innerHTML='';
-    posBox.append(el('div','h','POSITION'),el('div','h num','NOW'),el('div','h num','SCENARIO'),el('div','h','AT THESE PRICES'));
+    /* The balance used to be a fourth column, and a fourth column is the first thing a phone
+       drops — so the one reading that says what you would actually be holding was invisible
+       exactly where it was most wanted. It sits under the position name now, at every width. */
+    posBox.append(el('div','h','POSITION'),el('div','h num','NOW'),el('div','h num','SCENARIO'));
     for(const x of c.pos.slice().sort((a,b)=>b.vNew-a.vNew)){
+      const s0=esc((x.p.m0||{}).symbol||''), s1=esc((x.p.m1||{}).symbol||'');
+      const fd=scnFeeDay(x.p);
+      /* Out of range the position is fully one token — that is the cut, and the amount is the
+         point of showing it. amtsAt has already clamped at the bound, so these are the converted
+         balances rather than today's. */
+      const bal = x.state==='in'
+        ? fmtTok(x.a0)+' '+s0+' + '+fmtTok(x.a1)+' '+s1
+        : (x.state==='low' ? 'all '+fmtTok(x.a0)+' '+s0 : 'all '+fmtTok(x.a1)+' '+s1);
+      const tail = x.state==='in' ? ' · earning'
+        : ' · <b>out of range</b>, earning nothing'+(fd!=null?' — forgoing '+fmtUsd(fd,2)+'/day':'');
       posBox.append(el('div',null,'<span class="dot" style="background:'+seriesColor(cIdx(x.p))+'"></span>'
-        +esc(pairShort(x.p))+' <span class="unit">'+esc(posRef(x.p))+'</span>'));
+        +esc(pairShort(x.p))+' <span class="unit">'+esc(posRef(x.p))+'</span>'
+        +'<div class="scn-bal'+(x.state==='in'?'':' out')+'">'+bal+tail+'</div>'));
       posBox.append(el('div','num dim',fmtUsd(x.vNow,0)));
       posBox.append(el('div','num',fmtUsd(x.vNew,0)));
-      posBox.append(el('div','dim scn-st', x.state==='in'
-        ? 'in range · '+fmtTok(x.a0)+' '+esc((x.p.m0||{}).symbol||'')+' + '+fmtTok(x.a1)+' '+esc((x.p.m1||{}).symbol||'')
-        : (x.state==='low' ? 'out — all '+esc((x.p.m0||{}).symbol||'') : 'out — all '+esc((x.p.m1||{}).symbol||''))));
     }
   };
   scnRepaint();
