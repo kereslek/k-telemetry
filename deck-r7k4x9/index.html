@@ -583,7 +583,12 @@
     .scn-sl::-moz-range-thumb{width:20px;height:20px}
     .scn-out{grid-template-columns:minmax(0,1fr) repeat(3,max-content);gap:3px 8px;font-size:11.5px}
     .scn-pos{grid-template-columns:minmax(0,1fr) max-content max-content;gap:3px 8px}
-    .scn-pos .h:last-child,.scn-st{display:none} }
+    /* The fourth header, not the last child of the grid. :last-child only matched it when the
+       table had no rows under it — the moment there were positions it stayed visible, so the
+       header row carried four cells into a three-column grid and every cell after it landed one
+       place to the left. That is what made POSITION / NOW / SCENARIO / AT THESE PRICES read as
+       loose words down the page on a phone. Its body cells (.scn-st) go with it. */
+    .scn-pos .h:nth-child(4),.scn-st{display:none} }
   /* Under ~420px even content-sized columns do not fit, so the "now" column goes. The change
      column already carries it, and a clipped figure is worse than an absent one. */
   @media (max-width:420px){
@@ -1112,7 +1117,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v28.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
