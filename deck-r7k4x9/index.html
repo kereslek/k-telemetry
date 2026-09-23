@@ -607,6 +607,11 @@
   .conc-row>span:first-child{color:var(--text-muted);flex:0 0 auto;min-width:118px}
   .conc-row>span:last-child{color:var(--text-secondary);flex:1 1 auto;text-align:right}
   .conc-bad{color:var(--status-critical)}
+  .conc-chart{margin:10px 0 2px}
+  .conc-cap{font-size:10.5px;color:var(--text-secondary);margin-bottom:4px;line-height:1.5}
+  .conc-cap .k{display:inline-block;width:8px;height:8px;border-radius:2px;vertical-align:middle;margin-right:3px}
+  .conc-cap .k.lp{background:rgba(53,214,232,0.5)}
+  .conc-cap .k.id{background:rgba(93,120,137,0.6)}
   .conc-lad{display:grid;gap:2px 10px;font-size:11px;margin-top:9px;min-width:320px}
   .conc-lad .h{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);white-space:nowrap}
   .conc-lad .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text-secondary)}
@@ -1143,7 +1148,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2092,7 +2097,7 @@ function snapSave(){
       tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
       catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
-      tokenFlow:state.tokenFlow||prev.tokenFlow||null,
+      tokenFlow:state.tokenFlow||prev.tokenFlow||null, tokenSeries:state.tokenSeries||prev.tokenSeries||null,
       competition:state.competition||prev.competition||null,
       dayMoves:(state.dayMoves&&state.dayMoves.length?state.dayMoves:prev.dayMoves)||null,
       pxChg:state.pxChg||prev.pxChg||null,
@@ -2206,6 +2211,7 @@ async function scanInner(isBoot){
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(Array.isArray(d.daily) && d.daily.length) state.dayMoves=d.daily;
           if(d.tokenFlow) state.tokenFlow=d.tokenFlow;
+          if(d.tokenSeries) state.tokenSeries=d.tokenSeries;
           if(d.pxChg) state.pxChg=d.pxChg;
           /* The payload never comes from cache; index.html can, for as long as a phone feels
              like it. When the two disagree the page a reader is looking at is not the page that
@@ -2333,6 +2339,7 @@ async function scanInner(isBoot){
         if(!state.pxChg && snap.pxChg) state.pxChg=snap.pxChg;
         if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
         if(!state.tokenFlow && snap.tokenFlow) state.tokenFlow=snap.tokenFlow;
+        if(!state.tokenSeries && snap.tokenSeries) state.tokenSeries=snap.tokenSeries;
         if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
         if(!state.competition && snap.competition) state.competition=snap.competition;
       }
@@ -2376,6 +2383,7 @@ async function scanInner(isBoot){
       if(!state.pxChg && snap.pxChg) state.pxChg=snap.pxChg;
       state.catMtd=state.catMtd??snap.catMtd;
       state.tokenFlow=state.tokenFlow??snap.tokenFlow;
+      state.tokenSeries=state.tokenSeries??snap.tokenSeries;
       state.catMonths=state.catMonths??snap.catMonths;
       state.competition=state.competition??snap.competition;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -4020,6 +4028,58 @@ function convertLadder(t){
   });
 }
 
+/* The count over time, which is the number somebody trading out of a position is trying to
+   push down. Stacked rather than a single line because pooled and loose are not the same thing
+   to sell: what is in a pool has to be unwound before it can go anywhere, and a total that hid
+   the split would make a withdrawal look like progress. */
+function concSeries(card, t, key){
+  const ser=(state.tokenSeries||{})[key];
+  if(!ser || ser.length<2) return;
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(n,a)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  /* padL fits the widest tick label. At 52 a six-figure count ran off the left edge of the
+     viewBox, which is invisible until the count reaches six figures. */
+  const W=600,H=118,padL=68,padR=8,padT=8,padB=16;
+  const pts=ser.map(x=>({d:x.d, p:x.p||0, i:x.i||0, v:(x.p||0)+(x.i||0)}));
+  const mx=Math.max(...pts.map(x=>x.v))*1.08, mn=0;
+  const X=i=>padL+(i/(pts.length-1||1))*(W-padL-padR);
+  const Y=v=>padT+(mx-v)/(mx-mn||1)*(H-padT-padB);
+  /* Uniform scaling, as the other chart on this page does. preserveAspectRatio:none stretches
+     the axis labels along with the plot, which at a phone's width squashes them and at a
+     desktop's smears them. */
+  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H});
+  svg.style.width='100%'; svg.style.display='block';
+  for(const g of niceTicks(mn,mx,3)){
+    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g),stroke:'#13233a','stroke-width':1}));
+    const tx=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end','font-size':9,fill:'#5d7889'});
+    tx.textContent=fmtTok(g); svg.append(tx);
+  }
+  const area=(top,bottom,fill)=>{
+    let d='M '+X(0)+' '+Y(bottom(0));
+    pts.forEach((_,i)=>{ d+=' L '+X(i)+' '+Y(top(i)); });
+    for(let i=pts.length-1;i>=0;i--) d+=' L '+X(i)+' '+Y(bottom(i));
+    svg.append(mk('path',{d:d+' Z',fill,stroke:'none'}));
+  };
+  area(i=>pts[i].p, ()=>0, 'rgba(53,214,232,0.22)');
+  area(i=>pts[i].v, i=>pts[i].p, 'rgba(93,120,137,0.30)');
+  svg.append(mk('polyline',{points:pts.map((x,i)=>X(i)+','+Y(x.v)).join(' '),
+    fill:'none',stroke:'#35d6e8','stroke-width':1.8,'stroke-linejoin':'round'}));
+  const lab=(x,y,txt,anc)=>{const e=mk('text',{x,y,'font-size':9,fill:'#5d7889','text-anchor':anc||'start'});e.textContent=txt;svg.append(e);};
+  lab(padL,H-4,pts[0].d.slice(5));
+  lab(W-padR,H-4,pts[pts.length-1].d.slice(5),'end');
+  const box=el('div','conc-chart'); box.append(svg); card.append(box);
+  const now=pts[pts.length-1], first=pts[0];
+  const back=n=>pts[Math.max(0,pts.length-1-n)];
+  const delta=(n,lb)=>{ const b=back(n); if(b===now) return null;
+    const dv=now.v-b.v;
+    return '<b class="'+(dv<0?'tok-up':'tok-dn')+'">'+lb+' '+(dv<0?'−':'+')+fmtTok(Math.abs(dv))+'</b>'; };
+  const ds=[delta(7,'7d'),delta(30,'30d'),(first!==now?'<span class="dim">since '+first.d.slice(5)+' '
+      +(now.v-first.v<0?'−':'+')+fmtTok(Math.abs(now.v-first.v))+'</span>':null)].filter(Boolean);
+  card.append(el('div','conc-cap','<i class="k lp"></i> '+fmtTok(now.p)+' in pools &nbsp;·&nbsp; '
+    +'<i class="k id"></i> '+fmtTok(now.i)+' loose &nbsp;·&nbsp; <b>'+fmtTok(now.v)+' total</b>'
+    +(ds.length?' &nbsp;·&nbsp; '+ds.join(' &nbsp;·&nbsp; '):'')));
+}
+
 function renderConcentration(){
   const host=$('#concBody'); if(!host) return;
   host.innerHTML='';
@@ -4090,6 +4150,7 @@ function renderConcentration(){
     } else {
       line('your pools net traded','<span class="dim">needs two days of record</span>');
     }
+    concSeries(card, t, r.key);
     const lad=convertLadder(t);
     if(lad){
       const sc=el('div','cat-scroll');
@@ -7138,6 +7199,7 @@ async function init(){
       if(d.feeMonth) state.feeMonth=d.feeMonth;
       if(d.costMonth) state.costMonth=d.costMonth;
       if(d.tokenFlow) state.tokenFlow=d.tokenFlow;
+      if(d.tokenSeries) state.tokenSeries=d.tokenSeries;
       if(d.tickers) state.tickers=d.tickers;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
