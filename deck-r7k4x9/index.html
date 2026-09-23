@@ -607,6 +607,11 @@
   .conc-row>span:first-child{color:var(--text-muted);flex:0 0 auto;min-width:118px}
   .conc-row>span:last-child{color:var(--text-secondary);flex:1 1 auto;text-align:right}
   .conc-bad{color:var(--status-critical)}
+  .conc-lad{display:grid;gap:2px 10px;font-size:11px;margin-top:9px;min-width:320px}
+  .conc-lad .h{font-size:8.5px;letter-spacing:.14em;color:var(--text-muted);white-space:nowrap}
+  .conc-lad .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text-secondary)}
+  .conc-lad .h:first-child,.conc-lad .num:first-child{text-align:left}
+  .conc-lad .conc-now{color:var(--text-primary)}
   @media (max-width:520px){
     .conc-row{flex-direction:column;gap:0;padding:3px 0}
     .conc-row>span:last-child{text-align:left}
@@ -1138,7 +1143,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3915,7 +3920,10 @@ function renderScenario(host, book, nameOf){
    Two tests, and either one qualifies: you hold a material share of the token's supply, or you
    provide most of the liquidity it trades on. Both are measured, neither is a judgement about
    the token. */
-const CONC_MIN_USD=400, CONC_SUPPLY=1.5, CONC_LIQ=50;
+/* The liquidity bar is 90%, not a simple majority. At 61% of a token's active liquidity you
+   are merely the largest provider and somebody else can still fill a trade; at 100% you are the
+   only way out, and that is a different kind of position. The panel is about the second. */
+const CONC_MIN_USD=400, CONC_SUPPLY=1.5, CONC_LIQ=90;
 /* The daily series keys tokens its own way — chain prefix "evm" or "sol", address lowercased.
    Matching it needs the same spelling rather than the token panel's. */
 const dayKey=(chain,addr)=>(chain==='sol'?'sol':'evm')+':'+String(addr||'').toLowerCase();
@@ -3981,6 +3989,37 @@ function concentration(book){
   return out.sort((a,b)=>(b.t.value||0)-(a.t.value||0)).slice(0,4);
 }
 
+/* What the position turns INTO as the price moves. Down, the pools spend the counterpart
+   buying the token — the card says where that ends. Up, the reverse: the token becomes SOL and
+   USDT, which is the only exit that does not require somebody to take the whole position off
+   your hands at once. Both directions are the same curve read from opposite ends, so they
+   belong in one table.
+
+   The counterpart's own price is held where it is today. This answers "what happens if CPOOL
+   moves", not "what happens if everything moves", and mixing the two would make the column
+   unreadable. */
+function convertLadder(t){
+  if(!(t.usd>0)||!t.legs.length) return null;
+  const mult=[0.5,0.75,1,1.5,2,3];
+  return mult.map(m=>{
+    const target=t.usd*m;
+    let tok=t.idle||0, cp=0, inr=0;
+    for(const l of t.legs){
+      const p=l.p, L=p.liq?Number(p.liq):null;
+      if(!(L>0)) { tok+=l.amt; continue; }
+      const oth = l.side===0 ? (p.usd1||0) : (p.usd0||0);
+      if(!(oth>0)) { tok+=l.amt; continue; }
+      const P = l.side===0 ? target/oth : oth/target;
+      const a = amtsAt(L,P,p.priceLower,p.priceUpper,p.d0,p.d1);
+      if(!a){ tok+=l.amt; continue; }
+      tok += l.side===0 ? a.a0 : a.a1;
+      cp  += l.side===0 ? a.a1*oth : a.a0*oth;
+      if(P>p.priceLower && P<p.priceUpper) inr++;
+    }
+    return {m, target, tok, cp, worth:tok*target+cp, inr};
+  });
+}
+
 function renderConcentration(){
   const host=$('#concBody'); if(!host) return;
   host.innerHTML='';
@@ -3997,8 +4036,11 @@ function renderConcentration(){
     if(hint) hint.textContent='nothing flagged';
     return;
   }
+  /* The headline counts the whole position, matching the card. Summing only the token itself
+     said $13,536 where the card said $19,202, which is the same understatement the card was
+     just corrected for. */
   if(hint) hint.textContent=rows.length+' holding'+(rows.length>1?'s':'')+' · '
-    +fmtUsd(rows.reduce((s,r)=>s+(r.t.value||0),0),0)+' exposed';
+    +fmtUsd(rows.reduce((s,r)=>s+(r.t.value||0)+(r.other||0),0),0)+' at risk';
   for(const r of rows){
     const t=r.t;
     const card=el('div','conc-card');
@@ -4047,6 +4089,25 @@ function renderConcentration(){
       line('your pools net traded', parts.join(' &nbsp;·&nbsp; '));
     } else {
       line('your pools net traded','<span class="dim">needs two days of record</span>');
+    }
+    const lad=convertLadder(t);
+    if(lad){
+      const sc=el('div','cat-scroll');
+      const g=el('div','conc-lad');
+      g.style.gridTemplateColumns='repeat(4,minmax(74px,1fr))';
+      ['IF '+esc(t.sym)+' IS','YOU HOLD','SOL + USDT','WORTH'].forEach(h=>g.append(el('div','h',h)));
+      for(const r of lad){
+        g.append(el('div','num'+(r.m===1?' conc-now':''),fmtPrice(r.target)+(r.m===1?' <span class="dim">now</span>':'')));
+        g.append(el('div','num'+(r.m===1?' conc-now':''),fmtTok(r.tok)));
+        g.append(el('div','num'+(r.m===1?' conc-now':''),fmtUsd(r.cp,0)));
+        g.append(el('div','num'+(r.m===1?' conc-now':''),'<b>'+fmtUsd(r.worth,0)+'</b>'));
+      }
+      sc.append(g); card.append(sc);
+      const up=lad[lad.length-1], dn=lad[0];
+      card.append(el('div','flow-omit','Selling into a rise is the only exit that does not need a buyer for the '
+        +'whole position at once: at '+fmtPrice(up.target)+' the pools would have turned '+fmtTok(Math.max(0,lad[2].tok-up.tok))
+        +' '+esc(t.sym)+' into '+fmtUsd(up.cp-lad[2].cp,0)+' of SOL and USDT. A fall runs the same machine backwards — '
+        +'at '+fmtPrice(dn.target)+' you would hold '+fmtTok(dn.tok)+' '+esc(t.sym)+' and only '+fmtUsd(dn.cp,0)+' beside it.'));
     }
     host.append(card);
   }
