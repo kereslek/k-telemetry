@@ -7,10 +7,10 @@
   "attrib": 0,
   "lump": 0,
   "lastBooked": 30.65,
-  "owed0": 0.007129961,
-  "owed1": 6.679797297,
-  "readAt": 1790188788257,
-  "ceilFactor": 1.179,
+  "owed0": 0.09065355,
+  "owed1": 19.342574733,
+  "readAt": 1790190059157,
+  "ceilFactor": 1.171,
   "harvestRepair": "1 Sep harvest booked short by $43.24; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2025-10, before the month being counted"
@@ -43,10 +43,10 @@
   "attrib": 0,
   "lump": 0,
   "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
-  "owed0": 0.004326704,
+  "owed0": 0.009015328,
   "owed1": 13.722695922,
-  "readAt": 1790188789942,
-  "ceilFactor": 1.129,
+  "readAt": 1790190060983,
+  "ceilFactor": 1.117,
   "harvestRepair": "1 Sep harvest booked short by $13.32; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2025-11, before the month being counted"
@@ -70,10 +70,10 @@
   "lump": 0,
   "lastBooked": 29.06,
   "repaired": "redeposit counted as income; corrected 2026-08-23",
-  "owed0": 0.00501849,
-  "owed1": 4.701638743,
-  "readAt": 1790188788766,
-  "ceilFactor": 1.117,
+  "owed0": 0.063807362,
+  "owed1": 13.614454856,
+  "readAt": 1790190059565,
+  "ceilFactor": 1.114,
   "harvestRepair": "1 Sep harvest booked short by $23.05; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2026-08, before the month being counted"
@@ -91,7 +91,7 @@
   "lump": 0,
   "owed0": 0,
   "owed1": 0,
-  "readAt": 1790188787945,
+  "readAt": 1790190058069,
   "ceilFactor": 1.1,
   "openCost": {
    "lamports": 156890401,
@@ -114,9 +114,9 @@
   "txScanned": 0,
   "attrib": 0,
   "lump": 0,
-  "owed0": 0.081098199,
-  "owed1": 22.548795887,
-  "readAt": 1790188789546,
+  "owed0": 0.20904161,
+  "owed1": 41.945938005,
+  "readAt": 1790190060501,
   "ceilFactor": 1.1
  },
  "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
@@ -134,8 +134,8 @@
   "attrib": 0,
   "lump": 0,
   "owed0": 0,
-  "owed1": 0.654319,
-  "readAt": 1790188789135,
+  "owed1": 0.788328,
+  "readAt": 1790190059987,
   "ceilFactor": 1.1
  }
 }
