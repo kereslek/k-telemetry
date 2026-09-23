@@ -1228,9 +1228,19 @@ async function solWalletCosts(wallet, sinceSig, poolCache, priceOf, monthStartSe
     try{
       const keys=txAccountKeys(tx);
       const deltas=tokenDeltas(tx);
-      // did the wallet end up holding less of one thing and more of another?
+      /* Did the wallet end up holding less of one thing and more of another?
+
+         A position NFT is not one of those things. Opening a position mints one and pays out
+         two tokens; closing burns one and takes two back. Counted as a leg, both shapes look
+         exactly like a swap — and on 2026-09-23 a single restate, one close and one open,
+         reported two swaps through venues that could not be read. Neither was a swap and
+         neither was billed, because a deposit raises both vaults and a withdrawal lowers both,
+         so no money moved wrongly; what moved wrongly was the page's account of what it had
+         missed. Recognised by the same rule that finds positions in the first place: no
+         decimals, quantity one. */
+      const isNft=d=>d.dec===0 && (d.delta===1n||d.delta===-1n);
       const net={};
-      for(const [,d] of deltas) if(d.owner===wallet) net[d.mint]=(net[d.mint]||0n)+d.delta;
+      for(const [,d] of deltas) if(d.owner===wallet && !isNft(d)) net[d.mint]=(net[d.mint]||0n)+d.delta;
       const lost=Object.keys(net).filter(m=>net[m]<0n), gained=Object.keys(net).filter(m=>net[m]>0n);
       const swapLike=lost.length>0 && gained.length>0 && lost.some(m=>!gained.includes(m));
       const pools=await solPoolsIn(keys, poolCache);
