@@ -2481,7 +2481,7 @@ const main=async()=>{
     }
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
     const uiBuild=readUiBuild();
-    let profileDaily=[], profilePxChg=null, tokenFlow=null;
+    let profileDaily=[], profilePxChg=null, tokenFlow=null, tokenSeries=null;
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
     {
@@ -2733,6 +2733,36 @@ const main=async()=>{
           if(Object.keys(out).length) tokenFlow=out;
         }
       }catch(e){ logErr('tokenFlow',e); }
+      /* The count itself, day by day, for tokens the portfolio is actually exposed to. The flow
+         figure above says how many moved through trading; this says how many there are, which is
+         the number somebody working out of a position is trying to push down. Split into pooled
+         and loose because they are not the same thing to sell: one needs unwinding first.
+
+         Same reason as everything else in this block — the per-position day records are the
+         input and they never reach the payload. Ninety days, two decimals, and only tokens that
+         appear in a live position, which keeps it to a few kilobytes. */
+      try{
+        const keep=new Set();
+        for(const p of (rec.ps||[])){ if(p.k0) keep.add(p.k0); if(p.k1) keep.add(p.k1); }
+        const days=[...daily.filter(x=>x.d!==rec.d && Array.isArray(x.ps)), rec].slice(-90);
+        const out={};
+        for(const k of keep){
+          const pts=[];
+          for(const day of days){
+            let pooled=0, seen=false;
+            for(const p of (day.ps||[])){
+              if(p.k0===k){ pooled+=p.a0||0; seen=true; }
+              else if(p.k1===k){ pooled+=p.a1||0; seen=true; }
+            }
+            const wi=(day.w||[]).find(x=>x.k===k);
+            const idle=wi?wi.a:0;
+            if(!seen && !idle) continue;               // not held that day — no point to plot
+            pts.push({d:day.d, p:r2(pooled), i:r2(idle)});
+          }
+          if(pts.length>=2) out[k]=pts;
+        }
+        if(Object.keys(out).length) tokenSeries=out;
+      }catch(e){ logErr('tokenSeries',e); }
       /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
          them would more than double a payload that has to reach a phone every 15 minutes. The
          answers are 300 bytes a day, they are identical for every reader, and computing them
@@ -2911,7 +2941,7 @@ const main=async()=>{
     try{ competition=await buildCompetition(evmPositions, solPositions); }
     catch(e){ logErr('competition', e); }
 
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
