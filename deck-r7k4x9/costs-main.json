@@ -30,9 +30,9 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26038500,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26038500,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26038500
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26038599,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26038599,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26038599
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
@@ -51,18 +51,22 @@
   "2FSSdqBFfU2hPQLuVzDW2eXxVFFGewNPTHRFtd5gjt1Cd5o7eErUFwmtxes73zvb2cTTQimzRYdLbp6HShDNwrFz": 1,
   "56DygpJsCF9gtkepDmAyWVN8XrxvKU3tMc5CctND4n6BEQcpzr8dWniMCCtETQriGRUdeKsgLcZuTBqVZoP4dc16": 1,
   "u1WH4FyPmEKziyVq72Z7tpAgHhivBS3sobHKp2ZguMD83XxHBM8KMM1S99z7xaD1z1FcK4PoUF9wrc8kAPTe6wu": 1,
-  "9gu9zggrFeuyLThtv5HTZAWoXdmgmzneeAYxg7jctLTfg9ha8Ezb2nh8cjQKaeUxHw5CurhX9sg2xvp9eQjbfPY": 1
+  "9gu9zggrFeuyLThtv5HTZAWoXdmgmzneeAYxg7jctLTfg9ha8Ezb2nh8cjQKaeUxHw5CurhX9sg2xvp9eQjbfPY": 1,
+  "cz8ZBfNj36m6FRt2JGJoj1sZTLoyv1sk1CY3GhKwGVDieE7vZrAYvjdQGzzwqUitStRGcehjRsjgi1PrC1gVvVi": 1,
+  "3ou7VFjS4J2xjWumFR3VNVEcgxbGbvQydjd8u7Qg7ku8zh21MtUtfvvVym2WiroDbFvG37xpytZkTVrJPVuMACL4": 1,
+  "4P2AtU3CEXYPMDyE1UHba6UZNVH3n3B9g8UB526CzU8fAKRzTkYB87BTTNqJhVWshWjbMg7Cf3MfmFyNWwboUiJN": 1,
+  "3fkLyYJkYnMa4txKTZmR3idyeAD8HuVuEpa1HebkbVizhiLtRMRucyfivs2fhcWqep2N7gpqhLU7soGeLqBHFUKu": 1
  },
  "solPartial": true,
- "solGasUsd": 0.037436130544172296,
+ "solGasUsd": 0.07279075636498326,
  "solOpenUsd": 18.51,
  "solOpenPend": {},
  "solScan": {
   "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj",
-  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "2HiFe7uosHs7cyASxjpsKTcfBpJWrq3BFXe3WuwRe6VPQTcDHYCeuTuitxUzvPuyyPGi4BC2njtbv4XpZuL5Ne7N"
+  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "cz8ZBfNj36m6FRt2JGJoj1sZTLoyv1sk1CY3GhKwGVDieE7vZrAYvjdQGzzwqUitStRGcehjRsjgi1PrC1gVvVi"
  },
  "solWalletTx": {},
  "solSwapUsd": 4.74,
- "solUnattributed": 1,
+ "solUnattributed": 2,
  "solSwapOwnUsd": 0
 }
