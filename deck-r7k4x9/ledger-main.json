@@ -3,19 +3,18 @@
   "collectedUsd": 553.7238212195437,
   "since": 1786804445105,
   "sig": "2zbu15hjFGRs8dKj1Zcm14Y4EfkarEH7bWWYt9DXHSpxmmZpyjeDCiic9wGw99xA3ten9WSqXBaTVVqPt1XXV6XG",
-  "txScanned": 1,
-  "attrib": 1,
+  "txScanned": 0,
+  "attrib": 0,
   "lump": 0,
   "lastBooked": 1.16,
   "owed0": 0,
-  "owed1": 0,
-  "readAt": 1790191345319,
+  "owed1": 0.211228696,
+  "readAt": 1790192622992,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $43.24; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2025-10, before the month being counted"
-  },
-  "harvestGap": 10.36
+  }
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
   "collectedUsd": 488.8702766967674,
@@ -46,7 +45,7 @@
   "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
   "owed0": 0.009015328,
   "owed1": 13.722695922,
-  "readAt": 1790191347788,
+  "readAt": 1790192624968,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $13.32; credited 2026-09-01",
   "openCost": {
@@ -66,20 +65,19 @@
   "collectedUsd": 254.06823089489276,
   "since": 1786864626363,
   "sig": "2zbu15hjFGRs8dKj1Zcm14Y4EfkarEH7bWWYt9DXHSpxmmZpyjeDCiic9wGw99xA3ten9WSqXBaTVVqPt1XXV6XG",
-  "txScanned": 1,
-  "attrib": 1,
+  "txScanned": 0,
+  "attrib": 0,
   "lump": 0,
   "lastBooked": 0.81,
   "repaired": "redeposit counted as income; corrected 2026-08-23",
   "owed0": 0,
-  "owed1": 0,
-  "readAt": 1790191346035,
+  "owed1": 0.148675323,
+  "readAt": 1790192623374,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $23.05; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2026-08, before the month being counted"
-  },
-  "harvestGap": 7.29
+  }
  },
  "__sigs": [
   "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7"
@@ -93,7 +91,7 @@
   "lump": 0,
   "owed0": 0,
   "owed1": 0,
-  "readAt": 1790191344727,
+  "readAt": 1790192622116,
   "ceilFactor": 1.1,
   "openCost": {
    "lamports": 156890401,
@@ -117,8 +115,8 @@
   "attrib": 0,
   "lump": 0,
   "owed0": 0.20904161,
-  "owed1": 41.945938005,
-  "readAt": 1790191347259,
+  "owed1": 42.269503121,
+  "readAt": 1790192624459,
   "ceilFactor": 1.1
  },
  "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
@@ -132,12 +130,12 @@
    ]
   },
   "sig": "dpFtL8WUE6q5uDrVyqhtNstCBvWy7wkhQJfGjaorCLk6Kig33XsSFuhCwtzaivxceZph9UKyv8nsZkuXS5bCh8v",
-  "txScanned": 3,
-  "attrib": 1,
+  "txScanned": 0,
+  "attrib": 0,
   "lump": 0,
   "owed0": 0,
-  "owed1": 0,
-  "readAt": 1790191346816,
+  "owed1": 0.040062,
+  "readAt": 1790192623772,
   "ceilFactor": 1.1,
   "lastBooked": 0.79
  }
