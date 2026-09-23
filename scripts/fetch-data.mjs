@@ -2481,7 +2481,7 @@ const main=async()=>{
     }
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
     const uiBuild=readUiBuild();
-    let profileDaily=[], profilePxChg=null;
+    let profileDaily=[], profilePxChg=null, tokenFlow=null;
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
     {
@@ -2686,6 +2686,53 @@ const main=async()=>{
       }else{
         console.log('daily: skipped, chainStatus', JSON.stringify(chainStatus));
       }
+      /* Net tokens traded: sold or bought BY the pools, as opposed to deposited or withdrawn.
+
+         This is the figure that says whether an exit is actually happening. Value and fees are
+         snapshots; this is direction of travel, and for a token whose only liquidity is your own
+         it is the difference between a position you are working out of and one that is quietly
+         growing.
+
+         A position whose liquidity is identical in two day records moved tokens for exactly one
+         reason: somebody traded against it. Positions whose liquidity changed in the window are
+         dropped rather than guessed at — counting a withdrawal as a sale would make an exit look
+         like it was working — and how many were dropped rides along so the reader knows the
+         coverage. Computed here for the same reason the attribution below is: the per-position
+         day records live on the server and never reach the payload. */
+      try{
+        const hist=[...daily.filter(x=>x.d!==rec.d && Array.isArray(x.ps)), rec];
+        if(hist.length>=2){
+          const last=hist[hist.length-1];
+          const amtOf=(p,k)=> p.k0===k ? p.a0 : (p.k1===k ? p.a1 : null);
+          const keys=new Set();
+          for(const p of (last.ps||[])){ if(p.k0) keys.add(p.k0); if(p.k1) keys.add(p.k1); }
+          const out={};
+          for(const w of [1,7,30]){
+            const want=new Date(Date.parse(last.d+'T00:00:00Z')-w*86400000).toISOString().slice(0,10);
+            let base=null;
+            for(let i=hist.length-2;i>=0;i--){ base=hist[i]; if(hist[i].d<=want) break; }
+            if(!base||base.d===last.d) continue;
+            const A=new Map((base.ps||[]).map(p=>[String(p.i),p]));
+            for(const k of keys){
+              let net=0, used=0, moved=0;
+              for(const b of (last.ps||[])){
+                if(amtOf(b,k)==null) continue;
+                const a=A.get(String(b.i));
+                if(!a){ moved++; continue; }
+                if(!(a.L>0&&b.L>0) || Math.abs(b.L/a.L-1)>1e-9){ moved++; continue; }
+                const qa=amtOf(a,k), qb=amtOf(b,k);
+                if(qa==null||qb==null) continue;
+                net+=qb-qa; used++;
+              }
+              for(const a of (base.ps||[])) if(amtOf(a,k)!=null && !(last.ps||[]).some(b=>String(b.i)===String(a.i))) moved++;
+              if(!used) continue;
+              out[k]=out[k]||{};
+              out[k][w]={net:r6(net), used, moved, from:base.d, to:last.d};
+            }
+          }
+          if(Object.keys(out).length) tokenFlow=out;
+        }
+      }catch(e){ logErr('tokenFlow',e); }
       /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
          them would more than double a payload that has to reach a phone every 15 minutes. The
          answers are 300 bytes a day, they are identical for every reader, and computing them
@@ -2864,7 +2911,7 @@ const main=async()=>{
     try{ competition=await buildCompetition(evmPositions, solPositions); }
     catch(e){ logErr('competition', e); }
 
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));

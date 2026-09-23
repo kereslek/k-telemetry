@@ -595,6 +595,22 @@
        which is also the NOW header. The scenario figure is the one worth keeping. */
     .scn-pos{grid-template-columns:minmax(0,1fr) max-content}
     .scn-pos > *:nth-child(3n+2){display:none} }
+  /* Deliberately flex rows rather than a grid: this panel's right-hand side is prose of varying
+     length, and a grid would either clip it or force a column width the label cannot live in. */
+  .conc-card{padding:10px 0;border-bottom:1px solid var(--line-soft)}
+  .conc-card:last-of-type{border-bottom:none}
+  .conc-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin-bottom:6px}
+  .conc-sym{font-size:13px;color:var(--text-primary);letter-spacing:.04em}
+  .conc-n{font-size:11.5px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+  .conc-v{margin-left:auto;font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .conc-row{display:flex;gap:10px;align-items:baseline;font-size:11.5px;line-height:1.5;padding:1px 0}
+  .conc-row>span:first-child{color:var(--text-muted);flex:0 0 auto;min-width:118px}
+  .conc-row>span:last-child{color:var(--text-secondary);flex:1 1 auto;text-align:right}
+  .conc-bad{color:var(--status-critical)}
+  @media (max-width:520px){
+    .conc-row{flex-direction:column;gap:0;padding:3px 0}
+    .conc-row>span:last-child{text-align:left}
+    .conc-v{margin-left:0;width:100%} }
   .tok-total{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px 18px;
     padding:0 0 10px;margin-bottom:12px;border-bottom:1px solid var(--line)}
   .tok-total-n{font-size:22px;font-variant-numeric:tabular-nums;color:var(--text-primary);margin-right:9px}
@@ -970,6 +986,12 @@
       <div class="pbody" id="tokenBody"></div>
     </section>
 
+    <section class="panel" data-panel="conc" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CONCENTRATION — WHAT YOU ARE THE MARKET FOR</span><span class="hint" id="concHint">holdings whose price is closer to your own quote than to a market</span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="concBody"></div>
+    </section>
+
     <section class="panel" data-panel="global" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">GLOBAL SCOPE — TOP REALISTIC POOLS RIGHT NOW</span><span class="hint">25 volatile pairs · no stables · Uniswap · Pancake · Aerodrome · Raydium · Orca · Meteora &amp; more · 8 chains</span><button class="collapse-btn">▾</button></div>
@@ -1116,7 +1138,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v28.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2065,6 +2087,7 @@ function snapSave(){
       tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
       catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
+      tokenFlow:state.tokenFlow||prev.tokenFlow||null,
       competition:state.competition||prev.competition||null,
       dayMoves:(state.dayMoves&&state.dayMoves.length?state.dayMoves:prev.dayMoves)||null,
       pxChg:state.pxChg||prev.pxChg||null,
@@ -2177,6 +2200,7 @@ async function scanInner(isBoot){
           if(d.ethUsdChg24!=null) state.ethUsdChg24 = d.ethUsdChg24;
           if(Array.isArray(d.history) && d.history.length) state.history = d.history;
           if(Array.isArray(d.daily) && d.daily.length) state.dayMoves=d.daily;
+          if(d.tokenFlow) state.tokenFlow=d.tokenFlow;
           if(d.pxChg) state.pxChg=d.pxChg;
           /* The payload never comes from cache; index.html can, for as long as a phone feels
              like it. When the two disagree the page a reader is looking at is not the page that
@@ -2303,6 +2327,7 @@ async function scanInner(isBoot){
         if(!(state.dayMoves||[]).length && snap.dayMoves) state.dayMoves=snap.dayMoves;
         if(!state.pxChg && snap.pxChg) state.pxChg=snap.pxChg;
         if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
+        if(!state.tokenFlow && snap.tokenFlow) state.tokenFlow=snap.tokenFlow;
         if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
         if(!state.competition && snap.competition) state.competition=snap.competition;
       }
@@ -2345,6 +2370,7 @@ async function scanInner(isBoot){
       if(!(state.dayMoves||[]).length && snap.dayMoves) state.dayMoves=snap.dayMoves;
       if(!state.pxChg && snap.pxChg) state.pxChg=snap.pxChg;
       state.catMtd=state.catMtd??snap.catMtd;
+      state.tokenFlow=state.tokenFlow??snap.tokenFlow;
       state.catMonths=state.catMonths??snap.catMonths;
       state.competition=state.competition??snap.competition;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -2592,7 +2618,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); if(!$('#quickNav').children.length) buildQuickNav();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); renderConcentration(); if(!$('#quickNav').children.length) buildQuickNav();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -3874,6 +3900,128 @@ function renderScenario(host, book, nameOf){
   };
   scnRepaint();
   host.append(wrap);
+}
+
+/* ---------- concentration: the tokens you ARE the market for --------------------------------
+
+   The token panel answers "how much do I hold". This answers a different question, and it is
+   the one that decides whether a holding can be sold: is there anybody on the other side.
+
+   A position can be large, in range, earning well, and still be unsellable, because the only
+   liquidity quoting it is your own. When that is true the price on the screen is your own quote
+   rather than a market, the value is soft in a way no other figure on this page is, and the
+   honest way to size it is to ask what is left if it goes to nothing.
+
+   Two tests, and either one qualifies: you hold a material share of the token's supply, or you
+   provide most of the liquidity it trades on. Both are measured, neither is a judgement about
+   the token. */
+const CONC_MIN_USD=400, CONC_SUPPLY=1.5, CONC_LIQ=50;
+/* The daily series keys tokens its own way — chain prefix "evm" or "sol", address lowercased.
+   Matching it needs the same spelling rather than the token panel's. */
+const dayKey=(chain,addr)=>(chain==='sol'?'sol':'evm')+':'+String(addr||'').toLowerCase();
+
+/* How many of a token the pools SOLD or BOUGHT by trading, as opposed to what you put in or
+   took out. Computed by the relay against the full per-position day records, which never reach
+   the payload — the browser holds a summary of each day, not the positions inside it, so this
+   cannot be worked out here. */
+function tokenFlowSince(key, days){
+  const tf=state.tokenFlow;
+  if(!tf) return null;
+  const e=tf[key];
+  return (e && e[days]) ? {...e[days], days} : null;
+}
+
+function concentration(book){
+  const arenas=(state.competition&&state.competition.arenas)||[];
+  const byKey=new Map(arenas.map(a=>[dayKey(a.chain,a.token),a]));
+  const mint=(state.idle&&state.idle.mintInfo)||{};
+  const out=[];
+  for(const t of book){
+    if(!t.addr || t.usd==null || !(t.value>=CONC_MIN_USD)) continue;
+    const k=dayKey(t.chain,t.addr);
+    const ar=byKey.get(k);
+    const mi=mint[t.addr];
+    const supply=mi&&mi.supply!=null?Number(mi.supply):null;
+    const supplyPct=supply>0?t.total/supply*100:null;
+    const liqPct=ar?ar.tvlSharePct:null;
+    if(!((supplyPct!=null&&supplyPct>=CONC_SUPPLY) || (liqPct!=null&&liqPct>=CONC_LIQ))) continue;
+    /* What sits beside it in the same pools. A wipeout takes the token, not its counterpart —
+       and the counterpart is the part of the position that survives, so it belongs in the same
+       frame rather than being left for the reader to work out. */
+    let other=0;
+    for(const l of t.legs){
+      const p=l.p;
+      other += l.side===0 ? (p.amt1||0)*(p.usd1||0) : (p.amt0||0)*(p.usd0||0);
+    }
+    out.push({t, key:k, supply, supplyPct, liqPct, scope:ar?ar.scope:null, other,
+              flow1:tokenFlowSince(k,1), flow7:tokenFlowSince(k,7), flow30:tokenFlowSince(k,30)});
+  }
+  return out.sort((a,b)=>(b.t.value||0)-(a.t.value||0)).slice(0,4);
+}
+
+function renderConcentration(){
+  const host=$('#concBody'); if(!host) return;
+  host.innerHTML='';
+  const hint=$('#concHint');
+  const book=buildTokenBook();
+  if(!book.length){ host.append(el('div','flow-omit','No holdings loaded.')); if(hint) hint.textContent=''; return; }
+  const rows=concentration(book);
+  const grand=book.reduce((s,t)=>s+(t.value||0),0)+(state.idle&&state.idle.totalUsd?0:0);
+  const port=book.reduce((s,t)=>s+(t.value||0),0);
+  if(!rows.length){
+    host.append(el('div','flow-omit','Nothing here is concentrated enough to flag: no holding is more than '
+      +CONC_SUPPLY+'% of its token’s supply, and none sits in pools you provide more than '+CONC_LIQ
+      +'% of. This panel fills itself in when that changes.'));
+    if(hint) hint.textContent='nothing flagged';
+    return;
+  }
+  if(hint) hint.textContent=rows.length+' holding'+(rows.length>1?'s':'')+' · '
+    +fmtUsd(rows.reduce((s,r)=>s+(r.t.value||0),0),0)+' exposed';
+  for(const r of rows){
+    const t=r.t;
+    const card=el('div','conc-card');
+    const nm=t.sym+' · '+(t.chain==='sol'?'Solana':'Ethereum');
+    card.append(el('div','conc-head','<span class="conc-sym">'+esc(nm)+'</span>'
+      +'<span class="conc-n">'+fmtTok(t.total)+' <span class="dim">tokens</span></span>'
+      +'<span class="conc-v">'+fmtUsd(t.value,0)+'</span>'));
+    const line=(k,v,cls)=>{ const d=el('div','conc-row'); d.innerHTML='<span>'+k+'</span><span class="'+(cls||'')+'">'+v+'</span>'; card.append(d); };
+    line('<b>if it went to zero</b>','<b class="conc-bad">−'+fmtUsd(t.value,0)+'</b> · '
+      +(port>0?(t.value/port*100).toFixed(1):'0')+'% of everything you hold');
+    if(r.supplyPct!=null) line('you hold', '<b>'+r.supplyPct.toFixed(2)+'%</b> of its '+fmtTok(r.supply)+' supply');
+    if(r.liqPct!=null) line('you provide', '<b>'+r.liqPct.toFixed(r.liqPct>=99.5?2:1)+'%</b> of its liquidity'
+      +(r.scope?' <span class="dim">('+esc(r.scope)+')</span>':''));
+    line('beside it in the same pools', fmtUsd(r.other,0)+' <span class="dim">— unaffected if the token goes to zero</span>');
+    /* The number that says whether an exit is actually happening. Everything else on this card
+       is a snapshot; this is the direction of travel. */
+    const f=[['24h',r.flow1],['7d',r.flow7],['30d',r.flow30]].filter(x=>x[1]);
+    if(f.length){
+      /* Coverage belongs to the window it describes. Reporting one window's against all three
+         was wrong the moment they differed — the 24h figure read two positions where the 30d
+         figure could only read one, and a single trailing "1 of 6" made the fresher, better
+         figure look as thin as the oldest. */
+      const parts=f.map(([lab,fl])=>{
+        const cov=fl.used+fl.moved;
+        const tag=fl.moved>0?' <span class="dim">'+fl.used+'/'+cov+'</span>':'';
+        /* Below a hundredth of a percent of the holding it is not a direction, it is noise, and
+           printing "bought 1.00e-7" reads as a figure rather than as nothing happening. */
+        if(Math.abs(fl.net) < Math.max(1e-9, t.total*0.0001)) return '<span class="dim">'+lab+' flat</span>'+tag;
+        const sold=fl.net<0;
+        return '<b class="'+(sold?'tok-up':'tok-dn')+'">'+lab+' '+(sold?'sold':'bought')+' '
+          +fmtTok(Math.abs(fl.net))+'</b>'+tag;
+      });
+      line('your pools net traded', parts.join(' &nbsp;·&nbsp; '));
+    } else {
+      line('your pools net traded','<span class="dim">needs two days of record</span>');
+    }
+    host.append(card);
+  }
+  host.append(el('div','arch-note','Flagged because you hold a large share of the token’s supply, or because most '
+    +'of the liquidity it trades on is yours — either one means the price beside it is closer to your own quote than '
+    +'to a market, and that selling moves it. The liquidity share covers the venues named on each line and nothing else. '
+    +'"Net traded" counts only tokens that changed hands because somebody traded against your pools; deposits and '
+    +'withdrawals are excluded, and a position you altered during a window is dropped from that window rather than '
+    +'counted as a sale \u2014 the small figure beside each one is how many positions it could read out of how many it '
+    +'would have liked to.'));
 }
 
 function renderTokens(){
@@ -6891,6 +7039,7 @@ async function init(){
       if(Array.isArray(d.history) && d.history.length) state.history=d.history;
       if(d.feeMonth) state.feeMonth=d.feeMonth;
       if(d.costMonth) state.costMonth=d.costMonth;
+      if(d.tokenFlow) state.tokenFlow=d.tokenFlow;
       if(d.tickers) state.tickers=d.tickers;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
