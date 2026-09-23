@@ -1138,7 +1138,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3944,16 +3944,38 @@ function concentration(book){
     const supply=mi&&mi.supply!=null?Number(mi.supply):null;
     const supplyPct=supply>0?t.total/supply*100:null;
     const liqPct=ar?ar.tvlSharePct:null;
-    if(!((supplyPct!=null&&supplyPct>=CONC_SUPPLY) || (liqPct!=null&&liqPct>=CONC_LIQ))) continue;
+    const liqAny = (ar && (ar.mine||[]).some(m=>m.sharePct>=CONC_LIQ)) || (liqPct!=null&&liqPct>=CONC_LIQ);
+    if(!((supplyPct!=null&&supplyPct>=CONC_SUPPLY) || liqAny)) continue;
     /* What sits beside it in the same pools. A wipeout takes the token, not its counterpart —
        and the counterpart is the part of the position that survives, so it belongs in the same
        frame rather than being left for the reader to work out. */
-    let other=0;
+    let other=0, zeroBy=null;
     for(const l of t.legs){
       const p=l.p;
       other += l.side===0 ? (p.amt1||0)*(p.usd1||0) : (p.amt0||0)*(p.usd0||0);
+      /* The price of THIS token at which the position holds nothing else. A concentrated
+         position converts entirely into whichever side is falling, so the counterpart is not
+         spared by a collapse — it is spent buying the collapse. Token0 is exhausted at the
+         upper bound, token1 at the lower. */
+      const bound = l.side===0 ? p.priceLower : p.priceUpper;
+      const px = l.side===0 ? (p.usd1||0)*bound : (bound>0 ? (p.usd0||0)/bound : null);
+      if(px!=null && px>0 && (zeroBy==null || px<zeroBy)) zeroBy=px;
     }
-    out.push({t, key:k, supply, supplyPct, liqPct, scope:ar?ar.scope:null, other,
+    /* Share of the liquidity that can actually absorb a trade, read from the chain — my
+       liquidity over the pool's, at today's tick — rather than from the venue's published TVL.
+       The TVL feed lags: a 75% withdrawal from the 1% pool left it reporting four times the
+       position that remained, which read as someone else owning three quarters of a pool this
+       portfolio is the whole of. Value-weighted, so a pool's say matches its size. */
+    let liqOn=null;
+    if(ar && (ar.mine||[]).length){
+      let mineUsd=0, actUsd=0;
+      for(const m of ar.mine){
+        if(!(m.sharePct>0) || !(m.myUsd>0)) continue;
+        mineUsd+=m.myUsd; actUsd+=m.myUsd/(m.sharePct/100);
+      }
+      if(actUsd>0) liqOn=mineUsd/actUsd*100;
+    }
+    out.push({t, key:k, supply, supplyPct, liqPct, liqOn, scope:ar?ar.scope:null, other, zeroBy,
               flow1:tokenFlowSince(k,1), flow7:tokenFlowSince(k,7), flow30:tokenFlowSince(k,30)});
   }
   return out.sort((a,b)=>(b.t.value||0)-(a.t.value||0)).slice(0,4);
@@ -3985,12 +4007,25 @@ function renderConcentration(){
       +'<span class="conc-n">'+fmtTok(t.total)+' <span class="dim">tokens</span></span>'
       +'<span class="conc-v">'+fmtUsd(t.value,0)+'</span>'));
     const line=(k,v,cls)=>{ const d=el('div','conc-row'); d.innerHTML='<span>'+k+'</span><span class="'+(cls||'')+'">'+v+'</span>'; card.append(d); };
-    line('<b>if it went to zero</b>','<b class="conc-bad">−'+fmtUsd(t.value,0)+'</b> · '
-      +(port>0?(t.value/port*100).toFixed(1):'0')+'% of everything you hold');
+    /* The whole position, not just the token. This line used to say the SOL beside it was
+       unaffected, which is the opposite of what a concentrated position does: as one side
+       collapses the pool sells the other to buy it, and ends holding nothing but the collapse.
+       On these pools the last of the SOL is gone by roughly a 72% fall, not at zero. */
+    const risk=(t.value||0)+r.other;
+    line('<b>if it went to zero</b>','<b class="conc-bad">−'+fmtUsd(risk,0)+'</b> · '
+      +(port>0?(risk/port*100).toFixed(1):'0')+'% of everything you hold — <b>the whole position</b>');
+    line('· the token itself', fmtUsd(t.value,0));
+    if(r.other>0){
+      line('· its counterpart in those pools', fmtUsd(r.other,0)
+        +' <span class="dim">— not spared: the pools spend it buying '+esc(t.sym)+' the whole way down</span>');
+      if(r.zeroBy!=null && t.usd>0) line('nothing but '+esc(t.sym)+' below',
+        '<b>'+fmtPrice(r.zeroBy)+'</b> <span class="dim">— a '+((1-r.zeroBy/t.usd)*100).toFixed(0)
+        +'% fall, so the counterpart is gone well before zero</span>');
+    }
     if(r.supplyPct!=null) line('you hold', '<b>'+r.supplyPct.toFixed(2)+'%</b> of its '+fmtTok(r.supply)+' supply');
-    if(r.liqPct!=null) line('you provide', '<b>'+r.liqPct.toFixed(r.liqPct>=99.5?2:1)+'%</b> of its liquidity'
+    const lp=r.liqOn!=null?r.liqOn:r.liqPct;
+    if(lp!=null) line('you provide', '<b>'+lp.toFixed(lp>=99.5?2:1)+'%</b> of the liquidity active at today’s price'
       +(r.scope?' <span class="dim">('+esc(r.scope)+')</span>':''));
-    line('beside it in the same pools', fmtUsd(r.other,0)+' <span class="dim">— unaffected if the token goes to zero</span>');
     /* The number that says whether an exit is actually happening. Everything else on this card
        is a snapshot; this is the direction of travel. */
     const f=[['24h',r.flow1],['7d',r.flow7],['30d',r.flow30]].filter(x=>x[1]);
@@ -4017,7 +4052,9 @@ function renderConcentration(){
   }
   host.append(el('div','arch-note','Flagged because you hold a large share of the token’s supply, or because most '
     +'of the liquidity it trades on is yours — either one means the price beside it is closer to your own quote than '
-    +'to a market, and that selling moves it. The liquidity share covers the venues named on each line and nothing else. '
+    +'to a market, and that selling moves it. The liquidity share is read from the chain — your liquidity over the '
+    +'pool\u2019s at today\u2019s price — not from the venue\u2019s published TVL, which lags a withdrawal by hours. '
+    +'It covers the venues named on each line and nothing else. '
     +'"Net traded" counts only tokens that changed hands because somebody traded against your pools; deposits and '
     +'withdrawals are excluded, and a position you altered during a window is dropped from that window rather than '
     +'counted as a sale \u2014 the small figure beside each one is how many positions it could read out of how many it '
