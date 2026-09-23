@@ -1576,8 +1576,19 @@ async function buildCompetition(evmPositions, solPositions){
           blockCache.rivals[ck2]={at:Date.now(), pools:rows};
         }catch(e){ logErr('rivalsSol',e); }
       }
-      const minePoolsS=new Set(mineRows.map(x=>String(x.addr)));
-      for(const r of rows) if(minePoolsS.has(String(r.addr))) r.mine=true;
+      /* The market list is cached for RIVAL_TTL, which is right for other people's pools and
+         wrong for my own: the position side reads every pool of mine fresh on every run, so
+         after moving liquidity between two of them the page showed the 1% pool at $4,546 on the
+         card and $11,706 in the market total, and put my share of a pool I am the only LP in at
+         74%. Where both numbers exist the fresh one wins. */
+      const mineBy=new Map(mineRows.map(x=>[String(x.addr),x]));
+      for(const r of rows){
+        const m=mineBy.get(String(r.addr));
+        if(!m) continue;
+        r.mine=true;
+        if(m.tvlUsd!=null) r.tvlUsd=m.tvlUsd;
+        if(m.vol24Usd!=null) r.vol24Usd=m.vol24Usd;
+      }
       /* A pool created an hour ago is not in the index yet, and one that is cached is not in the
          copy we are holding. Either way my own position in it still counted towards my total,
          and the share came out at 106% — a number that cannot be true and so tells the reader
