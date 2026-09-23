@@ -1725,9 +1725,12 @@ const main=async()=>{
     const ks=Object.values(KEYS).join(',');
     const nowJ=await getJson('https://coins.llama.fi/prices/current/'+ks,20000);
     const agoJ=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(Date.now()/1000-86400)+'/'+ks,20000);
+    /* Carry the chain. The same symbol on two chains is two assets when the bridge between
+       them is shut, and a reader comparing a Solana mark against this price has to be able to
+       tell that it is an Ethereum price rather than infer it from the symbol. */
     tickers=Object.entries(KEYS).map(([sym,k])=>{
       const c=nowJ.coins?.[k]?.price??null, a=agoJ.coins?.[k]?.price??null;
-      return {sym, usd:c, chg:(c!=null&&a)?(c/a-1)*100:null};
+      return {sym, ch:k.split(':')[0], usd:c, chg:(c!=null&&a)?(c/a-1)*100:null};
     }).filter(t=>t.usd!=null);
     if(!tickers.length) tickers=null;
   }catch(e){ logErr('tickers',e); }
@@ -2741,6 +2744,8 @@ const main=async()=>{
          Same reason as everything else in this block — the per-position day records are the
          input and they never reach the payload. Ninety days, two decimals, and only tokens that
          appear in a live position, which keeps it to a few kilobytes. */
+      const NATIVE_OF={['sol:'+SOL_MINT.toLowerCase()]:'sol:native',
+                       ['evm:'+CHAINS.ethereum.weth]:'evm:native'};
       try{
         const keep=new Set();
         for(const p of (rec.ps||[])){ if(p.k0) keep.add(p.k0); if(p.k1) keep.add(p.k1); }
@@ -2754,8 +2759,16 @@ const main=async()=>{
               if(p.k0===k){ pooled+=p.a0||0; seen=true; }
               else if(p.k1===k){ pooled+=p.a1||0; seen=true; }
             }
-            const wi=(day.w||[]).find(x=>x.k===k);
-            const idle=wi?wi.a:0;
+            /* Native SOL and wrapped SOL are one asset to anybody counting what they hold,
+               and the wallet strip keys them apart. Leaving them apart made the SOL line read
+               49 pooled and nothing loose on a day 16.65 SOL was sitting in the wallet — which
+               is the wrong answer for the one series a trader converting INTO SOL watches. */
+            let idle=0;
+            for(const wk of [k, NATIVE_OF[k]]){
+              if(!wk) continue;
+              const wi=(day.w||[]).find(x=>x.k===wk);
+              if(wi) idle+=wi.a||0;
+            }
             if(!seen && !idle) continue;               // not held that day — no point to plot
             pts.push({d:day.d, p:r2(pooled), i:r2(idle)});
           }
