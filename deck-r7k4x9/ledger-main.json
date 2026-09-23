@@ -9,7 +9,7 @@
   "lastBooked": 41.29,
   "owed0": 0.045961311,
   "owed1": 573.535767552,
-  "readAt": 1790158143992,
+  "readAt": 1790159335897,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $43.24; credited 2026-09-01",
   "openCost": {
@@ -43,9 +43,9 @@
   "attrib": 0,
   "lump": 0,
   "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
-  "owed0": 0.055416466,
+  "owed0": 0.055451152,
   "owed1": 241.750572956,
-  "readAt": 1790158145021,
+  "readAt": 1790159336820,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $13.32; credited 2026-09-01",
   "openCost": {
@@ -72,7 +72,7 @@
   "repaired": "redeposit counted as income; corrected 2026-08-23",
   "owed0": 0.032350305,
   "owed1": 403.688594891,
-  "readAt": 1790158144200,
+  "readAt": 1790159336110,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $23.05; credited 2026-09-01",
   "openCost": {
@@ -85,13 +85,13 @@
  "sol:bMaDGpGGKzCjCiSm21pJjya9pzsyBKRyWL16gQT4tjF": {
   "collectedUsd": 0,
   "since": 1790011153610,
-  "sig": "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj",
-  "txScanned": 0,
+  "sig": "4gZd5zm78ffpoHsyf2qLw2Ff2PusYD9ecFz1aXngKdT2tqkW5Hr96jQL2LNHS3sqDC2yT9BQ5osHT5FPLiwDr7hx",
+  "txScanned": 1,
   "attrib": 0,
   "lump": 0,
   "owed0": 0,
   "owed1": 3.634432,
-  "readAt": 1790158143725,
+  "readAt": 1790159335668,
   "ceilFactor": 1.1,
   "openCost": {
    "lamports": 156890401,
@@ -99,5 +99,22 @@
     "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj"
    ]
   }
+ },
+ "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
+  "collectedUsd": 0,
+  "since": 1790159336110,
+  "openCost": {
+   "lamports": 59369641,
+   "sigs": [
+    "3cywPJ3cvncfckAmSTw7TYmSwiJFDDdx3RtNTxR5ZntogZd96SFxbhXzn5SPWnDyqxnbT2WXtY9bkJLf7izHXU44"
+   ]
+  },
+  "sig": "3cywPJ3cvncfckAmSTw7TYmSwiJFDDdx3RtNTxR5ZntogZd96SFxbhXzn5SPWnDyqxnbT2WXtY9bkJLf7izHXU44",
+  "txScanned": 0,
+  "attrib": 0,
+  "lump": 0,
+  "owed0": 0,
+  "owed1": 0,
+  "readAt": 1790159336329
  }
 }
