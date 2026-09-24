@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 60.4,
+   "last": 60.1,
    "hwm": 64.06,
    "acc": 47.47,
    "ck": "ethereum",
@@ -12,7 +12,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 329.4,
+   "last": 328.15,
    "hwm": 341.02,
    "acc": 248.82,
    "ck": "ethereum",
@@ -20,7 +20,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 370.29,
+   "last": 368.77,
    "hwm": 383.72,
    "acc": 343.1,
    "ck": "ethereum",
@@ -28,7 +28,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 120.3,
+   "last": 120.04,
    "hwm": 123.78,
    "acc": 123.78,
    "ck": "ethereum",
@@ -36,47 +36,47 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 633.58,
-   "acc": 329.7,
-   "hwm": 633.58,
+   "last": 635.13,
+   "acc": 331.25,
+   "hwm": 635.13,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 417.25,
-   "acc": 199.37,
-   "hwm": 417.25,
+   "last": 417.37,
+   "acc": 199.49,
+   "hwm": 417.37,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 310.27,
-   "hwm": 310.27,
-   "acc": 232.8,
+   "last": 311.37,
+   "hwm": 311.37,
+   "acc": 233.9,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:bMaDGpGGKzCjCiSm21pJjya9pzsyBKRyWL16gQT4tjF": {
    "m0": 0,
-   "last": 16.8,
-   "hwm": 16.81,
-   "acc": 16.81,
+   "last": 17.37,
+   "hwm": 17.37,
+   "acc": 17.37,
    "ck": "sol",
    "cat": "sol|CPOOL / USDT · wide"
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 149.72,
-   "hwm": 149.72,
-   "acc": 149.72,
+   "last": 152.29,
+   "hwm": 152.29,
+   "acc": 152.29,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
    "m0": 0,
-   "last": 24.91,
-   "hwm": 24.91,
-   "acc": 24.91,
+   "last": 25.56,
+   "hwm": 25.56,
+   "acc": 25.56,
    "ck": "sol",
    "cat": "sol|CPOOL / USDT · narrow"
   }
@@ -94,9 +94,9 @@
    }
   }
  ],
- "lastIl": -55.34,
+ "lastIl": -52.15,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07
  },
- "readAt": 1790225626448
+ "readAt": 1790226857477
 }
