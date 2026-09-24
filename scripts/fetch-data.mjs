@@ -2823,6 +2823,54 @@ const main=async()=>{
           if(off.length) stableOff=off;
         }
       }catch(e){ logErr('stableSeries',e); }
+      /* DEPOSITED, reconstructed from the daily snapshots where the chain cannot say.
+
+         The EVM side reads a cost basis from mint and increase events. Raydium has no
+         equivalent here yet, so every Solana position carried costUsd:null — and the
+         head-to-head matrix's FEES / $1K / DAY divides lifetime fees by what was put in, which
+         left the column blank for all six Solana rows and made the panel useless for the one
+         comparison it exists to serve.
+
+         The snapshots can answer it for any position whose whole life is on file: liquidity
+         going up is a deposit, valued at that day's prices. Gross deposits, not reduced by
+         withdrawals, because that is what costUsd means on the EVM side and one column cannot
+         hold two definitions — #1355331 gave away the difference, a 40% withdrawal that a
+         net-of-withdrawals basis scaled down and the real figure did not.
+
+         Checked against the four positions that have a true basis: within 1.0%, 1.0%, 2.0% and
+         2.4% of it. The gap is intra-day price drift, which daily granularity cannot see, so
+         the page marks these as approximate.
+
+         A position already open on the first day on file cannot be reconstructed at all and
+         stays blank rather than being handed a number that is really a guess. */
+      try{
+        const ds=[...daily.filter(x=>Array.isArray(x.ps) && x.ps.length), rec].slice(-120);
+        if(ds.length>=2){
+          const firstD=ds[0].d, st=new Map();
+          for(const day of ds){
+            for(const q of (day.ps||[])){
+              const L=Number(q.L)||0;
+              if(!q.i || !(L>0)) continue;
+              let e=st.get(q.i);
+              if(!e) st.set(q.i, e={first:day.d, gross:0, L:0});
+              if(L>e.L){
+                const val=(q.a0||0)*(q.u0||0)+(q.a1||0)*(q.u1||0);
+                e.gross += e.L>0 ? val*(1-e.L/L) : val;
+              }
+              e.L=L;
+            }
+          }
+          const today=Date.parse(rec.d+'T00:00:00Z');
+          for(const pos of [...evmPositions, ...solPositions]){
+            if(pos.costUsd!=null) continue;
+            const e=st.get(String(pos.id));
+            if(!e || e.first===firstD || !(e.gross>0)) continue;
+            const covered=(today-Date.parse(e.first+'T00:00:00Z'))/86400000 + 2;
+            if(pos.ageDays!=null && pos.ageDays>covered) continue;   // older than the record can see
+            pos.basisUsd=r2(e.gross); pos.basisFrom=e.first;
+          }
+        }
+      }catch(e){ logErr('basisFromDaily',e); }
       /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
          them would more than double a payload that has to reach a phone every 15 minutes. The
          answers are 300 bytes a day, they are identical for every reader, and computing them
