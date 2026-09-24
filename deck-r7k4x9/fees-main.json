@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 61.74,
+   "last": 62.46,
    "hwm": 64.06,
    "acc": 47.47,
    "ck": "ethereum",
@@ -12,31 +12,31 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 335.47,
-   "hwm": 338.16,
-   "acc": 245.96,
+   "last": 339.67,
+   "hwm": 339.67,
+   "acc": 247.47,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "1355918": {
    "m0": 40.62,
-   "last": 377.43,
-   "hwm": 381.27,
-   "acc": 340.65,
+   "last": 382.22,
+   "hwm": 382.22,
+   "acc": 341.6,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "1366332": {
    "m0": 0,
-   "last": 120.72,
-   "hwm": 120.78,
-   "acc": 120.78,
+   "last": 123.28,
+   "hwm": 123.28,
+   "acc": 123.28,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 631.19,
+   "last": 630.96,
    "acc": 329.65,
    "hwm": 633.53,
    "cat": "sol|SOL / CPOOL · wide"
@@ -50,7 +50,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 308.59,
+   "last": 308.43,
    "hwm": 310.24,
    "acc": 232.77,
    "ck": "sol",
@@ -58,15 +58,15 @@
   },
   "sol:bMaDGpGGKzCjCiSm21pJjya9pzsyBKRyWL16gQT4tjF": {
    "m0": 0,
-   "last": 16.77,
-   "hwm": 16.77,
-   "acc": 16.77,
+   "last": 16.81,
+   "hwm": 16.81,
+   "acc": 16.81,
    "ck": "sol",
    "cat": "sol|CPOOL / USDT · wide"
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 145.8,
+   "last": 145.33,
    "hwm": 149.66,
    "acc": 149.66,
    "ck": "sol",
@@ -74,9 +74,9 @@
   },
   "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
    "m0": 0,
-   "last": 24.87,
-   "hwm": 24.88,
-   "acc": 24.88,
+   "last": 24.91,
+   "hwm": 24.91,
+   "acc": 24.91,
    "ck": "sol",
    "cat": "sol|CPOOL / USDT · narrow"
   }
@@ -94,9 +94,9 @@
    }
   }
  ],
- "lastIl": -67,
+ "lastIl": -77.7,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07
  },
- "readAt": 1790214775472
+ "readAt": 1790215958964
 }
