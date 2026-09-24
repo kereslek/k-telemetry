@@ -597,6 +597,11 @@
     .scn-pos > *:nth-child(3n+2){display:none} }
   /* Deliberately flex rows rather than a grid: this panel's right-hand side is prose of varying
      length, and a grid would either clip it or force a column width the label cannot live in. */
+  .cash-big{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px}
+  .cash-big b{font-size:26px;font-family:var(--mono);letter-spacing:-.01em}
+  .cash-pct{font-size:13px;color:var(--text-muted);font-family:var(--mono)}
+  .cash-sub{font-size:11.5px;color:var(--text-muted);margin:6px 0 2px}
+  .cash-chart{margin:8px 0 2px}
   .conc-card{padding:10px 0;border-bottom:1px solid var(--line-soft)}
   .conc-card:last-of-type{border-bottom:none}
   .conc-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin-bottom:6px}
@@ -1002,6 +1007,12 @@
       <div class="pbody" id="concBody"></div>
     </section>
 
+    <section class="panel" data-panel="cash" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">CASH BANKED — STABLECOINS HELD, NOT DEPLOYED</span><span class="hint" id="cashHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="cashBody"></div>
+    </section>
+
     <section class="panel" data-panel="global" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">GLOBAL SCOPE — TOP REALISTIC POOLS RIGHT NOW</span><span class="hint">25 volatile pairs · no stables · Uniswap · Pancake · Aerodrome · Raydium · Orca · Meteora &amp; more · 8 chains</span><button class="collapse-btn">▾</button></div>
@@ -1148,7 +1159,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2098,6 +2109,7 @@ function snapSave(){
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
       catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
       tokenFlow:state.tokenFlow||prev.tokenFlow||null, tokenSeries:state.tokenSeries||prev.tokenSeries||null,
+      stableSeries:state.stableSeries||prev.stableSeries||null, stableOff:state.stableOff||prev.stableOff||null,
       competition:state.competition||prev.competition||null,
       dayMoves:(state.dayMoves&&state.dayMoves.length?state.dayMoves:prev.dayMoves)||null,
       pxChg:state.pxChg||prev.pxChg||null,
@@ -2212,6 +2224,8 @@ async function scanInner(isBoot){
           if(Array.isArray(d.daily) && d.daily.length) state.dayMoves=d.daily;
           if(d.tokenFlow) state.tokenFlow=d.tokenFlow;
           if(d.tokenSeries) state.tokenSeries=d.tokenSeries;
+          if(d.stableSeries) state.stableSeries=d.stableSeries;
+          if(d.stableOff!==undefined) state.stableOff=d.stableOff;
           if(d.pxChg) state.pxChg=d.pxChg;
           /* The payload never comes from cache; index.html can, for as long as a phone feels
              like it. When the two disagree the page a reader is looking at is not the page that
@@ -2340,6 +2354,8 @@ async function scanInner(isBoot){
         if(!state.catMtd && snap.catMtd) state.catMtd=snap.catMtd;
         if(!state.tokenFlow && snap.tokenFlow) state.tokenFlow=snap.tokenFlow;
         if(!state.tokenSeries && snap.tokenSeries) state.tokenSeries=snap.tokenSeries;
+        if(!state.stableSeries && snap.stableSeries) state.stableSeries=snap.stableSeries;
+        if(!state.stableOff && snap.stableOff) state.stableOff=snap.stableOff;
         if(!(state.catMonths||[]).length && Array.isArray(snap.catMonths)) state.catMonths=snap.catMonths;
         if(!state.competition && snap.competition) state.competition=snap.competition;
       }
@@ -2384,6 +2400,8 @@ async function scanInner(isBoot){
       state.catMtd=state.catMtd??snap.catMtd;
       state.tokenFlow=state.tokenFlow??snap.tokenFlow;
       state.tokenSeries=state.tokenSeries??snap.tokenSeries;
+      state.stableSeries=state.stableSeries??snap.stableSeries;
+      state.stableOff=state.stableOff??snap.stableOff;
       state.catMonths=state.catMonths??snap.catMonths;
       state.competition=state.competition??snap.competition;
       state.cacheAt=snap.t; state.dataAt=snap.t; state.mode='cache';
@@ -2631,7 +2649,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); renderConcentration(); if(!$('#quickNav').children.length) buildQuickNav();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); renderConcentration(); renderCash(); if(!$('#quickNav').children.length) buildQuickNav();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -6800,7 +6818,7 @@ function cmpBuild(a,b){
   }
   return 0;
 }
-const LAYOUT_VERSION=6;   // bump when the default panel order changes on purpose
+const LAYOUT_VERSION=7;   // bump when the default panel order changes on purpose
 function applyStoredOrders(){
   // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
   // reach anyone who has dragged a panel. Drop the stored order once per version bump.
@@ -6808,6 +6826,102 @@ function applyStoredOrders(){
   const po=store.get('panelOrder',null);
   if(po){ const stack=$('#panelStack');
     po.forEach(k=>{const p=stack.querySelector('[data-panel="'+k+'"]'); if(p)stack.append(p);}); }
+}
+
+/* ---------- cash banked: stablecoins held, not deployed ------------------------------------
+
+   The measure is deliberately unforgiving. Wallet-held stablecoins only, against everything
+   owned — so a dollar that goes back into a CPOOL/USDT pool stops counting, because it is not
+   cash any more, it is a standing order to buy CPOOL back. An exit registers here when the
+   proceeds are left alone and at no other time.
+
+   Staked dollars do count: a receipt for a deposited dollar is still a dollar, and the relay's
+   peg test lets those sit above par rather than discarding them for it. */
+function renderCash(){
+  const host=$('#cashBody'); if(!host) return;
+  host.innerHTML='';
+  const hint=$('#cashHint');
+  const ser=state.stableSeries;
+  if(!ser || ser.length<2){
+    host.append(el('div','flow-omit','Needs two days of record.'));
+    if(hint) hint.textContent='';
+    return;
+  }
+  const now=ser[ser.length-1], first=ser[0];
+  const pct=now.tot>0?now.st/now.tot*100:0;
+  if(hint) hint.textContent=fmtUsd(now.st,2)+' \u00b7 '+pct.toFixed(pct<1?4:2)+'% of everything';
+
+  const big=el('div','cash-big');
+  big.innerHTML='<b>'+fmtUsd(now.st,2)+'</b><span class="cash-pct">'+pct.toFixed(pct<1?4:2)
+    +'% of '+fmtUsd(now.tot,0)+'</span>';
+  host.append(big);
+
+  /* Stepped back by date, not by sample: a day without a record leaves no point, and a window
+     labelled 7d that reached back nine days would be a quiet lie. */
+  const back=n=>{
+    const cut=new Date(now.d+'T00:00:00Z').getTime()-n*86400000;
+    let best=null;
+    for(const x of ser){ if(new Date(x.d+'T00:00:00Z').getTime()<=cut) best=x; else break; }
+    return best;
+  };
+  const dl=(n,lb)=>{ const b=back(n); if(!b||b===now) return null;
+    const dv=now.st-b.st;
+    if(Math.abs(dv)<0.005) return '<span class="dim">'+lb+' flat</span>';
+    return '<b class="'+(dv>0?'tok-up':'tok-dn')+'">'+lb+' '+(dv>0?'+':'\u2212')+fmtUsd(Math.abs(dv),2)+'</b>'; };
+  const ds=[dl(1,'24h'),dl(7,'7d'),dl(30,'30d')].filter(Boolean);
+  if(ds.length) host.append(el('div','cash-sub',ds.join(' &nbsp;\u00b7&nbsp; ')));
+
+  cashChart(host, ser);
+
+  /* What is NOT counted, and why. Stablecoins sitting inside a position are the whole reason
+     this panel exists, so naming the amount is the point rather than a footnote. */
+  let inPools=0;
+  for(const p of ordered()){
+    const L=p.liq?Number(p.liq):null; if(!(L>0)) continue;
+    if(isPeg({sym:(p.m0||{}).symbol,usd:p.usd0})) inPools+=(p.amt0||0)*(p.usd0||0);
+    if(isPeg({sym:(p.m1||{}).symbol,usd:p.usd1})) inPools+=(p.amt1||0)*(p.usd1||0);
+  }
+  const peak=ser.reduce((a,b)=>b.st>a.st?b:a);
+  const bits=[];
+  if(inPools>0.5) bits.push('A further <b>'+fmtUsd(inPools,2)+'</b> of stablecoins sits inside your positions and is '
+    +'not counted here \u2014 in a pool a dollar is a bid, not cash, and it converts into the token as the price falls.');
+  bits.push('Most ever held at a day boundary: <b>'+fmtUsd(peak.st,2)+'</b> on '+peak.d.slice(5)+'.');
+  if(first!==now) bits.push('Record starts '+first.d+'.');
+  host.append(el('div','arch-note',bits.join(' ')+' Wallet-held only, staked dollars included; '
+    +'measured against everything you own on both chains, at each day\u2019s own prices.'));
+
+  if(state.stableOff && state.stableOff.length)
+    host.append(el('div','scn-warn','Reads like a dollar but is not priced like one, so it is excluded: '
+      +state.stableOff.map(x=>esc(x.s)+' at '+fmtPrice(x.u)+' ('+fmtUsd(x.usd,2)+')').join(', ')+'.'));
+}
+
+/* A single area, scaled to the largest balance rather than to the portfolio, or a balance that
+   has never been more than a rounding error would draw as a flat line on the floor and say
+   nothing. The axis is in dollars, so the smallness stays visible. */
+function cashChart(host, ser){
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(n,a)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const W=600,H=110,padL=58,padR=8,padT=8,padB=16;
+  const mx=Math.max(...ser.map(x=>x.st))*1.12 || 1;
+  const X=i=>padL+(i/(ser.length-1||1))*(W-padL-padR);
+  const Y=v=>padT+(mx-v)/(mx||1)*(H-padT-padB);
+  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H});
+  svg.style.width='100%'; svg.style.display='block';
+  for(const g of niceTicks(0,mx,3)){
+    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g),stroke:'#13233a','stroke-width':1}));
+    const tx=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end','font-size':9,fill:'#5d7889'});
+    tx.textContent=fmtUsd(g,g<10?2:0); svg.append(tx);
+  }
+  let d='M '+X(0)+' '+Y(0);
+  ser.forEach((x,i)=>{ d+=' L '+X(i)+' '+Y(x.st); });
+  d+=' L '+X(ser.length-1)+' '+Y(0)+' Z';
+  svg.append(mk('path',{d,fill:'rgba(53,214,232,0.20)',stroke:'none'}));
+  svg.append(mk('polyline',{points:ser.map((x,i)=>X(i)+','+Y(x.st)).join(' '),
+    fill:'none',stroke:'#35d6e8','stroke-width':1.8,'stroke-linejoin':'round'}));
+  const lab=(x,y,txt,anc)=>{const e=mk('text',{x,y,'font-size':9,fill:'#5d7889','text-anchor':anc||'start'});e.textContent=txt;svg.append(e);};
+  lab(padL,H-4,ser[0].d.slice(5));
+  lab(W-padR,H-4,ser[ser.length-1].d.slice(5),'end');
+  const box=el('div','cash-chart'); box.append(svg); host.append(box);
 }
 
 /* ================= SETTINGS DRAWER ================= */
@@ -7335,6 +7449,8 @@ async function init(){
       if(d.costMonth) state.costMonth=d.costMonth;
       if(d.tokenFlow) state.tokenFlow=d.tokenFlow;
       if(d.tokenSeries) state.tokenSeries=d.tokenSeries;
+      if(d.stableSeries) state.stableSeries=d.stableSeries;
+      if(d.stableOff!==undefined) state.stableOff=d.stableOff;
       if(d.tickers) state.tickers=d.tickers;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
