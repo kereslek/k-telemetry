@@ -2484,7 +2484,7 @@ const main=async()=>{
     }
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
     const uiBuild=readUiBuild();
-    let profileDaily=[], profilePxChg=null, tokenFlow=null, tokenSeries=null;
+    let profileDaily=[], profilePxChg=null, tokenFlow=null, tokenSeries=null, stableSeries=null, stableOff=null;
     let history=[];
     try{ history=JSON.parse(fs.readFileSync(OUT+'/hist-'+profile.slug+'.json','utf8')); }catch(e){}
     {
@@ -2776,6 +2776,53 @@ const main=async()=>{
         }
         if(Object.keys(out).length) tokenSeries=out;
       }catch(e){ logErr('tokenSeries',e); }
+      /* CASH BANKED — wallet-held stablecoins against everything owned, day by day.
+         Wallet-held only, and deliberately so: a stablecoin sitting in a CPOOL/USDT pool is
+         not cash, it is a standing order to buy CPOOL back, and counting it would report an
+         exit that has not happened. Proceeds only register here once they are left alone.
+
+         Staked stablecoins do count. A receipt for a deposited dollar is still a dollar, and
+         it is worth MORE than one by design — sDAI, sUSDe and jlUSDT accrue their yield into
+         the price — so a strict peg test would throw out precisely the holdings of somebody
+         who parked their cash sensibly. A bare dollar has to hold its peg; a receipt is
+         allowed to sit above it. Anything that reads like a dollar and fails both is listed
+         rather than dropped, because a depegged stablecoin is news, not an absence.
+
+         Each day is valued at that day's own prices, which the records already carry. */
+      try{
+        const BARE=/^(usdt|usdc|dai|usde|pyusd|fdusd|tusd|usds|usdp|gusd|lusd|usdd|frax)$/i;
+        const LOOKS=/usd|dai/i;
+        const isStable=(sym,px)=>{
+          if(!sym || !(px>0) || !LOOKS.test(sym)) return false;
+          return BARE.test(sym) ? Math.abs(px-1)<0.05 : (px>=0.9 && px<=2.5);
+        };
+        const days=[...daily.filter(x=>x.d!==rec.d && (Array.isArray(x.ps)||Array.isArray(x.w))), rec].slice(-90);
+        const pts=[];
+        for(const day of days){
+          const w=day.w||[], ps=day.ps||[];
+          if(!w.length && !ps.length) continue;
+          let st=0, tot=0;
+          for(const x of w){
+            const v=(x.a||0)*(x.u||0);
+            tot+=v;
+            if(isStable(x.s, x.u)) st+=v;
+          }
+          for(const q of ps) tot+=(q.a0||0)*(q.u0||0)+(q.a1||0)*(q.u1||0);
+          if(!(tot>0)) continue;
+          pts.push({d:day.d, st:r2(st), tot:r2(tot)});
+        }
+        if(pts.length>=2){
+          stableSeries=pts;
+          /* Today's near-misses, so a dollar that broke its peg is visible as a broken dollar
+             rather than as money that quietly stopped existing. */
+          const off=[];
+          for(const x of (rec.w||[])){
+            if(x.s && LOOKS.test(x.s) && !isStable(x.s, x.u) && (x.a||0)*(x.u||0)>1)
+              off.push({s:x.s, u:x.u, usd:r2((x.a||0)*(x.u||0))});
+          }
+          if(off.length) stableOff=off;
+        }
+      }catch(e){ logErr('stableSeries',e); }
       /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
          them would more than double a payload that has to reach a phone every 15 minutes. The
          answers are 300 bytes a day, they are identical for every reader, and computing them
@@ -2954,7 +3001,7 @@ const main=async()=>{
     try{ competition=await buildCompetition(evmPositions, solPositions); }
     catch(e){ logErr('competition', e); }
 
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));
