@@ -33,9 +33,9 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26045730,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26045730,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26045730
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26045826,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26045826,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26045826
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
@@ -97,14 +97,20 @@
   "FnrD7j4bngzy38iUm6q1GoDdBdHEs1zrcDHsK26f7MD48CpYqU8fWWsirfatqSpVYK4tJi9gCC9JQrVzmgmbSxX": 1,
   "5JWGLfZwXG365VY1VXGFLkxJLks2ao2Mxy9H38y6eVdEeyWvAQyUPSYQL1MKVySQrzqkNS5tAbhpqDqDBmPmPotE": 1,
   "YopB4srqwzfx62P5n1iAisVKVvf4k3dfJdrMutuVnCZgzmftA3qpAYJadz22Nq8cCqm4LW8zh6wQHX9hH4UogbH": 1,
-  "3ebs7S6bfmm89zTMLegAXrFKgU6uq2Tzo1hivDcfeGJu2g8imXRhp92yjGAtNnjHZrQ9zLt4pLPhdCpcsZVh8ufA": 1
+  "3ebs7S6bfmm89zTMLegAXrFKgU6uq2Tzo1hivDcfeGJu2g8imXRhp92yjGAtNnjHZrQ9zLt4pLPhdCpcsZVh8ufA": 1,
+  "2twzk8xhQvxU1vgiggtGa6smQ61sG9XXzZs9ag7DgUVWDndMdfC5bU2PLKTHqZPxfbi6zpCdsb5PwbYGhGtbrUXB": 1,
+  "2KEqa9zVxqqgcMLDX4WR1LeLQxkKntqnyySz3TbX4hzbSy4Csty11iArd3a16qJS6UvjgRNHRUJqePNuJGa2sj2j": 1,
+  "RpeQC4D9LX7UKoFFKgdGp7v1B6zTLcbysw5PiHgBf6syME9CdHNdL2S9n9ZczBCQoDTNCVjkK4zbiDB9jkutgTG": 1,
+  "4SZLcAXv36S7SPa834XwrTTNPQhsJaqco3UcxtubZAwNWKcts2ciwsZ8H7JGZ7tQoAcx6MLtxDEvivpt5iLuXGbi": 1,
+  "3X3EKf2u4weEsoxYcRivAtxZkTWHcixRnwNTohkogPqEwESddSvo1xPMrTRbPzSFwXK3aCMYe8b68vL6QsYdqzuV": 1,
+  "5WXmyMWPnPoSES7Dzud3zyZE5scasbZL2zVFp6pQ2f2B9QFNVVTSep2KxtSDKYVWfwKhFTPTSbW3D7ZDXWtxYRAy": 1
  },
  "solPartial": true,
- "solGasUsd": 0.15818947724178445,
+ "solGasUsd": 0.17893598230278074,
  "solOpenUsd": 32.28,
  "solOpenPend": {},
  "solScan": {
-  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "2cn1gAo6GRK43jbie2mHjJ1neRMstmwVwTW1ihDwa7ZKzJUjEUDf4D34kNqesvRDJwiiKaSmAxyHB13SmiZustt3",
+  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "2twzk8xhQvxU1vgiggtGa6smQ61sG9XXzZs9ag7DgUVWDndMdfC5bU2PLKTHqZPxfbi6zpCdsb5PwbYGhGtbrUXB",
   "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "5JWGLfZwXG365VY1VXGFLkxJLks2ao2Mxy9H38y6eVdEeyWvAQyUPSYQL1MKVySQrzqkNS5tAbhpqDqDBmPmPotE"
  },
  "solWalletTx": {},
