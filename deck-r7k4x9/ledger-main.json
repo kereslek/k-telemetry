@@ -1,20 +1,21 @@
 {
  "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
-  "collectedUsd": 553.7238212195437,
+  "collectedUsd": 640.8039667873987,
   "since": 1786804445105,
-  "sig": "2zbu15hjFGRs8dKj1Zcm14Y4EfkarEH7bWWYt9DXHSpxmmZpyjeDCiic9wGw99xA3ten9WSqXBaTVVqPt1XXV6XG",
-  "txScanned": 0,
-  "attrib": 0,
+  "sig": "5JVr1kpEmypJ3JgrRkgcvMys4CoJNqpxWfbEvcToJiVBpFH8KZb2JvAWrYsdBJRVe8sH8gcJDoqdrGca4VK1NnCg",
+  "txScanned": 2,
+  "attrib": 2,
   "lump": 0,
-  "lastBooked": 1.16,
-  "owed0": 0.439506029,
-  "owed1": 525.395951369,
-  "readAt": 1790232738906,
+  "lastBooked": 87.08,
+  "owed0": 0,
+  "owed1": 0,
+  "readAt": 1790233885610,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $43.24; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2025-10, before the month being counted"
-  }
+  },
+  "clampedTokens": 241.565896
  },
  "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF": {
   "collectedUsd": 488.8702766967674,
@@ -35,22 +36,24 @@
   }
  },
  "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
-  "collectedUsd": 407.40006916987795,
+  "collectedUsd": 416.5854235848616,
   "since": 1786804445105,
-  "sig": "3FXYjD4a6v7ihkiGZeS58Trs82ZG2aEugYbK5ELny7fLT1qCkhuK1dQ6X4eZwMKEnfsd6s3Cs9yERX6R2DqhDzPp",
-  "txScanned": 0,
-  "lastBooked": 0.46,
-  "attrib": 0,
+  "sig": "2NLBbMshd2gpE6aQAxxXAcjY341YA8w4nC4CopfgQz8YqHg4URrJUNJ6UmLsjbsw9LNm9JtD8SbGMCJuNBSyMF4U",
+  "txScanned": 2,
+  "lastBooked": 3.61,
+  "attrib": 2,
   "lump": 0,
   "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
-  "owed0": 0.05150442,
-  "owed1": 57.34375195,
-  "readAt": 1790232740465,
+  "owed0": 0,
+  "owed1": 4.413803332,
+  "readAt": 1790233888099,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $13.32; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2025-11, before the month being counted"
-  }
+  },
+  "clampedTokens": 6161.264328,
+  "harvestGap": 5.58
  },
  "sol:3MkkgnTj66mETGUyiqwBafJcJDJCov6bWcEEEXcYKf1p": {
   "collectedUsd": 0
@@ -62,36 +65,37 @@
   "collectedUsd": 0
  },
  "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
-  "collectedUsd": 254.06823089489276,
+  "collectedUsd": 315.3604181014224,
   "since": 1786864626363,
-  "sig": "2zbu15hjFGRs8dKj1Zcm14Y4EfkarEH7bWWYt9DXHSpxmmZpyjeDCiic9wGw99xA3ten9WSqXBaTVVqPt1XXV6XG",
-  "txScanned": 0,
-  "attrib": 0,
+  "sig": "2ECm93yjkeDEhUrzNCWXB3NdsbgsUU8w8F73gyE8okAWczvUZKYuoLrsWo5T3HDC984Wygqamw2HoP8UadWPN5vh",
+  "txScanned": 2,
+  "attrib": 2,
   "lump": 0,
-  "lastBooked": 0.81,
+  "lastBooked": 61.29,
   "repaired": "redeposit counted as income; corrected 2026-08-23",
-  "owed0": 0.309350491,
-  "owed1": 369.804928251,
-  "readAt": 1790232739327,
+  "owed0": 0,
+  "owed1": 0,
+  "readAt": 1790233886157,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $23.05; credited 2026-09-01",
   "openCost": {
    "skip": "opened 2026-08, before the month being counted"
-  }
+  },
+  "clampedTokens": 170.028449
  },
  "__sigs": [
   "5YJzCiYSgLAgRUwrA56UWSS1uMB938dJHscMSYL9xowFL7CeMUPBRoTFau6tiFmy141yWwUVCkapkizYJzETVxG7"
  ],
  "sol:bMaDGpGGKzCjCiSm21pJjya9pzsyBKRyWL16gQT4tjF": {
-  "collectedUsd": 3.6339085368473194,
+  "collectedUsd": 19.873025986254678,
   "since": 1790011153610,
-  "sig": "3fF3nvjhVKyQRLUCCiQFNUgu5iUoLAN1E1qo3j8cm7T9NxymyHBTuLd89y7jeBYUvSVxMwJ1iLHNcMGmW7rhh93H",
-  "txScanned": 0,
-  "attrib": 0,
+  "sig": "5JVr1kpEmypJ3JgrRkgcvMys4CoJNqpxWfbEvcToJiVBpFH8KZb2JvAWrYsdBJRVe8sH8gcJDoqdrGca4VK1NnCg",
+  "txScanned": 2,
+  "attrib": 2,
   "lump": 0,
   "owed0": 0,
-  "owed1": 14.766672,
-  "readAt": 1790232738618,
+  "owed1": 0,
+  "readAt": 1790233884808,
   "ceilFactor": 1.1,
   "openCost": {
    "lamports": 156890401,
@@ -99,10 +103,11 @@
     "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj"
    ]
   },
-  "lastBooked": 3.63
+  "lastBooked": 16.24,
+  "clampedTokens": 1.594328
  },
  "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
-  "collectedUsd": 0,
+  "collectedUsd": 48.398226800099025,
   "since": 1790159336110,
   "openCost": {
    "lamports": 59369641,
@@ -110,17 +115,18 @@
     "3cywPJ3cvncfckAmSTw7TYmSwiJFDDdx3RtNTxR5ZntogZd96SFxbhXzn5SPWnDyqxnbT2WXtY9bkJLf7izHXU44"
    ]
   },
-  "sig": "3cywPJ3cvncfckAmSTw7TYmSwiJFDDdx3RtNTxR5ZntogZd96SFxbhXzn5SPWnDyqxnbT2WXtY9bkJLf7izHXU44",
-  "txScanned": 0,
-  "attrib": 0,
+  "sig": "2c1fvDUTfogtZ7VzLQkFbZXM7XT1s7XASPcZR9i9uQ5RBiEjnHtf5M6BGxAn4XJUJbV5fmvP6PtfKCWh5emx8VDH",
+  "txScanned": 1,
+  "attrib": 1,
   "lump": 0,
-  "owed0": 0.882287346,
-  "owed1": 846.759888848,
-  "readAt": 1790232740007,
-  "ceilFactor": 1.1
+  "owed0": 0.048075011,
+  "owed1": 450.517751105,
+  "readAt": 1790233887359,
+  "ceilFactor": 1.1,
+  "lastBooked": 48.4
  },
  "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
-  "collectedUsd": 0.788152990850834,
+  "collectedUsd": 29.340412941626177,
   "since": 1790180515999,
   "openCost": {
    "lamports": 216260042,
@@ -129,14 +135,15 @@
     "4jhkuH2PGoUs5v9BkiU9YNztgQWrksQy6V6vFbwx32sbK8dY9EbcUe7B92NtLTgMEXzwRrTzJD23nqmQazZyBCCj"
    ]
   },
-  "sig": "dpFtL8WUE6q5uDrVyqhtNstCBvWy7wkhQJfGjaorCLk6Kig33XsSFuhCwtzaivxceZph9UKyv8nsZkuXS5bCh8v",
-  "txScanned": 0,
-  "attrib": 0,
+  "sig": "2cn1gAo6GRK43jbie2mHjJ1neRMstmwVwTW1ihDwa7ZKzJUjEUDf4D34kNqesvRDJwiiKaSmAxyHB13SmiZustt3",
+  "txScanned": 3,
+  "attrib": 2,
   "lump": 0,
   "owed0": 0,
-  "owed1": 25.963348,
-  "readAt": 1790232739651,
+  "owed1": 0,
+  "readAt": 1790233886903,
   "ceilFactor": 1.1,
-  "lastBooked": 0.79
+  "lastBooked": 28.55,
+  "clampedTokens": 5.760102
  }
 }
