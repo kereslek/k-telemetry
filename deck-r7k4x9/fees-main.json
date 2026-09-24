@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 63.86,
+   "last": 64.01,
    "hwm": 64.06,
    "acc": 47.47,
    "ck": "ethereum",
@@ -12,47 +12,47 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 351.65,
-   "hwm": 352.17,
-   "acc": 259.97,
+   "last": 353.21,
+   "hwm": 353.21,
+   "acc": 261.01,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "1355918": {
    "m0": 40.62,
-   "last": 393.87,
-   "hwm": 394.53,
-   "acc": 353.91,
+   "last": 395.35,
+   "hwm": 395.35,
+   "acc": 354.73,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "1366332": {
    "m0": 0,
-   "last": 132.14,
-   "hwm": 132.31,
-   "acc": 132.31,
+   "last": 133.16,
+   "hwm": 133.16,
+   "acc": 133.16,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide"
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 645.54,
-   "acc": 341.66,
-   "hwm": 645.54,
+   "last": 645.93,
+   "acc": 342.05,
+   "hwm": 645.93,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 417.01,
+   "last": 417.02,
    "acc": 199.64,
    "hwm": 417.52,
    "cat": "sol|SOL / CPOOL · wide"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 318.69,
-   "hwm": 318.69,
-   "acc": 241.22,
+   "last": 318.97,
+   "hwm": 318.97,
+   "acc": 241.5,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide"
   },
@@ -66,7 +66,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 89.09,
+   "last": 90.17,
    "hwm": 163.48,
    "acc": 163.48,
    "ck": "sol",
@@ -74,9 +74,9 @@
   },
   "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
    "m0": 0,
-   "last": 31.07,
-   "hwm": 31.07,
-   "acc": 31.07,
+   "last": 31.11,
+   "hwm": 31.11,
+   "acc": 31.11,
    "ck": "sol",
    "cat": "sol|CPOOL / USDT · narrow"
   }
@@ -94,9 +94,9 @@
    }
   }
  ],
- "lastIl": -98.13,
+ "lastIl": -93.22,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07
  },
- "readAt": 1790259433347
+ "readAt": 1790260570284
 }
