@@ -1159,7 +1159,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3035,8 +3035,19 @@ const MATRIX_COLS = [
   {key:'ageDays',    label:'AGE',             fmt:v=>fmtAge(v)},
   {key:'status',     label:'STATUS',          fmt:null},
 ];
+/* What was put in. The chain's own answer where there is one, the relay's reconstruction from
+   the daily snapshots where there is not, and nothing at all for a position that was already
+   open before the record began. The second case is marked on the page rather than passed off
+   as the first. */
+function basisOf(p){
+  if(p.costUsd>0) return {v:p.costUsd, approx:false};
+  if(p.basisUsd>0) return {v:p.basisUsd, approx:true, from:p.basisFrom};
+  return {v:null, approx:false};
+}
 function matrixVal(p, key){
-  if(key==='fees1k') return (p.feesEverUsd!=null && p.costUsd>0 && p.ageDays>0.05) ? p.feesEverUsd/p.costUsd*1000/p.ageDays : null;
+  if(key==='fees1k'){ const b=basisOf(p).v;
+    return (p.feesEverUsd!=null && b>0 && p.ageDays>0.05) ? p.feesEverUsd/b*1000/p.ageDays : null; }
+  if(key==='costUsd') return basisOf(p).v;
   if(key==='roiDay') return (p.roiPct!=null && p.ageDays>0.05) ? p.roiPct/p.ageDays : null;
   if(key==='aprWin') return aprOf(p).v;
   if(key==='ilPct') return (p.roiPct!=null&&p.costUsd>0&&p.feesEverUsd!=null)?p.roiPct-(p.feesEverUsd/p.costUsd*100):null;
@@ -3085,7 +3096,15 @@ function renderMatrix(){
         tr.append(el('td',null,'<span style="color:var(--status-'+sev.replace('serious','serious')+')">'+SEV_ICON[sev]+' '+SEV_LABEL[sev]+'</span>')); return;
       }
       const isBest = best[c.key]!=null && v!=null && Math.abs(v-best[c.key])<1e-12;
-      let txt = v==null ? '<span style="color:var(--text-muted)">…</span>' : c.fmt(v);
+      const bs = (c.key==='fees1k'||c.key==='costUsd') ? basisOf(p) : null;
+      let txt = v==null ? '<span style="color:var(--text-muted)"'
+          + (bs ? ' title="Needs a deposit cost basis. This position was already open on the first day of the daily record, and the chain does not supply one for Raydium, so there is nothing to reconstruct it from."' : '')
+          + '>…</span>' : c.fmt(v);
+      /* An approximate figure that looks exact is worse than one that admits it. The marker is
+         the same idea as the pool-APR one two columns over. */
+      if(bs && bs.approx && v!=null) txt = '<span title="Deposit reconstructed from the daily snapshots from '
+          + esc(bs.from||'') + ' \u2014 the chain does not report one for Raydium. Within about 2% of the true figure where both exist; daily granularity misses intra-day price drift.">'
+          + txt + ' \u2248</span>';
       if(c.key==='aprWin' && v!=null && aprOf(p).pool) txt='<span style="color:var(--text-muted)" title="Raydium pool-level APR — position-level windows need tx history (v2)">'+v.toFixed(1)+'% ◎</span>';
       if(c.signed && v!=null && !isBest) txt = '<span style="color:var(--status-'+(v>=0?'good':'critical')+')">'+txt+'</span>';
       tr.append(el('td', isBest?'best':null, txt));
