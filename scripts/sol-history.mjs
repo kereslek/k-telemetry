@@ -288,7 +288,12 @@ export function makeRpc(urls, {timeout=20000, log=()=>{}, nullIsMiss=false}={}){
      openT      block time of the opening transaction
    A transaction is read once. What it said is a fact about the past and is never read again,
    so after the first backfill a pass costs one listing call per position and nothing more. */
+/* Bumped when what an event records changes. A ledger written by an older version is rebuilt
+   rather than trusted: v2 added the liquidity each event moved, which is what makes the ledger
+   checkable against the chain at all. */
+export const LEDGER_V=2;
 export async function syncPositionLedger(rpc, pos, st, {ourPdas, maxTx=40, maxPages=2}={}){
+  if(st.v!==LEDGER_V){ for(const k of Object.keys(st)) if(k!=='seen') delete st[k]; st.v=LEDGER_V; }
   st.ev=st.ev||[]; st.todo=st.todo||[]; st.miss=st.miss||{};
   let calls=0, read=0;
   if(st.top){
@@ -325,7 +330,7 @@ export async function syncPositionLedger(rpc, pos, st, {ourPdas, maxTx=40, maxPa
     const r=positionEffect(tx,pos);
     const nz=a=>a.some(x=>x>0n);
     if(nz(r.dep)||nz(r.wd)||nz(r.fee)){
-      st.ev.push({s:sig, t:r.t, src:r.src, sq:r.sqrt,
+      st.ev.push({s:sig, t:r.t, src:r.src, sq:r.sqrt, l:String(r.dL),
         d:r.dep.map(String), w:r.wd.map(String), f:r.fee.map(String)});
     }
   }
@@ -393,8 +398,9 @@ export async function valueDeposits(items, {anchorUsd, dailyUsd, isAnchor}){
 /* What the history says, in token units and — for deposits — dollars at the time. */
 export function summarizeLedger(st, pos){
   const H=(x,d)=>Number(BigInt(x))/10**d;
-  const o={dep:[0,0], wd:[0,0], fee:[0,0], costUsd:0, unpriced:0, n:st.ev.length, first:null, src:{}};
+  const o={dep:[0,0], wd:[0,0], fee:[0,0], costUsd:0, unpriced:0, n:st.ev.length, first:null, src:{}, liq:0n, liqKnown:true};
   for(const e of st.ev){
+    if(e.l==null) o.liqKnown=false; else o.liq+=BigInt(e.l);
     const d=[H(e.d[0],pos.d0),H(e.d[1],pos.d1)];
     o.dep[0]+=d[0]; o.dep[1]+=d[1];
     o.wd[0]+=H(e.w[0],pos.d0); o.wd[1]+=H(e.w[1],pos.d1);
@@ -405,6 +411,15 @@ export function summarizeLedger(st, pos){
     }
   }
   o.complete=!!st.complete;
+  /* The audit. Every liquidity change a position has ever had is in its history, so for a
+     complete history the net of them is the liquidity the position holds right now — exactly,
+     to the unit, because both sides are the program's own integers. A deposit or withdrawal the
+     reader missed, a fee-only event misread as principal, a transaction attributed to the wrong
+     position: any of them breaks the equality. Only a ledger that balances is allowed to state
+     a cost basis. A withdrawal the fallback read from transfers carries no liquidity, so a
+     history that needed the fallback for principal cannot balance and says so. */
+  o.liqNow = pos.liq!=null ? BigInt(pos.liq) : null;
+  o.balanced = o.complete && o.liqKnown && o.liqNow!=null && o.liq===o.liqNow;
   if(o.unpriced) o.costUsd=null;
   return o;
 }

@@ -1043,6 +1043,17 @@ function solAttribute(tx, pda, mints, owner){
       if(addr&&b.owner) ownerOf[addr]=b.owner;
       if(b.mint&&b.uiTokenAmount&&b.uiTokenAmount.decimals!=null) decOf[b.mint]=b.uiTokenAmount.decimals;
     }
+    /* SOL paid out of a pool lands in a wrapped-SOL account the transaction opens and closes
+       itself, so it is in neither balance table and its owner was unknown — every harvest's SOL
+       leg was dropped here. On 2026-09-25 4j7pU was paid 0.2593 SOL and 1,369 CPOOL; this read
+       $49.58 of it, the CPOOL, and the ceiling logic credited the missing $30.23 and logged it as
+       an error. The instruction that opened the account names its owner. */
+    for(const ins of [...top, ...(tx.meta.innerInstructions||[]).flatMap(g=>g.instructions||[])]){
+      const q=ins&&ins.parsed; if(!q||typeof q!=='object') continue;
+      const i=q.info||{};
+      if(/^initializeAccount/.test(q.type||'') && i.account && i.owner){ ownerOf[i.account]=i.owner; if(i.mint) mintOf[i.account]=i.mint; }
+      if((q.type==='create'||q.type==='createIdempotent') && i.account && i.wallet){ ownerOf[i.account]=i.wallet; if(i.mint) mintOf[i.account]=i.mint; }
+    }
     const amt={}; let saw=false;
     for(const g of inner){
       if(!idxs.includes(g.index)) continue;
@@ -1895,7 +1906,7 @@ const main=async()=>{
           const st=blockCache.solHist[p.id]=blockCache.solHist[p.id]||{};
           st.seen=Date.now();
           const pos={pda:p.pda, nftMint:p.nftMint, poolId:p.poolId, owner:p.wallet, mint0:p.mint0, mint1:p.mint1,
-                     d0:p.d0, d1:p.d1, tl:p.tl, tu:p.tu};
+                     d0:p.d0, d1:p.d1, tl:p.tl, tu:p.tu, liq:p.liq};
           solLedgerItems.push({p,pos,st});
           if(Date.now()-t0>150000 || reads>=80) continue;          // budget spent — next pass
           try{
@@ -2955,8 +2966,14 @@ const main=async()=>{
           await valueDeposits(solLedgerItems.map(x=>({pos:x.pos,st:x.st})), {anchorUsd, dailyUsd, isAnchor});
           for(const {p,pos,st} of solLedgerItems){
             const h=summarizeLedger(st,pos);
-            p.hist={n:h.n, complete:h.complete, unpriced:h.unpriced, queued:(st.todo||[]).length, lost:st.lost||0, priced:h.src};
-            if(!h.complete || h.costUsd==null || !(h.costUsd>0) || p.usd0==null || p.usd1==null) continue;
+            p.hist={n:h.n, complete:h.complete, balanced:h.balanced, unpriced:h.unpriced, queued:(st.todo||[]).length,
+                    lost:st.lost||0, priced:h.src};
+            /* A history that is complete but does not balance against the chain is wrong somewhere,
+               and a cost basis built on it would be stated with a confidence it has not earned.
+               The discrepancy is published so it can be looked at, and nothing else is. */
+            if(h.complete && h.liqKnown && !h.balanced && h.liqNow!=null)
+              p.hist.liqGap=(h.liqNow-h.liq).toString();
+            if(!h.balanced || h.costUsd==null || !(h.costUsd>0) || p.usd0==null || p.usd1==null) continue;
             p.costUsd=r2(h.costUsd); p.roiMode='entry';
             delete p.basisUsd; delete p.basisFrom;
             p.depAmt=h.dep.map(x=>+x.toPrecision(10)); p.wdAmt=h.wd.map(x=>+x.toPrecision(10)); p.feeAmt=h.fee.map(x=>+x.toPrecision(10));

@@ -1159,7 +1159,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -6658,7 +6658,11 @@ function renderCards(){
        than showing a blank that looks like a fault. */
     const histNote = isSol && p.hist && !p.hist.complete
       ? '<span class="unit" title="Reading this position\u2019s transactions back to its opening, a few per refresh.">history '+(p.hist.queued?p.hist.queued+' tx to go':'loading')+'</span>'
-      : (isSol && p.hist && p.hist.unpriced ? '<span class="unit" title="A deposit could not be priced at the time it was made, so no cost basis is stated.">unpriced deposit</span>' : '…');
+      : (isSol && p.hist && p.hist.unpriced ? '<span class="unit" title="A deposit could not be priced at the time it was made, so no cost basis is stated.">unpriced deposit</span>'
+      : (isSol && p.hist && p.hist.complete && p.hist.balanced===false
+          ? '<span class="unit" title="The liquidity this position\u2019s transactions added and removed does not net to what it holds on chain'
+            +(p.hist.liqGap?' (off by '+esc(p.hist.liqGap)+' units)':'')+', so something in its history was misread and no cost basis is stated. Usually a transaction landing between two reads, which clears on the next refresh.">not reconciled</span>'
+          : '…'));
     mkm(roiLabel, p.roiPct==null?histNote:'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
     mkm('RANGE BUFFER ↓ / ↑', p.inRange
       ? '<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">−'+p.dLow.toFixed(1)+'%</span> <span class="unit">/</span> +'+p.dUp.toFixed(1)+'%'
