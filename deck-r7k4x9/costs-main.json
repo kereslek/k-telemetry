@@ -37,10 +37,10 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26053125,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26053125,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26053125,
-  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26053125
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26053227,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26053227,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26053227,
+  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26053227
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
@@ -109,18 +109,22 @@
   "4SZLcAXv36S7SPa834XwrTTNPQhsJaqco3UcxtubZAwNWKcts2ciwsZ8H7JGZ7tQoAcx6MLtxDEvivpt5iLuXGbi": 1,
   "3X3EKf2u4weEsoxYcRivAtxZkTWHcixRnwNTohkogPqEwESddSvo1xPMrTRbPzSFwXK3aCMYe8b68vL6QsYdqzuV": 1,
   "5WXmyMWPnPoSES7Dzud3zyZE5scasbZL2zVFp6pQ2f2B9QFNVVTSep2KxtSDKYVWfwKhFTPTSbW3D7ZDXWtxYRAy": 1,
-  "4xCp42hgvZbdn6WkPEKsC1VQGEMAemjZmfdvZymdob6B3zQQVwXL46y6gnyvARnNm7eGFqXk1uNyAxYR5xuLRE9u": 1
+  "4xCp42hgvZbdn6WkPEKsC1VQGEMAemjZmfdvZymdob6B3zQQVwXL46y6gnyvARnNm7eGFqXk1uNyAxYR5xuLRE9u": 1,
+  "vm4XyoS4ppsZFDW6ktJ4ZxSTH1TxZ4FpcRqkexCXywbMUWcfiQ1SpFbNaUb3SZMBoZjbfieg9ALgBT2FWuLsdYq": 1,
+  "qnU3kfX1szMcCktvYXi5Wzfy9JPZW7Ly29hkugSXmo8f1sqTqBUqJM83jH6cRaDXybVH3DNpaXjBPpyGjQ1mB7A": 1,
+  "xhaNwrSG6sgq4CWdE2jNn6WofDF55WJA3GGxf4jASRwGqsp7FhUXau2nvmfmacxDfWWSJnbYWRnet7XJBwo2wMZ": 1,
+  "3fcRr6nEirtZpAA1T9vUWonMZpZ2yTtrBxHkvt2P1VQWC35KUhKumUqXGCB6HLAkGQ7GXHPHYDad3EqnZRebbCNn": 1
  },
  "solPartial": true,
- "solGasUsd": 0.1795187853034399,
- "solOpenUsd": 32.28,
+ "solGasUsd": 0.3404877086758156,
+ "solOpenUsd": 39.24,
  "solOpenPend": {},
  "solScan": {
-  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "4xCp42hgvZbdn6WkPEKsC1VQGEMAemjZmfdvZymdob6B3zQQVwXL46y6gnyvARnNm7eGFqXk1uNyAxYR5xuLRE9u",
+  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "qnU3kfX1szMcCktvYXi5Wzfy9JPZW7Ly29hkugSXmo8f1sqTqBUqJM83jH6cRaDXybVH3DNpaXjBPpyGjQ1mB7A",
   "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "5JWGLfZwXG365VY1VXGFLkxJLks2ao2Mxy9H38y6eVdEeyWvAQyUPSYQL1MKVySQrzqkNS5tAbhpqDqDBmPmPotE"
  },
  "solWalletTx": {},
- "solSwapUsd": 69.67,
+ "solSwapUsd": 70.88,
  "solUnattributed": 3,
- "solSwapOwnUsd": 64.75
+ "solSwapOwnUsd": 65.96
 }
