@@ -69,15 +69,21 @@
   }
 
   /* ============ HEADER ============ */
+  /* One grid, named areas. Wide: brand · status · controls on top, one row of price tiles
+     under it. Medium: status drops to its own line. Phone: brand + action icons, status line,
+     tiles (tokens 2 across, market 3 across, gas full width), timeframe. */
   header{
     position:sticky;top:0;z-index:50;
-    display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;
-    padding:10px 22px;
+    display:grid;align-items:center;gap:12px 18px;
+    grid-template-columns:auto auto minmax(0,1fr) auto;
+    grid-template-areas:"logo brand stat ctl" "px px px px";
+    padding:12px 22px;
     background:linear-gradient(180deg, rgba(7,13,22,.97), rgba(7,13,22,.88));
     border-bottom:1px solid var(--line);
     backdrop-filter:blur(6px);
   }
-  .reactor{width:38px;height:38px;flex:none;position:relative}
+  .reactor{grid-area:logo;width:38px;height:38px;flex:none;position:relative}
+  .brand{grid-area:brand;min-width:0}
   .reactor svg{width:100%;height:100%;filter:drop-shadow(0 0 6px var(--accent-glow))}
   .reactor .spin{transform-origin:50% 50%;animation:spin 14s linear infinite}
   .reactor .spin2{transform-origin:50% 50%;animation:spin 8s linear infinite reverse}
@@ -87,30 +93,36 @@
   /* nowrap plus a wide letter-spacing makes this line 322px, which is wider than a 320px
      phone — the whole page then scrolled sideways. Let it wrap and tighten the tracking. */
   @media(max-width:400px){ .brand .sub{white-space:normal;letter-spacing:.18em;line-height:1.5} }
-  .hdr-stats{display:flex;gap:22px;margin-left:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-  /* Three rows, each one kind of thing: brand + status, prices, controls. The break forces the
-     prices under row 1; the controls share row 2 when there is room and drop to row 3 when not. */
-  .hdr-break{flex-basis:100%;height:0;margin-top:-10px}   /* its own flex line: cancel one of the two row gaps it adds */
-  .hdr-px{display:flex;align-items:stretch;gap:0;flex:1 1 auto;min-width:0;
-          border:1px solid var(--line-soft);background:rgba(10,20,32,.55)}
-  /* Seven equal columns across the two groups (4 : 3), so every price starts on a grid line. */
-  .px-grp{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(max-content,1fr);gap:20px;padding:6px 14px}
-  .px-grp.tok{flex:4 1 0} .px-grp.mkt{flex:3 1 0}
-  .px-grp+.px-grp{border-left:1px solid var(--line)}
-  .px{min-width:0}
-  .px .k{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);white-space:nowrap}
-  .px .v{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .px .chg{font-size:10px;font-weight:600;margin-left:3px}
-  .hdr-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
-  .hdr-ctl .seg{margin-left:0}
-  .hdr-btns{display:flex;gap:10px}
-  .hstat{text-align:right}
-  .hstat .k{font-size:8.5px;letter-spacing:.22em;color:var(--text-muted)}
-  .hstat .v{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums}
-  .hstat .v .unit{color:var(--text-muted);font-size:10px}
-  .gasstat{text-align:left}
-  .gaswrap{display:flex;align-items:center;gap:7px}
-  .gasgauge{width:60px;height:32px;flex:none;overflow:visible}
+  @media(max-width:360px){ .brand h1{font-size:11px !important;letter-spacing:.1em !important} .hdr-btns .hbtn{width:32px !important}
+                           .px.mkt .v{font-size:12px !important} }
+  /* status line: small, quiet, one line when it fits */
+  .hdr-stats{grid-area:stat;justify-self:end;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;
+             gap:4px 18px;font-family:var(--sans)}
+  /* wide screens: a deliberate 2 x 2 block (connection · clock / data as of · next) */
+  @media(min-width:1400px){ .hdr-stats{display:grid;grid-template-columns:auto auto;gap:4px 20px;justify-items:start} }
+  .hdr-stats>.conn{order:-1;border:none;background:none;padding:0;gap:6px}
+  .hdr-stats .conn .label{font-size:10px;letter-spacing:.08em;font-weight:600}
+  .hstat{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+  .hstat .k{font-size:9.5px;letter-spacing:.08em;font-weight:600;color:var(--text-muted)}
+  .hstat .v{font-size:12.5px;color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .hstat .v .unit{color:var(--text-muted);font-size:11px}
+  .hdr-ctl{grid-area:ctl;display:flex;align-items:center;gap:10px}
+  .hdr-segs{display:flex;gap:8px}
+  .hdr-segs .seg{margin-left:0}
+  .hdr-btns{display:flex;gap:8px}
+  /* price tiles: one look for all eight; tokens carry an accent edge, the market does not */
+  .hdr-px{grid-area:px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) minmax(0,2fr);gap:8px}
+  .px{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:7px 11px 8px;
+      background:rgba(10,20,32,.6);border:1px solid var(--line);border-top:2px solid var(--line);font-family:var(--sans)}
+  .px.tok{border-top-color:var(--accent-dim)}
+  .px.mkt.first,.px.gas{margin-left:10px}
+  .px .k{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.06em;font-weight:600;color:var(--text-muted);white-space:nowrap;overflow:hidden}
+  .px .k em{font-style:normal;font-size:8.5px;letter-spacing:.08em;line-height:1;padding:2px 4px;border:1px solid var(--line);color:var(--text-secondary);text-transform:uppercase}
+  .px .v{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .px .chg{font-size:10.5px;font-weight:600}
+  .px.gas{display:grid;grid-template-columns:auto auto minmax(0,1fr);grid-template-areas:"g k num" "g band band" "sub sub sub";
+          align-items:center;gap:2px 8px}
+  .px.gas .gaswrap,.px.gas .gastxt{display:contents}
   .gg-seg{fill:none;stroke-width:5;stroke-linecap:butt;opacity:.30}
   .gg-a{stroke:var(--status-good)} .gg-b{stroke:var(--status-warning)}
   .gg-c{stroke:var(--status-serious)} .gg-d{stroke:var(--status-critical)}
@@ -118,12 +130,21 @@
   .gg-needle{stroke:var(--text-primary);stroke-width:2;stroke-linecap:round;
              transform-box:view-box;transform-origin:38px 34px;transition:transform .5s cubic-bezier(.2,.8,.2,1)}
   .gg-hub{fill:var(--text-primary)}
-  .gastxt{text-align:left;line-height:1.15}
-  .gasnum{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .gasnum .unit{color:var(--text-muted);font-size:10px}
-  .gasband{font-size:8.5px;letter-spacing:.14em;white-space:nowrap}
-  .gassub{font-size:9px;color:var(--text-muted);white-space:nowrap;margin-top:1px}
-  .act-size{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
+  .gasgauge{grid-area:g;width:44px;height:23px;overflow:visible}
+  .px.gas>.k{grid-area:k}
+  .gasnum{grid-area:num;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .gasnum .unit{color:var(--text-muted);font-size:10.5px}
+  .gasband{grid-area:band;font-size:9px;letter-spacing:.06em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gassub{grid-area:sub;font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media(min-width:761px) and (max-width:1399px){
+    header{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"logo brand ctl" "stat stat stat" "px px px"}
+    .hdr-stats{justify-self:start;justify-content:flex-start}
+    .brand h1{font-size:14px;letter-spacing:.22em} .brand .sub{white-space:normal;line-height:1.5}
+    /* tokens four across; SOL, ETH, BTC in the left half of row two, gas the right half */
+    .hdr-px{grid-template-columns:repeat(12,minmax(0,1fr))}
+    .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.gas{grid-column:span 6}
+    .px.mkt.first,.px.gas{margin-left:0}
+  }  .act-size{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
   .cat-scroll{overflow-x:auto;margin-top:6px}
   .cat-grid{display:grid;gap:5px 12px;align-items:baseline;font-size:12px;min-width:min-content}
   .cat-grid .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
@@ -505,35 +526,25 @@
   }
   @media(max-width:760px){
     body{font-size:13px}
-    header{gap:10px 14px;padding:9px 12px}
-    .brand h1{font-size:13px;letter-spacing:.2em}
-    .brand .sub{font-size:8px;letter-spacing:.22em}
-    .reactor{width:30px;height:30px}
-    .hdr-stats{margin-left:0;width:100%;gap:10px 14px;justify-content:flex-start}
-    .hstat{text-align:left}
-    /* Gas gets a line of its own: gauge, reading and band side by side, the cost line under the
-       reading — it never has to squeeze in next to something else. */
-    .hdr-stats>.gasstat{flex-basis:100%;display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center}
-    .gasstat>.k{grid-column:1/-1}
-    .gasstat .gaswrap{grid-column:1/-1}
-    .gasgauge{width:46px;height:25px}
-    .gastxt{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px}
-    .gassub{grid-column:1/-1;margin-top:2px}
-    /* Prices: tokens two by two, the market three across, all columns aligned. */
-    .hdr-break{display:none}
-    .hdr-px{flex-basis:100%;flex-direction:column}
-    .px-grp{grid-auto-flow:row;grid-template-columns:1fr 1fr;gap:8px 12px;padding:8px 10px}
-    .px-grp.mkt{grid-template-columns:repeat(3,1fr)}
-    .px-grp+.px-grp{border-left:none;border-top:1px solid var(--line-soft)}
-    .px .v{font-size:12.5px}
-    .hdr-ctl{margin-left:0;width:100%;justify-content:flex-start;gap:8px}
-    .conn{flex:1 1 auto;justify-content:center}
-    .hdr-btns{flex-basis:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-    .hdr-btns .hbtn{text-align:center}
-    .hstat .v{font-size:12px}
+    header{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"logo brand btns" "stat stat stat" "px px px" "segs segs segs";
+           gap:10px;padding:10px 12px}
+    .brand .sub{white-space:normal;line-height:1.5;letter-spacing:.1em !important}
+    .hdr-stats{justify-self:stretch;justify-content:flex-start;gap:4px 14px}
+    .hdr-ctl{display:contents}
+    .hdr-btns{grid-area:btns;gap:6px}
+    .hdr-btns .hbtn{width:36px;height:34px;padding:0;display:grid;place-items:center;font-size:14px;letter-spacing:0}
+    .hdr-btns .hbtn .bt{display:none}
+    .hdr-segs{grid-area:segs}
+    .hdr-segs #aprSeg{flex:1} .hdr-segs #aprSeg button{flex:1}
+    .hdr-px{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+    .px{padding:6px 9px 7px;gap:3px}
+    .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.gas{grid-column:1/-1}
+    .px.mkt.first,.px.gas{margin-left:0}
+    .px .v{font-size:13.5px} .px .chg{font-size:10px}
+    .px.mkt .v{font-size:13px}
+    .gasnum{font-size:13.5px}    .hstat .v{font-size:12px}
     .hbtn{padding:6px 10px;font-size:9px}
     .seg button{padding:4px 7px;font-size:8.5px}
-    .conn{padding:4px 9px}
     main{padding:12px 10px 50px}
     .tiles{grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:9px}
     .tile{padding:11px 12px 10px}
@@ -554,13 +565,10 @@
     .chead{flex-wrap:wrap;row-gap:6px}
   }
   @media(max-width:430px){
-    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}   /* hide CET clock + BLOCK on tiny screens — DATA AS OF, NEXT DATA and gas stay; prices are their own row */
-    .hdr-stats>.hstat{flex:1 1 0}
-    .hdr-stats>.gasstat{flex:1 1 100%}
-    .px .k{letter-spacing:.1em}
-    .px-grp.mkt .px .k{letter-spacing:.08em}
-    .hbtn{letter-spacing:.1em;padding:7px 6px}
-    .brand h1{font-size:12px}
+    /* hide the CET clock on tiny screens. BLOCK is gone; child 2 is now the connection pill,
+       which is not an .hstat, so the second half matches nothing — DATA AS OF and NEXT stay. */
+    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}
+    .brand h1{font-size:12px;letter-spacing:.14em}
     .seg{margin-left:0}
   }
 
@@ -893,14 +901,28 @@
     <h1>ARC // LP COMMAND</h1>
     <div class="sub">UNISWAP V3 · RAYDIUM · ORCA · <span id="buildTag"></span></div>
   </div>
-  <!-- Row 1 (with the brand): status. CET and BLOCK must stay children 1 and 2 — the phone rule
-       .hdr-stats>.hstat:nth-child(1),(2) hides exactly those two. -->
   <div class="hdr-stats">
     <div class="hstat"><div class="k" id="hClockLabel">CET</div><div class="v" id="hClock">—</div></div>
-    <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
+    <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
     <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
     <div class="hstat"><div class="k" id="hCdLabel">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
-    <div class="hstat gasstat" id="hGasStat" title="Cost to transact on Ethereum right now"><div class="k">ETH GAS</div>
+  </div>
+  <div class="hdr-ctl">
+    <div class="hdr-segs">
+      <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
+      <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
+    </div>
+    <div class="hdr-btns">
+      <button class="hbtn" id="btnNotify" title="Alerts — browser notifications near range edges" aria-label="Alerts"><span class="bi">◉</span><span class="bt"> ALERTS</span></button>
+      <button class="hbtn" id="btnRefresh" title="Scan now" aria-label="Scan"><span id="scanIcon" class="bi" style="display:inline-block">⟳</span><span id="scanBtnTxt" class="bt"> SCAN</span></button>
+      <button class="hbtn" id="btnSettings" title="Config — wallets, endpoints, alerts" aria-label="Config"><span class="bi">⚙</span><span class="bt"> CONFIG</span></button>
+    </div>
+  </div>
+  <!-- price tiles: tokens in the token-exposure order, then the market, then gas. The prices are
+       filled by renderHeader into #hPx; the gas tile is static markup driven by renderGasGauge. -->
+  <div class="hdr-px">
+    <div id="hPx" style="display:contents"></div>
+    <div class="px gas" id="hGasStat" title="Cost to transact on Ethereum right now"><div class="k">ETH GAS</div>
       <div class="gaswrap">
         <svg class="gasgauge" viewBox="0 0 76 40" aria-hidden="true">
           <path class="gg-seg gg-a" d="M10.0 34.0 A28 28 0 0 1 24.0 9.75"/>
@@ -913,20 +935,6 @@
         <div class="gastxt"><div class="gasnum" id="hGasNum">—</div><div class="gasband" id="hGasBand">—</div></div>
       </div>
       <div class="gassub" id="hGasSub">—</div>
-    </div>
-  </div>
-  <div class="hdr-break"></div>
-  <!-- Row 2: prices, tokens in the token-exposure order, then the market. Filled by renderHeader. -->
-  <div class="hdr-px" id="hPx"></div>
-  <!-- Row 3 (or the end of row 2 on a wide screen): controls -->
-  <div class="hdr-ctl">
-    <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
-    <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
-    <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
-    <div class="hdr-btns">
-      <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
-      <button class="hbtn" id="btnRefresh"><span id="scanIcon" style="display:inline-block">⟳</span><span id="scanBtnTxt"> SCAN</span></button>
-      <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
     </div>
   </div>
 </header>
@@ -1207,7 +1215,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2763,7 +2771,6 @@ function renderAll(){
 }
 function renderHeader(){
   renderGasGauge();
-  $('#hBlock').textContent = state.block ?? '—';
   const chip = c => c!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(c>=0?'good':'critical')+')">'
         +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>' : '';
   const px=$('#hPx');
@@ -2784,10 +2791,11 @@ function renderHeader(){
     const TOK=['LCX / USD (new)','LCX / USD (old)','CPOOL / USD (SOL)','CPOOL / USD (ETH)'];
     const MKT=['SOL / USD','ETH / USD','BTC / USD'];
     const tok=[...TOK.filter(l=>got.has(l)), ...[...got.keys()].filter(l=>!TOK.includes(l)&&!MKT.includes(l))];
-    const cell=l=>{ const q=got.get(l)||{};
-      return '<div class="px"'+(q.tip?' title="'+esc(q.tip)+'"':'')+'><div class="k">'+esc(l)+'</div><div class="v">'+pfmt(q.usd)+ch(q.chg)+'</div></div>'; };
-    px.innerHTML=(tok.length?'<div class="px-grp tok">'+tok.map(cell).join('')+'</div>':'')
-      +'<div class="px-grp mkt">'+MKT.map(cell).join('')+'</div>';
+    /* "LCX / USD (new)" renders as the pair plus a small tag holding the same word. */
+    const cell=(l,cls)=>{ const q=got.get(l)||{}, m=/^(.*?)\s*\((.+)\)$/.exec(l);
+      return '<div class="px '+cls+'"'+(q.tip?' title="'+esc(q.tip)+'"':'')+'><div class="k">'
+        +(m?esc(m[1])+'<em>'+esc(m[2])+'</em>':esc(l))+'</div><div class="v">'+pfmt(q.usd)+ch(q.chg)+'</div></div>'; };
+    px.innerHTML=tok.map(l=>cell(l,'tok')).join('')+MKT.map((l,i)=>cell(l,'mkt'+(i?'':' first'))).join('');
   }
 }
 function setConn(mode){
@@ -7544,10 +7552,10 @@ async function init(){
   $('#btnNotify').addEventListener('click',async()=>{
     if(!('Notification' in window)){ log('warning','This browser does not support notifications.'); return; }
     const perm = await Notification.requestPermission();
-    if(perm==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').textContent='◉ ARMED'; log('good','Browser notifications armed — you will be pinged near range edges.'); }
+    if(perm==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').innerHTML='<span class="bi">◉</span><span class="bt"> ARMED</span>'; log('good','Browser notifications armed — you will be pinged near range edges.'); }
     else log('warning','Notification permission denied.');
   });
-  if(('Notification' in window) && Notification.permission==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').textContent='◉ ARMED'; }
+  if(('Notification' in window) && Notification.permission==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').innerHTML='<span class="bi">◉</span><span class="bt"> ARMED</span>'; }
   setInterval(tickClock,1000);
   $('#buildTag').textContent = 'BUILD '+BUILD;
   bootMsg('ESTABLISHING RPC UPLINK…');
