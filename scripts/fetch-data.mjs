@@ -1819,16 +1819,16 @@ const main=async()=>{
     }catch(e){ logErr('quote lcx old',e); }
     push('CPOOL / USD (ETH)', T('CPOOL')?.usd, T('CPOOL')?.chg, 'feed');
     try{
-      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL+','+SOL_MINT,15000);
+      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL,15000);
       const e=js&&js[CPOOL_SOL];
-      /* Logged once per pass so the unit of Jupiter's change field can be checked against the
-         feed's SOL change beside it. It is used only if it matches. */
-      const sj=js&&js[SOL_MINT];
-      console.log('quote jup', JSON.stringify({cpool:e, sol:sj&&{usd:sj.usdPrice,chg:sj.priceChange24h}, feedSolChg:T('SOL')?.chg}));
+      /* Jupiter's own 24h change is a percentage. Checked before trusting it: across three
+         rehearsal passes its SOL figure read 6.45, 6.79 and 7.17 against the feed's 6.40, 6.71
+         and 7.26. The relay's own samples stand in only when Jupiter leaves the field out. */
       if(e && e.usdPrice!=null){
         const usd=Number(e.usdPrice);
         const own=tickChange('cpool:sol',usd);
-        push('CPOOL / USD (SOL)', usd, own, 'jupiter');
+        const jc=e.priceChange24h!=null ? Number(e.priceChange24h) : null;
+        push('CPOOL / USD (SOL)', usd, (jc!=null&&isFinite(jc)) ? jc : own, 'jupiter');
       }
     }catch(e){ logErr('quote cpool sol',e); }
     if(q.length) quotes=q;
