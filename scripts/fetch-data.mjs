@@ -5,9 +5,27 @@
 
 import { pathToFileURL } from 'node:url';
 import fs from 'fs';
+import { makeRpc, syncPositionLedger, valueDeposits, summarizeLedger } from './sol-history.mjs';
 const OUT='deck-r7k4x9';
 const CONFIG = JSON.parse(fs.readFileSync(OUT+'/config.json','utf8'));
-const SOL_RPCS = ['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com','https://solana.drpc.org'];
+/* Solana endpoints, chosen by measurement (scripts/sol-probe.mjs, 2026-09-25), not by habit.
+
+   api.mainnet-beta.solana.com keeps the whole history — it served a position's opening from
+   2025-10-30 — but throttles a GitHub runner after about a dozen quick calls. publicnode is fast
+   and never throttled in testing, but keeps under three days: asked for older history it returns
+   a SHORT signature list and null transactions, both of which look like real answers. drpc
+   answered HTTP 400 to everything and is gone; five other public endpoints tried were dead.
+
+   So the two are used for what each is good at. Reads of current state go to the fast one
+   first. Anything that walks history goes only to an endpoint that keeps it — before this split,
+   a throttled mainnet-beta handed history calls to publicnode, which answered with a truncated
+   list that the code then took as complete.
+
+   SOL_RPC_URL, if set as a repository secret, goes in front of both. It is optional: the relay
+   runs without it, just more slowly while it backfills. */
+const SOL_KEYED=(process.env.SOL_RPC_URL||'').split(',').map(s=>s.trim()).filter(Boolean);
+const SOL_LIVE=[...SOL_KEYED,'https://solana-rpc.publicnode.com','https://api.mainnet-beta.solana.com'];
+const SOL_ARCHIVE=[...SOL_KEYED,'https://api.mainnet-beta.solana.com'];
 const NPM_STD='0xc36442b4a4522e871399cd717abdd847ab11fe88', FACT_STD='0x1f98431c8ad98523631ae4a59f267346ea31f984';
 const CHAINS = {
   ethereum:{ tag:'ETH', rpcs:['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'],
@@ -79,16 +97,13 @@ async function evm(chainKey,method,params){
 const evmCall=(ck,to,data,block='latest',from)=>evm(ck,'eth_call',[{to,data,...(from?{from}:{})},block]);
 const eth=(method,params)=>evm('ethereum',method,params);
 const ethCall=(to,data,block='latest',from)=>evmCall('ethereum',to,data,block,from);
+const solLive=makeRpc(SOL_LIVE,{timeout:20000});
+const solArchive=makeRpc(SOL_ARCHIVE,{timeout:25000, nullIsMiss:true});
+const SOL_HIST_METHODS=new Set(['getSignaturesForAddress','getTransaction','getBlock','getBlockTime']);
+/* Every existing call site goes through here, so routing by method fixes all of them at once:
+   the open-date walk, the harvest scan, the wallet cost scan and the new position history. */
 async function sol(method,params){
-  let last;
-  for(const url of SOL_RPCS){
-    try{
-      const js=await post(url,{jsonrpc:'2.0',id:rpcId++,method,params});
-      if(js.error) throw new Error(js.error.message||JSON.stringify(js.error));
-      return js.result;
-    }catch(e){ last=e; }
-  }
-  throw last;
+  return (SOL_HIST_METHODS.has(method)?solArchive:solLive)(method,params);
 }
 
 /* ---------- v3 math ---------- */
@@ -176,7 +191,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -853,7 +868,12 @@ async function fetchSolana(SOL_WALLETS){
     const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
     const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
     let mintTs=null, openSig=null, openExact=false, poolOpenSig=null;
-    try{
+    /* Once the position's history has been walked to its opening, the opening is known and
+       never changes. Up to three signature pages per position per pass were being spent to
+       rediscover it, all of them on the one endpoint that throttles. */
+    const hst=blockCache.solHist&&blockCache.solHist['sol:'+pp.nftMint];
+    if(hst && hst.done && hst.openT && hst.bot){ mintTs=hst.openT*1000; openSig=hst.bot; openExact=true; }
+    else try{
       let before,oldest=null,pages=0;
       while(pages<3){
         const sigs=await sol('getSignaturesForAddress',[pd,{limit:1000,...(before?{before}:{})}]);
@@ -886,6 +906,7 @@ async function fetchSolana(SOL_WALLETS){
     }
     const rinfo=ray[pp.poolId]||{};
     out.push({ id:'sol:'+pp.nftMint, chain:'sol', relay:true, wallet:c.wallet, nftMint:pp.nftMint, poolId:pp.poolId, pda:pd,
+      tl:pp.tickLower, tu:pp.tickUpper,
       liq:pp.liquidity.toString(), poolLiq:pool.liquidity!=null?pool.liquidity.toString():null,
       poolTvlUsd:rinfo.tvl??null, poolVol24Usd:rinfo.vol24??null,
       m0:{symbol:symbols[pool.mint0]}, m1:{symbol:symbols[pool.mint1]}, mint0:pool.mint0, mint1:pool.mint1, d0, d1, tick, price, priceLower, priceUpper,
@@ -1857,6 +1878,39 @@ const main=async()=>{
         }
       }
       catch(e){ logErr('sol',e); chainErrs.add('solana'); scanIncomplete.add('sol'); }
+    }
+    /* ---- Solana position history: deposits, withdrawals and fees, from the transactions ----
+       Bounded per pass, so a first backfill spreads itself over a few refreshes instead of
+       stalling one of them on the endpoint that throttles. After that a pass costs one listing
+       call per position. Skipped when the scan itself was incomplete: a wallet that did not
+       answer says nothing about its positions' histories either. */
+    let solLedgerItems=[];
+    if(solPositions.length && !solPositions.incomplete){
+      try{
+        blockCache.solHist=blockCache.solHist||{};
+        const ourPdas=new Set(solPositions.map(p=>p.pda).filter(Boolean));
+        const t0=Date.now(); let reads=0, calls=0;
+        for(const p of solPositions){
+          if(!p.pda||!p.nftMint||p.tl==null||p.tu==null) continue;
+          const st=blockCache.solHist[p.id]=blockCache.solHist[p.id]||{};
+          st.seen=Date.now();
+          const pos={pda:p.pda, nftMint:p.nftMint, poolId:p.poolId, owner:p.wallet, mint0:p.mint0, mint1:p.mint1,
+                     d0:p.d0, d1:p.d1, tl:p.tl, tu:p.tu};
+          solLedgerItems.push({p,pos,st});
+          if(Date.now()-t0>150000 || reads>=80) continue;          // budget spent — next pass
+          try{
+            const r=await syncPositionLedger(sol, pos, st, {ourPdas, maxTx:Math.min(40,80-reads)});
+            reads+=r.read; calls+=r.calls;
+          }catch(e){ logErr('solHist '+String(p.id).slice(4,14), e); }
+        }
+        for(const k of Object.keys(blockCache.solHist)){
+          const x=blockCache.solHist[k];
+          if(!x || !x.seen || Date.now()-x.seen>30*86400000) delete blockCache.solHist[k];   // closed a month ago
+        }
+        console.log('solHist:', reads,'tx read,', calls,'calls,',
+          solLedgerItems.filter(x=>x.st.complete).length+'/'+solLedgerItems.length,'positions complete,',
+          solLedgerItems.reduce((n,x)=>n+(x.st.todo||[]).length,0),'transactions still queued');
+      }catch(e){ logErr('solHist',e); }
     }
     let solTxFees={}, solOpenLam={};
     // ---- harvest ledger: detect fee collections between snapshots (Solana has no easy event log) ----
@@ -2871,6 +2925,54 @@ const main=async()=>{
           }
         }
       }catch(e){ logErr('basisFromDaily',e); }
+      /* ---- Solana: the exact cost basis, and the P&L that follows from it ----
+         Same definitions as the EVM side, so the two sit in one column without a footnote:
+         deposits valued when they were made; principal taken back and fees paid, valued now;
+         P&L is what the position and everything it returned are worth today against what went
+         in. Only a history that reached the opening and priced every deposit is used — a
+         partial one would state a cost basis that is simply too small. Where it is not yet
+         complete, the snapshot reconstruction above stays in place and says it is approximate. */
+      try{
+        if(solLedgerItems.length){
+          const STABLE=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
+          const isAnchor=m=>m===SOL_MINT||STABLE.has(m);
+          const hourPx={};
+          const anchorUsd=async(m,t)=>{
+            if(STABLE.has(m)) return 1;
+            if(m!==SOL_MINT || !t) return null;
+            const h=Math.floor(t/3600)*3600;
+            if(!(h in hourPx)){ const r=await llamaHistorical(['coingecko:solana'],h); hourPx[h]=r['coingecko:solana']??null; }
+            return hourPx[h];
+          };
+          const dayPx={};
+          const note=(k,d,u)=>{ if(k&&u>0) (dayPx[k]=dayPx[k]||{})[d]=u; };
+          for(const day of daily){
+            for(const x of (day.w||[])) note(x.k,day.d,x.u);
+            for(const q of (day.ps||[])){ note(q.k0,day.d,q.u0); note(q.k1,day.d,q.u1); }
+          }
+          const dailyUsd=(m,t)=>{ const k='sol:'+String(m).toLowerCase(), d=new Date(t*1000).toISOString().slice(0,10);
+                                  return (dayPx[k]&&dayPx[k][d])||null; };
+          await valueDeposits(solLedgerItems.map(x=>({pos:x.pos,st:x.st})), {anchorUsd, dailyUsd, isAnchor});
+          for(const {p,pos,st} of solLedgerItems){
+            const h=summarizeLedger(st,pos);
+            p.hist={n:h.n, complete:h.complete, unpriced:h.unpriced, queued:(st.todo||[]).length, lost:st.lost||0, priced:h.src};
+            if(!h.complete || h.costUsd==null || !(h.costUsd>0) || p.usd0==null || p.usd1==null) continue;
+            p.costUsd=r2(h.costUsd); p.roiMode='entry';
+            delete p.basisUsd; delete p.basisFrom;
+            p.depAmt=h.dep.map(x=>+x.toPrecision(10)); p.wdAmt=h.wd.map(x=>+x.toPrecision(10)); p.feeAmt=h.fee.map(x=>+x.toPrecision(10));
+            const wdNow=h.wd[0]*p.usd0+h.wd[1]*p.usd1;
+            p.feesLifeUsd=r2(h.fee[0]*p.usd0+h.fee[1]*p.usd1+(p.feesUsd||0));
+            p.roiPct=((p.valueUsd||0)+wdNow+p.feesLifeUsd-p.costUsd)/p.costUsd*100;
+            p.hodlNowUsd=h.dep[0]*p.usd0+h.dep[1]*p.usd1;
+            p.ilUsd=(p.valueUsd||0)+wdNow-p.hodlNowUsd;
+            p.lpVsHodlUsd=p.ilUsd+p.feesLifeUsd;
+            if(h.first && !p.openExact){ p.mintTs=h.first*1000; p.ageDays=(Date.now()-p.mintTs)/86400000; }
+            /* Lifetime, not "since this bot started watching": the history reaches the opening,
+               so the fee rate no longer has to be annualised over a partial window. */
+            if(p.ageDays>0.05){ p.feeAprPct=(p.feesLifeUsd/p.costUsd)*(365/p.ageDays)*100; p.feesPartial=false; }
+          }
+        }
+      }catch(e){ logErr('solLedger',e); }
       /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
          them would more than double a payload that has to reach a phone every 15 minutes. The
          answers are 300 bytes a day, they are identical for every reader, and computing them
@@ -3057,6 +3159,8 @@ const main=async()=>{
     console.log('profile',profile.slug,':',evmPositions.length,'evm +',solPositions.length,'sol · errors:',errors.length);
   }
   try{ fs.writeFileSync(OUT+'/blockcache.json', JSON.stringify(blockCache)); }catch(e){}
+  /* What this pass cost, measured. */
+  try{ console.log('rpc sol live', JSON.stringify(solLive.stats)); console.log('rpc sol archive', JSON.stringify(solArchive.stats)); }catch(e){}
 };
 /* Run only when this file IS the entry point. The backfill imports dailyRecord from here, and
    an unguarded call would have it fetch the whole portfolio as a side effect of an import. */

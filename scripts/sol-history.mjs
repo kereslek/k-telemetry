@@ -218,7 +218,7 @@ export async function syncSignatures(rpc, addr, st, maxPages=2){
 
    Every call is counted, per endpoint and per method, so the cost of a run is a measured number
    rather than an estimate. */
-export function makeRpc(urls, {timeout=20000, log=()=>{}}={}){
+export function makeRpc(urls, {timeout=20000, log=()=>{}, nullIsMiss=false}={}){
   const stats={calls:0, byUrl:{}, byMethod:{}, throttled:0, failed:0, retries:0};
   const bench={};             // url -> epoch ms until which it is skipped
   let id=1;
@@ -242,7 +242,7 @@ export function makeRpc(urls, {timeout=20000, log=()=>{}}={}){
   }
   async function rpc(method, params){
     stats.byMethod[method]=(stats.byMethod[method]||0)+1;
-    let lastErr='no endpoint';
+    let lastErr='no endpoint', sawThrottle=false;
     for(let round=0; round<4; round++){
       let anyTried=false;
       for(const url of urls){
@@ -252,15 +252,22 @@ export function makeRpc(urls, {timeout=20000, log=()=>{}}={}){
         const s=stats.byUrl[L]=stats.byUrl[L]||{calls:0,throttled:0,errors:0};
         s.calls++; stats.calls++;
         const r=await once(url, method, params);
+        /* A transaction the node does not keep comes back as null, which is indistinguishable
+           from a transaction that does not exist. The probe caught a short-history endpoint
+           answering null for 36 of one position's 44 transactions, and the history reading as
+           if they had never happened. On an archive client a null is a miss: ask the next. */
+        if(r.ok && r.result===null && nullIsMiss && method==='getTransaction' && url!==urls[urls.length-1]){ s.misses=(s.misses||0)+1; continue; }
         if(r.ok) return r.result;
-        if(r.throttle){ s.throttled++; stats.throttled++; bench[url]=Date.now()+4000*(round+1); continue; }
+        if(r.throttle){ s.throttled++; stats.throttled++; sawThrottle=true; bench[url]=Date.now()+4000*(round+1); continue; }
         s.errors++; lastErr=L+': '+r.err;
       }
       /* Everybody was benched or throttled. Wait for the earliest to come back rather than
          reporting a rate limit as though the data did not exist. */
       const soonest=Math.min(...urls.map(u=>bench[u]||0));
       const wait=Math.max(1500, soonest-Date.now());
-      if(!anyTried || stats.throttled){ stats.retries++; await new Promise(r=>setTimeout(r, Math.min(wait,15000))); continue; }
+      /* Waiting is only worth it when this call was told to wait. A genuine refusal from every
+         endpoint is not going to change in fifteen seconds. */
+      if(!anyTried || sawThrottle){ stats.retries++; await new Promise(r=>setTimeout(r, Math.min(wait,15000))); continue; }
       break;
     }
     stats.failed++;
@@ -269,4 +276,135 @@ export function makeRpc(urls, {timeout=20000, log=()=>{}}={}){
   rpc.stats=stats;
   rpc.label=label;
   return rpc;
+}
+
+/* ---------- the ledger, kept per position ----------
+
+   State lives in the relay's block cache between runs:
+     top / bot  newest and oldest signature already listed
+     done       the listing has reached the position's opening
+     todo       signatures listed but not yet read, oldest last
+     ev         the liquidity and fee events found, amounts in raw units as strings
+     openT      block time of the opening transaction
+   A transaction is read once. What it said is a fact about the past and is never read again,
+   so after the first backfill a pass costs one listing call per position and nothing more. */
+export async function syncPositionLedger(rpc, pos, st, {ourPdas, maxTx=40, maxPages=2}={}){
+  st.ev=st.ev||[]; st.todo=st.todo||[]; st.miss=st.miss||{};
+  let calls=0, read=0;
+  if(st.top){
+    const got=await rpc('getSignaturesForAddress',[pos.pda,{limit:1000, until:st.top}]); calls++;
+    if(Array.isArray(got)&&got.length){
+      st.todo.unshift(...got.filter(x=>!x.err).map(x=>x.signature));
+      st.top=got[0].signature;
+    }
+  }
+  let pages=0;
+  while(!st.done && pages<maxPages){
+    const q={limit:1000}; if(st.bot) q.before=st.bot;
+    const got=await rpc('getSignaturesForAddress',[pos.pda,q]); calls++; pages++;
+    if(!Array.isArray(got)) break;
+    if(!st.top && got.length) st.top=got[0].signature;
+    st.todo.push(...got.filter(x=>!x.err).map(x=>x.signature));
+    if(got.length){ st.bot=got[got.length-1].signature; if(got[got.length-1].blockTime) st.openT=got[got.length-1].blockTime; }
+    if(got.length<1000) st.done=true;
+  }
+  while(st.todo.length && read<maxTx){
+    const sig=st.todo[st.todo.length-1];
+    const tx=await rpc('getTransaction',[sig,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); calls++; read++;
+    if(!tx||!tx.meta){
+      /* Not served this time. Left queued; after enough refusals it is dropped and the ledger
+         is marked as having a hole, so it can never present itself as complete. */
+      st.miss[sig]=(st.miss[sig]||0)+1;
+      if(st.miss[sig]>=6){ st.todo.pop(); st.lost=(st.lost||0)+1; delete st.miss[sig]; continue; }
+      break;
+    }
+    st.todo.pop(); delete st.miss[sig];
+    if(st.ev.some(e=>e.s===sig)) continue;
+    const keys=((tx.transaction&&tx.transaction.message&&tx.transaction.message.accountKeys)||[]).map(k=>typeof k==='string'?k:(k&&k.pubkey));
+    pos.soleInTx=!ourPdas || keys.filter(k=>ourPdas.has(k)).length<=1;
+    const r=positionEffect(tx,pos);
+    const nz=a=>a.some(x=>x>0n);
+    if(nz(r.dep)||nz(r.wd)||nz(r.fee)){
+      st.ev.push({s:sig, t:r.t, src:r.src, sq:r.sqrt,
+        d:r.dep.map(String), w:r.wd.map(String), f:r.fee.map(String)});
+    }
+  }
+  st.ev.sort((a,b)=>(a.t||0)-(b.t||0));
+  st.complete=!!st.done && !st.todo.length && !st.lost;
+  return {calls, read};
+}
+
+/* Dollar value of every deposit at the moment it was made.
+
+   The anchor leg is priced from a feed that can be trusted for it — SOL from its historical
+   price, a stablecoin at a dollar. The other leg is priced from the pool: each event that moved
+   both tokens fixes the pool's exact price at that instant, and every such event across every
+   position is one point on a price history for the token no feed covers correctly. (DefiLlama
+   maps the Solana CPOOL mint to the Ethereum token's price, identical to fifteen digits; on the
+   day the bridge was shut the two were 123% apart.)
+
+   A deposit is priced from its own event when it can be, otherwise from the nearest pool
+   reading within three days, otherwise from the relay's own daily record for that date. One
+   that none of those can price is left unpriced, and a position with an unpriced deposit has no
+   cost basis rather than a wrong one. Values are cached on the event: computed once, never
+   again. */
+export async function valueDeposits(items, {anchorUsd, dailyUsd, isAnchor}){
+  const H=(x,d)=>Number(BigInt(x))/10**d;
+  const tl={};                                  // mint -> [{t,usd}]
+  const hp=(e,pos)=>e.sq?e.sq*e.sq*10**(pos.d0-pos.d1):null;
+  for(const {pos,st} of items){
+    for(const e of st.ev){
+      const px=hp(e,pos); if(!px||!e.t) continue;
+      if(e.a==null){
+        const a0=isAnchor(pos.mint0)?await anchorUsd(pos.mint0,e.t):null;
+        const a1=isAnchor(pos.mint1)?await anchorUsd(pos.mint1,e.t):null;
+        let u0=a0, u1=a1;
+        if(u0==null&&u1!=null) u0=px*u1;
+        if(u1==null&&u0!=null) u1=u0/px;
+        e.a=(u0!=null&&u1!=null)?[u0,u1]:0;       // 0 = tried and could not
+      }
+      if(e.a){ (tl[pos.mint0]=tl[pos.mint0]||[]).push({t:e.t,usd:e.a[0]}); (tl[pos.mint1]=tl[pos.mint1]||[]).push({t:e.t,usd:e.a[1]}); }
+    }
+  }
+  const near=(mint,t)=>{
+    let best=null;
+    for(const x of tl[mint]||[]){ const dt=Math.abs(x.t-t); if(dt<=3*86400 && (!best||dt<best.dt)) best={usd:x.usd,dt}; }
+    return best?best.usd:null;
+  };
+  const priceLeg=async(mint,t,own)=>{
+    if(own!=null) return {usd:own, src:'event'};
+    if(isAnchor(mint)){ const v=await anchorUsd(mint,t); if(v!=null) return {usd:v, src:'feed'}; }
+    const n=near(mint,t); if(n!=null) return {usd:n, src:'pool'};
+    const dly=dailyUsd(mint,t); if(dly!=null) return {usd:dly, src:'daily'};
+    return null;
+  };
+  for(const {pos,st} of items){
+    for(const e of st.ev){
+      const d0=H(e.d[0],pos.d0), d1=H(e.d[1],pos.d1);
+      if(!(d0>0||d1>0) || e.du!=null) continue;
+      const own=e.a||null;
+      const p0=d0>0?await priceLeg(pos.mint0,e.t,own?own[0]:null):{usd:0,src:'-'};
+      const p1=d1>0?await priceLeg(pos.mint1,e.t,own?own[1]:null):{usd:0,src:'-'};
+      if(p0&&p1){ e.du=d0*p0.usd+d1*p1.usd; e.ds=[p0.src,p1.src].filter(x=>x!=='-').join('+'); }
+    }
+  }
+}
+
+/* What the history says, in token units and — for deposits — dollars at the time. */
+export function summarizeLedger(st, pos){
+  const H=(x,d)=>Number(BigInt(x))/10**d;
+  const o={dep:[0,0], wd:[0,0], fee:[0,0], costUsd:0, unpriced:0, n:st.ev.length, first:null, src:{}};
+  for(const e of st.ev){
+    const d=[H(e.d[0],pos.d0),H(e.d[1],pos.d1)];
+    o.dep[0]+=d[0]; o.dep[1]+=d[1];
+    o.wd[0]+=H(e.w[0],pos.d0); o.wd[1]+=H(e.w[1],pos.d1);
+    o.fee[0]+=H(e.f[0],pos.d0); o.fee[1]+=H(e.f[1],pos.d1);
+    if(d[0]>0||d[1]>0){
+      if(e.du==null) o.unpriced++; else { o.costUsd+=e.du; if(e.ds) o.src[e.ds]=(o.src[e.ds]||0)+1; }
+      if(o.first==null || e.t<o.first) o.first=e.t;
+    }
+  }
+  o.complete=!!st.complete;
+  if(o.unpriced) o.costUsd=null;
+  return o;
 }

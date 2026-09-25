@@ -1,28 +1,56 @@
-# Read-only measurement run for the Solana history work. Triggered only by pushes to the feature
-# branch that touch the probe or the history module, so it never runs against the live data and
-# never competes with refresh-data for the concurrency slot. Its output is its log.
+# Measurement and rehearsal runs for the Solana history work. Triggered only by pushes to the
+# feature branch that touch these files — the default branch is gh-pages, so none of this can
+# fire against the live data or take refresh-data's concurrency slot. Read-only permissions: the
+# rehearsal runs the real relay against a copy of the live files and cannot push what it makes.
 name: sol-probe
 on:
   push:
     branches: [claude/new-session-argqhq]
-    paths: ['scripts/sol-probe.mjs', 'scripts/sol-history.mjs', '.github/workflows/sol-probe.yml']
+    paths: ['scripts/sol-probe.mjs', 'scripts/sol-history.mjs', 'scripts/fetch-data.mjs',
+            'scripts/sol-rehearsal-report.mjs', '.github/workflows/sol-probe.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   probe:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Current positions from the published payload
-        run: git show origin/gh-pages:deck-r7k4x9/data-main.json > /tmp/data.json
-      - name: Probe
-        run: node scripts/sol-probe.mjs /tmp/data.json
+        with: { node-version: 20 }
+      - run: git show origin/gh-pages:deck-r7k4x9/data-main.json > /tmp/data.json
+      - run: node scripts/sol-probe.mjs /tmp/data.json
         env:
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+  rehearsal:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Live data files as the starting state
+        run: |
+          for f in $(git ls-tree --name-only origin/gh-pages deck-r7k4x9/ | grep -E '\.json$' | grep -v config.json); do
+            git show origin/gh-pages:$f > $f
+          done
+          cp deck-r7k4x9/data-main.json /tmp/live.json
+      - name: Three relay passes, back to back
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+        run: |
+          for i in 1 2 3; do
+            echo "::group::pass $i"
+            t0=$(date +%s)
+            node scripts/fetch-data.mjs > /tmp/pass$i.log 2>&1 || echo "pass $i exited non-zero"
+            echo "pass $i took $(( $(date +%s) - t0 ))s"
+            grep -E "solHist|rpc sol|solLedger|sol found|solFees|ERR|Error|error" /tmp/pass$i.log | head -40
+            echo "::endgroup::"
+            echo "--- after pass $i ---"
+            node scripts/sol-rehearsal-report.mjs /tmp/live.json
+          done
