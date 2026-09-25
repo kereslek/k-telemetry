@@ -191,7 +191,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -1741,11 +1741,11 @@ const main=async()=>{
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;
   let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
-  let ethUsd=null,btcUsd=null,ethUsdChg24=null;
+  let ethUsd=null,btcUsd=null,ethUsdChg24=null,ethUsdAgo=null,btcUsdChg24=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
   try{
     const ago=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+(blockNum-7200).toString(16))),8);
-    if(ethUsd&&ago) ethUsdChg24=(ethUsd/ago-1)*100;
+    if(ethUsd&&ago){ ethUsdChg24=(ethUsd/ago-1)*100; ethUsdAgo=ago; }
   }catch(e){}
   try{ btcUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_BTC,SEL.latestAnswer)),8); }catch(e){}
   // header ticker strip: SOL / LCX(new contract) / CPOOL — price + 24h change via DefiLlama
@@ -1766,6 +1766,73 @@ const main=async()=>{
     }).filter(t=>t.usd!=null);
     if(!tickers.length) tickers=null;
   }catch(e){ logErr('tickers',e); }
+  /* BTC for the header. The Chainlink read above has been returning nothing, so the feed that
+     already prices everything else in the strip supplies it, with its 24h change. It is kept
+     out of `tickers` on purpose: other panels match holdings against that list by symbol. */
+  try{
+    const k='coingecko:bitcoin';
+    const nowJ=await getJson('https://coins.llama.fi/prices/current/'+k,20000);
+    const agoJ=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(Date.now()/1000-86400)+'/'+k,20000);
+    const c=nowJ.coins?.[k]?.price??null, a=agoJ.coins?.[k]?.price??null;
+    if(btcUsd==null && c!=null) btcUsd=c;
+    if(c!=null && a) btcUsdChg24=(c/a-1)*100;
+  }catch(e){ logErr('btc',e); }
+  /* The header's price strip, in reading order. `tickers` stays one reference price per symbol,
+     because the concentration card and the mark-divergence check compare a holding against it
+     by symbol; the strip needs more than one price per symbol, and more accurate ones.
+
+     Two of these are not feed prices, and cannot be. The price feed maps both LCX contracts to a
+     single listing — it priced them identically at $0.034117 while their pools stood at
+     $0.03498 and $0.03455, and on 23 Sep 9% apart — and it maps the Solana CPOOL mint to the
+     Ethereum token's price, to fifteen digits. So the old LCX is read from its own Uniswap pool,
+     now and 7,200 blocks ago, times ETH/USD at the same two blocks: the same way the ETH change
+     beside it is measured. Solana CPOOL is the Jupiter price every Solana position on the page
+     is already valued at, so the strip and the positions agree. */
+  const LCX_OLD_POOL='0x5aaa28ca43c6646fd1403e508f0fca1d92357dde';   // old LCX / WETH, 1%; both 18 decimals
+  const CPOOL_SOL='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
+  blockCache.tickHist=blockCache.tickHist||{};
+  /* A 24h change from the relay's own samples, for a price with no history to ask for. The
+     nearest sample to exactly a day ago, and only if it is within two hours of it; otherwise no
+     change is stated. */
+  const tickChange=(key,usd)=>{
+    const now=Date.now(), h=(blockCache.tickHist[key]||[]).filter(x=>now-x.t<36*3600000);
+    let best=null;
+    for(const x of h){ const d=Math.abs(now-24*3600000-x.t); if(d<=2*3600000 && (!best||d<best.d)) best={p:x.p,d}; }
+    h.push({t:now,p:usd}); blockCache.tickHist[key]=h.filter((x,i)=>i===h.length-1 || now-x.t<36*3600000);
+    return best&&best.p>0 ? (usd/best.p-1)*100 : null;
+  };
+  let quotes=null;
+  try{
+    const q=[], T=sym=>(tickers||[]).find(t=>t.sym===sym);
+    const push=(label,usd,chg,src)=>{ if(usd>0) q.push({label, usd, chg:(chg!=null&&isFinite(chg))?chg:null, src}); };
+    push('SOL / USD', T('SOL')?.usd, T('SOL')?.chg, 'feed');
+    push('LCX / USD (new)', T('LCX')?.usd, T('LCX')?.chg, 'feed');
+    try{
+      const px=async blk=>{ const r=await ethCall(LCX_OLD_POOL,SEL.slot0,blk); const x=Number(BigInt(word(r,0)))/2**96; return x*x; };
+      const pNow=await px('0x'+blockNum.toString(16));
+      let pAgo=null; try{ pAgo=await px('0x'+(blockNum-7200).toString(16)); }catch(e){}
+      if(pNow>0 && ethUsd){
+        const usd=pNow*ethUsd;
+        const chg=(pAgo>0 && ethUsdAgo) ? (usd/(pAgo*ethUsdAgo)-1)*100 : tickChange('lcx:old',usd);
+        push('LCX / USD (old)', usd, chg, 'pool');
+      }
+    }catch(e){ logErr('quote lcx old',e); }
+    push('CPOOL / USD (ETH)', T('CPOOL')?.usd, T('CPOOL')?.chg, 'feed');
+    try{
+      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL+','+SOL_MINT,15000);
+      const e=js&&js[CPOOL_SOL];
+      /* Logged once per pass so the unit of Jupiter's change field can be checked against the
+         feed's SOL change beside it. It is used only if it matches. */
+      const sj=js&&js[SOL_MINT];
+      console.log('quote jup', JSON.stringify({cpool:e, sol:sj&&{usd:sj.usdPrice,chg:sj.priceChange24h}, feedSolChg:T('SOL')?.chg}));
+      if(e && e.usdPrice!=null){
+        const usd=Number(e.usdPrice);
+        const own=tickChange('cpool:sol',usd);
+        push('CPOOL / USD (SOL)', usd, own, 'jupiter');
+      }
+    }catch(e){ logErr('quote cpool sol',e); }
+    if(q.length) quotes=q;
+  }catch(e){ logErr('quotes',e); }
   let topPools=[];
   try{
     const js=await getJson('https://yields.llama.fi/pools',45000);
@@ -3168,7 +3235,7 @@ const main=async()=>{
     try{ competition=await buildCompetition(evmPositions, solPositions); }
     catch(e){ logErr('competition', e); }
 
-    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, tickers, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, chainStatus, history, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors] };
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     fs.writeFileSync(OUT+'/data-'+profile.slug+'.json', JSON.stringify(data));

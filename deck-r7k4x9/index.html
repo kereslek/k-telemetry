@@ -857,6 +857,7 @@
     <div class="hstat"><div class="k" id="hClockLabel">CET</div><div class="v" id="hClock">—</div></div>
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
     <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
+    <div class="hstat"><div class="k">BTC / USD</div><div class="v" id="hBtc">—</div></div>
     <div class="hstat gasstat" id="hGasStat" title="Cost to transact on Ethereum right now"><div class="k">ETH GAS</div>
       <div class="gaswrap">
         <svg class="gasgauge" viewBox="0 0 76 40" aria-hidden="true">
@@ -1159,7 +1160,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2114,7 +2115,7 @@ function snapSave(){
     const ethIds = keep('eth','ethIds', !!state.ethStale);
     store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
       block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth,
-      tickers:state.tickers, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
+      tickers:state.tickers, quotes:state.quotes, btcUsdChg24:state.btcUsdChg24, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
       catMtd:state.catMtd||prev.catMtd||null, catMonths:state.catMonths||prev.catMonths||null,
       tokenFlow:state.tokenFlow||prev.tokenFlow||null, tokenSeries:state.tokenSeries||prev.tokenSeries||null,
@@ -2263,6 +2264,9 @@ async function scanInner(isBoot){
           if(d.feeMonth) state.feeMonth = d.feeMonth;
           if(d.costMonth) state.costMonth = d.costMonth;
           if(d.tickers) state.tickers = d.tickers;
+          if(d.quotes) state.quotes = d.quotes;
+          if(d.btcUsd!=null) state.btcUsd = d.btcUsd;
+          if(d.btcUsdChg24!=null) state.btcUsdChg24 = d.btcUsdChg24;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); }
@@ -2401,6 +2405,8 @@ async function scanInner(isBoot){
       state.feeMonth=state.feeMonth??snap.feeMonth;
       state.costMonth=state.costMonth??snap.costMonth;
       state.tickers=state.tickers??snap.tickers;
+      state.quotes=state.quotes??snap.quotes;
+      state.btcUsdChg24=state.btcUsdChg24??snap.btcUsdChg24;
       if(!(state.topPools||[]).length && snap.topPools) state.topPools=snap.topPools;
       if(!(state.history||[]).length && snap.history) state.history=snap.history;
       if(state.idle==null && snap.idle){ state.idle=snap.idle; state.idleAt=snap.idleAt||snap.t; }
@@ -2714,11 +2720,17 @@ function renderHeader(){
   const chip = c => c!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(c>=0?'good':'critical')+')">'
         +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>' : '';
   $('#hEth').innerHTML = (state.ethUsd ? fmtUsd(state.ethUsd,0) : '—') + chip(state.ethUsdChg24);
+  const hb=$('#hBtc'); if(hb) hb.innerHTML = (state.btcUsd ? fmtUsd(state.btcUsd,0) : '—') + chip(state.btcUsdChg24);
   const tk=$('#hTickers');
   if(tk){
     const pfmt=v=>v>=100?fmtUsd(v,0):v>=1?fmtUsd(v,2):'$'+v.toFixed(4);
-    tk.innerHTML=(state.tickers||[]).map(t=>
-      '<div class="hstat"><div class="k">'+esc(t.sym)+' / USD</div><div class="v">'+pfmt(t.usd)+chip(t.chg)+'</div></div>').join('');
+    /* The relay's ordered strip when it has one: two LCX contracts and CPOOL on each chain, each
+       priced from its own market. An older payload has only the one-per-symbol list. */
+    const src={pool:'its own Uniswap pool × ETH/USD', jupiter:'Jupiter — the price every Solana position here is valued at', feed:'DefiLlama'};
+    tk.innerHTML = Array.isArray(state.quotes) && state.quotes.length
+      ? state.quotes.map(q=>'<div class="hstat" title="'+esc(q.label)+' · '+esc(src[q.src]||q.src||'')+'"><div class="k">'+esc(q.label)+'</div><div class="v">'+pfmt(q.usd)+chip(q.chg)+'</div></div>').join('')
+      : (state.tickers||[]).map(t=>
+          '<div class="hstat"><div class="k">'+esc(t.sym)+' / USD</div><div class="v">'+pfmt(t.usd)+chip(t.chg)+'</div></div>').join('');
   }
 }
 function setConn(mode){
@@ -7506,6 +7518,9 @@ async function init(){
       if(d.stableSeries) state.stableSeries=d.stableSeries;
       if(d.stableOff!==undefined) state.stableOff=d.stableOff;
       if(d.tickers) state.tickers=d.tickers;
+      if(d.quotes) state.quotes=d.quotes;
+      if(d.btcUsd!=null) state.btcUsd=d.btcUsd;
+      if(d.btcUsdChg24!=null) state.btcUsdChg24=d.btcUsdChg24;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
