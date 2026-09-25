@@ -14,7 +14,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 367.61,
+   "last": 368.73,
    "hwm": 370.04,
    "acc": 277.84,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 404.88,
+   "last": 405.52,
    "hwm": 409.79,
    "acc": 369.17,
    "ck": "ethereum",
@@ -34,9 +34,9 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 150.33,
-   "hwm": 150.68,
-   "acc": 150.68,
+   "last": 151.43,
+   "hwm": 151.43,
+   "acc": 151.43,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -44,9 +44,9 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 774.24,
-   "acc": 470.36,
-   "hwm": 774.24,
+   "last": 774.35,
+   "acc": 470.47,
+   "hwm": 774.35,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%"
@@ -62,9 +62,9 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 409.28,
-   "hwm": 409.28,
-   "acc": 331.81,
+   "last": 409.36,
+   "hwm": 409.36,
+   "acc": 331.89,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -72,9 +72,9 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 271.25,
-   "hwm": 271.25,
-   "acc": 271.25,
+   "last": 271.41,
+   "hwm": 271.41,
+   "acc": 271.41,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -121,10 +121,10 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -80.11,
+ "lastIl": -80.44,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790374458722
+ "readAt": 1790375542021
 }
