@@ -2322,6 +2322,26 @@ const main=async()=>{
           console.log('repaired August split — narrow $'+aug.cat[NK].toFixed(2)+', total $'+aug.total.toFixed(2));
         }
       }
+      /* August by token. August was archived by pool type only, and its narrow LCX / ETH bucket
+         mixes both LCX contracts (five old-contract positions, seven new). Replaying every
+         August payload in this repo's history position by position — each one's lifetime fees
+         accrued against a high-water mark, exactly as this ledger does — gives old $290.14 and
+         new $414.44 for that bucket; those shares are applied to the archived $691.83 so the
+         month still totals what it always has. The wide bucket needs no estimate: it is three
+         positions minted that month, and their September opening balances are August's
+         earnings (old #1355331 $16.59, new #1355336 + #1355918 $132.82). CPOOL and cbBTC are
+         single-token pools. Written once; a month that already has a token split is left alone. */
+      {
+        const aug=(fl.months||[]).find(m=>m&&m.m==='2026-08');
+        if(aug && !aug.tok && Math.abs((aug.total||0)-1530.49)<0.005){
+          aug.tok={'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e':539.76,
+                   'ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41':301.48,
+                   'sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg':688.70,
+                   'sol:cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij':0.55};
+          aug.tokNote='LCX contract split of closed narrow positions reconstructed from payload history';
+          console.log('August token split recorded');
+        }
+      }
       const seen=new Set();
       for(const p of [...evmPositions,...solPositions]){
         const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);

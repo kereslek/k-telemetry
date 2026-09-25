@@ -1235,7 +1235,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -6657,7 +6657,8 @@ const TOKEN_NAME={
   'ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41':['LCX','old contract'],
   'sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg':['CPOOL','Solana'],
   'ethereum:0x66761fa41377003622aee3c7675fc7b5c1c2fac5':['CPOOL','Ethereum'],
-  'sol:native':['SOL','Solana'], 'ethereum:native':['ETH','Ethereum']};
+  'sol:native':['SOL','Solana'], 'ethereum:native':['ETH','Ethereum'],
+  'sol:cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij':['cbBTC','Solana']};
 function renderFeeByToken(host){
   const fm=state.feeMonth; if(!fm) return;
   const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
@@ -6692,7 +6693,38 @@ function renderFeeByToken(host){
     const i=k.indexOf(':'); return [symOf(k)||k.slice(i+1,i+7)+'…', k.startsWith('sol:')?'Solana':k.slice(0,i)]; };
   const ref=id=>String(id).startsWith('sol:')?String(id).slice(4,8)+'…'+String(id).slice(-4):'#'+id;
   const wrap=el('div','flow-block'); wrap.id='feeByTok';
-  wrap.append(el('div','flow-title','FEES EARNED BY TOKEN · '+mName));
+  wrap.append(el('div','flow-title','FEES EARNED BY TOKEN'));
+  /* ---- month by month: one column per archived month, this month last ---- */
+  const mcols=(fm.prev||[]).filter(x=>x&&x.m).map(x=>{
+    let t=x.tok;
+    if(!t){ t={}; for(const [cat,a] of Object.entries(x.cat||{})){ const k=tokFromCat(cat); t[k]=(t[k]||0)+a; } }
+    return {m:x.m, tok:t, total:x.total, est:!!x.tokNote, cur:false};
+  });
+  { const t={}; groups.forEach(x=>{ t[x.tk]=x.amt; }); mcols.push({m:fm.month, tok:t, total:tot, cur:true}); }
+  if(mcols.length>1){
+    const rank=k=>{ const i=TOKEN_ORDER.indexOf(k.replace(/^sol:So11111111111111111111111111111111111111112$/,'sol:native')); return i<0?99:i; };
+    const keys=[...new Set(mcols.flatMap(c=>Object.keys(c.tok)))].filter(k=>mcols.some(c=>(c.tok[k]||0)>0.004))
+      .sort((a,b)=>rank(a)-rank(b) || (mcols[mcols.length-1].tok[b]||0)-(mcols[mcols.length-1].tok[a]||0));
+    const mn=k=>(MN[Number(String(k).slice(5,7))-1]||'')+' ’'+String(k).slice(2,4);
+    const scroll=el('div','cat-scroll'), grid=el('div','cat-grid ftk-months');
+    grid.style.gridTemplateColumns='minmax(max-content,1.4fr) repeat('+mcols.length+',minmax(92px,1fr))';
+    const cell=(h,c)=>grid.append(el('div',c||null,h));
+    cell('TOKEN','cat-h');
+    mcols.forEach(c=>cell(mn(c.m)+(c.cur?' <span class="cat-live">MTD</span>':''),'cat-h num'));
+    for(const k of keys){
+      const [sym,sub]=name(k);
+      cell('<b>'+esc(sym)+'</b> <span class="unit">'+esc(sub)+'</span>','cat-name');
+      mcols.forEach(c=>{ const v=c.tok[k]||0, sum=Object.values(c.tok).reduce((a,b)=>a+b,0);
+        cell(v>0.004?fmtUsd(v,v<10?2:0)+' <span class="unit">'+(sum>0?(v/sum*100).toFixed(0):'0')+'%</span>':'—','num'); });
+    }
+    cell('<b>TOTAL</b>','cat-net');
+    mcols.forEach(c=>{ const sum=Object.values(c.tok).reduce((a,b)=>a+b,0); cell('<b>'+fmtUsd(sum,0)+'</b>','num cat-net'); });
+    scroll.append(grid); wrap.append(scroll);
+    const est=mcols.filter(c=>c.est).map(c=>mn(c.m));
+    wrap.append(el('div','arch-note',(est.length?est.join(', ')+': the split between the two LCX contracts for positions closed that month is reconstructed from the dashboard\'s own snapshot history, scaled to the month\'s recorded total. ':'')
+      +'The current month is to date and moves with every scan.'));
+  }
+  wrap.append(el('div','flow-title',mName+' IN DETAIL — by pool'));
   const gr=el('div','ftk');
   for(const x of groups){
     const [sym,sub]=name(x.tk), pct=tot>0?x.amt/tot*100:0;
