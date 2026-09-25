@@ -1,0 +1,28 @@
+# Read-only measurement run for the Solana history work. Triggered only by pushes to the feature
+# branch that touch the probe or the history module, so it never runs against the live data and
+# never competes with refresh-data for the concurrency slot. Its output is its log.
+name: sol-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/sol-probe.mjs', 'scripts/sol-history.mjs', '.github/workflows/sol-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Current positions from the published payload
+        run: git show origin/gh-pages:deck-r7k4x9/data-main.json > /tmp/data.json
+      - name: Probe
+        run: node scripts/sol-probe.mjs /tmp/data.json
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
