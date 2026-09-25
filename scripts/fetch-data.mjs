@@ -1895,7 +1895,7 @@ const main=async()=>{
           const st=blockCache.solHist[p.id]=blockCache.solHist[p.id]||{};
           st.seen=Date.now();
           const pos={pda:p.pda, nftMint:p.nftMint, poolId:p.poolId, owner:p.wallet, mint0:p.mint0, mint1:p.mint1,
-                     d0:p.d0, d1:p.d1, tl:p.tl, tu:p.tu};
+                     d0:p.d0, d1:p.d1, tl:p.tl, tu:p.tu, liq:p.liq};
           solLedgerItems.push({p,pos,st});
           if(Date.now()-t0>150000 || reads>=80) continue;          // budget spent — next pass
           try{
@@ -2955,8 +2955,14 @@ const main=async()=>{
           await valueDeposits(solLedgerItems.map(x=>({pos:x.pos,st:x.st})), {anchorUsd, dailyUsd, isAnchor});
           for(const {p,pos,st} of solLedgerItems){
             const h=summarizeLedger(st,pos);
-            p.hist={n:h.n, complete:h.complete, unpriced:h.unpriced, queued:(st.todo||[]).length, lost:st.lost||0, priced:h.src};
-            if(!h.complete || h.costUsd==null || !(h.costUsd>0) || p.usd0==null || p.usd1==null) continue;
+            p.hist={n:h.n, complete:h.complete, balanced:h.balanced, unpriced:h.unpriced, queued:(st.todo||[]).length,
+                    lost:st.lost||0, priced:h.src};
+            /* A history that is complete but does not balance against the chain is wrong somewhere,
+               and a cost basis built on it would be stated with a confidence it has not earned.
+               The discrepancy is published so it can be looked at, and nothing else is. */
+            if(h.complete && h.liqKnown && !h.balanced && h.liqNow!=null)
+              p.hist.liqGap=(h.liqNow-h.liq).toString();
+            if(!h.balanced || h.costUsd==null || !(h.costUsd>0) || p.usd0==null || p.usd1==null) continue;
             p.costUsd=r2(h.costUsd); p.roiMode='entry';
             delete p.basisUsd; delete p.basisFrom;
             p.depAmt=h.dep.map(x=>+x.toPrecision(10)); p.wdAmt=h.wd.map(x=>+x.toPrecision(10)); p.feeAmt=h.fee.map(x=>+x.toPrecision(10));

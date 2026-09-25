@@ -16,7 +16,7 @@ for(const p of now.sol||[]){
     'P&L '+(p.roiPct!=null?p.roiPct.toFixed(1)+'%':'—'),
     'feesLife $'+$(p.feesLifeUsd), 'ledgerFees $'+$(p.feesEverUsd),
     'age '+(p.ageDays!=null?p.ageDays.toFixed(1)+'d':'—'),
-    'hist '+JSON.stringify(p.hist||null)].join('  '));
+    'hist '+JSON.stringify(p.hist||null), 'onchainL '+p.liq].join('  '));
   if(p.depAmt) console.log('               deposited '+p.depAmt.map(x=>+x.toFixed(4)).join(' / ')+
     '   principal back '+p.wdAmt.map(x=>+x.toFixed(4)).join(' / ')+'   fees paid '+p.feeAmt.map(x=>+x.toFixed(4)).join(' / ')+
     '   hodl $'+$(p.hodlNowUsd)+'  IL $'+$(p.ilUsd)+'  vs hodl $'+$(p.lpVsHodlUsd));
