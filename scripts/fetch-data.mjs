@@ -1043,6 +1043,17 @@ function solAttribute(tx, pda, mints, owner){
       if(addr&&b.owner) ownerOf[addr]=b.owner;
       if(b.mint&&b.uiTokenAmount&&b.uiTokenAmount.decimals!=null) decOf[b.mint]=b.uiTokenAmount.decimals;
     }
+    /* SOL paid out of a pool lands in a wrapped-SOL account the transaction opens and closes
+       itself, so it is in neither balance table and its owner was unknown — every harvest's SOL
+       leg was dropped here. On 2026-09-25 4j7pU was paid 0.2593 SOL and 1,369 CPOOL; this read
+       $49.58 of it, the CPOOL, and the ceiling logic credited the missing $30.23 and logged it as
+       an error. The instruction that opened the account names its owner. */
+    for(const ins of [...top, ...(tx.meta.innerInstructions||[]).flatMap(g=>g.instructions||[])]){
+      const q=ins&&ins.parsed; if(!q||typeof q!=='object') continue;
+      const i=q.info||{};
+      if(/^initializeAccount/.test(q.type||'') && i.account && i.owner){ ownerOf[i.account]=i.owner; if(i.mint) mintOf[i.account]=i.mint; }
+      if((q.type==='create'||q.type==='createIdempotent') && i.account && i.wallet){ ownerOf[i.account]=i.wallet; if(i.mint) mintOf[i.account]=i.mint; }
+    }
     const amt={}; let saw=false;
     for(const g of inner){
       if(!idxs.includes(g.index)) continue;
