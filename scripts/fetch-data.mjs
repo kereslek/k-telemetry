@@ -2174,6 +2174,25 @@ const main=async()=>{
         // to the right rows without the reader having to know where each pair trades
         return (q.chain==='sol'?'sol':'evm')+'|'+pair+(span==null?'':(span>5?' · wide':' · narrow'));
       };
+      /* Which token a position's fees are credited to: the one the pool exists for. A pool
+         against a base asset (SOL, ETH or a dollar) belongs to the other side — SOL / CPOOL and
+         CPOOL / USDT are both CPOOL income — and the LCX contracts stay apart by address. Keys
+         match the page's tokKey(), so the token panel's order and names apply unchanged. */
+      const BASE_TOK=new Set(['So11111111111111111111111111111111111111112','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+        '0xdac17f958d2ee523a2206206994597c13d831ec7','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']);
+      const STABLE_TOK=new Set(['Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+        '0xdac17f958d2ee523a2206206994597c13d831ec7','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']);
+      const tokOf=q=>{
+        const sol=q.chain==='sol', ch=sol?'sol':(q.chain||'ethereum');
+        const norm=a=>sol?String(a||''):String(a||'').toLowerCase();
+        const a0=norm(sol?q.mint0:q.token0), a1=norm(sol?q.mint1:q.token1);
+        if(!a0&&!a1) return null;
+        const b0=BASE_TOK.has(a0), b1=BASE_TOK.has(a1);
+        const pick = b0&&!b1 ? a1 : b1&&!b0 ? a0 : (b0&&b1 ? (STABLE_TOK.has(a0)?a1:a0) : a0);
+        const nat=sol?'So11111111111111111111111111111111111111112':'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+        return ch+':'+(pick===nat?'native':pick);
+      };
       let fl={month:monthKey, closed:0, pos:{}, months:[], catClosed:{}};
       try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
       if(fl.month!==monthKey){
@@ -2233,9 +2252,18 @@ const main=async()=>{
           const k=e.cat||'—'; prevCat[k]=(prevCat[k]||0)+a;
         }
         for(const k in prevCat) prevCat[k]=Math.round(prevCat[k]*100)/100;
+        // the same month split by token, where each amount's token is on record
+        const prevTok={};
+        for(const c of Object.values(fl.closedPos||{})) if(c.tk) prevTok[c.tk]=(prevTok[c.tk]||0)+(c.acc||0);
+        for(const id in (fl.pos||{})){
+          const e=fl.pos[id]; if(!e.tk) continue;
+          prevTok[e.tk]=(prevTok[e.tk]||0)+(e.acc!=null?e.acc:Math.max(0,e.last-e.m0))+(tailOf[id]||0);
+        }
+        for(const k in prevTok) prevTok[k]=Math.round(prevTok[k]*100)/100;
         fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,
-                                       ilEnd:fl.lastIl??null,cat:prevCat}].slice(-12);
-        fl.month=monthKey; fl.closed=0; fl.catClosed={};
+                                       ilEnd:fl.lastIl??null,cat:prevCat,
+                                       ...(Object.keys(prevTok).length?{tok:prevTok}:{})}].slice(-12);
+        fl.month=monthKey; fl.closed=0; fl.catClosed={}; fl.closedPos={};
 
         /* Both counters reset, not just the baseline. The month's figure is read from `acc`
            whenever it is present — and it always is after a month of accruing — so moving m0
@@ -2318,6 +2346,8 @@ const main=async()=>{
         }
         // refreshed every run: a position that is re-ranged keeps its id but can change class
         fl.pos[p.id].cat=catKeyOf(p);
+        { const tk=tokOf(p); if(tk) fl.pos[p.id].tk=tk; }
+        fl.pos[p.id].lbl=(p.pairLabel||'')+(p.feeLabel?' '+p.feeLabel:'');
         delete fl.pos[p.id].miss;   // present again — any earlier absence was a blip, not a close
       }
       for(const id of Object.keys(fl.pos)){
@@ -2346,6 +2376,9 @@ const main=async()=>{
           fl.closed=(fl.closed||0)+goneAmt;
           fl.catClosed=fl.catClosed||{};
           const gk=gone.cat||'—'; fl.catClosed[gk]=(fl.catClosed[gk]||0)+goneAmt;
+          // kept by id too, so a closed position's fees still name their token and their pool
+          fl.closedPos=fl.closedPos||{};
+          fl.closedPos[id]={acc:Math.round(goneAmt*100)/100, cat:gk, tk:gone.tk||null, lbl:gone.lbl||null};
           const ck=ckRaw;
           // v25.2: legacy ledger entries have no .ck — a Solana id must never fall through to the EVM scanner
           if(!String(id).startsWith('sol:')&&ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
@@ -2382,7 +2415,17 @@ const main=async()=>{
       }
       feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
-        projBasis:'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[]};
+        projBasis:'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[],
+        /* Month to date per position — open ones and the ones closed this month — so the page
+           can say which token the income came from. Closes banked before positions were
+           recorded by id survive only as a pool-type total; those are published as they are. */
+        byPos:[...Object.entries(fl.pos).map(([id,e])=>({id, acc:Math.round((e.acc!=null?e.acc:Math.max(0,e.last-e.m0))*100)/100,
+                                                         cat:e.cat||null, tk:e.tk||null, lbl:e.lbl||null})),
+               ...Object.entries(fl.closedPos||{}).map(([id,c])=>({id, acc:c.acc, cat:c.cat||null, tk:c.tk||null, lbl:c.lbl||null, closed:true}))],
+        closedByCatOnly:(()=>{ const o={...(fl.catClosed||{})};
+          for(const c of Object.values(fl.closedPos||{})) if(c.cat&&o[c.cat]!=null) o[c.cat]-=c.acc||0;
+          for(const k in o){ o[k]=Math.round(o[k]*100)/100; if(!(o[k]>0.004)) delete o[k]; }
+          return o; })()};
       fs.writeFileSync(OUT+'/fees-'+profile.slug+'.json', JSON.stringify(fl,null,1));
     }catch(e){ logErr('feeMonth',e); }
     // ---- monthly COST ledger: gas for every LP op + ALL rebalance swap fees (any pool, any route) ----

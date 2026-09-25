@@ -146,6 +146,17 @@
     .px.mkt.first,.px.gas{margin-left:0}
   }  .act-size{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
   .cat-scroll{overflow-x:auto;margin-top:6px}
+  /* fees by token */
+  .ftk{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;margin-top:8px;font-size:12.5px}
+  .ftk-name b{font-size:13px;color:var(--text-primary)} .ftk-name .unit{margin-left:6px}
+  .ftk-amt{text-align:right;font-variant-numeric:tabular-nums;color:var(--status-good);font-weight:600}
+  .ftk-pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);min-width:44px}
+  .ftk-bar{grid-column:1/-1;height:4px;background:var(--line-soft);margin-top:-3px}
+  .ftk-bar i{display:block;height:100%;background:var(--accent-dim)}
+  .ftk-pos{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 14px;padding:2px 0 8px 12px;
+           border-left:1px solid var(--line);font-size:11px;color:var(--text-secondary)}
+  .ftk-pos .num{text-align:right;font-variant-numeric:tabular-nums}
+  .ftk-tot{grid-column:1/-1;border-top:1px solid var(--line);padding-top:6px;display:flex;justify-content:space-between;font-size:12px}
   .cat-grid{display:grid;gap:5px 12px;align-items:baseline;font-size:12px;min-width:min-content}
   .cat-grid .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
   .cat-h{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);white-space:nowrap;padding-bottom:3px;border-bottom:1px solid var(--line)}
@@ -201,7 +212,7 @@
   #quickNav button:hover{color:var(--accent);border-color:var(--accent-dim)}
   #quickNav button:active{color:var(--accent);border-color:var(--accent)}
   /* the scroll target clears both sticky bars */
-  .panel{scroll-margin-top:calc(var(--nav-h,34px) + 12px)}   /* only the strip is sticky */
+  .panel,#feeByTok{scroll-margin-top:calc(var(--nav-h,34px) + 12px)}   /* only the strip is sticky */
   @media(max-width:560px){
     #quickNav{padding:5px 10px;gap:6px}
     #quickNav button{font-size:9px;padding:4px 7px;letter-spacing:.1em}
@@ -1224,7 +1235,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2917,6 +2928,7 @@ function renderTiles(){
               +(fm.dayRate?'; open positions currently run at '+fmtUsd(fm.dayRate)+'/day':'')+')</span>'+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
             +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
+            +' <span class="unit">·</span> <button type="button" class="tile-why" data-jump="telemetry" data-anchor="feeByTok">by token</button>'
           : 'ledger starts with the next relay refresh (~15 min)');
     const cm=state.costMonth;
     const net=(fm&&cm)?fm.mtd-cm.total:null;
@@ -5500,6 +5512,7 @@ function renderSpark(){
   host.append(svg);
   renderDaily(host);
   renderMonths(host);
+  renderFeeByToken(host);
   renderCatSplit(host);
   renderContractCompare(host);
   renderCompetition(host);
@@ -6634,6 +6647,78 @@ function renderCompetition(host){
   }
 }
 
+/* ---- this month's fees, by the token that earned them ----------------------------------------
+   Each position's month-to-date fees are credited to the token its pool exists for (the relay
+   decides, by address: SOL / CPOOL and CPOOL / USDT are both Solana-CPOOL income, the two LCX
+   contracts stay apart). Grouped under that token with the pools listed beneath it, so the
+   answer to "where did this month's income come from" is one look, and it adds up to the tile. */
+const TOKEN_NAME={
+  'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e':['LCX','new contract'],
+  'ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41':['LCX','old contract'],
+  'sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg':['CPOOL','Solana'],
+  'ethereum:0x66761fa41377003622aee3c7675fc7b5c1c2fac5':['CPOOL','Ethereum'],
+  'sol:native':['SOL','Solana'], 'ethereum:native':['ETH','Ethereum']};
+function renderFeeByToken(host){
+  const fm=state.feeMonth; if(!fm) return;
+  const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const mName=MN[Number(String(fm.month).slice(5,7))-1]||'';
+  const BASE=/^(SOL|WSOL|ETH|WETH|USDT|USDC)$/i;
+  const all=state.positions?[...state.positions.values()]:[];
+  const symOf=k=>{ for(const p of all){ const k0=tokKey(p.chain,p.chain==='sol'?p.mint0:p.token0), k1=tokKey(p.chain,p.chain==='sol'?p.mint1:p.token1);
+      if(k0===k) return (p.m0||{}).symbol; if(k1===k) return (p.m1||{}).symbol; } return null; };
+  /* An amount recorded only by pool type ('sol|SOL / CPOOL · wide'). The chain settles CPOOL;
+     it cannot settle which LCX contract, so that is said rather than guessed. */
+  const tokFromCat=cat=>{
+    const bar=cat.indexOf('|'), ch=cat.slice(0,bar), pair=cat.slice(bar+1).split(' · ')[0];
+    const syms=pair.split(' / ').map(x=>x.trim()); const sym=syms.find(x=>!BASE.test(x))||syms[0];
+    const hit=Object.entries(TOKEN_NAME).filter(([k,v])=>v[0]===sym && (ch==='sol'?k.startsWith('sol:'):!k.startsWith('sol:')));
+    return hit.length===1 ? hit[0][0] : 'cat:'+ch+'|'+sym;
+  };
+  const rows=[];
+  const byPos=Array.isArray(fm.byPos)?fm.byPos:null;
+  if(byPos){
+    byPos.forEach(r=>rows.push({tk:r.tk||(r.cat?tokFromCat(r.cat):'?'), amt:r.acc||0, id:r.id, lbl:r.lbl||(r.cat?r.cat.split('|')[1]:''), closed:!!r.closed}));
+    for(const [cat,a] of Object.entries(fm.closedByCatOnly||{})) rows.push({tk:tokFromCat(cat), amt:a, lbl:cat.split('|')[1].split(' · ')[0], closed:true, noid:true});
+  } else {
+    // relay has not published the per-position split yet: the pool-type totals, mapped where they can be
+    for(const [cat,a] of Object.entries(state.catMtd||{})) rows.push({tk:tokFromCat(cat), amt:a, lbl:cat.split('|')[1], noid:true});
+  }
+  if(!rows.length) return;
+  const g={}; rows.forEach(r=>{ (g[r.tk]=g[r.tk]||{tk:r.tk,amt:0,rows:[]}); g[r.tk].amt+=r.amt; g[r.tk].rows.push(r); });
+  const groups=Object.values(g).filter(x=>x.amt>0.004).sort((a,b)=>b.amt-a.amt);
+  const tot=groups.reduce((s,x)=>s+x.amt,0);
+  const name=k=>{ if(TOKEN_NAME[k]) return TOKEN_NAME[k];
+    if(k.startsWith('cat:')){ const [ch,sym]=k.slice(4).split('|'); return [sym, (ch==='sol'?'Solana':'Ethereum')+' · contract not recorded']; }
+    const i=k.indexOf(':'); return [symOf(k)||k.slice(i+1,i+7)+'…', k.startsWith('sol:')?'Solana':k.slice(0,i)]; };
+  const ref=id=>String(id).startsWith('sol:')?String(id).slice(4,8)+'…'+String(id).slice(-4):'#'+id;
+  const wrap=el('div','flow-block'); wrap.id='feeByTok';
+  wrap.append(el('div','flow-title','FEES EARNED BY TOKEN · '+mName));
+  const gr=el('div','ftk');
+  for(const x of groups){
+    const [sym,sub]=name(x.tk), pct=tot>0?x.amt/tot*100:0;
+    gr.append(el('div','ftk-name','<b>'+esc(sym)+'</b><span class="unit">'+esc(sub)+'</span>'));
+    gr.append(el('div','ftk-amt',fmtUsd(x.amt,x.amt<10?2:0)));
+    gr.append(el('div','ftk-pct',pct.toFixed(0)+'%'));
+    gr.append(el('div','ftk-bar','<i style="width:'+Math.max(1,pct).toFixed(1)+'%"></i>'));
+    const pos=el('div','ftk-pos');
+    x.rows.filter(r=>r.amt>0.004).sort((a,b)=>b.amt-a.amt).forEach(r=>{
+      pos.append(el('div',null,esc(r.lbl||'')+(r.noid?'':' <span class="unit">'+esc(ref(r.id))+'</span>')
+        +(r.closed?' <span class="unit">· '+(r.noid?'closed LPs':'closed')+'</span>':'')));
+      pos.append(el('div','num',fmtUsd(r.amt,2)));
+    });
+    gr.append(pos);
+  }
+  gr.append(el('div','ftk-tot','<span>TOTAL</span><b style="color:var(--status-good)">'+fmtUsd(tot,2)+'</b>'));
+  wrap.append(gr);
+  const note=[];
+  if(fm.mtd!=null && Math.abs(tot-fm.mtd)>0.05) note.push('The tile reads '+fmtUsd(fm.mtd,2)+'; the gap is rounding between ledgers.');
+  if(!byPos) note.push('Split by pool type until the relay\'s next refresh adds the per-position record; the two LCX contracts cannot be told apart until then.');
+  note.push('Month to date, closed LPs included, claimed and unclaimed — the same figure as the FEES EARNED tile.');
+  note.push('Each pool\'s fees count toward the token it exists for: SOL / CPOOL and CPOOL / USDT are CPOOL income, LCX / ETH is LCX income. Fees are paid out in both tokens of a pool; this is about which market earned them.');
+  wrap.append(el('div','arch-note',note.join(' ')));
+  host.append(wrap);
+}
+
 function renderCatSplit(host){
   /* Whole dollars once a figure is big enough for a dollar to be noise, cents below that — a
      55c row rounded to "$1" reads as a dollar that was never earned. */
@@ -6910,8 +6995,11 @@ document.addEventListener('click', e=>{
     try{ renderMatrix(); }catch(err){}
   }
   const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
-  try{ p.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
-  catch(err){ p.scrollIntoView(); }
+  /* A jump can name a block inside the panel, so a link to one table does not land the reader
+     at the top of a long panel and leave them to find it. */
+  const an=b.getAttribute('data-anchor'), tgt=(an&&p.querySelector('#'+CSS.escape(an)))||p;
+  try{ tgt.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
+  catch(err){ tgt.scrollIntoView(); }
 });
 function buildQuickNav(){
   const nav=$('#quickNav'); if(!nav) return;
