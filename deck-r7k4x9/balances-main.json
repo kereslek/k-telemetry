@@ -1,5 +1,5 @@
 {
- "t": 1790313144605,
+ "t": 1790313567417,
  "rows": [
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -18,7 +18,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 14774.24
+   "usd": 14779.15
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -37,7 +37,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 2483.27
+   "usd": 2481.36
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -94,7 +94,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 169.38
+   "usd": 169.76
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -132,7 +132,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
-   "usd": 131.28
+   "usd": 131.18
   },
   {
    "addr": "native",
@@ -161,7 +161,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 87.2
+   "usd": 87.4
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -622,7 +622,7 @@
    "usd": null
   }
  ],
- "totalUsd": 49284.67,
+ "totalUsd": 49288.15,
  "unpriced": 31,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
