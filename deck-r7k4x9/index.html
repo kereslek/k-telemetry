@@ -179,7 +179,12 @@
             mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent);
   }
   .qn-track::-webkit-scrollbar{display:none}
-  #quickNav.expanded .qn-track{flex-wrap:wrap; overflow-x:visible; -webkit-mask-image:none; mask-image:none}
+  /* Opened: justified chips — every row stretches its buttons to the full width, so there is
+     no ragged right side and no label is cut. The toggle is the last chip rather than a column
+     of its own; the track dissolves into the nav so all of them wrap together. */
+  #quickNav.expanded{flex-wrap:wrap; gap:4px}
+  #quickNav.expanded .qn-track{display:contents}
+  #quickNav.expanded button{flex:1 1 auto; text-align:center}
   .qn-more{
     flex:0 0 auto; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em;
     color:var(--accent); background:transparent; border:1px solid var(--accent-dim);
@@ -200,7 +205,11 @@
   @media(max-width:560px){
     #quickNav{padding:5px 10px;gap:6px}
     #quickNav button{font-size:9px;padding:4px 7px;letter-spacing:.1em}
-    #quickNav.expanded .qn-track{gap:4px}
+  }
+  @media(max-width:760px){
+    #quickNav.expanded{gap:3px; padding:5px 8px}
+    #quickNav.expanded button{font-family:var(--sans); font-size:9px; font-weight:600; letter-spacing:.04em;
+                              padding:3px 5px; line-height:1.2}
   }
   @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
   /* Back to top. z-index sits UNDER the settings scrim (150) so opening the drawer covers it
@@ -1215,7 +1224,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
