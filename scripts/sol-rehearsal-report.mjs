@@ -7,6 +7,9 @@ const bc=JSON.parse(fs.readFileSync('deck-r7k4x9/blockcache.json','utf8'));
 const old=new Map((was.sol||[]).map(p=>[p.id,p]));
 const $=v=>v==null?'—':(Math.abs(v)>=100?v.toFixed(0):v.toFixed(2));
 console.log('errors:', JSON.stringify(now.errors||[]).slice(0,600));
+console.log('header: ETH $'+now.ethUsd+' ('+(now.ethUsdChg24??'—')+'%)  BTC $'+now.btcUsd+' ('+(now.btcUsdChg24??'—')+'%)');
+for(const q of now.quotes||[]) console.log('  quote  '+q.label.padEnd(20)+' $'+q.usd+'  chg '+(q.chg==null?'—':q.chg.toFixed(2)+'%')+'  ['+q.src+']');
+if(!(now.quotes||[]).length) console.log('  quote  NONE');
 console.log('%-12s %-12s %9s %9s %9s %8s %9s %9s %7s  %s'.replace(/%-?\d*s/g,x=>x),'');
 for(const p of now.sol||[]){
   const o=old.get(p.id)||{};
