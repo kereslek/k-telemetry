@@ -52,7 +52,7 @@ const CHAINS = {
 
 
 const CHAINLINK_ETH='0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419';
-const CHAINLINK_BTC='0xf4030086522a5beea4988f8ca5b36dba0d0f58a6';
+const CHAINLINK_BTC='0xf4030086522a5beea4988f8ca5b36dbc97bee88c';   // BTC / USD proxy
 const SEL={positions:'0x99fbab88',ownerOf:'0x6352211e',getPool:'0x1698ee82',slot0:'0x3850c7bd',symbol:'0x95d89b41',decimals:'0x313ce567',latestAnswer:'0x50d25bcd',collect:'0xfc6f7865',
   /* pool.liquidity(): the liquidity active AT THE CURRENT TICK, which is the denominator
      every in-range position's fee share is divided by. Not the same thing as TVL — a pool

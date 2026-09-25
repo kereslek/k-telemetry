@@ -71,7 +71,7 @@
   /* ============ HEADER ============ */
   header{
     position:sticky;top:0;z-index:50;
-    display:flex;align-items:center;gap:18px;
+    display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;
     padding:10px 22px;
     background:linear-gradient(180deg, rgba(7,13,22,.97), rgba(7,13,22,.88));
     border-bottom:1px solid var(--line);
@@ -88,12 +88,28 @@
      phone — the whole page then scrolled sideways. Let it wrap and tighten the tracking. */
   @media(max-width:400px){ .brand .sub{white-space:normal;letter-spacing:.18em;line-height:1.5} }
   .hdr-stats{display:flex;gap:22px;margin-left:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  /* Three rows, each one kind of thing: brand + status, prices, controls. The break forces the
+     prices under row 1; the controls share row 2 when there is room and drop to row 3 when not. */
+  .hdr-break{flex-basis:100%;height:0;margin-top:-10px}   /* its own flex line: cancel one of the two row gaps it adds */
+  .hdr-px{display:flex;align-items:stretch;gap:0;flex:1 1 auto;min-width:0;
+          border:1px solid var(--line-soft);background:rgba(10,20,32,.55)}
+  /* Seven equal columns across the two groups (4 : 3), so every price starts on a grid line. */
+  .px-grp{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(max-content,1fr);gap:20px;padding:6px 14px}
+  .px-grp.tok{flex:4 1 0} .px-grp.mkt{flex:3 1 0}
+  .px-grp+.px-grp{border-left:1px solid var(--line)}
+  .px{min-width:0}
+  .px .k{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);white-space:nowrap}
+  .px .v{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .px .chg{font-size:10px;font-weight:600;margin-left:3px}
+  .hdr-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+  .hdr-ctl .seg{margin-left:0}
+  .hdr-btns{display:flex;gap:10px}
   .hstat{text-align:right}
   .hstat .k{font-size:8.5px;letter-spacing:.22em;color:var(--text-muted)}
   .hstat .v{font-size:13px;color:var(--text-primary);font-variant-numeric:tabular-nums}
   .hstat .v .unit{color:var(--text-muted);font-size:10px}
-  .gasstat{text-align:right}
-  .gaswrap{display:flex;align-items:center;gap:7px;justify-content:flex-end}
+  .gasstat{text-align:left}
+  .gaswrap{display:flex;align-items:center;gap:7px}
   .gasgauge{width:60px;height:32px;flex:none;overflow:visible}
   .gg-seg{fill:none;stroke-width:5;stroke-linecap:butt;opacity:.30}
   .gg-a{stroke:var(--status-good)} .gg-b{stroke:var(--status-warning)}
@@ -489,12 +505,31 @@
   }
   @media(max-width:760px){
     body{font-size:13px}
-    header{flex-wrap:wrap;gap:8px 14px;padding:9px 12px}
+    header{gap:10px 14px;padding:9px 12px}
     .brand h1{font-size:13px;letter-spacing:.2em}
     .brand .sub{font-size:8px;letter-spacing:.22em}
     .reactor{width:30px;height:30px}
     .hdr-stats{margin-left:0;width:100%;gap:10px 14px;justify-content:flex-start}
     .hstat{text-align:left}
+    /* Gas gets a line of its own: gauge, reading and band side by side, the cost line under the
+       reading — it never has to squeeze in next to something else. */
+    .hdr-stats>.gasstat{flex-basis:100%;display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center}
+    .gasstat>.k{grid-column:1/-1}
+    .gasstat .gaswrap{grid-column:1/-1}
+    .gasgauge{width:46px;height:25px}
+    .gastxt{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px}
+    .gassub{grid-column:1/-1;margin-top:2px}
+    /* Prices: tokens two by two, the market three across, all columns aligned. */
+    .hdr-break{display:none}
+    .hdr-px{flex-basis:100%;flex-direction:column}
+    .px-grp{grid-auto-flow:row;grid-template-columns:1fr 1fr;gap:8px 12px;padding:8px 10px}
+    .px-grp.mkt{grid-template-columns:repeat(3,1fr)}
+    .px-grp+.px-grp{border-left:none;border-top:1px solid var(--line-soft)}
+    .px .v{font-size:12.5px}
+    .hdr-ctl{margin-left:0;width:100%;justify-content:flex-start;gap:8px}
+    .conn{flex:1 1 auto;justify-content:center}
+    .hdr-btns{flex-basis:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .hdr-btns .hbtn{text-align:center}
     .hstat .v{font-size:12px}
     .hbtn{padding:6px 10px;font-size:9px}
     .seg button{padding:4px 7px;font-size:8.5px}
@@ -519,7 +554,12 @@
     .chead{flex-wrap:wrap;row-gap:6px}
   }
   @media(max-width:430px){
-    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}   /* hide CET clock + BLOCK on tiny screens — prices, DATA AS OF + NEXT DATA stay */
+    .hdr-stats>.hstat:nth-child(1),.hdr-stats>.hstat:nth-child(2){display:none}   /* hide CET clock + BLOCK on tiny screens — DATA AS OF, NEXT DATA and gas stay; prices are their own row */
+    .hdr-stats>.hstat{flex:1 1 0}
+    .hdr-stats>.gasstat{flex:1 1 100%}
+    .px .k{letter-spacing:.1em}
+    .px-grp.mkt .px .k{letter-spacing:.08em}
+    .hbtn{letter-spacing:.1em;padding:7px 6px}
     .brand h1{font-size:12px}
     .seg{margin-left:0}
   }
@@ -853,11 +893,13 @@
     <h1>ARC // LP COMMAND</h1>
     <div class="sub">UNISWAP V3 · RAYDIUM · ORCA · <span id="buildTag"></span></div>
   </div>
+  <!-- Row 1 (with the brand): status. CET and BLOCK must stay children 1 and 2 — the phone rule
+       .hdr-stats>.hstat:nth-child(1),(2) hides exactly those two. -->
   <div class="hdr-stats">
     <div class="hstat"><div class="k" id="hClockLabel">CET</div><div class="v" id="hClock">—</div></div>
     <div class="hstat"><div class="k">BLOCK</div><div class="v" id="hBlock">—</div></div>
-    <div class="hstat"><div class="k">ETH / USD</div><div class="v" id="hEth">—</div></div>
-    <div class="hstat"><div class="k">BTC / USD</div><div class="v" id="hBtc">—</div></div>
+    <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
+    <div class="hstat"><div class="k" id="hCdLabel">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
     <div class="hstat gasstat" id="hGasStat" title="Cost to transact on Ethereum right now"><div class="k">ETH GAS</div>
       <div class="gaswrap">
         <svg class="gasgauge" viewBox="0 0 76 40" aria-hidden="true">
@@ -872,15 +914,20 @@
       </div>
       <div class="gassub" id="hGasSub">—</div>
     </div>
-    <span id="hTickers" style="display:contents"></span>
-    <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
-    <div class="hstat"><div class="k" id="hCdLabel">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
+  </div>
+  <div class="hdr-break"></div>
+  <!-- Row 2: prices, tokens in the token-exposure order, then the market. Filled by renderHeader. -->
+  <div class="hdr-px" id="hPx"></div>
+  <!-- Row 3 (or the end of row 2 on a wide screen): controls -->
+  <div class="hdr-ctl">
     <span class="seg" id="profileSeg" title="Profile — a saved set of wallets"></span>
     <span class="seg aprSegHost" id="aprSeg" title="Timeframe — standardizes APR & earnings across ALL panels, cards and the leaderboard"></span>
     <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
-    <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
-    <button class="hbtn" id="btnRefresh"><span id="scanIcon" style="display:inline-block">⟳</span><span id="scanBtnTxt"> SCAN</span></button>
-    <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
+    <div class="hdr-btns">
+      <button class="hbtn" id="btnNotify" title="Enable browser notifications">◉ ALERTS</button>
+      <button class="hbtn" id="btnRefresh"><span id="scanIcon" style="display:inline-block">⟳</span><span id="scanBtnTxt"> SCAN</span></button>
+      <button class="hbtn" id="btnSettings">⚙ CONFIG</button>
+    </div>
   </div>
 </header>
 <nav id="quickNav" aria-label="Jump to section"></nav>
@@ -1160,7 +1207,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2719,18 +2766,28 @@ function renderHeader(){
   $('#hBlock').textContent = state.block ?? '—';
   const chip = c => c!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(c>=0?'good':'critical')+')">'
         +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>' : '';
-  $('#hEth').innerHTML = (state.ethUsd ? fmtUsd(state.ethUsd,0) : '—') + chip(state.ethUsdChg24);
-  const hb=$('#hBtc'); if(hb) hb.innerHTML = (state.btcUsd ? fmtUsd(state.btcUsd,0) : '—') + chip(state.btcUsdChg24);
-  const tk=$('#hTickers');
-  if(tk){
-    const pfmt=v=>v>=100?fmtUsd(v,0):v>=1?fmtUsd(v,2):'$'+v.toFixed(4);
-    /* The relay's ordered strip when it has one: two LCX contracts and CPOOL on each chain, each
+  const px=$('#hPx');
+  if(px){
+    const pfmt=v=>v==null||!isFinite(v)?'—':v>=100?fmtUsd(v,0):v>=1?fmtUsd(v,2):'$'+v.toFixed(4);
+    const ch=c=>c!=null&&isFinite(c)?'<span class="chg" style="color:var(--status-'+(c>=0?'good':'critical')+')">'
+        +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>':'';
+    /* The relay's ordered quotes when it has them: two LCX contracts and CPOOL on each chain, each
        priced from its own market. An older payload has only the one-per-symbol list. */
     const src={pool:'its own Uniswap pool × ETH/USD', jupiter:'Jupiter — the price every Solana position here is valued at', feed:'DefiLlama'};
-    tk.innerHTML = Array.isArray(state.quotes) && state.quotes.length
-      ? state.quotes.map(q=>'<div class="hstat" title="'+esc(q.label)+' · '+esc(src[q.src]||q.src||'')+'"><div class="k">'+esc(q.label)+'</div><div class="v">'+pfmt(q.usd)+chip(q.chg)+'</div></div>').join('')
-      : (state.tickers||[]).map(t=>
-          '<div class="hstat"><div class="k">'+esc(t.sym)+' / USD</div><div class="v">'+pfmt(t.usd)+chip(t.chg)+'</div></div>').join('');
+    const got=new Map();
+    if(Array.isArray(state.quotes)&&state.quotes.length)
+      state.quotes.forEach(q=>got.set(q.label,{usd:q.usd,chg:q.chg,tip:q.label+' · '+(src[q.src]||q.src||'')}));
+    else (state.tickers||[]).forEach(t=>got.set(t.sym+' / USD',{usd:t.usd,chg:t.chg}));
+    if(state.ethUsd) got.set('ETH / USD',{usd:state.ethUsd,chg:state.ethUsdChg24});
+    if(state.btcUsd) got.set('BTC / USD',{usd:state.btcUsd,chg:state.btcUsdChg24});
+    // Token-exposure order: LCX new, LCX old, CPOOL on Solana, CPOOL on Ethereum; then the market.
+    const TOK=['LCX / USD (new)','LCX / USD (old)','CPOOL / USD (SOL)','CPOOL / USD (ETH)'];
+    const MKT=['SOL / USD','ETH / USD','BTC / USD'];
+    const tok=[...TOK.filter(l=>got.has(l)), ...[...got.keys()].filter(l=>!TOK.includes(l)&&!MKT.includes(l))];
+    const cell=l=>{ const q=got.get(l)||{};
+      return '<div class="px"'+(q.tip?' title="'+esc(q.tip)+'"':'')+'><div class="k">'+esc(l)+'</div><div class="v">'+pfmt(q.usd)+ch(q.chg)+'</div></div>'; };
+    px.innerHTML=(tok.length?'<div class="px-grp tok">'+tok.map(cell).join('')+'</div>':'')
+      +'<div class="px-grp mkt">'+MKT.map(cell).join('')+'</div>';
   }
 }
 function setConn(mode){
