@@ -42,6 +42,10 @@ jobs:
       # the next. The job fails only if every pass failed, which is the case that means the
       # refresh is genuinely broken rather than merely unlucky.
       - name: Refresh, repeatedly
+        # Optional. When the repository has a SOL_RPC_URL secret the relay puts it in front of the
+        # public Solana endpoints; when it does not, this is an empty string and nothing changes.
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
         run: |
           PASSES=22
           SPACING=900

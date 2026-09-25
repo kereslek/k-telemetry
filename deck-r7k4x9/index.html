@@ -2077,6 +2077,15 @@ async function discoverEthIds(){
 function linifyRangePos(p){
   if(p && p.price!=null && p.priceLower!=null && p.priceUpper!=null && p.priceUpper!==p.priceLower)
     p.rangePos = (p.price-p.priceLower)/(p.priceUpper-p.priceLower);
+  /* A Solana position whose history has been read back to its opening carries its true lifetime
+     fees. The relay's ledger figure covers only what it has watched since it started, and it
+     stays in the relay for the monthly accounting it drives; but everywhere on this page that
+     says "lifetime" — the matrix, the card, the truth panel, fees per $1k — the full figure is
+     the right one, and dividing a partial fee total by a complete cost basis would understate
+     every rate built on it. */
+  if(p && p.chain==='sol' && p.feesLifeUsd!=null && p.feesLedgerUsd===undefined){
+    p.feesLedgerUsd=p.feesEverUsd; p.feesEverUsd=p.feesLifeUsd;
+  }
   return p;
 }
 /* last-known snapshot: saved after every successful scan, restored when fully offline */
@@ -5743,10 +5752,12 @@ function renderTruth(){
     for(const [pair,list] of groups){
       if(list.length<2) continue;
       const vrows=list.map(q=>{
-        /* Solana exposes no deposit history on free RPC, so there is no cost basis and no IL:
-           current value is the only honest denominator, and the yield shown is gross. */
-        const base=q.chain==='sol'?(q.valueUsd??null):(q.costUsd??q.valueUsd??null);
-        const win =q.chain==='sol'?(q.feesObservedDays??null):(q.ageDays??null);
+        /* A Solana position gets the same treatment as any other once its history has been read
+           to its opening: cost basis and full age. Until then current value and the watched
+           window are the only honest denominator, and the yield shown is gross. */
+        const exact=q.chain!=='sol' || (q.costUsd>0 && q.hist && q.hist.complete);
+        const base=exact?(q.costUsd??q.valueUsd??null):(q.valueUsd??null);
+        const win =exact?(q.ageDays??null):(q.feesObservedDays??null);
         const fees=q.feesEverUsd;
         const ok=base!=null&&base>0&&win!=null&&win>=VAR_MIN_DAYS&&fees!=null;
         /* Fees are only half the P&L. Divergence is the other half, and showing gross alone
@@ -6643,7 +6654,12 @@ function renderCards(){
       mkm((a.pool?'POOL':'FEE')+' APR · '+WIN_LABEL[cfg.aprWin],
           a.v==null?'…':'<b>'+a.v.toFixed(1)+'</b><span class="unit"> %'+(a.pool?' ◎pool':'')+'</span>'); }
     const roiLabel = isSol ? 'P&L SINCE OPEN' : (p.roiMode==='entry'?'ROI (ENTRY-PRICED)':'P&L VS DEPOSIT');
-    mkm(roiLabel, p.roiPct==null?(isSol?'<span class="unit">tx-history · v2</span>':'…'):'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
+    /* While the history is still being read the card says so, and how much is left, rather
+       than showing a blank that looks like a fault. */
+    const histNote = isSol && p.hist && !p.hist.complete
+      ? '<span class="unit" title="Reading this position\u2019s transactions back to its opening, a few per refresh.">history '+(p.hist.queued?p.hist.queued+' tx to go':'loading')+'</span>'
+      : (isSol && p.hist && p.hist.unpriced ? '<span class="unit" title="A deposit could not be priced at the time it was made, so no cost basis is stated.">unpriced deposit</span>' : '…');
+    mkm(roiLabel, p.roiPct==null?histNote:'<span class="'+(p.roiPct>=0?'up':'down')+'">'+fmtPct(p.roiPct,2,true)+'</span>');
     mkm('RANGE BUFFER ↓ / ↑', p.inRange
       ? '<span style="color:var(--status-'+({good:'good',warning:'warning',serious:'serious',critical:'critical'})[sev]+')">−'+p.dLow.toFixed(1)+'%</span> <span class="unit">/</span> +'+p.dUp.toFixed(1)+'%'
       : '<span style="color:var(--status-critical)">OUT OF RANGE</span>');

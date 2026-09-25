@@ -35,6 +35,9 @@ jobs:
         with:
           node-version: 20
       - name: Refresh only if the data has gone stale
+        # Optional key for the Solana endpoints; empty when the secret is not set.
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
         run: |
           STALE_MIN=45
           AGE=$(node -e "
