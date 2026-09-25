@@ -1159,7 +1159,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v29.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v29.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3774,11 +3774,26 @@ const isStakedSol=t=>t.chain==='sol' && /sol$/i.test(t.sym||'') && (t.sym||'').t
    the ticker has to say dollar and the market has to agree, so a token that merely happens to
    trade near a dollar keeps its slider and a depegged one loses its peg treatment. */
 const isPeg=t=>/usd|^dai$/i.test(t.sym||'') && t.usd>0 && Math.abs(t.usd-1)<0.05;
+/* Reading order for the token panel, fixed rather than by value: the two LCX contracts, CPOOL
+   on each chain, then the two base assets. A value sort reshuffled the cards whenever prices
+   moved, so the same token was never in the same place twice. Anything not named here follows,
+   largest first. Keys are tokKey()'s: native and wrapped SOL/ETH share one. */
+const TOKEN_ORDER=[
+  'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e',   // LCX (new contract)
+  'ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41',   // LCX (old contract)
+  'sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg',      // CPOOL on Solana
+  'ethereum:0x66761fa41377003622aee3c7675fc7b5c1c2fac5',   // CPOOL on Ethereum
+  'sol:native',                                            // SOL
+  'ethereum:native',                                       // ETH
+];
+const tokRank=t=>{ const i=TOKEN_ORDER.indexOf(t.key); return i<0?TOKEN_ORDER.length:i; };
+const byTokenOrder=(a,b)=>(tokRank(a)-tokRank(b)) || ((b.value||0)-(a.value||0));
 function scnDrivers(book){
   /* Worth a slider if it is in a pool, or big enough that repricing it changes the answer.
-     Staked-SOL derivatives are driven by the SOL slider instead of getting one of their own. */
+     Staked-SOL derivatives are driven by the SOL slider instead of getting one of their own.
+     Chosen by size, then shown in the panel's reading order. */
   return book.filter(t=>t.usd>0 && !isStakedSol(t) && !isPeg(t) && (t.pooled>0 || (t.value||0)>=400))
-             .sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,6);
+             .sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,6).sort(byTokenOrder);
 }
 function scnLivePrices(book){ const m={}; for(const t of book) if(t.usd!=null) m[t.key]=t.usd; return m; }
 function scnPrices(book){
@@ -4366,7 +4381,7 @@ function renderTokens(){
   host.innerHTML='';
   const book=buildTokenBook();
   if(!book.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">No holdings to show yet — this builds from the relay’s wallet read and your open positions.</div>'; return; }
-  const shown=book.filter(t=>(t.value??0)>=25 || t.pooled>0);
+  const shown=book.filter(t=>(t.value??0)>=25 || t.pooled>0).sort(byTokenOrder);
   const rest=book.filter(t=>!shown.includes(t));
   /* A ticker is not an identity. LCX exists here as two contracts and CPOOL as two chains, and
      they trade at different prices, so the chain is always named and the contract is named too
