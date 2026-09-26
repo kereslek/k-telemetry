@@ -4,9 +4,9 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 65.25,
-   "hwm": 65.39,
-   "acc": 48.8,
+   "last": 65.55,
+   "hwm": 65.55,
+   "acc": 48.96,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -14,9 +14,9 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 377.43,
-   "hwm": 377.43,
-   "acc": 285.23,
+   "last": 379.33,
+   "hwm": 379.33,
+   "acc": 287.13,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -24,9 +24,9 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 412.97,
-   "hwm": 412.97,
-   "acc": 372.35,
+   "last": 414.94,
+   "hwm": 414.94,
+   "acc": 374.32,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -34,9 +34,9 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 157.47,
-   "hwm": 157.47,
-   "acc": 157.47,
+   "last": 158.41,
+   "hwm": 158.41,
+   "acc": 158.41,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -44,7 +44,7 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 790.16,
+   "last": 790.07,
    "acc": 486.7,
    "hwm": 790.58,
    "cat": "sol|SOL / CPOOL · wide",
@@ -53,16 +53,16 @@
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 419.32,
-   "acc": 201.44,
-   "hwm": 419.32,
+   "last": 419.37,
+   "acc": 201.49,
+   "hwm": 419.37,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 420.49,
+   "last": 420.42,
    "hwm": 420.79,
    "acc": 343.32,
    "ck": "sol",
@@ -72,7 +72,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 294.83,
+   "last": 295.05,
    "hwm": 295.43,
    "acc": 295.43,
    "ck": "sol",
@@ -121,10 +121,10 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -91.46,
+ "lastIl": -96.46,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790397611015
+ "readAt": 1790398739695
 }
