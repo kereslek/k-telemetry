@@ -4,9 +4,9 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 66.1,
-   "hwm": 66.63,
-   "acc": 50.04,
+   "last": 66.76,
+   "hwm": 66.76,
+   "acc": 50.17,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -14,9 +14,9 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 386.64,
-   "hwm": 389.55,
-   "acc": 297.35,
+   "last": 390.3,
+   "hwm": 390.3,
+   "acc": 298.1,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -24,9 +24,9 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 420.72,
-   "hwm": 423.99,
-   "acc": 383.37,
+   "last": 424.81,
+   "hwm": 424.81,
+   "acc": 384.19,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -34,9 +34,9 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 163.99,
-   "hwm": 165.17,
-   "acc": 165.17,
+   "last": 165.49,
+   "hwm": 165.49,
+   "acc": 165.49,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -44,7 +44,7 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 795.26,
+   "last": 795.24,
    "acc": 491.38,
    "hwm": 795.26,
    "cat": "sol|SOL / CPOOL · wide",
@@ -53,7 +53,7 @@
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 419.45,
+   "last": 419.44,
    "acc": 201.57,
    "hwm": 419.45,
    "cat": "sol|SOL / CPOOL · wide",
@@ -62,7 +62,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 424.07,
+   "last": 424.06,
    "hwm": 424.07,
    "acc": 346.6,
    "ck": "sol",
@@ -72,7 +72,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 302.68,
+   "last": 302.66,
    "hwm": 302.68,
    "acc": 302.68,
    "ck": "sol",
@@ -121,10 +121,10 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -105.9,
+ "lastIl": -117.78,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790423287164
+ "readAt": 1790424457429
 }
