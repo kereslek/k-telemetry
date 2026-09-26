@@ -2264,6 +2264,10 @@ const main=async()=>{
                                        ilEnd:fl.lastIl??null,cat:prevCat,
                                        ...(Object.keys(prevTok).length?{tok:prevTok}:{})}].slice(-12);
         fl.month=monthKey; fl.closed=0; fl.catClosed={}; fl.closedPos={};
+        /* The old month's last day closes on the month's archived total, boundary tail included,
+           so its days add up to the figure the month is remembered by. */
+        { const lastDay=new Date(Date.UTC(Number(fl.months[fl.months.length-1].m.slice(0,4)),Number(fl.months[fl.months.length-1].m.slice(5,7)),0)).toISOString().slice(0,10);
+          fl.dayEnd=fl.dayEnd||{}; fl.dayEnd[lastDay]=Math.round(prevTotal*100)/100; }
 
         /* Both counters reset, not just the baseline. The month's figure is read from `acc`
            whenever it is present — and it always is after a month of accruing — so moving m0
@@ -2433,7 +2437,32 @@ const main=async()=>{
         const a=(p.chain==='sol')?(p.poolAprDay??null):(p.aprW?(p.aprW.d1??null):null);
         if(a!=null && p.valueUsd>0) dayRate+=p.valueUsd*a/100/365;
       }
-      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+      /* Daily fee income. The month-to-date total at the last reading of each UTC day; a day's
+         income is its close minus the previous day's, or its close outright on the first of a
+         month. The days before this was recorded come from a seed rebuilt out of the payload
+         history (scripts/fee-days-seed.json, with its corrections written down there), merged
+         once and never over a day already recorded. */
+      let daily=null;
+      try{
+        fl.dayEnd=fl.dayEnd||{};
+        // the seed is this deck's main profile's own history — no other profile may inherit it
+        if(!fl.daySeeded && profile.slug==='main'){
+          try{
+            const seed=JSON.parse(fs.readFileSync(new URL('./fee-days-seed.json', import.meta.url),'utf8'));
+            for(const [d,v] of Object.entries(seed.dayEnd||{})) if(fl.dayEnd[d]==null) fl.dayEnd[d]=v;
+            fl.dayEst=seed.est||[]; fl.daySeeded=1;
+          }catch(e){ logErr('feeSeed',e); }
+        }
+        const today=new Date().toISOString().slice(0,10);
+        if(today.slice(0,7)===monthKey) fl.dayEnd[today]=Math.round(mtd*100)/100;
+        const ds=Object.keys(fl.dayEnd).sort().slice(-400);
+        for(const d of Object.keys(fl.dayEnd)) if(!ds.includes(d)) delete fl.dayEnd[d];
+        const est=new Set(fl.dayEst||[]);
+        daily=ds.map((d,i)=>{ const p=i?ds[i-1]:null;
+          const base=(p&&p.slice(0,7)===d.slice(0,7))?fl.dayEnd[p]:0;
+          return {d, usd:Math.round((fl.dayEnd[d]-base)*100)/100, ...(est.has(d)?{est:1}:{})}; });
+      }catch(e){ logErr('feeDaily',e); }
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
         projBasis:'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[],
         /* Month to date per position — open ones and the ones closed this month — so the page

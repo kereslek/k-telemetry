@@ -665,6 +665,30 @@
     .scn-pos > *:nth-child(3n+2){display:none} }
   /* Deliberately flex rows rather than a grid: this panel's right-hand side is prose of varying
      length, and a grid would either clip it or force a column width the label cannot live in. */
+  /* fee pulse */
+  .fp-story{font-size:14px;line-height:1.55;color:var(--text-secondary)}
+  .fp-story b{color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .fp-story .big{font-size:22px;color:var(--status-good);font-weight:600;font-variant-numeric:tabular-nums}
+  .fp-read{margin-top:10px;font-size:12px;color:var(--text-muted);min-height:18px;font-variant-numeric:tabular-nums}
+  .fp-read b{color:var(--text-primary)}
+  .fp-svg{width:100%;display:block;margin-top:4px;touch-action:pan-y;-webkit-user-select:none;user-select:none}
+  .fp-bar{fill:var(--accent-dim);opacity:.85}
+  .fp-bar.above{fill:var(--accent);opacity:.9}
+  .fp-bar.est{opacity:.35}
+  .fp-bar.today{fill:var(--status-good);opacity:1}
+  .fp-bar.sel{stroke:var(--text-primary);stroke-width:1.2}
+  .fp-ghost{fill:none;stroke:var(--status-good);stroke-dasharray:3 2;stroke-width:1.2}
+  .fp-grid{stroke:var(--line);stroke-width:1}
+  .fp-ax{fill:var(--text-muted);font-size:9.5px;font-family:var(--mono)}
+  .fp-mon{fill:var(--text-secondary);font-size:10px;font-weight:600;letter-spacing:.12em;font-family:var(--mono)}
+  .fp-sep{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+  .fp-avg{stroke:var(--text-secondary);stroke-width:1.2;opacity:.55}
+  .fp-avgt{fill:var(--text-secondary);font-size:9px;font-family:var(--mono);opacity:.8}
+  .fp-ref{stroke:var(--status-good);stroke-width:1;stroke-dasharray:5 4;opacity:.7}
+  .fp-reft{fill:var(--status-good);font-size:9.5px;font-family:var(--mono);font-weight:600}
+  .fp-months{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:11.5px;color:var(--text-muted)}
+  .fp-key{display:inline-block;width:14px;height:0;border-top:1.5px solid var(--text-secondary);opacity:.6;vertical-align:middle;margin-right:5px}
+  .fp-months b{color:var(--text-primary);font-variant-numeric:tabular-nums}
   .cash-big{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px}
   .cash-big b{font-size:26px;font-family:var(--mono);letter-spacing:-.01em}
   .cash-pct{font-size:13px;color:var(--text-muted);font-family:var(--mono)}
@@ -1003,6 +1027,12 @@
       </div>
     </section>
 
+    <section class="panel" data-panel="feepulse" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">FEE PULSE — TODAY AGAINST EVERY DAY SO FAR</span><span class="hint" id="fpHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="fpBody"></div>
+    </section>
+
     <section class="panel" data-panel="truth" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">TRUTH PANEL — LP vs HODL &amp; IMPERMANENT LOSS</span><span class="hint">was pooling worth it? fees earned vs what just holding would be worth · month-over-month ledger</span><button class="collapse-btn">▾</button></div>
@@ -1235,7 +1265,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2739,7 +2769,7 @@ function assignColors(){
 
 function renderAll(){
   assignColors(); assignPools();
-  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); renderConcentration(); renderCash(); if(!$('#quickNav').children.length) buildQuickNav();
+  renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderFeePulse(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); renderConcentration(); renderCash(); if(!$('#quickNav').children.length) buildQuickNav();
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -6994,7 +7024,7 @@ function measureChrome(){
 /* Short enough that several fit across a phone. Keyed by panel id so the label does not
    change when a heading is reworded. */
 const NAV_SHORT={action:'PRIORITY',playbook:'PLAYBOOK',rank:'LEADERBOARD',idle:'IDLE',
-  seismo:'SEISMO',truth:'TRUTH',flow:'FLOW',outlook:'OUTLOOK',arch:'RANGES',cosmos:'GALAXY',
+  seismo:'SEISMO',feepulse:'FEE PULSE',truth:'TRUTH',flow:'FLOW',outlook:'OUTLOOK',arch:'RANGES',cosmos:'GALAXY',
   ops:'DIRECTIVES',radar:'RADAR',compare:'COMPARE',matrix:'MATRIX',telemetry:'HISTORY',
   positions:'POSITIONS',global:'GLOBAL',intel:'INTEL',log:'LOG'};
 function navLabel(panel){
@@ -7083,7 +7113,10 @@ function applyStoredOrders(){
   // A stored order pins the OLD arrangement forever, so a deliberate reorder would never
   // reach anyone who has dragged a panel. Drop the stored order once per version bump.
   if(store.get('layoutV',1)!==LAYOUT_VERSION){ store.set('panelOrder',null); store.set('layoutV',LAYOUT_VERSION); }
-  const po=store.get('panelOrder',null);
+  let po=store.get('panelOrder',null);
+  if(po){ const all=[...$('#panelStack').querySelectorAll('.panel[data-panel]')].map(p=>p.dataset.panel);
+    all.forEach((k,i)=>{ if(po.includes(k)) return;
+      const j=i?po.indexOf(all[i-1]):-1; po.splice(j<0?po.length:j+1,0,k); }); }
   if(po){ const stack=$('#panelStack');
     po.forEach(k=>{const p=stack.querySelector('[data-panel="'+k+'"]'); if(p)stack.append(p);}); }
 }
@@ -7097,6 +7130,143 @@ function applyStoredOrders(){
 
    Staked dollars do count: a receipt for a deposited dollar is still a dollar, and the relay's
    peg test lets those sit above par rather than discarding them for it. */
+/* ================= FEE PULSE =================
+   One question: is today a good day? Every day's fee income as a bar, months side by side with
+   each month's average marked, and today's pace drawn across the whole history as a line — a bar
+   that pokes above it is a day that earned more than today is on course to. The readout under
+   the story follows the finger or the pointer and falls back to today.
+
+   Source is the relay's own monthly fee ledger (all LPs, open and closed, claimed + unclaimed),
+   read at the close of each UTC day — so the days of a month add up to that month's FEES EARNED. */
+function renderFeePulse(){
+  const host=$('#fpBody'); if(!host) return;
+  const hint=$('#fpHint');
+  const raw=(state.feeMonth&&state.feeMonth.daily)||null;
+  host.innerHTML='';
+  if(!raw||raw.length<2){
+    host.append(el('div','flow-omit','The daily record arrives with the next relay refresh.'));
+    if(hint) hint.textContent=''; return;
+  }
+  const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const DW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const now=new Date(), todayK=now.toISOString().slice(0,10);
+  // every calendar day from the first record to today, so a missing day shows as a gap, not as nothing
+  const by={}; raw.forEach(r=>{ by[r.d]=r; });
+  const days=[]; for(let t=Date.parse(raw[0].d+'T00:00Z'); t<=Date.parse(todayK+'T00:00Z'); t+=86400000){
+    const d=new Date(t).toISOString().slice(0,10); days.push({d, usd:by[d]?by[d].usd:null, est:!!(by[d]&&by[d].est), today:d===todayK}); }
+  const today=days[days.length-1];
+  const done=days.filter(x=>!x.today && x.usd!=null && !x.est);
+  const hrs=(now-Date.parse(todayK+'T00:00Z'))/3600000;
+  const soFar=today.usd;
+  const pace=(soFar!=null && hrs>=4) ? soFar/(hrs/24) : null;
+  const ref=pace ?? soFar;
+  const last30=done.slice(-30).map(x=>x.usd).sort((a,b)=>a-b);
+  const med=last30.length?last30[Math.floor(last30.length/2)]:null;
+  const beat=ref!=null?done.filter(x=>x.usd>ref).length:null;
+  const dlab=d=>{ const t=new Date(d+'T12:00Z'); const m=MN[t.getUTCMonth()]; return DW[t.getUTCDay()]+' '+t.getUTCDate()+' '+m[0]+m.slice(1).toLowerCase(); };
+  const f0=v=>fmtUsd(v,v<100?2:0);
+  const localMidnight=new Date(Date.parse(todayK+'T00:00Z')).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+
+  // ---- the story, two lines ----
+  const st=el('div','fp-story');
+  if(soFar==null) st.innerHTML='No reading for today yet.';
+  else{
+    let l1='Today <span class="big">'+f0(soFar)+'</span> so far'
+      +(pace!=null?' · on pace for <b>~'+fmtUsd(pace,0)+'</b>':'');
+    let l2='';
+    if(pace==null) l2='Too early to judge — the day began at '+localMidnight+' your time'
+      +(done.length?'; yesterday earned <b>'+f0(done[done.length-1].usd)+'</b>.':'.');
+    else if(med){
+      const x=pace/med;
+      l2='That is <b>'+(x>=10?x.toFixed(0):x.toFixed(1))+'×</b> your typical day <span class="unit">('+fmtUsd(med,0)+')</span> — '
+        +(beat===0?'<b>no day</b> has beaten it':(beat<=done.length/2?'only ':'')+'<b>'+beat+'</b> of '+done.length+' days beat it')+'.';
+    }
+    st.innerHTML=l1+(l2?'<br>'+l2:'');
+  }
+  host.append(st);
+  if(hint) hint.textContent=soFar!=null?(pace!=null?'today on pace for ~'+fmtUsd(pace,0):'today '+f0(soFar)+' so far'):'';
+
+  // ---- readout: follows the pointer, rests on today ----
+  const read=el('div','fp-read'); host.append(read);
+  const rankOf=v=>1+done.filter(x=>x.usd>v).length;
+  const say=x=>{
+    if(!x) return;
+    if(x.today){ read.innerHTML='▸ <b>Today</b> so far <b>'+(x.usd!=null?fmtUsd(x.usd,2):'—')+'</b>'
+      +' <span class="unit">· '+Math.floor(hrs)+'h '+String(Math.floor((hrs%1)*60)).padStart(2,'0')+'m into the day · '
+      +(matchMedia('(hover:hover)').matches?'hover':'tap')+' a bar for any other day</span>'; return; }
+    if(x.usd==null){ read.innerHTML='▸ <b>'+dlab(x.d)+'</b> · no reading that day'; return; }
+    read.innerHTML='▸ <b>'+dlab(x.d)+'</b> <b>'+fmtUsd(x.usd,2)+'</b>'
+      +(x.est?' <span class="unit">· estimated — the ledger\'s first reading covered 1–4 Aug together</span>'
+             :' <span class="unit">· #'+rankOf(x.usd)+' of '+done.length+' days</span>');
+  };
+
+  // ---- chart ----
+  const cw=Math.max(300, host.clientWidth||600);
+  const W=cw, H=cw<560?150:200, padL=40, padR=10, padT=18, padB=22;
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(t,a,cls)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); return e; };
+  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H},'fp-svg');
+  const vals=days.map(x=>x.usd||0);
+  const top=Math.max(...vals, pace||0, 1)*1.12;
+  const stepY=[10,20,25,50,100,200,250,500,1000,2000,5000].find(s=>top/s<=4)||10000;
+  const Y=v=>padT+(1-v/top)*(H-padT-padB);
+  const n=days.length, step=(W-padL-padR)/n, bw=Math.max(1,Math.min(18,step*0.72));
+  const X=i=>padL+step*i+(step-bw)/2;
+  for(let g=0; g<=top; g+=stepY){
+    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g)},'fp-grid'));
+    const t=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end'},'fp-ax'); t.textContent=g>=1000?'$'+(g/1000)+'k':'$'+g; svg.append(t);
+  }
+  // months: separator, label, average
+  const mons=[]; days.forEach((x,i)=>{ const m=x.d.slice(0,7); if(!mons.length||mons[mons.length-1].m!==m) mons.push({m,i0:i,i1:i}); else mons[mons.length-1].i1=i; });
+  for(const mo of mons){
+    if(mo.i0>0) svg.append(mk('line',{x1:padL+step*mo.i0,x2:padL+step*mo.i0,y1:padT-8,y2:H-padB+4},'fp-sep'));
+    const lt=mk('text',{x:padL+step*mo.i0+2,y:H-6},'fp-mon'); lt.textContent=MN[Number(mo.m.slice(5,7))-1]; svg.append(lt);
+    const ds=days.slice(mo.i0,mo.i1+1).filter(x=>!x.today && x.usd!=null);
+    if(ds.length){
+      const avg=ds.reduce((a,x)=>a+x.usd,0)/ds.length;
+      const x1=padL+step*mo.i0+2, x2=padL+step*(mo.i1+1)-2;
+      svg.append(mk('line',{x1,x2,y1:Y(avg),y2:Y(avg)},'fp-avg'));
+      mo.avg=avg; mo.tot=ds.reduce((a,x)=>a+x.usd,0)+(days[mo.i1].today&&days[mo.i1].usd?days[mo.i1].usd:0);
+    }
+  }
+  // today's pace, across the whole history
+  if(ref!=null){
+    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(ref),y2:Y(ref)},'fp-ref'));
+    const rt=mk('text',{x:padL+4,y:Y(ref)-4},'fp-reft'); rt.textContent=(pace!=null?'today\'s pace ':'today ')+fmtUsd(ref,0); svg.append(rt);
+  }
+  // bars
+  const rects=[];
+  days.forEach((x,i)=>{
+    if(x.usd==null){ rects.push(null); return; }
+    const cls='fp-bar'+(x.today?' today':x.est?' est':(ref!=null&&x.usd>ref?' above':''));
+    const r=mk('rect',{x:X(i),y:Y(Math.max(0,x.usd)),width:bw,height:Math.max(1.5,Y(0)-Y(Math.max(0,x.usd))),rx:1},cls);
+    svg.append(r); rects.push(r);
+  });
+  if(pace!=null && soFar!=null && pace>soFar){
+    const i=n-1; svg.append(mk('rect',{x:X(i),y:Y(pace),width:bw,height:Math.max(0,Y(soFar)-Y(pace)),rx:1},'fp-ghost'));
+  }
+  // one hit strip per day, full height: bars can be a pixel wide on a phone
+  let sel=-1;
+  const pick=i=>{ if(sel>=0&&rects[sel]) rects[sel].classList.remove('sel'); sel=i; if(i>=0&&rects[i]) rects[i].classList.add('sel'); say(days[i]); };
+  const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
+  svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
+  svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
+  svg.addEventListener('pointerleave',()=>pick(n-1));
+  host.append(svg);
+  pick(n-1);
+
+  // ---- the months in one line each ----
+  const mrow=el('div','fp-months');
+  mons.forEach(mo=>{ if(mo.avg==null) return;
+    const cur=mo.m===todayK.slice(0,7);
+    mrow.append(el('span',null,MN[Number(mo.m.slice(5,7))-1]+(cur?' so far':'')+' <b>'+fmtUsd(mo.tot,0)+'</b> · <span class="fp-key"></span><b>'+fmtUsd(mo.avg,0)+'</b>/day avg')); });
+  host.append(mrow);
+  host.append(el('div','arch-note','One bar per day, UTC (starts '+localMidnight+' your time) · all LPs, claimed + unclaimed · '
+    +'bright bars beat today\'s pace, grey lines are month averages'
+    +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));
+}
+let fpRz=null; addEventListener('resize',()=>{ clearTimeout(fpRz); fpRz=setTimeout(()=>{ try{ renderFeePulse(); }catch(e){} },200); },{passive:true});
+
 function renderCash(){
   const host=$('#cashBody'); if(!host) return;
   host.innerHTML='';
