@@ -1,0 +1,17 @@
+# One-off read of the CPOOL -> CLEAR Snapshot proposal. Feature branch only, read-only.
+name: snapshot-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/snapshot-probe.mjs', '.github/workflows/snapshot-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node scripts/snapshot-probe.mjs
