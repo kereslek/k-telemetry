@@ -665,6 +665,30 @@
     .scn-pos > *:nth-child(3n+2){display:none} }
   /* Deliberately flex rows rather than a grid: this panel's right-hand side is prose of varying
      length, and a grid would either clip it or force a column width the label cannot live in. */
+  .jump-flash{animation:jumpFlash 1.8s ease-out}
+  @keyframes jumpFlash{0%,25%{box-shadow:0 0 0 1px var(--accent),0 0 28px var(--accent-glow)}100%{box-shadow:0 0 0 1px transparent,0 0 0 transparent}}
+  @media(prefers-reduced-motion:reduce){.jump-flash{animation:none}}
+  /* fee pulse link card, under the 24h tile */
+  .fp-link{display:block;width:100%;margin-top:10px;padding:8px 10px 7px;text-align:left;cursor:pointer;
+           border:1px solid var(--line);background:linear-gradient(180deg,rgba(53,214,232,.06),rgba(53,214,232,0) 70%);
+           color:var(--text-secondary);font-size:11px;transition:border-color .2s,box-shadow .2s,background .2s}
+  .fp-link:hover,.fp-link:focus-visible{opacity:1;border-color:var(--accent-dim);box-shadow:0 0 16px var(--accent-glow);outline:none}
+  .fp-link:active{background:rgba(53,214,232,.1)}
+  .fp-link svg{display:block;width:100%;height:30px;overflow:visible}
+  .fpl-lo{fill:var(--accent-dim);opacity:.55} .fpl-est{fill:var(--accent-dim);opacity:.25}
+  .fpl-hi{fill:var(--accent);opacity:.9}
+  .fpl-today{fill:var(--status-good);filter:drop-shadow(0 0 4px var(--status-good));animation:fplPulse 2.4s ease-in-out infinite}
+  @keyframes fplPulse{50%{opacity:.55}}
+  @media(prefers-reduced-motion:reduce){.fpl-today{animation:none}}
+  .fpl-ref{stroke:var(--status-good);stroke-width:1;stroke-dasharray:4 3;opacity:.6;vector-effect:non-scaling-stroke}
+  .fpl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;
+            color:var(--accent);font-size:9px;letter-spacing:.16em;white-space:nowrap}
+  .fpl-head i{font-style:normal;font-size:14px;line-height:1;transition:transform .2s}
+  .fp-link:hover .fpl-head i{transform:translateX(3px)}
+  .fpl-l{display:block;margin-top:5px;line-height:1.35}
+  .fpl-l+.fpl-l{margin-top:1px}
+  .fpl-l b{color:var(--text-primary);font-variant-numeric:tabular-nums} .fpl-l b.up{color:var(--status-good)}
+  .fpl-dim{color:var(--text-muted)}
   /* fee pulse */
   .fp-story{font-size:14px;line-height:1.55;color:var(--text-secondary)}
   .fp-story b{color:var(--text-primary);font-variant-numeric:tabular-nums}
@@ -1265,7 +1289,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3007,7 +3031,8 @@ function renderTiles(){
        perDay==null?'no position has a 24H rate yet'
          :(parts.length?'<span class="unit">'+parts.join('&nbsp; · &nbsp;')
              +(noData?'&nbsp; · &nbsp;'+noData+' position'+(noData>1?'s':'')+' without 24H data':'')+'</span><br>':'')
-          +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'); }
+          +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'
+         +feePulseLink()); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
      pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
@@ -7062,6 +7087,9 @@ document.addEventListener('click', e=>{
   const an=b.getAttribute('data-anchor'), tgt=(an&&p.querySelector('#'+CSS.escape(an)))||p;
   try{ tgt.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
   catch(err){ tgt.scrollIntoView(); }
+  // land with a brief glow, so the eye finds what the link promised
+  tgt.classList.remove('jump-flash'); void tgt.offsetWidth; tgt.classList.add('jump-flash');
+  setTimeout(()=>tgt.classList.remove('jump-flash'),1800);
 });
 function buildQuickNav(){
   const nav=$('#quickNav'); if(!nav) return;
@@ -7138,17 +7166,39 @@ function applyStoredOrders(){
 
    Source is the relay's own monthly fee ledger (all LPs, open and closed, claimed + unclaimed),
    read at the close of each UTC day — so the days of a month add up to that month's FEES EARNED. */
-function renderFeePulse(){
-  const host=$('#fpBody'); if(!host) return;
-  const hint=$('#fpHint');
-  const raw=(state.feeMonth&&state.feeMonth.daily)||null;
-  host.innerHTML='';
-  if(!raw||raw.length<2){
-    host.append(el('div','flow-omit','The daily record arrives with the next relay refresh.'));
-    if(hint) hint.textContent=''; return;
+/* The FEE INCOME · LAST 24H tile's way into FEE PULSE. The tile is a rolling 24-hour rate; this
+   is the calendar day it belongs to, set against the last 30 — so it answers the question the
+   tile's number raises (is that good?) and says where the full answer is. The whole card is the
+   link. */
+function feePulseLink(){
+  const S=feePulseStats(); if(!S) return '';
+  const ds=S.days.slice(-30), n=ds.length, W=300, H=30, gap=2;
+  const top=Math.max(...ds.map(x=>x.usd||0), S.ref||0, 1);
+  const bw=(W-gap*(n-1))/n;
+  const y=v=>H-Math.max(1.5,v/top*(H-2));
+  let bars='';
+  ds.forEach((x,i)=>{ if(x.usd==null) return;
+    const cls=x.today?'fpl-today':(S.ref!=null&&x.usd>S.ref?'fpl-hi':(x.est?'fpl-est':'fpl-lo'));
+    bars+='<rect class="'+cls+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(Math.max(0,x.usd)).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(Math.max(0,x.usd))).toFixed(1)+'"/>'; });
+  const refLine=S.ref!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(S.ref).toFixed(1)+'" y2="'+y(S.ref).toFixed(1)+'"/>':'';
+  let l1, l2='';
+  if(S.soFar==null) l1='no reading for today yet';
+  else{
+    l1='today <b>'+fmtUsd(S.soFar,0)+'</b>'+(S.pace!=null&&S.pace>S.soFar*1.05?' <span class="fpl-dim">on pace for</span> <b>~'+fmtUsd(S.pace,0)+'</b>':' <span class="fpl-dim">so far</span>');
+    if(S.pace==null) l2='<span class="fpl-dim">too early in the day to rank</span>';
+    else{ const N=S.done.length;
+      l2=S.beat===0?'<b class="up">best day on record</b>':'<span class="fpl-dim">beats</span> <b>'+(N-S.beat)+'</b> <span class="fpl-dim">of '+N+' days</span>'; }
   }
-  const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const DW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return '<button type="button" class="tile-why fp-link" data-jump="feepulse" aria-label="Open FEE PULSE — today against every day so far">'
+    +'<span class="fpl-head"><span>FEE PULSE · 30 DAYS</span><i>›</i></span>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+refLine+bars+'</svg>'
+    +'<span class="fpl-l">'+l1+'</span>'+(l2?'<span class="fpl-l">'+l2+'</span>':'')+'</button>';
+}
+/* The day series and today's standing in it. One function so the panel and the tile link that
+   points at it can never tell two different stories. */
+function feePulseStats(){
+  const raw=(state.feeMonth&&state.feeMonth.daily)||null;
+  if(!raw||raw.length<2) return null;
   const now=new Date(), todayK=now.toISOString().slice(0,10);
   // every calendar day from the first record to today, so a missing day shows as a gap, not as nothing
   const by={}; raw.forEach(r=>{ by[r.d]=r; });
@@ -7158,11 +7208,26 @@ function renderFeePulse(){
   const done=days.filter(x=>!x.today && x.usd!=null && !x.est);
   const hrs=(now-Date.parse(todayK+'T00:00Z'))/3600000;
   const soFar=today.usd;
+  // too few hours in and one arbitrage burst would project to a record day
   const pace=(soFar!=null && hrs>=4) ? soFar/(hrs/24) : null;
   const ref=pace ?? soFar;
   const last30=done.slice(-30).map(x=>x.usd).sort((a,b)=>a-b);
   const med=last30.length?last30[Math.floor(last30.length/2)]:null;
   const beat=ref!=null?done.filter(x=>x.usd>ref).length:null;
+  return {now,todayK,days,today,done,hrs,soFar,pace,ref,last30,med,beat};
+}
+function renderFeePulse(){
+  const host=$('#fpBody'); if(!host) return;
+  const hint=$('#fpHint');
+  host.innerHTML='';
+  const S=feePulseStats();
+  if(!S){
+    host.append(el('div','flow-omit','The daily record arrives with the next relay refresh.'));
+    if(hint) hint.textContent=''; return;
+  }
+  const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const DW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const {now,todayK,days,today,done,hrs,soFar,pace,ref,last30,med,beat}=S;
   const dlab=d=>{ const t=new Date(d+'T12:00Z'); const m=MN[t.getUTCMonth()]; return DW[t.getUTCDay()]+' '+t.getUTCDate()+' '+m[0]+m.slice(1).toLowerCase(); };
   const f0=v=>fmtUsd(v,v<100?2:0);
   const localMidnight=new Date(Date.parse(todayK+'T00:00Z')).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
