@@ -1,5 +1,5 @@
 {
- "t": 1790388690669,
+ "t": 1790389808103,
  "rows": [
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -8,7 +8,7 @@
    "amount": 520000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 17413.06
+   "usd": 17627.47
   },
   {
    "addr": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
@@ -18,7 +18,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Jupiter Staked SOL",
-   "usd": 16264.87
+   "usd": 16236.87
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -27,7 +27,7 @@
    "amount": 353000,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 11820.79
+   "usd": 11966.34
   },
   {
    "addr": "native",
@@ -37,7 +37,7 @@
    "native": true,
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
-   "usd": 1588.91
+   "usd": 1585.95
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -46,7 +46,7 @@
    "amount": 20024.78592219995,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 773.96
+   "usd": 768.06
   },
   {
    "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
@@ -55,7 +55,7 @@
    "amount": 19820.024403132807,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 766.05
+   "usd": 760.21
   },
   {
    "addr": "AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -75,7 +75,7 @@
    "chain": "sol",
    "wallet": "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2",
    "name": "Pudgy Penguins",
-   "usd": 182.26
+   "usd": 182.73
   },
   {
    "addr": "native",
@@ -85,7 +85,7 @@
    "native": true,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 173.21
+   "usd": 173.32
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -94,7 +94,7 @@
    "amount": 5000,
    "chain": "ethereum",
    "wallet": "0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d",
-   "usd": 167.43
+   "usd": 169.49
   },
   {
    "addr": "0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -103,16 +103,7 @@
    "amount": 4000,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 133.95
-  },
-  {
-   "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
-   "symbol": "CPOOL",
-   "decimals": 18,
-   "amount": 2801.0801619336767,
-   "chain": "ethereum",
-   "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 108.26
+   "usd": 135.6
   },
   {
    "addr": "native",
@@ -122,7 +113,16 @@
    "native": true,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 107.6
+   "usd": 107.66
+  },
+  {
+   "addr": "0x66761fa41377003622aee3c7675fc7b5c1c2fac5",
+   "symbol": "CPOOL",
+   "decimals": 18,
+   "amount": 2801.0801619336767,
+   "chain": "ethereum",
+   "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
+   "usd": 107.44
   },
   {
    "addr": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -132,7 +132,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Pudgy Penguins",
-   "usd": 93.84
+   "usd": 94.08
   },
   {
    "addr": "0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -141,7 +141,7 @@
    "amount": 710.065012086321,
    "chain": "ethereum",
    "wallet": "0x9e9a57a538093c800e821f9a47b850dadca4c728",
-   "usd": 23.78
+   "usd": 24.07
   },
   {
    "addr": "native",
@@ -151,7 +151,7 @@
    "native": true,
    "chain": "ethereum",
    "wallet": "0x22fe6188f048ad8116f746cc1a31705d30e2fc4e",
-   "usd": 16.17
+   "usd": 16.18
   },
   {
    "addr": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
@@ -161,7 +161,7 @@
    "chain": "sol",
    "wallet": "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca",
    "name": "Zcash",
-   "usd": 15.44
+   "usd": 15.39
   },
   {
    "addr": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
@@ -623,7 +623,7 @@
    "usd": null
   }
  ],
- "totalUsd": 49860.01,
+ "totalUsd": 50181.29,
  "unpriced": 30,
  "mintInfo": {
   "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v": {
