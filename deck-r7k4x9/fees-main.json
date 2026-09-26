@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 64.14,
+   "last": 64.17,
    "hwm": 65.39,
    "acc": 48.8,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 367.39,
+   "last": 367.58,
    "hwm": 370.19,
    "acc": 277.99,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 403.92,
+   "last": 404.12,
    "hwm": 409.79,
    "acc": 369.17,
    "ck": "ethereum",
@@ -34,7 +34,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 151,
+   "last": 151.08,
    "hwm": 152.02,
    "acc": 152.02,
    "ck": "ethereum",
@@ -44,7 +44,7 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 786.52,
+   "last": 786.59,
    "acc": 484.28,
    "hwm": 788.16,
    "cat": "sol|SOL / CPOOL · wide",
@@ -62,7 +62,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 417.92,
+   "last": 417.98,
    "hwm": 419.08,
    "acc": 341.61,
    "ck": "sol",
@@ -72,7 +72,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 289.66,
+   "last": 289.77,
    "hwm": 291.72,
    "acc": 291.72,
    "ck": "sol",
@@ -121,10 +121,10 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -75.4,
+ "lastIl": -75.12,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790386527741
+ "readAt": 1790387600626
 }
