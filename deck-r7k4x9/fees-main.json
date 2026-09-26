@@ -4,9 +4,9 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 65.71,
-   "hwm": 65.92,
-   "acc": 49.33,
+   "last": 65.97,
+   "hwm": 65.97,
+   "acc": 49.38,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41",
@@ -14,9 +14,9 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 381.86,
-   "hwm": 383,
-   "acc": 290.8,
+   "last": 383.26,
+   "hwm": 383.26,
+   "acc": 291.06,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -24,9 +24,9 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 416.84,
-   "hwm": 418.12,
-   "acc": 377.5,
+   "last": 418.42,
+   "hwm": 418.42,
+   "acc": 377.8,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -34,9 +34,9 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 160.45,
-   "hwm": 160.91,
-   "acc": 160.91,
+   "last": 161.01,
+   "hwm": 161.01,
+   "acc": 161.01,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
@@ -44,7 +44,7 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 791.2,
+   "last": 791.19,
    "acc": 489.17,
    "hwm": 793.05,
    "cat": "sol|SOL / CPOOL · wide",
@@ -62,7 +62,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 421.22,
+   "last": 421.21,
    "hwm": 422.52,
    "acc": 345.05,
    "ck": "sol",
@@ -72,7 +72,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 296.92,
+   "last": 296.89,
    "hwm": 299.21,
    "acc": 299.21,
    "ck": "sol",
@@ -121,10 +121,10 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -98.09,
+ "lastIl": -103.3,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790409221834
+ "readAt": 1790410400930
 }
