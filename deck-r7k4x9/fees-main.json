@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 65.86,
+   "last": 65.87,
    "hwm": 66.96,
    "acc": 50.37,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 387.16,
+   "last": 387.17,
    "hwm": 393.55,
    "acc": 301.35,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 419.8,
+   "last": 419.82,
    "hwm": 427.21,
    "acc": 386.59,
    "ck": "ethereum",
@@ -34,7 +34,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 165.84,
+   "last": 165.85,
    "hwm": 168.17,
    "acc": 168.17,
    "ck": "ethereum",
@@ -44,27 +44,27 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 827.64,
-   "acc": 523.76,
-   "hwm": 827.64,
+   "last": 827.98,
+   "acc": 524.1,
+   "hwm": 827.98,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 419.87,
-   "acc": 201.99,
-   "hwm": 419.87,
+   "last": 419.93,
+   "acc": 202.05,
+   "hwm": 419.93,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 446.87,
-   "hwm": 446.87,
-   "acc": 369.4,
+   "last": 447.11,
+   "hwm": 447.11,
+   "acc": 369.64,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -72,9 +72,9 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 352.47,
-   "hwm": 352.47,
-   "acc": 352.47,
+   "last": 352.99,
+   "hwm": 352.99,
+   "acc": 352.99,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -121,12 +121,12 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -95.83,
+ "lastIl": -95.79,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790461897768,
+ "readAt": 1790463123334,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -184,7 +184,7 @@
   "2026-09-23": 1948.49,
   "2026-09-24": 2107.98,
   "2026-09-25": 2436.79,
-  "2026-09-26": 2672.88
+  "2026-09-26": 2674.04
  },
  "dayEst": [
   "2026-08-01",
