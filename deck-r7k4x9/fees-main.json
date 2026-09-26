@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 64.61,
+   "last": 64.6,
    "hwm": 65.39,
    "acc": 48.8,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 371.33,
+   "last": 371.23,
    "hwm": 371.33,
    "acc": 279.13,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 407.57,
+   "last": 407.47,
    "hwm": 409.79,
    "acc": 369.17,
    "ck": "ethereum",
@@ -34,7 +34,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 153.4,
+   "last": 153.36,
    "hwm": 153.4,
    "acc": 153.4,
    "ck": "ethereum",
@@ -44,7 +44,7 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 790.51,
+   "last": 790.5,
    "acc": 486.7,
    "hwm": 790.58,
    "cat": "sol|SOL / CPOOL · wide",
@@ -72,7 +72,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 295.33,
+   "last": 295.32,
    "hwm": 295.43,
    "acc": 295.43,
    "ck": "sol",
@@ -121,10 +121,10 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -80.32,
+ "lastIl": -80.49,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790389795637
+ "readAt": 1790390894797
 }
