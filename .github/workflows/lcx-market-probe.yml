@@ -1,0 +1,19 @@
+# One-off read of where LCX trades and the deck's real share of LCX swap fees. Feature branch only, read-only.
+name: lcx-market-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/lcx-market-probe.mjs', '.github/workflows/lcx-market-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: git show origin/gh-pages:deck-r7k4x9/data-main.json > /tmp/data.json
+      - run: node scripts/lcx-market-probe.mjs
