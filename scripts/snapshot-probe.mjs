@@ -1,3 +1,4 @@
+// rerun: confirm votes cast 2026-09-27
 /* One-off, read-only: the CPOOL -> CLEAR Snapshot proposal and this deck's wallets' place in it.
    Runs in Actions because hub.snapshot.org is not reachable from the dev container. */
 import fs from 'node:fs';
