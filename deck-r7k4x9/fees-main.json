@@ -4,7 +4,7 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 442.15,
+   "last": 439.15,
    "hwm": 477.16,
    "acc": 384.96,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 457.83,
+   "last": 454.59,
    "hwm": 502.7,
    "acc": 462.08,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 212.34,
+   "last": 210.99,
    "hwm": 221.84,
    "acc": 221.84,
    "ck": "ethereum",
@@ -34,27 +34,27 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 835.44,
-   "acc": 531.56,
-   "hwm": 835.44,
+   "last": 839.55,
+   "acc": 535.67,
+   "hwm": 839.55,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 420.06,
-   "acc": 202.18,
-   "hwm": 420.06,
+   "last": 420.14,
+   "acc": 202.26,
+   "hwm": 420.14,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 452.36,
-   "hwm": 452.36,
-   "acc": 374.89,
+   "last": 455.25,
+   "hwm": 455.25,
+   "acc": 377.78,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -62,9 +62,9 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 364.9,
-   "hwm": 364.9,
-   "acc": 364.9,
+   "last": 371.24,
+   "hwm": 371.24,
+   "acc": 371.24,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -111,13 +111,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -134.21,
+ "lastIl": -115.21,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 60.97
  },
- "readAt": 1790532674099,
+ "readAt": 1790533778047,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -176,7 +176,7 @@
   "2026-09-24": 2107.98,
   "2026-09-25": 2436.79,
   "2026-09-26": 2674.39,
-  "2026-09-27": 2922.16
+  "2026-09-27": 2935.58
  },
  "dayEst": [
   "2026-08-01",
