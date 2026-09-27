@@ -10,11 +10,12 @@
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41",
-   "lbl": "LCX / ETH 1%"
+   "lbl": "LCX / ETH 1%",
+   "miss": 1
   },
   "1355336": {
    "m0": 92.2,
-   "last": 446.05,
+   "last": 447.26,
    "hwm": 477.16,
    "acc": 384.96,
    "ck": "ethereum",
@@ -24,7 +25,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 465.21,
+   "last": 466.48,
    "hwm": 502.7,
    "acc": 462.08,
    "ck": "ethereum",
@@ -34,7 +35,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 212.07,
+   "last": 212.65,
    "hwm": 221.84,
    "acc": 221.84,
    "ck": "ethereum",
@@ -72,9 +73,9 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 363.73,
-   "hwm": 363.73,
-   "acc": 363.73,
+   "last": 363.75,
+   "hwm": 363.75,
+   "acc": 363.75,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -121,12 +122,12 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -137.37,
+ "lastIl": -167.04,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790500969147,
+ "readAt": 1790502710326,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -185,7 +186,7 @@
   "2026-09-24": 2107.98,
   "2026-09-25": 2436.79,
   "2026-09-26": 2674.39,
-  "2026-09-27": 2919.78
+  "2026-09-27": 2919.8
  },
  "dayEst": [
   "2026-08-01",

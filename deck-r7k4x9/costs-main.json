@@ -1,6 +1,6 @@
 {
  "month": "2026-09",
- "gasUsd": 20.87,
+ "gasUsd": 21.61,
  "swapFeeUsd": 45.01,
  "txs": {
   "0x8536f69fc7a1ef8f3732b983bed598eab95b8b105b8c59336de6983efbe0a9de": 1,
@@ -29,7 +29,9 @@
   "0x00086c46dc388ae7f17090faf50468a6d045dedfdf7436e38a0e62ea41368416": 1,
   "0xaa9e9cedf7705d74dcd72e7a99c44d7a73237128f3b2bc94043011fb9b960f74": 1,
   "0x6388bc7a636af6fc70b683b1ff9fbc466cbaa15700203e5b31fa1242da4104a0": 2,
-  "0x70ec5b298fcb7ddcd753eec7ae632d29a2eb104aa0770dd73dad31bdd448f5c7": 1
+  "0x70ec5b298fcb7ddcd753eec7ae632d29a2eb104aa0770dd73dad31bdd448f5c7": 1,
+  "0xf37c08b45349df59ab80e3cfef40f23c6e6df29fae6c42e95a5234d0c66059e8": 2,
+  "0xefa318a5d5bae32cec2f99dfb2ce7548294eaa0de9c0ce4b90e1e3225a9dd1ee": 1
  },
  "months": [
   {
@@ -40,10 +42,10 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26067838,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26067838,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26067838,
-  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26067838
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26067994,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26067994,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26067994,
+  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26067994
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
