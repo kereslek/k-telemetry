@@ -4,7 +4,7 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 458.42,
+   "last": 454.57,
    "hwm": 477.16,
    "acc": 384.96,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 468.24,
+   "last": 464.08,
    "hwm": 502.7,
    "acc": 462.08,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 226.55,
+   "last": 224.83,
    "hwm": 226.55,
    "acc": 226.55,
    "ck": "ethereum",
@@ -34,27 +34,27 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 841.48,
-   "acc": 537.6,
-   "hwm": 841.48,
+   "last": 843,
+   "acc": 539.12,
+   "hwm": 843,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 420.14,
-   "acc": 202.26,
-   "hwm": 420.14,
+   "last": 420.15,
+   "acc": 202.27,
+   "hwm": 420.15,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 456.61,
-   "hwm": 456.61,
-   "acc": 379.14,
+   "last": 457.68,
+   "hwm": 457.68,
+   "acc": 380.21,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -62,9 +62,9 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 374.02,
-   "hwm": 374.02,
-   "acc": 374.02,
+   "last": 376.55,
+   "hwm": 376.55,
+   "acc": 376.55,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -111,13 +111,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -143.49,
+ "lastIl": -127.16,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 60.97
  },
- "readAt": 1790537131127,
+ "readAt": 1790538259523,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -176,7 +176,7 @@
   "2026-09-24": 2107.98,
   "2026-09-25": 2436.79,
   "2026-09-26": 2674.39,
-  "2026-09-27": 2946.36
+  "2026-09-27": 2951.49
  },
  "dayEst": [
   "2026-08-01",
@@ -194,10 +194,6 @@
   }
  },
  "ticks": [
-  [
-   1790357879153,
-   3852.53
-  ],
   [
    1790358998011,
    3903.4
@@ -793,6 +789,10 @@
   [
    1790537131128,
    4476.85
+  ],
+  [
+   1790538259523,
+   4481.98
   ]
  ],
  "ticksSeeded": 1
