@@ -4,7 +4,7 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 453.09,
+   "last": 452.42,
    "hwm": 477.16,
    "acc": 384.96,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 470,
+   "last": 469.33,
    "hwm": 502.7,
    "acc": 462.08,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 216.86,
+   "last": 216.53,
    "hwm": 221.84,
    "acc": 221.84,
    "ck": "ethereum",
@@ -34,27 +34,27 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 834.75,
-   "acc": 530.88,
-   "hwm": 834.76,
+   "last": 834.77,
+   "acc": 530.89,
+   "hwm": 834.77,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%"
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 420.01,
-   "acc": 202.13,
-   "hwm": 420.01,
+   "last": 420.04,
+   "acc": 202.16,
+   "hwm": 420.04,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 451.88,
-   "hwm": 451.88,
-   "acc": 374.41,
+   "last": 451.89,
+   "hwm": 451.89,
+   "acc": 374.42,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
@@ -62,7 +62,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 363.71,
+   "last": 363.7,
    "hwm": 363.76,
    "acc": 363.76,
    "ck": "sol",
@@ -111,13 +111,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -175.7,
+ "lastIl": -179.85,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 60.97
  },
- "readAt": 1790514225046,
+ "readAt": 1790515363174,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -176,7 +176,7 @@
   "2026-09-24": 2107.98,
   "2026-09-25": 2436.79,
   "2026-09-26": 2674.39,
-  "2026-09-27": 2919.81
+  "2026-09-27": 2919.86
  },
  "dayEst": [
   "2026-08-01",
