@@ -49,8 +49,9 @@ jobs:
             t0=$(date +%s)
             node scripts/fetch-data.mjs > /tmp/pass$i.log 2>&1 || echo "pass $i exited non-zero"
             echo "pass $i took $(( $(date +%s) - t0 ))s"
-            grep -E "solHist|rpc sol|solLedger|sol found|solFees|quote|btc|ERR|Error|error" /tmp/pass$i.log | head -40
+            grep -E "solHist|rpc sol|solLedger|sol found|solFees|quote|btc|restated|feeRestate|feePos24|feeTicks|feeMonth|ERR|Error|error" /tmp/pass$i.log | head -40
             echo "::endgroup::"
             echo "--- after pass $i ---"
             node scripts/sol-rehearsal-report.mjs /tmp/live.json
+            node -e "const d=require('./deck-r7k4x9/data-main.json'),f=d.feeMonth||{};const p=f.pos24||{};console.log('FEE mtd',f.mtd,'basis',f.basis,'| pos24 total',p.total,'hours',p.from&&((p.to-p.from)/36e5).toFixed(1),'| rows',JSON.stringify((p.byPos||[]).map(r=>[r.id.slice(0,12),r.usd,r.lbl,r.closed||0])),'| ticks',JSON.stringify((f.ticks||[]).slice(-2)),'| days',JSON.stringify((f.daily||[]).slice(-3)))"
           done

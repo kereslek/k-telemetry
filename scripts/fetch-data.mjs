@@ -2346,6 +2346,42 @@ const main=async()=>{
           console.log('August token split recorded');
         }
       }
+      /* September 2026 restatement, applied once. Ethereum fees had been accrued as the rise in the
+         USD value of each position's lifetime fees: every LCX/ETH move re-priced fees earned weeks
+         earlier, and the high-water mark kept every intraday peak. scripts/fee-restate-2026-09.json
+         rebuilds the month from the payload history in tokens earned, priced when earned, and says
+         how. The EVM entries take its totals and token baselines; the token accrual below then
+         counts whatever was earned between its snapshot and this run. Closed #1355331, the day
+         bars, the 50-hour readings and the per-position history are replaced to match. */
+      if(!fl.restated202609 && profile.slug==='main' && monthKey==='2026-09'){
+        try{
+          const R=JSON.parse(fs.readFileSync(new URL('./fee-restate-2026-09.json', import.meta.url),'utf8'));
+          for(const [id,x] of Object.entries(R.evm||{})){
+            const e=fl.pos[id]; if(!e) continue;
+            e.acc=x.acc; e.tk0=x.tk0; e.tk1=x.tk1;
+          }
+          for(const [id,a] of Object.entries(R.closedEvm||{})){
+            const c=(fl.closedPos||{})[id]; if(!c) continue;
+            const dlt=a-(c.acc||0); c.acc=a;
+            fl.closed=Math.round(((fl.closed||0)+dlt)*100)/100;
+            if(c.cat&&fl.catClosed&&fl.catClosed[c.cat]!=null) fl.catClosed[c.cat]=Math.round((fl.catClosed[c.cat]+dlt)*100)/100;
+          }
+          fl.dayEnd=fl.dayEnd||{}; for(const [d,v] of Object.entries(R.dayEnd||{})) fl.dayEnd[d]=v;
+          fl.ticks=R.ticks||fl.ticks; fl.posHist=R.posHist||[];
+          for(const e of Object.values(fl.pos)) e.run=e.acc||0;   // running totals start from the restated month
+          for(const [id,c] of Object.entries(fl.closedPos||{})) c.run=c.acc||0;
+          fl.restated202609={asOf:R.asOf, before:R.mtdBefore, after:R.mtdAfter};
+          console.log('September fee ledger restated: $'+R.mtdBefore+' → $'+R.mtdAfter+' at '+new Date(R.asOf).toISOString());
+        }catch(e){ logErr('feeRestate',e); }
+      }
+      /* Lifetime fee tokens of an Ethereum position: collected (net of withdrawn principal) plus
+         owed. These only ever grow, so the month accrues the growth since the last reading, each
+         token priced now — the price of a fee at the moment it is counted, never again after. */
+      const feeTokens=q=>{
+        if(q.chain==='sol'||!q.feeDbg||q.histPartial||q.f0==null||q.f1==null||q.usd0==null||q.usd1==null) return null;
+        const fd=q.feeDbg;
+        return [Math.max(0,(fd.col0||0)-(fd.wdr0||0))+q.f0, Math.max(0,(fd.col1||0)-(fd.wdr1||0))+q.f1];
+      };
       const seen=new Set();
       for(const p of [...evmPositions,...solPositions]){
         const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);
@@ -2359,13 +2395,24 @@ const main=async()=>{
           fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100,
                         hwm:Math.round(cum*100)/100, acc:Math.round(Math.max(0,cum-m0)*100)/100,
                         ck:p.chain||'ethereum'};
+          fl.pos[p.id].run=fl.pos[p.id].acc;
+          const T=feeTokens(p); if(T){ fl.pos[p.id].tk0=T[0]; fl.pos[p.id].tk1=T[1]; }
+        } else if(feeTokens(p)){
+          const T=feeTokens(p);
+          if(e.tk0==null){ e.tk0=T[0]; e.tk1=T[1]; }        // switch-over: baseline now, count from the next reading
+          else{
+            const add=Math.max(0,T[0]-e.tk0)*p.usd0+Math.max(0,T[1]-e.tk1)*p.usd1;
+            if(add>0){ e.acc=Math.round(((e.acc||0)+add)*100)/100; e.run=Math.round(((e.run??e.acc-add)+add)*100)/100; }
+            e.tk0=Math.max(e.tk0,T[0]); e.tk1=Math.max(e.tk1,T[1]);
+          }
+          e.last=Math.round(cum*100)/100; e.hwm=Math.max(e.hwm||0,e.last);
         } else {
           // cum is re-derived from chain each run and priced at spot, so it can fall for
           // reasons that are not "you un-earned fees": a collect, or the fee tokens simply
           // being worth less today. Accrue against a high-water mark so real growth is
           // counted once and a dip never rewrites what the month already earned.
           if(e.acc==null){ e.acc=Math.max(0,(e.last||0)-(e.m0||0)); e.hwm=e.last||0; }
-          if(cum>e.hwm){ e.acc=Math.round((e.acc+(cum-e.hwm))*100)/100; e.hwm=Math.round(cum*100)/100; }
+          if(cum>e.hwm){ const add=cum-e.hwm; e.acc=Math.round((e.acc+add)*100)/100; e.run=Math.round(((e.run??e.acc-add)+add)*100)/100; e.hwm=Math.round(cum*100)/100; }
           e.last=Math.round(cum*100)/100;
         }
         // refreshed every run: a position that is re-ranged keeps its id but can change class
@@ -2402,7 +2449,7 @@ const main=async()=>{
           const gk=gone.cat||'—'; fl.catClosed[gk]=(fl.catClosed[gk]||0)+goneAmt;
           // kept by id too, so a closed position's fees still name their token and their pool
           fl.closedPos=fl.closedPos||{};
-          fl.closedPos[id]={acc:Math.round(goneAmt*100)/100, cat:gk, tk:gone.tk||null, lbl:gone.lbl||null};
+          fl.closedPos[id]={acc:Math.round(goneAmt*100)/100, cat:gk, tk:gone.tk||null, lbl:gone.lbl||null, run:gone.run??null, closedAt:Date.now()};
           const ck=ckRaw;
           // v25.2: legacy ledger entries have no .ck — a Solana id must never fall through to the EVM scanner
           if(!String(id).startsWith('sol:')&&ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
@@ -2483,7 +2530,34 @@ const main=async()=>{
         fl.ticks=fl.ticks.filter(x=>x[0]>nowMs-50*3600000).sort((a,b)=>a[0]-b[0]);
         ticks=fl.ticks.filter(x=>x[0]>nowMs-26*3600000);
       }catch(e){ logErr('feeTicks',e); }
-      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+      /* The last 24 hours per position, from each position's running total of what the ledger
+         booked for it (it does not reset at a month end). A position closed inside the window
+         contributes what it earned before it closed. Summed, it is the same figure as the running
+         total over the same window — the tile's headline and its split come from one record. */
+      let pos24=null;
+      try{
+        const nowMs=Date.now();
+        fl.posHist=Array.isArray(fl.posHist)?fl.posHist:[];
+        const snap={}; for(const [id,e] of Object.entries(fl.pos)) snap[id]=e.run??e.acc??0;
+        fl.posHist.push([nowMs,snap]);
+        fl.posHist=fl.posHist.filter(x=>x[0]>nowMs-50*3600000);
+        const start=[...fl.posHist].reverse().find(x=>x[0]<=nowMs-24*3600000) || fl.posHist[0];
+        if(start && start[0]<nowMs-12*3600000){
+          const win=fl.posHist.filter(x=>x[0]>=start[0]);
+          const ids=new Set(win.flatMap(x=>Object.keys(x[1])));
+          const rows=[];
+          for(const id of ids){
+            const a=start[1][id]; let b=null;
+            for(const x of win) if(x[1][id]!=null) b=x[1][id];
+            const c=(fl.closedPos||{})[id]; if(!(id in snap) && c && c.run!=null) b=Math.max(b??0,c.run);
+            const usd=Math.max(0,(b??0)-(a??0));
+            const meta=fl.pos[id]||c||{};
+            rows.push({id, usd:Math.round(usd*100)/100, lbl:meta.lbl||null, cat:meta.cat||null, tk:meta.tk||null, ...(id in snap?{}:{closed:1})});
+          }
+          pos24={from:start[0], to:nowMs, total:Math.round(rows.reduce((x,r)=>x+r.usd,0)*100)/100, byPos:rows.sort((x,y)=>y.usd-x.usd)};
+        }
+      }catch(e){ logErr('feePos24',e); }
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, pos24, basis:'tokens', ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
         projBasis:'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[],
         /* Month to date per position — open ones and the ones closed this month — so the page

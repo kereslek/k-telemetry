@@ -1301,7 +1301,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3025,26 +3025,46 @@ function renderTiles(){
               })():'')
             +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
           : 'gas + rebalance swap fees · starts with the next relay refresh'); }
-  { /* Pinned to the last 24 hours regardless of the header timeframe. This tile answers
-       "what came in today", and a 7D or 30D average cannot — it would smooth away exactly
-       the day-to-day movement the tile exists to show. */
+  { /* What was actually earned in the last 24 hours: the relay's fee ledger, per position, over
+       the same window as the 24-hour pulse — so this, FEE PULSE and FEES EARNED are one record.
+       Pinned to 24 hours regardless of the header timeframe. Before the relay publishes the
+       per-position window, the old estimate (each position's 24h fee rate on its value today)
+       stands in, and says that it is an estimate. */
+    const P24=state.feeMonth&&state.feeMonth.pos24;
+    const OLD_LCX='ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41';
+    if(P24 && Array.isArray(P24.byPos)){
+      const byPair=new Map();
+      for(const r of P24.byPos){ if(!(r.usd>0.004)) continue;
+        const k=(r.lbl||'—')+(r.tk===OLD_LCX?' · OLD':'')+(r.closed?' · closed':'');
+        byPair.set(k,(byPair.get(k)||0)+r.usd); }
+      const tot=P24.total;
+      const parts=[...byPair.entries()].sort((a,b)=>b[1]-a[1])
+        .map(([k,v])=>esc(k)+' <b>'+fmtUsd(v)+'</b>'+(tot>0?' <span style="opacity:.7">'+Math.round(v/tot*100)+'%</span>':''));
+      const hrs=(P24.to-P24.from)/3600000;
+      mk('FEE INCOME · LAST 24H', inc(fmtUsd(tot)),
+         (parts.length?'<span class="unit">'+parts.join('&nbsp; · &nbsp;')+'</span><br>':'')
+         +(hrs<23.5?'<span class="unit">over the last '+hrs.toFixed(0)+'h — the record is still filling</span><br>':'')
+         +'≈ <b>'+fmtUsd(tot/hrs*24*7,0)+'</b>/wk · <b>'+fmtUsd(tot/hrs*24*30.44,0)+'</b>/mo if the last 24h repeat'
+         +feePulseLink()+feePulseLink24());
+    } else {
     const dayOf = p => { const a=aprOfWin(p,'d1').v, base=p.valueUsd||p.costUsd;
                          return (a!=null&&base)? a/100*base/365 : null; };
     const rows=ps.map(p=>dayOf(p)).filter(v=>v!=null);
     const perDay=rows.length? rows.reduce((a,b)=>a+b,0) : null;
-    // small per-pair split: a single total hides which pool is actually producing the income
     const byPair=new Map();
     for(const p of ps){ const v=dayOf(p); if(v==null) continue;
       const k=pairShort(p); byPair.set(k,(byPair.get(k)||0)+v); }
     const parts=[...byPair.entries()].sort((a,b)=>b[1]-a[1])
       .map(([k,v])=>esc(k)+' <b>'+fmtUsd(v)+'</b>'+(perDay>0?' <span style="opacity:.7">'+Math.round(v/perDay*100)+'%</span>':''));
     const noData=ps.length-rows.length;
-    mk('FEE INCOME · LAST 24H', perDay==null?'—':inc(fmtUsd(perDay)),
+    mk('FEE INCOME · LAST 24H · EST.', perDay==null?'—':inc(fmtUsd(perDay)),
        perDay==null?'no position has a 24H rate yet'
          :(parts.length?'<span class="unit">'+parts.join('&nbsp; · &nbsp;')
              +(noData?'&nbsp; · &nbsp;'+noData+' position'+(noData>1?'s':'')+' without 24H data':'')+'</span><br>':'')
+          +'<span class="unit">estimated from each position\'s 24h fee rate (Solana: the pool\'s) until the ledger\'s 24h record arrives</span><br>'
           +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'
-         +feePulseLink()+feePulseLink24()); }
+         +feePulseLink()+feePulseLink24());
+    } }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
      pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
