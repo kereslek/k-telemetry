@@ -4,7 +4,7 @@
  "pos": {
   "1355331": {
    "m0": 16.59,
-   "last": 70.59,
+   "last": 70.6,
    "hwm": 77.56,
    "acc": 60.97,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355336": {
    "m0": 92.2,
-   "last": 440.71,
+   "last": 440.79,
    "hwm": 477.16,
    "acc": 384.96,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 460.58,
+   "last": 460.62,
    "hwm": 502.7,
    "acc": 462.08,
    "ck": "ethereum",
@@ -34,7 +34,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 208.43,
+   "last": 208.52,
    "hwm": 221.84,
    "acc": 221.84,
    "ck": "ethereum",
@@ -44,7 +44,7 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 824.97,
+   "last": 825.61,
    "acc": 525.72,
    "hwm": 829.6,
    "cat": "sol|SOL / CPOOL · wide",
@@ -53,16 +53,16 @@
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
-   "last": 419.86,
-   "acc": 202.06,
-   "hwm": 419.94,
+   "last": 419.95,
+   "acc": 202.07,
+   "hwm": 419.95,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%"
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 444.99,
+   "last": 445.44,
    "hwm": 448.25,
    "acc": 370.78,
    "ck": "sol",
@@ -72,7 +72,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 348.88,
+   "last": 349.86,
    "hwm": 355.42,
    "acc": 355.42,
    "ck": "sol",
@@ -121,12 +121,12 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -122.87,
+ "lastIl": -120.82,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87
  },
- "readAt": 1790488705875,
+ "readAt": 1790490110999,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -185,7 +185,7 @@
   "2026-09-24": 2107.98,
   "2026-09-25": 2436.79,
   "2026-09-26": 2674.39,
-  "2026-09-27": 2902.61
+  "2026-09-27": 2902.62
  },
  "dayEst": [
   "2026-08-01",
