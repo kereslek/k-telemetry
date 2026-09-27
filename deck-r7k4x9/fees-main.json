@@ -4,7 +4,7 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 447.26,
+   "last": 443.99,
    "hwm": 477.16,
    "acc": 384.96,
    "ck": "ethereum",
@@ -14,7 +14,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 463.46,
+   "last": 459.9,
    "hwm": 502.7,
    "acc": 462.08,
    "ck": "ethereum",
@@ -24,7 +24,7 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 214.53,
+   "last": 213.08,
    "hwm": 221.84,
    "acc": 221.84,
    "ck": "ethereum",
@@ -111,13 +111,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -160.82,
+ "lastIl": -144.23,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 60.97
  },
- "readAt": 1790529313050,
+ "readAt": 1790530422270,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
