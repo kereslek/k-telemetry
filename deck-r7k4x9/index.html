@@ -674,6 +674,7 @@
            color:var(--text-secondary);font-size:11px;transition:border-color .2s,box-shadow .2s,background .2s}
   .fp-link:hover,.fp-link:focus-visible{opacity:1;border-color:var(--accent-dim);box-shadow:0 0 16px var(--accent-glow);outline:none}
   .fp-link:active{background:rgba(53,214,232,.1)}
+  .fp-link+.fp-link{margin-top:6px}
   .fp-link svg{display:block;width:100%;height:30px;overflow:visible}
   .fpl-lo{fill:var(--accent-dim);opacity:.55} .fpl-est{fill:var(--accent-dim);opacity:.25}
   .fpl-hi{fill:var(--accent);opacity:.9}
@@ -1300,7 +1301,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3043,7 +3044,7 @@ function renderTiles(){
          :(parts.length?'<span class="unit">'+parts.join('&nbsp; · &nbsp;')
              +(noData?'&nbsp; · &nbsp;'+noData+' position'+(noData>1?'s':'')+' without 24H data':'')+'</span><br>':'')
           +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'
-         +feePulseLink()); }
+         +feePulseLink()+feePulseLink24()); }
   mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
      pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
@@ -7190,11 +7191,49 @@ function feePulseLink(){
   let bars='';
   ds.forEach((x,i)=>{ if(x.usd==null) return;
     const cls=x.today?'fpl-today':(S.ref!=null&&x.usd>S.ref?'fpl-hi':(x.est?'fpl-est':'fpl-lo'));
-    bars+='<rect class="'+cls+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(Math.max(0,x.usd)).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(Math.max(0,x.usd))).toFixed(1)+'"/>'; });
+    bars+='<rect class="'+cls+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(Math.max(0,x.usd)).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(Math.max(0,x.usd))).toFixed(1)+'">'
+      +'<title>'+x.d.slice(8)+'.'+x.d.slice(5,7)+'.'+(x.today?' (so far)':'')+' · '+fmtUsd(x.usd,2)+'</title></rect>'; });
   const refLine=S.ref!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(S.ref).toFixed(1)+'" y2="'+y(S.ref).toFixed(1)+'"/>':'';
   return '<button type="button" class="tile-why fp-link" data-jump="feepulse" aria-label="Open FEE PULSE — today against every day so far">'
     +'<span class="fpl-head"><span>FEE PULSE · 30 DAYS</span><i>›</i></span>'
     +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+refLine+bars+'</svg></button>';
+}
+/* The last 24 clock hours of fee income. The ledger is read every ~20 minutes as a running total;
+   the gain between two readings is spread over the hours it spans, in proportion to time, so a
+   reading that straddles the hour does not hand all of it to one side. A fall between readings (a
+   correction, never income) counts as nothing. Hours before the first reading stay empty. */
+function feeHourStats(){
+  const tk=(state.feeMonth&&state.feeMonth.ticks)||null;
+  if(!tk||tk.length<2) return null;
+  const H=3600000, now=Date.now(), h0=Math.floor(now/H)*H-23*H;
+  const hours=Array.from({length:24},(_,i)=>({t:h0+i*H, usd:null, cur:i===23}));
+  for(let i=1;i<tk.length;i++){
+    const [a,ca]=tk[i-1], [b,cb]=tk[i]; if(!(b>a)) continue;
+    const gain=Math.max(0,cb-ca);
+    for(const h of hours){
+      const lo=Math.max(a,h.t), hi=Math.min(b,h.t+H);
+      if(hi>lo) h.usd=(h.usd||0)+gain*(hi-lo)/(b-a);
+    }
+  }
+  const done=hours.filter(h=>!h.cur&&h.usd!=null);
+  const avg=done.length?done.reduce((x,h)=>x+h.usd,0)/done.length:null;
+  return {hours,avg,total:hours.reduce((x,h)=>x+(h.usd||0),0)};
+}
+function feePulseLink24(){
+  const S=feeHourStats(); if(!S) return '';
+  const n=24, W=300, H=30, gap=2, bw=(W-gap*(n-1))/n;
+  const top=Math.max(...S.hours.map(h=>h.usd||0), S.avg||0, 0.01);
+  const y=v=>H-Math.max(1.5,v/top*(H-2));
+  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  let bars='';
+  S.hours.forEach((h,i)=>{ if(h.usd==null) return;
+    const cls=h.cur?'fpl-today':(S.avg!=null&&h.usd>S.avg?'fpl-hi':'fpl-lo');
+    bars+='<rect class="'+cls+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(h.usd).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(h.usd)).toFixed(1)+'">'
+      +'<title>'+hl(h.t)+'–'+hl(h.t+3600000)+(h.cur?' (so far)':'')+' · '+fmtUsd(h.usd,2)+'</title></rect>'; });
+  const avgLine=S.avg!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(S.avg).toFixed(1)+'" y2="'+y(S.avg).toFixed(1)+'"/>':'';
+  return '<button type="button" class="tile-why fp-link fp-link24" data-jump="feepulse" aria-label="Open FEE PULSE — fee income by hour, last 24 hours">'
+    +'<span class="fpl-head"><span>FEE PULSE · 24 HOURS</span><i>›</i></span>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
 }
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */

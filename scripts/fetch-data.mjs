@@ -2462,7 +2462,28 @@ const main=async()=>{
           const base=(p&&p.slice(0,7)===d.slice(0,7))?fl.dayEnd[p]:0;
           return {d, usd:Math.round((fl.dayEnd[d]-base)*100)/100, ...(est.has(d)?{est:1}:{})}; });
       }catch(e){ logErr('feeDaily',e); }
-      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+      /* Intraday: every reading of the ledger as a running total (archived months + month to date),
+         kept for 50 hours. The page spreads the gain between two readings over the clock hours
+         they span, which is what the 24-hour view draws. The first run merges readings rebuilt
+         from the payload history (scripts/fee-ticks-seed.json) so the view opens with a full day. */
+      let ticks=null;
+      try{
+        const cum=Math.round(((fl.months||[]).reduce((a,m)=>a+(m.total||0),0)+mtd)*100)/100;
+        fl.ticks=Array.isArray(fl.ticks)?fl.ticks:[];
+        if(!fl.ticksSeeded && profile.slug==='main'){
+          try{
+            const seed=JSON.parse(fs.readFileSync(new URL('./fee-ticks-seed.json', import.meta.url),'utf8'));
+            const first=fl.ticks.length?fl.ticks[0][0]:Infinity;
+            fl.ticks=[...(seed.ticks||[]).filter(x=>x[0]<first), ...fl.ticks];
+            fl.ticksSeeded=1;
+          }catch(e){ logErr('feeTicksSeed',e); }
+        }
+        const nowMs=Date.now();
+        fl.ticks.push([nowMs,cum]);
+        fl.ticks=fl.ticks.filter(x=>x[0]>nowMs-50*3600000).sort((a,b)=>a[0]-b[0]);
+        ticks=fl.ticks.filter(x=>x[0]>nowMs-26*3600000);
+      }catch(e){ logErr('feeTicks',e); }
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
         projBasis:'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[],
         /* Month to date per position — open ones and the ones closed this month — so the page
