@@ -685,10 +685,6 @@
             color:var(--accent);font-size:9px;letter-spacing:.16em;white-space:nowrap}
   .fpl-head i{font-style:normal;font-size:14px;line-height:1;transition:transform .2s}
   .fp-link:hover .fpl-head i{transform:translateX(3px)}
-  .fpl-l{display:block;margin-top:5px;line-height:1.35}
-  .fpl-l+.fpl-l{margin-top:1px}
-  .fpl-l b{color:var(--text-primary);font-variant-numeric:tabular-nums} .fpl-l b.up{color:var(--status-good)}
-  .fpl-dim{color:var(--text-muted)}
   /* fee pulse */
   .fp-story{font-size:14px;line-height:1.55;color:var(--text-secondary)}
   .fp-story b{color:var(--text-primary);font-variant-numeric:tabular-nums}
@@ -1289,7 +1285,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7181,18 +7177,9 @@ function feePulseLink(){
     const cls=x.today?'fpl-today':(S.ref!=null&&x.usd>S.ref?'fpl-hi':(x.est?'fpl-est':'fpl-lo'));
     bars+='<rect class="'+cls+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(Math.max(0,x.usd)).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(Math.max(0,x.usd))).toFixed(1)+'"/>'; });
   const refLine=S.ref!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(S.ref).toFixed(1)+'" y2="'+y(S.ref).toFixed(1)+'"/>':'';
-  let l1, l2='';
-  if(S.soFar==null) l1='no reading for today yet';
-  else{
-    l1='today <b>'+fmtUsd(S.soFar,0)+'</b>'+(S.pace!=null&&S.pace>S.soFar*1.05?' <span class="fpl-dim">on pace for</span> <b>~'+fmtUsd(S.pace,0)+'</b>':' <span class="fpl-dim">so far</span>');
-    if(S.pace==null) l2='<span class="fpl-dim">too early in the day to rank</span>';
-    else{ const N=S.done.length;
-      l2=S.beat===0?'<b class="up">best day on record</b>':'<span class="fpl-dim">beats</span> <b>'+(N-S.beat)+'</b> <span class="fpl-dim">of '+N+' days</span>'; }
-  }
   return '<button type="button" class="tile-why fp-link" data-jump="feepulse" aria-label="Open FEE PULSE — today against every day so far">'
     +'<span class="fpl-head"><span>FEE PULSE · 30 DAYS</span><i>›</i></span>'
-    +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+refLine+bars+'</svg>'
-    +'<span class="fpl-l">'+l1+'</span>'+(l2?'<span class="fpl-l">'+l2+'</span>':'')+'</button>';
+    +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+refLine+bars+'</svg></button>';
 }
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */
