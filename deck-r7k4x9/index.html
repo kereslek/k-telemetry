@@ -1272,6 +1272,21 @@
 
 <script>
 "use strict";
+/* Always open at the top. Mobile browsers reload a backgrounded tab and then restore the old
+   scroll offset, while the panels are still building, so the page landed somewhere in the middle.
+   Restoration is switched off, every load starts at the top, and so does a return to the tab after
+   it has sat unseen for ten minutes or more (a short app switch keeps your place). */
+(function(){
+  const top=()=>{ try{ window.scrollTo(0,0); }catch(e){} };
+  try{ if('scrollRestoration' in history) history.scrollRestoration='manual'; }catch(e){}
+  let hiddenAt=0; const LONG=10*60*1000;
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden) hiddenAt=Date.now();
+    else if(hiddenAt && Date.now()-hiddenAt>=LONG){ hiddenAt=0; top(); }
+  });
+  addEventListener('pageshow',ev=>{ if(!ev.persisted) top(); });
+  addEventListener('load',top);
+})();
 /* ================================================================
    ARC // LP COMMAND — single-file Uniswap V3 position HUD
    Live on-chain via public JSON-RPC; graceful demo fallback.
@@ -1285,7 +1300,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v30.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v30.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
