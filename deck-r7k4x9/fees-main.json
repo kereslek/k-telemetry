@@ -4,46 +4,46 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 607.52,
-   "hwm": 607.52,
-   "acc": 439.01,
+   "last": 608.36,
+   "hwm": 608.36,
+   "acc": 440.29,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
    "tk0": 8854.47793071369,
-   "tk1": 0.10530670500653029,
-   "run": 439.01
+   "tk1": 0.10578531381536117,
+   "run": 440.29
   },
   "1355918": {
    "m0": 40.62,
-   "last": 549.22,
-   "hwm": 549.22,
-   "acc": 426.33,
+   "last": 549.36,
+   "hwm": 549.36,
+   "acc": 426.79,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
    "tk0": 8260.773812241921,
-   "tk1": 0.09170798315854538,
-   "run": 426.33
+   "tk1": 0.09187987801209899,
+   "run": 426.79
   },
   "1366332": {
    "m0": 0,
-   "last": 366.13,
-   "hwm": 366.13,
-   "acc": 342.53,
+   "last": 366.64,
+   "hwm": 366.64,
+   "acc": 343.36,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
    "tk0": 5172.7750755406105,
-   "tk1": 0.06569294409345014,
-   "run": 342.53
+   "tk1": 0.06600244404362372,
+   "run": 343.36
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 892.27,
+   "last": 892.14,
    "acc": 606.45,
    "hwm": 892.77,
    "cat": "sol|SOL / CPOOL · wide",
@@ -67,7 +67,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 492.36,
+   "last": 492.27,
    "hwm": 492.71,
    "acc": 427.27,
    "ck": "sol",
@@ -80,7 +80,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 451.78,
+   "last": 451.57,
    "hwm": 452.6,
    "acc": 531.82,
    "ck": "sol",
@@ -138,13 +138,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -220.12,
+ "lastIl": -226.07,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 38.62
  },
- "readAt": 1790632170227,
+ "readAt": 1790633413269,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -204,7 +204,7 @@
   "2026-09-25": 2441.39,
   "2026-09-26": 2657.93,
   "2026-09-27": 2986.25,
-  "2026-09-28": 3351.78
+  "2026-09-28": 3354.35
  },
  "dayEst": [
   "2026-08-01",
@@ -223,10 +223,6 @@
   }
  },
  "ticks": [
-  [
-   1790453254092,
-   4085.4
-  ],
   [
    1790454479647,
    4085.4
@@ -822,25 +818,14 @@
   [
    1790632170227,
    4882.27
+  ],
+  [
+   1790633413270,
+   4884.84
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790453254092,
-   {
-    "1355331": 35.94,
-    "1355336": 238.09,
-    "1355918": 314.22,
-    "1366332": 154.38,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 518.11,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 365.1,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 213.66,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 396.15,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 1.47
-   }
-  ],
   [
    1790454479647,
    {
@@ -2954,6 +2939,20 @@
     "1355336": 439.01,
     "1355918": 426.33,
     "1366332": 342.53,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 606.45,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.2,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 427.27,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 531.82,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790633413270,
+   {
+    "1355336": 440.29,
+    "1355918": 426.79,
+    "1366332": 343.36,
     "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 606.45,
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.2,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 427.27,
