@@ -936,6 +936,8 @@
 /* v20: action vector map */
 #flowMap{width:100%;height:300px;display:block;margin-top:14px;border:1px solid #13233a;border-radius:8px;background:radial-gradient(ellipse at 50% 120%,rgba(20,50,80,.35),rgba(6,12,22,.6))}
 @media (max-width:760px){ .gp-apy{margin-left:0} #flowMap{height:240px} }
+.tile .v .apr30{display:flex;align-items:baseline;gap:8px;margin-top:4px;font-size:.52em;line-height:1.1}
+.tile .v .apr30-k{font-size:.42em;letter-spacing:.12em;color:var(--text-muted,#8a9bb0)}
 </style>
 </head>
 <body>
@@ -1301,7 +1303,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3085,7 +3087,28 @@ function renderTiles(){
           +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'
          +feePulseLink()+feePulseLink24());
     } }
-  mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>', 'capital-weighted, annualized');
+  { /* "Portfolio" here is every open LP position, Ethereum and Solana — not wallet tokens. The big
+       number is each position's own fee APR over the header window, weighted by what it is worth
+       now. Under it, the measured 30 days: fees the ledger actually recorded over the last 30
+       complete UTC days, against the average LP value at those days' closes, annualised. Only
+       recorded days count (estimated backfill is left out); too thin a record shows nothing. */
+    const fd=(state.feeMonth&&state.feeMonth.daily)||[], todayK=new Date().toISOString().slice(0,10);
+    const vAt=new Map((state.dayMoves||[]).map(m=>[m.d,m.v]));
+    const days=fd.filter(x=>x.d<todayK && !x.est && x.usd!=null).slice(-30);
+    const vals=days.map(x=>vAt.get(x.d)).filter(v=>v>0);
+    let m30=null;
+    if(days.length>=7 && vals.length>=days.length*0.8){
+      const fees=days.reduce((a,x)=>a+x.usd,0), avgV=vals.reduce((a,b)=>a+b,0)/vals.length;
+      m30={apr:fees/avgV*365/days.length*100, fees, avgV, n:days.length, from:days[0].d, to:days[days.length-1].d}; }
+    const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const dd=d=>MN[Number(d.slice(5,7))-1]+' '+Number(d.slice(8,10));
+    const big=wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>';
+    const sub='<div class="apr30"><span class="apr30-v">'+(m30?m30.apr.toFixed(1)+'<span class="unit"> %</span>':'—')+'</span>'
+      +'<span class="apr30-k">'+(m30?m30.n:30)+'-DAY MEASURED</span></div>';
+    mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], big+sub,
+       '<span class="unit">portfolio = all '+aprs.length+' open LPs, Ethereum + Solana, weighted by value · fees only · wallet tokens not included</span>'
+       +(m30?'<br>30-day: <b>'+fmtUsd(m30.fees,0)+'</b> earned '+dd(m30.from)+'–'+dd(m30.to)+' on <b>'+fmtUsd(m30.avgV,0)+'</b> average in LPs, annualised':''));
+  }
   mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
      pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
        +'<br>what every LP is worth now <i>plus</i> all fees earned, against what you put in'
