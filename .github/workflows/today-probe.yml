@@ -1,0 +1,20 @@
+# One-off read of today's wallet activity. Feature branch only, read-only.
+name: today-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/today-probe.mjs', '.github/workflows/today-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node scripts/today-probe.mjs
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          SINCE: '2026-09-28T00:00:00Z'
