@@ -1,0 +1,18 @@
+# One-off: read the live dashboard's 60-minute pulse in a real browser. Feature branch only.
+name: live-check
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/live-check.mjs', '.github/workflows/live-check.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: node scripts/live-check.mjs
