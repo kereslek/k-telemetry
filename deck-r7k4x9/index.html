@@ -1315,7 +1315,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v32.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3012,10 +3012,17 @@ function renderTiles(){
   { const fm=state.feeMonth;
     const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
+    /* Where the month lands: what is earned so far plus the last 30 days' measured pace for the
+       days left — the same figure OUTLOOK shows, so the two can never name different month-ends.
+       Before there are 30 recorded days, the relay's month-to-date average stands in. */
+    const P30=feePace(30);
+    const endM=fm?Date.UTC(Number(fm.month.slice(0,4)),Number(fm.month.slice(5,7)),1):0;
+    const close=fm?(P30?fm.mtd+P30.perDay*Math.max(0,(endM-Date.now())/86400000):fm.proj):null;
+    const closeHow=P30?'so far + the last 30 days\' pace for the days left':'month-to-date average × '+(fm&&fm.daysInMonth)+' days';
     mk('FEES EARNED · '+mName,
        fm?inc(fmtUsd(fm.mtd)):'—',
-       fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth
-              +' <span class="unit">(month-to-date average × '+fm.daysInMonth+' days'
+       fm ? (close!=null?'on pace for <b>'+fmtUsd(close,0)+'</b> by '+mName+' '+fm.daysInMonth
+              +' <span class="unit">('+closeHow
               +((fm.pos24&&fm.pos24.total!=null)?'; the last 24 hours earned '+fmtUsd(fm.pos24.total)
                  :(fm.dayRate?'; open positions currently run at '+fmtUsd(fm.dayRate)+'/day':''))+')</span>'+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
@@ -3042,15 +3049,16 @@ function renderTiles(){
                  any other LPs' share remain as cost. */
               +((cm.selfSolUsd||0)>0.005?' <span class="unit">(paid '+fmtUsd(cm.solSwapUsd)+'; '+fmtUsd(cm.selfSolUsd)+' went to your own LPs, so it was never a cost)</span>'
                 :((cm.solSwapOwnUsd||0)>0.005?' <span class="unit">('+fmtUsd(cm.solSwapOwnUsd)+' of it paid to your own pools, and back to you as LP fees)</span>':'')):'')
+            +((cm.solGasUsd||0)>0.005?' · Solana gas <b>'+fmtUsd(cm.solGasUsd)+'</b> <span class="unit">◎</span>':'')
             +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             /* Gas and swap fees recur, so a rate times the month is the right shape for them.
                Creating a pool is paid once. Extrapolating it made a $18 fee project as $26 of
                cost that will never be charged, so it is held out of the rate and added back
                whole. */
-            +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?(()=>{
+            +((net!=null&&close!=null&&fm.elapsedDays>0.25)?(()=>{
                 const once=cm.solOpenUsd||0, rec=cm.total-once;
-                const projCost=rec/fm.elapsedDays*fm.daysInMonth+once, pn=fm.proj-projCost;
+                const projCost=rec/fm.elapsedDays*fm.daysInMonth+once, pn=close-projCost;
                 return ' · projected net ≈ <b style="color:var(--status-'+(pn>=0?'good':'critical')+')">'
                   +fmtUsd(pn,0)+'</b> by '+mName+' '+fm.daysInMonth
                   +' <span class="unit">(recurring costs extrapolated from this month\'s pace'

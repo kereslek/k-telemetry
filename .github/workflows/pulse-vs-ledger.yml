@@ -1,0 +1,17 @@
+# One-off comparison of the minute recorder with the fee ledger. Feature branch only, read-only.
+name: pulse-vs-ledger
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/pulse-vs-ledger.mjs', '.github/workflows/pulse-vs-ledger.yml']
+permissions:
+  contents: read
+jobs:
+  cmp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node scripts/pulse-vs-ledger.mjs
