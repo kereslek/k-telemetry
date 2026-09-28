@@ -1313,7 +1313,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2657,6 +2657,7 @@ function ladderOf(p){
     getSym:  side===0?(p.m1||{}).symbol:(p.m0||{}).symbol,
     sellAmt: side===0?(p.amt0||0):(p.amt1||0),
     gotAmt:  side===0?(p.amt1||0):(p.amt0||0),
+    gotUsd:  side===0?(p.amt1||0)*(p.usd1||0):(p.amt0||0)*(p.usd0||0),
     filled:  sold!=null?Math.min(1,Math.max(0,sold)):null,
     // what the rest of the climb averages, in the units the range is quoted in
     avgLeft: side===0 ? sqrt(P*Pb) : 1/sqrt(P*Pa),
@@ -2964,8 +2965,6 @@ function renderTiles(){
   const aprs = ps.map(p=>({p, v:aprOf(p).v, w:p.valueUsd||p.costUsd||1})).filter(x=>x.v!=null);
   const wApr = aprs.length ? aprs.reduce((s,x)=>s+x.v*x.w,0)/aprs.reduce((s,x)=>s+x.w,0) : null;
   const inR = ps.filter(p=>p.inRange).length;
-  const cost = ps.reduce((s,p)=>s+(p.costUsd||0),0);
-  const pnl = cost>0 ? ps.reduce((s,p)=>s+((p.roiPct||0)/100)*(p.costUsd||0),0)/cost*100 : null;
   const t = $('#tiles'); t.innerHTML='';
   const mk = (k,v,d)=>{const x=el('div','tile');x.append(el('div','k',k),el('div','v',v),el('div','d',d??''));t.append(x);};
   const partial = state.missingChain
@@ -3111,24 +3110,6 @@ function renderTiles(){
     mk('PORTFOLIO FEE APR · '+WIN_LABEL[cfg.aprWin], big+sub,
        '<span class="unit">portfolio = all '+aprs.length+' open LPs, Ethereum + Solana, weighted by value · fees only · wallet tokens not included</span>'
        +(m30?'<br>30-day: <b>'+fmtUsd(m30.fees,0)+'</b> earned '+dd(m30.from)+'–'+dd(m30.to)+' on <b>'+fmtUsd(m30.avgV,0)+'</b> average in LPs, annualised':''));
-  }
-  { /* Lifetime P&L of the open LPs, shown as the sum it is so every figure can be traced: value now,
-       plus principal already taken back (valued at today's prices), plus every fee ever earned,
-       minus every deposit. Deposits are gross, so money moved out of one LP and into another is
-       counted in both — the dollar result is unaffected, the percentage is understated by it. */
-    const kn=ps.filter(p=>p.costUsd>0 && p.roiPct!=null);
-    const fOf=p=>p.feesLifeUsd??p.feesEverUsd??0;
-    const S=kn.reduce((a,p)=>{ const pl=p.roiPct/100*p.costUsd, v=p.valueUsd||0, f=fOf(p);
-      a.pl+=pl; a.dep+=p.costUsd; a.v+=v; a.f+=f; a.wd+=Math.max(0,pl+p.costUsd-v-f); return a; },{pl:0,dep:0,v:0,f:0,wd:0});
-    const since=kn.map(p=>p.mintTs).filter(Boolean).sort((x,y)=>x-y)[0];
-    const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
-     pnl==null?'—':'≈<b>'+fmtUsd(S.pl,0)+'</b> on <b>'+fmtUsd(S.dep,0)+'</b> deposited'
-       +'<br><span class="unit"><b>'+fmtUsd(S.v,0)+'</b> in LPs now + <b>'+fmtUsd(S.wd,0)+'</b> taken back out + <b>'+fmtUsd(S.f,0)+'</b> fees − <b>'+fmtUsd(S.dep,0)+'</b> deposited</span>'
-       +'<br><span class="unit">your '+kn.length+' open LPs over their whole life'+(since?' (oldest opened '+MN[new Date(since).getUTCMonth()]+' '+new Date(since).getUTCFullYear()+')':'')
-       +' · includes price moves · taken-out tokens valued at today\'s prices · closed LPs not counted · money moved from one LP to another counts as deposited in both, so the % reads low'
-       +(kn.length<ps.length?' · '+(ps.length-kn.length)+' LP'+(ps.length-kn.length>1?'s':'')+' without a known deposit left out':'')
-       +'</span>');
   }
   mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
      ps.length-inR>0 ? '<span class="down">'+(ps.length-inR)+' position(s) idle</span>' : '<span class="up">all earning</span>');
@@ -3993,7 +3974,7 @@ function fmtTok(v){
   if(a>=1e4) return Math.round(v).toLocaleString('en');
   if(a>=1)   return v.toLocaleString('en',{maximumFractionDigits:2});
   if(a>=0.001) return v.toFixed(4);
-  return v>0?v.toExponential(2):'0';
+  return v>0?'<0.001':v<0?'>−0.001':'0';
 }
 /* ---- price scenario: drag a token's price and watch every LP re-solve ----------------------
    The cards above answer "what does a move in THIS token do". This answers the portfolio
@@ -4989,14 +4970,21 @@ function renderActions(){
       const filled=L.filled!=null?(L.filled*100):null;
       const crit=near<=10;
       items.push({r:crit?2.5:6.5, cls:crit?'warn':'watch', tag:'RANGE ORDER',
-        head:ref+' — '+(filled!=null?'<b>'+filled.toFixed(filled<1?2:0)+'% filled</b>':'<b>a one-sided ladder</b>'),
-        sub:'Selling '+esc(String(L.sellSym||'?'))+' for '+esc(String(L.getSym||'?'))+' as the price climbs; '
-          +fmtTok(L.sellAmt)+' '+esc(String(L.sellSym||''))+' still to go, '+fmtTok(L.gotAmt)+' '
-          +esc(String(L.getSym||''))+' taken so far. A full fill from here averages <b>'+fmtPrice(L.avgLeft)+' '
+        head:ref+' — '+(L.gotUsd<0.01?'<b>not started</b>':filled!=null?'<b>'+filled.toFixed(filled<1?2:0)+'% filled</b>':'<b>a one-sided ladder</b>'),
+        /* Under a cent received is rounding dust in the pool maths, not a sale: say nothing has sold. */
+        sub:(L.gotUsd<0.01
+            ? 'Nothing sold yet: <b>'+fmtTok(L.sellAmt)+' '+esc(String(L.sellSym||''))+'</b> is waiting to be sold for '
+              +esc(String(L.getSym||''))+' as the price climbs. A full fill'
+            : 'Selling '+esc(String(L.sellSym||'?'))+' for '+esc(String(L.getSym||'?'))+' as the price climbs: <b>'
+              +fmtTok(L.gotAmt)+' '+esc(String(L.getSym||''))+'</b> received so far, '+fmtTok(L.sellAmt)+' '
+              +esc(String(L.sellSym||''))+' still to go. A full fill')+' from here averages <b>'+fmtPrice(L.avgLeft)+' '
           +esc(String(L.getSym||''))+'</b> per '+esc(String(L.sellSym||''))+', and completes at '
           +fmtPrice(L.donePx)+'. '
-          +'A '+near.toFixed(1)+'% fall takes it back through '+fmtPrice(L.restPx)+', where it stops filling and '
-          +'waits in '+esc(String(L.sellSym||''))+' — the order resting, not a range to widen.',
+          +(near<0.5
+            ? 'The price is sitting at the start of the order ('+fmtPrice(L.restPx)+'); it sells only while the price is above that, and below it the order simply waits in '
+              +esc(String(L.sellSym||''))+' — resting, not a range to widen.'
+            : 'A '+near.toFixed(1)+'% fall takes it back through '+fmtPrice(L.restPx)+', where it stops filling and '
+              +'waits in '+esc(String(L.sellSym||''))+' — the order resting, not a range to widen.'),
         when:'—'});
       if(watchShown<WATCH_MIN) watchShown++;
       continue;
