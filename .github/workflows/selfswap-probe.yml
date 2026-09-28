@@ -1,0 +1,23 @@
+# One-off read of the fees this deck paid into its own pools this month. Feature branch only, read-only.
+name: selfswap-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/selfswap-probe.mjs', '.github/workflows/selfswap-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: |
+          git show origin/gh-pages:deck-r7k4x9/data-main.json > /tmp/data.json
+          git show origin/gh-pages:deck-r7k4x9/costs-main.json > /tmp/costs.json
+      - run: node scripts/selfswap-probe.mjs
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
