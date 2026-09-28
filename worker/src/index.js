@@ -48,7 +48,7 @@ export class Pulse {
     const ps=await this.positions();
     const cache=(await this.s.get('cache'))||{};
     const solRpcs=this.env.SOL_RPC_URL?[this.env.SOL_RPC_URL,...SOL_RPCS]:SOL_RPCS;
-    const cur=await readGrowth(ps, cache, {solRpcs});
+    const cur=await readGrowth(ps, cache, {solRpcs, solFirst:!!this.env.SOL_RPC_URL});
     await this.s.put('cache',cache);
     const prev=(await this.s.get('prev'))||{};          // id -> {t, reading}
     const mins=(await this.s.get('mins'))||{};

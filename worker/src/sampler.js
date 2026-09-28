@@ -16,7 +16,11 @@
 
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
-export const EVM_RPCS=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth'];
+/* One eth_call per minute (everything bundled through Multicall3), so any endpoint that answers
+   a plain eth_call will do; batch requests were refused by some and rate-limited by others. */
+export const EVM_RPCS=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://rpc.mevblocker.io',
+  'https://eth-mainnet.public.blastapi.io','https://rpc.flashbots.net','https://eth.llamarpc.com'];
+const MC3='0xca11bde05977b3631167028862be2a173976ca11';
 /* Keyless endpoints that answer a Cloudflare Worker (checked from the Workers runtime, 28 Sep):
    Solana's own api.mainnet-beta and drpc's free tier refuse it. A SOL_RPC_URL secret goes first. */
 export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://rpc.solanatracker.io/public','https://solana.leorpc.com/?api_key=FREE','https://solana-mainnet.gateway.tatum.io'];
@@ -28,20 +32,6 @@ async function post(url, body, ms=12000){
   if(!r.ok) throw new Error(url.split('/')[2]+' HTTP '+r.status+' '+(await r.text().catch(()=>'')).slice(0,80));
   return r.json();
 }
-// a JSON-RPC batch, in order, from the first endpoint that answers all of it
-async function batch(rpcs, calls){
-  const errs=[];
-  for(const u of rpcs){
-    try{
-      const res=await post(u, calls.map((c,i)=>({jsonrpc:'2.0',id:i,method:c[0],params:c[1]})));
-      if(!Array.isArray(res)) throw new Error('not a batch reply');
-      const by=new Map(res.map(x=>[x.id,x]));
-      const out=calls.map((_,i)=>{ const x=by.get(i); if(!x||x.error||x.result==null) throw new Error((x&&x.error&&x.error.message)||'missing'); return x.result; });
-      return out;
-    }catch(e){ errs.push(u.split('/')[2]+': '+String(e.message||e)); }
-  }
-  throw new Error(errs.join(' | ')||'no rpc');
-}
 async function one(rpcs, method, params){
   const errs=[];
   for(const u of rpcs){ try{ const j=await post(u,{jsonrpc:'2.0',id:1,method,params}); if(j.error) throw new Error(u.split('/')[2]+' '+j.error.message); return j.result; }catch(e){ errs.push(String(e.message||e)); } }
@@ -52,7 +42,26 @@ async function one(rpcs, method, params){
 const word=(hex,i)=>BigInt('0x'+(hex.slice(2+64*i,2+64*(i+1))||'0'));
 const i256=w=>w>=(1n<<255n)?w-(1n<<256n):w;
 const u256hex=v=>((BigInt.asUintN(256,BigInt(v))).toString(16)).padStart(64,'0');
-const call=(to,data)=>['eth_call',[{to,data},'latest']];
+const call=(to,data)=>({to,data});
+// Multicall3.aggregate3((address target, bool allowFailure, bytes callData)[])
+function encAgg(calls){
+  const parts=calls.map(c=>{ const d=c.data.slice(2), len=d.length/2;
+    return c.to.slice(2).toLowerCase().padStart(64,'0')+u256hex(1)+u256hex(0x60)+u256hex(len)+d.padEnd(Math.ceil(len/32)*64,'0'); });
+  let off=calls.length*32; const offs=parts.map(p=>{ const o=u256hex(off); off+=p.length/2; return o; });
+  return '0x82ad56cb'+u256hex(0x20)+u256hex(calls.length)+offs.join('')+parts.join('');
+}
+function decAgg(ret){
+  const h=ret.slice(2), at=p=>Number(BigInt('0x'+h.slice(p*2,p*2+64)));
+  const arr=at(0), n=at(arr), base=arr+32, out=[];
+  for(let k=0;k<n;k++){ const el=base+at(base+32*k), ok=at(el)!==0, b=el+at(el+32), len=at(b);
+    out.push(ok&&len?'0x'+h.slice((b+32)*2,(b+32+len)*2):null); }
+  return out;
+}
+async function multi(rpcs, calls){
+  const r=decAgg(await one(rpcs,'eth_call',[{to:MC3,data:encAgg(calls)},'latest']));
+  if(r.length!==calls.length||r.some(x=>x==null)) throw new Error('multicall: a call failed');
+  return r;
+}
 function insideEvm(g,oL,oU,cur,tl,tu){
   const below=cur>=tl?oL:(g-oL)&M256, above=cur<tu?oU:(g-oU)&M256;
   return (g-below-above)&M256;
@@ -63,7 +72,7 @@ async function growthEvm(ps, cache, rpcs){
   // tick range never changes for a token id: read once, keep
   const need=ps.filter(p=>!cache[p.id]);
   if(need.length){
-    const r=await batch(rpcs, need.map(p=>call(NPM,'0x99fbab88'+u256hex(p.id))));
+    const r=await multi(rpcs, need.map(p=>call(NPM,'0x99fbab88'+u256hex(p.id))));
     need.forEach((p,i)=>{ cache[p.id]={tl:Number(i256(word(r[i],5))), tu:Number(i256(word(r[i],6)))}; });
   }
   const pools=[...new Set(ps.map(p=>p.pool))];
@@ -73,7 +82,7 @@ async function growthEvm(ps, cache, rpcs){
   for(const p of ps){ const c=cache[p.id];
     for(const t of [c.tl,c.tu]){ const k=p.pool+':'+t; if(tickAt[k]==null){ tickAt[k]=calls.length; calls.push(call(p.pool,'0xf30dba93'+u256hex(t))); } }
     p._i=calls.length; calls.push(call(NPM,'0x99fbab88'+u256hex(p.id))); }
-  const r=await batch(rpcs, calls);
+  const r=await multi(rpcs, calls);
   for(const p of ps){
     const c=cache[p.id], a=at[p.pool];
     const cur=Number(i256(word(r[a],1))), g0=word(r[a+1],0), g1=word(r[a+2],0);
@@ -165,10 +174,13 @@ export function positionsFrom(data){
 
 /* One reading of every position's fee growth. `cache` holds the facts that never change (ranges,
    tick spacing, tick-array addresses) and is the caller's to keep between readings. */
+// a different endpoint leads each minute, so no single free provider carries every request
+const rot=(a,k)=>a.map((_,i)=>a[(i+k)%a.length]);
 export async function readGrowth(ps, cache, opt={}){
+  const k=Math.floor(Date.now()/60000), sol=opt.solRpcs||SOL_RPCS, fixed=opt.solFirst?1:0;
   const [e,s]=await Promise.allSettled([
-    growthEvm(ps.filter(p=>p.chain==='eth'), cache, opt.evmRpcs||EVM_RPCS),
-    growthSol(ps.filter(p=>p.chain==='sol'), cache, opt.solRpcs||SOL_RPCS)]);
+    growthEvm(ps.filter(p=>p.chain==='eth'), cache, rot(opt.evmRpcs||EVM_RPCS,k)),
+    growthSol(ps.filter(p=>p.chain==='sol'), cache, [...sol.slice(0,fixed),...rot(sol.slice(fixed),k)])]);
   return { t:Date.now(), g:{...(e.status==='fulfilled'?e.value:{}), ...(s.status==='fulfilled'?s.value:{})},
            err:[e,s].filter(x=>x.status==='rejected').map(x=>String(x.reason&&x.reason.message||x.reason)) };
 }
