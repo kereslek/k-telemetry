@@ -17,12 +17,14 @@
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
 export const EVM_RPCS=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth'];
-export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://solana.drpc.org','https://api.mainnet-beta.solana.com'];
+/* Keyless endpoints that answer a Cloudflare Worker (checked from the Workers runtime, 28 Sep):
+   Solana's own api.mainnet-beta and drpc's free tier refuse it. A SOL_RPC_URL secret goes first. */
+export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://rpc.solanatracker.io/public','https://solana.leorpc.com/?api_key=FREE','https://solana-mainnet.gateway.tatum.io'];
 const M256=(1n<<256n)-1n, M128=(1n<<128n)-1n;
 
 /* ---------- plumbing ---------- */
 async function post(url, body, ms=12000){
-  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json','accept':'application/json','user-agent':'kt-pulse/1 (fee monitor)'},body:JSON.stringify(body),signal:AbortSignal.timeout(ms)});
+  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(ms)});
   if(!r.ok) throw new Error(url.split('/')[2]+' HTTP '+r.status+' '+(await r.text().catch(()=>'')).slice(0,80));
   return r.json();
 }
