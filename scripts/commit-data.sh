@@ -39,5 +39,22 @@ if git diff --cached --quiet; then echo "nothing changed this pass"; exit 0; fi
 
 git commit -q -m "data refresh $(date -u +%FT%TZ)"
 if git push -q origin gh-pages; then echo "pushed"; exit 0; fi
+# A lost race used to cost a whole pass (~18 minutes of stale data), even when all the remote had
+# gained was a dashboard deploy that touches none of these files. If no data file moved on the
+# remote, this pass's output is still exactly right on top of it: rebase and push. If any data
+# file moved, regenerating from the new state is the only safe answer, as before.
+for attempt in 1 2 3; do
+  git fetch -q origin gh-pages
+  base=$(git merge-base HEAD origin/gh-pages)
+  if git diff --name-only "$base" origin/gh-pages | grep -q '^deck-r7k4x9/.*\.json$'; then
+    echo "push lost a race to new data — the next pass will regenerate from the updated remote"
+    exit 1
+  fi
+  if git rebase -q origin/gh-pages && git push -q origin gh-pages; then
+    echo "pushed after stepping over a non-data commit"; exit 0
+  fi
+  git rebase --abort 2>/dev/null || true
+  sleep 3
+done
 echo "push lost a race — the next pass will regenerate from the updated remote"
 exit 1
