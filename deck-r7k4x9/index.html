@@ -1315,7 +1315,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7398,9 +7398,9 @@ function feePulseLink60(){
   if(M){
     const W=300, H=30, n=60, gap=1, bw=(W-gap*(n-1))/n, H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
     const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 1e-6), y=v=>H-Math.max(1,v/top*(H-2));
-    let bars='';
+    let bars='', li=n-1; while(li>0&&M.mins[li].usd==null) li--;
     M.mins.forEach((m,i)=>{ if(m.usd==null) return;
-      bars+='<rect class="'+(i===n-1?'fpl-today':(perMin!=null&&m.usd>perMin?'fpl-hi':'fpl-lo'))+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(m.usd).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(m.usd)).toFixed(1)+'"/>'; });
+      bars+='<rect class="'+(i===li?'fpl-today':(perMin!=null&&m.usd>perMin?'fpl-hi':'fpl-lo'))+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(m.usd).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(m.usd)).toFixed(1)+'"/>'; });
     const avgLine=perMin!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(perMin).toFixed(1)+'" y2="'+y(perMin).toFixed(1)+'"/>':'';
     return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — fee income by minute, last 60 minutes">'
       +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
@@ -7513,17 +7513,19 @@ function renderFeePulse60m(host){
   M.mins.forEach((m,i)=>{ if(i%15===0||i===n-1){ const t=mk('text',{x:padL+step*i+step/2,y:H-6,'text-anchor':i===0?'start':i===n-1?'end':'middle'},'fp-ax'); t.textContent=hl(m.t); svg.append(t); } });
   if(perMin!=null){ svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(perMin),y2:Y(perMin)},'fp-avg'));
     if(cw>=560){ const at=mk('text',{x:W-padR-2,y:Y(perMin)-4,'text-anchor':'end'},'fp-avgt'); at.textContent='24h avg '+fmtUsd(perMin,3)+'/min'; svg.append(at); } }
+  // the minute that just ended is often not written yet: rest on the newest one that is
+  let li=n-1; while(li>0&&M.mins[li].usd==null) li--;
   const rects=M.mins.map((m,i)=>{ if(m.usd==null) return null;
-    const r=mk('rect',{x:X(i),y:Y(m.usd),width:bw,height:Math.max(1,Y(0)-Y(m.usd)),rx:0.5},'fp-bar'+(i===n-1?' today':(perMin!=null&&m.usd>perMin?' above':''))+(m.part?' est':''));
+    const r=mk('rect',{x:X(i),y:Y(m.usd),width:bw,height:Math.max(1,Y(0)-Y(m.usd)),rx:0.5},'fp-bar'+(i===li?' today':(perMin!=null&&m.usd>perMin?' above':''))+(m.part?' est':''));
     svg.append(r); return r; });
   let sel=-1;
   const pick=i=>{ if(sel>=0&&rects[sel]) rects[sel].classList.remove('sel'); sel=i; if(i>=0&&rects[i]) rects[i].classList.add('sel'); say(M.mins[i]); };
   const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
   svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
   svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerleave',()=>pick(n-1));
+  svg.addEventListener('pointerleave',()=>pick(li));
   wrap.append(svg);
-  pick(n-1);
+  pick(li);
   wrap.append(el('div','arch-note','One bar per minute, your time · recorded around the clock from each pool\'s fee counter, so collecting, adding or withdrawing never shows as income · '
     +'bright bars beat the 24-hour average per minute, green is the latest minute · includes fees your own swaps paid to your own pools, which the monthly ledger takes out · updates every minute while the page is open.'));
 }
