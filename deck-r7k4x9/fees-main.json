@@ -4,8 +4,8 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 486.89,
-   "hwm": 487.01,
+   "last": 495.54,
+   "hwm": 495.54,
    "acc": 353.53,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
@@ -17,7 +17,7 @@
   },
   "1355918": {
    "m0": 40.62,
-   "last": 472.18,
+   "last": 480.78,
    "hwm": 502.7,
    "acc": 381.89,
    "ck": "ethereum",
@@ -30,8 +30,8 @@
   },
   "1366332": {
    "m0": 0,
-   "last": 265.24,
-   "hwm": 265.29,
+   "last": 269.82,
+   "hwm": 269.82,
    "acc": 262.5,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
@@ -43,13 +43,13 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 844.12,
-   "acc": 540.24,
-   "hwm": 844.12,
+   "last": 844.17,
+   "acc": 540.29,
+   "hwm": 844.17,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 540.24
+   "run": 540.29
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 217.88,
@@ -63,25 +63,25 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 458.47,
-   "hwm": 458.47,
-   "acc": 381,
+   "last": 458.5,
+   "hwm": 458.5,
+   "acc": 381.03,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 381
+   "run": 381.03
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 378.22,
-   "hwm": 378.22,
-   "acc": 378.22,
+   "last": 378.32,
+   "hwm": 378.32,
+   "acc": 378.32,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 378.22
+   "run": 378.32
   },
   "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
    "m0": 0,
@@ -126,13 +126,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -75.97,
+ "lastIl": -91.42,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 39.58
  },
- "readAt": 1790554316447,
+ "readAt": 1790555420051,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -192,7 +192,7 @@
   "2026-09-25": 2296.69,
   "2026-09-26": 2513.22,
   "2026-09-27": 2855.52,
-  "2026-09-28": 2858.16
+  "2026-09-28": 2858.34
  },
  "dayEst": [
   "2026-08-01",
@@ -211,10 +211,6 @@
   }
  },
  "ticks": [
-  [
-   1790374476125,
-   3823.19
-  ],
   [
    1790375554920,
    3826.87
@@ -810,25 +806,14 @@
   [
    1790554316447,
    4388.65
+  ],
+  [
+   1790555420051,
+   4388.83
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790374476125,
-   {
-    "1355331": 36.28,
-    "1355336": 223.12,
-    "1355918": 304.35,
-    "1366332": 140.8,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 470.36,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 201.24,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 331.81,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 271.25,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 50.08,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 1.47
-   }
-  ],
   [
    1790375554920,
    {
@@ -3013,6 +2998,20 @@
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 202.42,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 381,
     "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 378.22,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 50.08,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790555420051,
+   {
+    "1355336": 353.53,
+    "1355918": 381.89,
+    "1366332": 262.5,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 540.29,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 202.42,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 381.03,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 378.32,
     "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 50.08,
     "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
    }
