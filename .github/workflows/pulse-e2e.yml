@@ -16,16 +16,17 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - name: Which Solana RPCs answer from the Workers runtime
-        working-directory: worker
+        working-directory: worker/test
+        timeout-minutes: 4
         run: |
-          npx --yes wrangler@4 dev test/rpc-probe.js --port 8788 --ip 127.0.0.1 > /tmp/probe.log 2>&1 &
-          for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8788/ && break; sleep 2; done
-          curl -s http://127.0.0.1:8788/ ; echo
-          kill %1 || true
+          npx --yes wrangler@4 dev --config wrangler-probe.toml --port 8788 --ip 127.0.0.1 < /dev/null > /tmp/probe.log 2>&1 &
+          for i in $(seq 1 40); do curl -s -m 3 -o /dev/null http://127.0.0.1:8788/nothing && break; sleep 2; done
+          curl -s -m 60 http://127.0.0.1:8788/ ; echo
+          tail -5 /tmp/probe.log
       - name: Run worker locally and fire the cron
         working-directory: worker
         run: |
-          npx --yes wrangler@4 dev --test-scheduled --port 8787 --ip 127.0.0.1 > /tmp/dev.log 2>&1 &
+          npx --yes wrangler@4 dev --test-scheduled --port 8787 --ip 127.0.0.1 < /dev/null > /tmp/dev.log 2>&1 &
           for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8787/m && break; sleep 2; done
           for i in 1 2 3 4 5 6; do
             curl -s "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*" ; echo " fired $(date -u +%T)"
