@@ -7366,7 +7366,7 @@ function feeMinStats(){
    Reads every position's fee growth once a minute around the clock and keeps the minutes, so the
    last 60 are there whenever the page is opened. Empty until it is deployed; when it is missing
    or stale the 60-minute views fall back to the ledger's ~20-minute readings and say so. */
-const PULSE_URL='';
+const PULSE_URL='https://kt-pulse.kereslek.workers.dev';
 function pulseMins(){
   const P=state.pulse; if(!P||!Array.isArray(P.mins)||!P.last) return null;
   if(Date.now()-P.last>6*60000) return null;                  // stale: say nothing rather than old news
