@@ -17,18 +17,18 @@
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
 export const EVM_RPCS=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth'];
-export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://api.mainnet-beta.solana.com'];
+export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://solana.drpc.org','https://api.mainnet-beta.solana.com'];
 const M256=(1n<<256n)-1n, M128=(1n<<128n)-1n;
 
 /* ---------- plumbing ---------- */
 async function post(url, body, ms=12000){
-  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(ms)});
-  if(!r.ok) throw new Error(url.split('/')[2]+' HTTP '+r.status);
+  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json','accept':'application/json','user-agent':'kt-pulse/1 (fee monitor)'},body:JSON.stringify(body),signal:AbortSignal.timeout(ms)});
+  if(!r.ok) throw new Error(url.split('/')[2]+' HTTP '+r.status+' '+(await r.text().catch(()=>'')).slice(0,80));
   return r.json();
 }
 // a JSON-RPC batch, in order, from the first endpoint that answers all of it
 async function batch(rpcs, calls){
-  let last;
+  const errs=[];
   for(const u of rpcs){
     try{
       const res=await post(u, calls.map((c,i)=>({jsonrpc:'2.0',id:i,method:c[0],params:c[1]})));
@@ -36,14 +36,14 @@ async function batch(rpcs, calls){
       const by=new Map(res.map(x=>[x.id,x]));
       const out=calls.map((_,i)=>{ const x=by.get(i); if(!x||x.error||x.result==null) throw new Error((x&&x.error&&x.error.message)||'missing'); return x.result; });
       return out;
-    }catch(e){ last=e; }
+    }catch(e){ errs.push(u.split('/')[2]+': '+String(e.message||e)); }
   }
-  throw last||new Error('no rpc');
+  throw new Error(errs.join(' | ')||'no rpc');
 }
 async function one(rpcs, method, params){
-  let last;
-  for(const u of rpcs){ try{ const j=await post(u,{jsonrpc:'2.0',id:1,method,params}); if(j.error) throw new Error(j.error.message); return j.result; }catch(e){ last=e; } }
-  throw last||new Error('no rpc');
+  const errs=[];
+  for(const u of rpcs){ try{ const j=await post(u,{jsonrpc:'2.0',id:1,method,params}); if(j.error) throw new Error(u.split('/')[2]+' '+j.error.message); return j.result; }catch(e){ errs.push(String(e.message||e)); } }
+  throw new Error(errs.join(' | ')||'no rpc');
 }
 
 /* ---------- Ethereum: Uniswap v3 ---------- */
