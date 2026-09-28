@@ -1,7 +1,7 @@
 {
  "month": "2026-09",
- "gasUsd": 27.49,
- "swapFeeUsd": 57.61,
+ "gasUsd": 30.91,
+ "swapFeeUsd": 79.77,
  "txs": {
   "0x8536f69fc7a1ef8f3732b983bed598eab95b8b105b8c59336de6983efbe0a9de": 1,
   "0x6f4e561595188c3f23eea8ab922f1b073ecf3377f7de9458165c4b7745d1a821": 1,
@@ -41,7 +41,9 @@
   "0x78b49083c0c6c451566cdb2cead91071cf0beab5ddaaee3b8c75678f5fee1b93": 1,
   "0xfa7c14b7960fc530fc234c849da90e05cf737c02afe90442b09046ef7e9d9e42": 1,
   "0x80523fc799cf8f8daecf0d7b15b47e19d419abc52a3464457c161dd57d45a9b3": 1,
-  "0xfc49c54879e435f1404acd6aabe1c333e186d0695799a508a68e48329b87f4d3": 1
+  "0xfc49c54879e435f1404acd6aabe1c333e186d0695799a508a68e48329b87f4d3": 1,
+  "0x424e1e80887afb9d5fe439eebecce2048e5e24d4e3c9ee898b4d03094c228a54": 1,
+  "0x96634b1bad60884ba6e13f86976603585e4bd41312e96d493c880da208705e8a": 1
  },
  "months": [
   {
@@ -52,10 +54,10 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26077325,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26077325,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26077325,
-  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26077325
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26077421,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26077421,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26077421,
+  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26077421
  },
  "solTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
@@ -166,14 +168,16 @@
   "55RTVqSFQbbGCLevNK9SZ7RyjbGFAWRpmKwdZsWxo3vqRvKq2VM9wrokHRP4Cui72CAB2HMbof9sGc6MaMV5aRZ2": 1,
   "5RZEJHtv9tk9Fggd995J3zcRPXaHQtCUYaXnEidNxxQCmPAdEyHXto12ZpyPSrtxoBBfPkrXPH8ZmvGg1QBKfVEW": 1,
   "5BUZeai2awkrY2NHKVYyTpG1tNu5DkmP7343WQnzev7usXfEtQBDMJdHzPxVb97LYV1RTVfTmVzd2qSSY9SdRvBv": 1,
-  "4TJmnfiwgaVLkFNgVw9vuFimb2ceeMJ77Ukr9ChTTnUGeM27jyWBFGTsKDcYkZFgbgLpSchyzoLYhwf3ApzdDgGY": 1
+  "4TJmnfiwgaVLkFNgVw9vuFimb2ceeMJ77Ukr9ChTTnUGeM27jyWBFGTsKDcYkZFgbgLpSchyzoLYhwf3ApzdDgGY": 1,
+  "L7GW57tT2XKYUqBAa1W64FoqAoKJgLD2LUSeWPtybYAPARij2964ofa2GkRM6nEf8JnqzedpXBWgmyyWLGrk5Te": 1,
+  "4zpdm3ok2GeoHWeLApeAvuHgd4uHyUNabyaWx3DYjNRkTHbQdgSbCK1gyBoMmypLb5QyBcQGUGYqozqz1qwcrEf3": 1
  },
  "solPartial": true,
- "solGasUsd": 0.4298513943402447,
+ "solGasUsd": 0.431061417649987,
  "solOpenUsd": 39.24,
  "solOpenPend": {},
  "solScan": {
-  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "5RYBXzgBoqnzuCHMJRZyGnxXY7fNLxieQTLKKKM4zi91tFPneXXcFAgmeDEMSwddxuezS5TQdQYEmp88WPUrxKcG",
+  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "L7GW57tT2XKYUqBAa1W64FoqAoKJgLD2LUSeWPtybYAPARij2964ofa2GkRM6nEf8JnqzedpXBWgmyyWLGrk5Te",
   "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "5RZEJHtv9tk9Fggd995J3zcRPXaHQtCUYaXnEidNxxQCmPAdEyHXto12ZpyPSrtxoBBfPkrXPH8ZmvGg1QBKfVEW"
  },
  "solWalletTx": {},
