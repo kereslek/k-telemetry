@@ -52,24 +52,32 @@ export class Pulse {
     await this.s.put('cache',cache);
     const prev=(await this.s.get('prev'))||{};          // id -> {t, reading}
     const mins=(await this.s.get('mins'))||{};
-    const slot=Math.floor(cur.t/MIN)*MIN-MIN;           // the minute that just ended
+    /* Each reading's fees are spread over the minutes it actually covers, in proportion to the
+       time, so a reading that lands a few seconds either side of the minute neither double-fills
+       one minute nor skips the next. The second number is coverage in position-minutes: a minute
+       every position covered in full holds N. */
     let got=0;
     for(const p of ps){
       const b=cur.g[p.id]; if(!b) continue;
       const a=prev[p.id];
       prev[p.id]={t:cur.t, r:b};
-      if(!a) continue;
-      const span=Math.max(1,Math.round((cur.t-a.t)/MIN));
-      if(span>MAX_SPAN) continue;
+      if(!a||!(cur.t>a.t)) continue;
+      if(cur.t-a.t>MAX_SPAN*MIN) continue;
       const e=earned({g:{[p.id]:a.r}}, {g:{[p.id]:b}}, [p]);
       if(!(p.id in e.by)) continue;
       got++;
-      for(let k=0;k<span;k++){ const t=slot-k*MIN; const v=mins[t]||(mins[t]=[0,0]); v[0]+=e.by[p.id]/span; v[1]++; }
+      const span=cur.t-a.t;
+      for(let t=Math.floor(a.t/MIN)*MIN; t<cur.t; t+=MIN){
+        const lo=Math.max(a.t,t), hi=Math.min(cur.t,t+MIN); if(!(hi>lo)) continue;
+        const v=mins[t]||(mins[t]=[0,0]);
+        v[0]+=e.by[p.id]*(hi-lo)/span; v[1]+=(hi-lo)/MIN;
+      }
     }
+    const slot=Math.floor(cur.t/MIN)*MIN;
     // forget positions that are no longer listed, and minutes older than a day
     for(const id of Object.keys(prev)) if(!ps.some(p=>p.id===id)) delete prev[id];
     const cut=slot-KEEP*MIN;
-    for(const t of Object.keys(mins)){ if(Number(t)<cut) delete mins[t]; else mins[t][0]=Math.round(mins[t][0]*1e6)/1e6; }
+    for(const t of Object.keys(mins)){ if(Number(t)<cut) delete mins[t]; else { mins[t][0]=Math.round(mins[t][0]*1e6)/1e6; mins[t][1]=Math.round(mins[t][1]*100)/100; } }
     const meta={N:ps.length, last:cur.t, read:Object.keys(cur.g).length, err:cur.err};
     await this.s.put({prev, mins, meta});
     return {slot, got, ...meta};
