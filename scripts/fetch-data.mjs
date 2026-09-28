@@ -3377,6 +3377,15 @@ const main=async()=>{
           }
         }
       }catch(e){ logErr('solLedger',e); }
+      /* IL at month end covers every position. The fee ledger records it before the Solana
+         positions have theirs (worked out just above), so it is restated here and written back,
+         and the month's archive — taken from this figure at the boundary — gets the whole of it. */
+      try{
+        const il=Math.round([...evmPositions,...solPositions].reduce((a,q)=>a+(q.ilUsd||0),0)*100)/100;
+        if(feeMonth){ feeMonth.ilNow=il; }
+        const fp=OUT+'/fees-'+profile.slug+'.json';
+        const F=JSON.parse(fs.readFileSync(fp,'utf8')); if(F.lastIl!==il){ F.lastIl=il; fs.writeFileSync(fp, JSON.stringify(F,null,1)); }
+      }catch(e){ if(e.code!=='ENOENT') logErr('ilNow',e); }
       /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
          them would more than double a payload that has to reach a phone every 15 minutes. The
          answers are 300 bytes a day, they are identical for every reader, and computing them
