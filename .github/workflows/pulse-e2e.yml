@@ -15,6 +15,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
+      - name: Which Solana RPCs answer from the Workers runtime
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 dev test/rpc-probe.js --port 8788 --ip 127.0.0.1 > /tmp/probe.log 2>&1 &
+          for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8788/ && break; sleep 2; done
+          curl -s http://127.0.0.1:8788/ ; echo
+          kill %1 || true
       - name: Run worker locally and fire the cron
         working-directory: worker
         run: |
