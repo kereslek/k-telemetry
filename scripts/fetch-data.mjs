@@ -345,6 +345,10 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   const price=sp*sp*scale, priceLower=tickToPrice(tickLower)*scale, priceUpper=tickToPrice(tickUpper)*scale;
   await llamaPrices([C.llama+':'+token0, C.llama+':'+token1]);
   let usd0=priceCache[C.llama+':'+token0]??null, usd1=priceCache[C.llama+':'+token1]??null;
+  /* One ETH price on the page: the header's (Chainlink). A feed quote for WETH a few dollars off
+     it made the token panel and the header disagree about the same asset. */
+  const WETH_ETH='0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+  if(ck==='ethereum' && ethUsd){ if(String(token0).toLowerCase()===WETH_ETH) usd0=ethUsd; if(String(token1).toLowerCase()===WETH_ETH) usd1=ethUsd; }
   if(usd0==null&&usd1!=null) usd0=price*usd1;
   if(usd1==null&&usd0!=null) usd1=usd0/price;
   const valueUsd=(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null;
@@ -1256,7 +1260,7 @@ async function solWalletCosts(wallet, sinceSig, poolCache, priceOf, monthStartSe
        It is a real cost and it is really recycled, and the two facts belong together — a swap
        routed through your own 4% pool reads very differently from one routed through someone
        else's. */
-    const rec={lamports:Number(tx.meta.fee||0), swapUsd:0, ownUsd:0};
+    const rec={lamports:Number(tx.meta.fee||0), swapUsd:0, ownUsd:0, ownBy:{}, t:(tx.blockTime||s.blockTime||0)*1000};
     try{
       const keys=txAccountKeys(tx);
       const deltas=tokenDeltas(tx);
@@ -1304,7 +1308,7 @@ async function solWalletCosts(wallet, sinceSig, poolCache, priceOf, monthStartSe
         const amt=Number(inSide.delta)/Math.pow(10,inSide.dec);
         const paid=amt*px*rate;
         rec.swapUsd+=paid;
-        if(myPools && myPools.has(p.addr)) rec.ownUsd+=paid;
+        if(myPools && myPools.has(p.addr)){ rec.ownUsd+=paid; rec.ownBy[p.addr]=(rec.ownBy[p.addr]||0)+paid; }
         attributed++;
       }
       if(swapLike && !attributed) out.unattributed++;
@@ -1947,6 +1951,14 @@ const main=async()=>{
     if(solWallets.length){
       try{
         solPositions=await fetchSolana(solWallets);
+        /* One SOL price on the page: the one the Solana positions are valued at. The header quote
+           and wallet SOL came from the feed and sat a few cents away from it, so the same coin
+           had three prices on one screen. */
+        { const SOLM='So11111111111111111111111111111111111111112';
+          const sp=solPositions.find(x=>(x.mint0===SOLM&&x.usd0>0)||(x.mint1===SOLM&&x.usd1>0));
+          const solPx=sp?(sp.mint0===SOLM?sp.usd0:sp.usd1):null;
+          if(solPx){ const tq=(tickers||[]).find(t=>t.sym==='SOL'); if(tq) tq.usd=solPx;
+                     const qq=(quotes||[]).find(q=>q.label==='SOL / USD'); if(qq) qq.usd=solPx; } }
         /* A throw was the only thing that used to reach this branch, and the wallet listing does
            not throw — it logs and returns short. Same verdict either way: the scan did not see
            Solana, so nothing may be closed on its say-so and the chain reports itself down. */
@@ -2263,7 +2275,7 @@ const main=async()=>{
         fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,
                                        ilEnd:fl.lastIl??null,cat:prevCat,
                                        ...(Object.keys(prevTok).length?{tok:prevTok}:{})}].slice(-12);
-        fl.month=monthKey; fl.closed=0; fl.catClosed={}; fl.closedPos={};
+        fl.month=monthKey; fl.closed=0; fl.catClosed={}; fl.closedPos={}; fl.selfMtd=0;
         /* The old month's last day closes on the month's archived total, boundary tail included,
            so its days add up to the figure the month is remembered by. */
         { const lastDay=new Date(Date.UTC(Number(fl.months[fl.months.length-1].m.slice(0,4)),Number(fl.months[fl.months.length-1].m.slice(5,7)),0)).toISOString().slice(0,10);
@@ -2374,15 +2386,77 @@ const main=async()=>{
           console.log('September fee ledger restated: $'+R.mtdBefore+' → $'+R.mtdAfter+' at '+new Date(R.asOf).toISOString());
         }catch(e){ logErr('feeRestate',e); }
       }
+      /* Second September restatement, applied once (scripts/fee-restate-2026-09b.json says how it
+         was rebuilt): Solana fees recounted in tokens from each position's on-chain history, and
+         the fees this deck's own swaps paid into its own pools taken out of income. Positions move
+         by the seed's per-position difference, so what the relay booked after the seed's snapshot
+         is kept; the day bars, 50-hour readings and per-position history are replaced to match.
+         Solana entries then switch to token counting on this run (baseline now, counted after). */
+      if(fl.restated202609 && !fl.restated202609b && profile.slug==='main' && monthKey==='2026-09'){
+        try{
+          const R=JSON.parse(fs.readFileSync(new URL('./fee-restate-2026-09b.json', import.meta.url),'utf8'));
+          for(const [id,d] of Object.entries(R.delta||{})){
+            const e=fl.pos[id]; if(!e) continue;
+            e.acc=Math.round(((e.acc||0)+d)*100)/100; e.run=Math.round(((e.run??0)+d)*100)/100;
+          }
+          for(const [id,d] of Object.entries(R.closedDelta||{})){
+            const c=(fl.closedPos||{})[id]; if(!c) continue;
+            c.acc=Math.round(((c.acc||0)+d)*100)/100; if(c.run!=null) c.run=Math.round((c.run+d)*100)/100;
+            fl.closed=Math.round(((fl.closed||0)+d)*100)/100;
+            if(c.cat&&fl.catClosed&&fl.catClosed[c.cat]!=null) fl.catClosed[c.cat]=Math.round((fl.catClosed[c.cat]+d)*100)/100;
+          }
+          fl.dayEnd=fl.dayEnd||{}; for(const [d,v] of Object.entries(R.dayEnd||{})) fl.dayEnd[d]=v;
+          if(Array.isArray(R.ticks)&&R.ticks.length) fl.ticks=R.ticks;
+          if(Array.isArray(R.posHist)&&R.posHist.length) fl.posHist=R.posHist;
+          fl.selfMtd=R.selfMtd||0;
+          fl.restated202609b={asOf:R.asOf, before:R.mtdBefore, after:R.mtdAfter};
+          console.log('September fee ledger restated (Solana in tokens, own-swap fees out): $'+R.mtdBefore+' → $'+R.mtdAfter);
+        }catch(e){ logErr('feeRestateB',e); }
+      }
       /* Lifetime fee tokens of an Ethereum position: collected (net of withdrawn principal) plus
          owed. These only ever grow, so the month accrues the growth since the last reading, each
          token priced now — the price of a fee at the moment it is counted, never again after. */
       const feeTokens=q=>{
-        if(q.chain==='sol'||!q.feeDbg||q.histPartial||q.f0==null||q.f1==null||q.usd0==null||q.usd1==null) return null;
+        /* Solana: every fee the position has ever paid out, from its complete and balanced
+           transaction history, plus what it owes now. The old method booked a harvest by
+           watching owed fees drop between two reads, and missed it whenever the position changed
+           in the same window — $202 of September's Solana fees were never counted. */
+        if(q.chain==='sol'){
+          if(q.f0==null||q.f1==null||q.usd0==null||q.usd1==null) return null;
+          const it=solLedgerItems.find(x=>x.p.id===q.id); if(!it||!it.st.complete) return null;
+          const h=summarizeLedger(it.st,it.pos); if(!h.balanced) return null;
+          return [h.fee[0]+q.f0, h.fee[1]+q.f1];
+        }
+        if(!q.feeDbg||q.histPartial||q.f0==null||q.f1==null||q.usd0==null||q.usd1==null) return null;
         const fd=q.feeDbg;
         return [Math.max(0,(fd.col0||0)-(fd.wdr0||0))+q.f0, Math.max(0,(fd.col1||0)-(fd.wdr1||0))+q.f1];
       };
       const seen=new Set();
+      /* Fees this deck's own swaps paid into its own pools. They land in the positions as fee
+         income, but they are the wallet's money moving into the LP, not income from anyone else,
+         so they are taken back out here — out of the positions that received them, in proportion
+         to the liquidity each had in range. The cost scan (later in the run) finds them and
+         queues them in the cost ledger; this applies the queue once, on the next run. */
+      let selfApplied=0;
+      try{
+        const pend=(JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')).selfPend)||[];
+        fl.selfDone=Array.isArray(fl.selfDone)?fl.selfDone:[];
+        for(const x of pend){
+          if(!x||!x.id||fl.selfDone.includes(x.id)||!(x.back>0)) continue;
+          const inPool=[...evmPositions,...solPositions].filter(q=>String(q.chain==='sol'?q.poolId:q.pool).toLowerCase()===String(x.pool).toLowerCase());
+          const tgt=inPool.filter(q=>q.inRange).length?inPool.filter(q=>q.inRange):inPool;
+          const w=tgt.map(q=>Number(q.liq)||0), W=w.reduce((a,b)=>a+b,0);
+          let left=x.back;
+          tgt.forEach((q,i)=>{ const e=fl.pos[q.id]; if(!e) return;
+            const amt=W>0?x.back*w[i]/W:x.back/tgt.length;
+            e.acc=Math.round(((e.acc||0)-amt)*100)/100; e.run=Math.round(((e.run??e.acc)-amt)*100)/100; left-=amt; });
+          if(left>0.005){ fl.closed=Math.round(((fl.closed||0)-left)*100)/100; }   // no live position to take it from
+          fl.selfMtd=Math.round(((fl.selfMtd||0)+x.back)*100)/100; selfApplied+=x.back;
+          fl.selfDone.push(x.id);
+        }
+        fl.selfDone=fl.selfDone.slice(-600);
+        if(selfApplied) console.log('own-swap fees taken out of fee income: $'+selfApplied.toFixed(2));
+      }catch(e){ if(e.code!=='ENOENT') logErr('feeSelf',e); }
       for(const p of [...evmPositions,...solPositions]){
         const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);
         if(cum==null) continue;
@@ -2474,7 +2548,8 @@ const main=async()=>{
       const nowD=new Date();
       const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
       const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
-      fl.lastIl=Math.round(evmPositions.reduce((s,p)=>s+(p.ilUsd||0),0)*100)/100;
+      // every position with an IL figure — Solana has one now that its deposits are known
+      fl.lastIl=Math.round([...evmPositions,...solPositions].reduce((s,p)=>s+(p.ilUsd||0),0)*100)/100;
       /* Straight extrapolation of the month-to-date average: what has been earned so far,
          scaled to the full month. Simple and stable by design. dayRate (the current run rate
          of open positions) is published alongside for reference — it will read lower than the
@@ -2557,9 +2632,9 @@ const main=async()=>{
           pos24={from:start[0], to:nowMs, total:Math.round(rows.reduce((x,r)=>x+r.usd,0)*100)/100, byPos:rows.sort((x,y)=>y.usd-x.usd)};
         }
       }catch(e){ logErr('feePos24',e); }
-      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, pos24, basis:'tokens', ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, pos24, basis:'tokens', selfBack:fl.selfMtd||0, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
-        projBasis:'average', dayRate:Math.round(dayRate*100)/100, prev:fl.months||[],
+        projBasis:'average', dayRate:(pos24&&pos24.total!=null&&(pos24.to-pos24.from)>=20*3600000)?pos24.total:Math.round(dayRate*100)/100, prev:fl.months||[],
         /* Month to date per position — open ones and the ones closed this month — so the page
            can say which token the income came from. Closes banked before positions were
            recorded by id survive only as a pool-type total; those are published as they are. */
@@ -2583,9 +2658,10 @@ const main=async()=>{
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
                      solGas:Math.round((cl.solGasUsd||0)*100)/100,
                      solOpen:Math.round((cl.solOpenUsd||0)*100)/100,
-                     solSwap:Math.round((cl.solSwapUsd||0)*100)/100}].slice(-12);
+                     solSwap:Math.round((cl.solSwapUsd||0)*100)/100,
+                     selfEvm:Math.round((cl.selfEvmUsd||0)*100)/100, selfSol:Math.round((cl.selfSolUsd||0)*100)/100}].slice(-12);
         cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0;
-        cl.solSwapUsd=0; cl.solSwapOwnUsd=0; cl.solUnattributed=0;
+        cl.solSwapUsd=0; cl.solSwapOwnUsd=0; cl.solUnattributed=0; cl.selfEvmUsd=0; cl.selfSolUsd=0;
         cl.txs={}; cl.solTxs={}; cl.solOpenPend={}; cl.solWalletTx={};
         /* cl.solScan is deliberately NOT cleared. It is how far the wallet history has been
            walked, not a figure for the month; resetting it at a month boundary would send the
@@ -2673,6 +2749,31 @@ const main=async()=>{
          one and the entry is kept until it can be banked. */
       cl.solSwapUsd=cl.solSwapUsd||0;
       cl.solSwapOwnUsd=cl.solSwapOwnUsd||0;
+      cl.selfSolUsd=cl.selfSolUsd||0; cl.selfEvmUsd=cl.selfEvmUsd||0;
+      cl.selfPend=(cl.selfPend||[]).filter(x=>x&&Date.now()-(x.at||0)<7*86400000);
+      /* September's own-pool fees found before this was traced per swap (see the fee ledger's
+         second restatement): out of the cost total from here, as they are out of income. */
+      if(!cl.selfRestated202609 && monthKey==='2026-09' && profile.slug==='main'){
+        cl.selfEvmUsd=(cl.selfEvmUsd||0)+5.49; cl.selfSolUsd=(cl.selfSolUsd||0)+66.90; cl.selfRestated202609=1;
+      }
+      /* How much of a fee paid into one of this deck's own Solana pools came back to it: the LPs'
+         part of the fee (Raydium keeps a protocol and a fund cut, read from the pool's own config)
+         times this deck's share of the liquidity active at the pool's current price. */
+      const solBackShare={};
+      const solShareOf=async pool=>{
+        if(solBackShare[pool]!=null) return solBackShare[pool];
+        let lp=0.84, share=1;
+        try{
+          const a=await sol('getAccountInfo',[pool,{encoding:'base64'}]); const bf=Buffer.from(a.value.data[0],'base64');
+          const cfgKey=b58e(bf.subarray(9,41));
+          const c=await sol('getAccountInfo',[cfgKey,{encoding:'base64'}]); const cb=Buffer.from(c.value.data[0],'base64');
+          lp=1-(cb.readUInt32LE(43)+cb.readUInt32LE(53))/1e6;
+          const L=bf.readBigUInt64LE(237)+(bf.readBigUInt64LE(245)<<64n), tick=bf.readInt32LE(269);
+          const ours=solPositions.filter(q=>q.poolId===pool&&q.tl<=tick&&tick<q.tu).reduce((x,q)=>x+BigInt(q.liq||0),0n);
+          if(L>0n) share=Math.min(1,Number(ours*1000000n/L)/1e6);
+        }catch(e){ logErr('solSelfShare '+String(pool).slice(0,6),e); }
+        return solBackShare[pool]=lp*share;
+      };
       if(solUsd!=null){
         for(const sig in cl.solWalletTx){
           const t=cl.solWalletTx[sig];
@@ -2682,6 +2783,10 @@ const main=async()=>{
           cl.solGasUsd+=((t.lamports||0)/1e9)*solUsd;
           cl.solSwapUsd+=t.swapUsd||0;
           cl.solSwapOwnUsd+=t.ownUsd||0;
+          for(const [pool,paid] of Object.entries(t.ownBy||{})){
+            const back=paid*(await solShareOf(pool));
+            if(back>0.0005){ cl.selfSolUsd+=back; cl.selfPend.push({id:'sol:'+sig+':'+pool, at:Date.now(), t:t.t||Date.now(), chain:'sol', pool, back:Math.round(back*1e4)/1e4}); }
+          }
         }
       }
       /* A swap fee that could not be traced to a pool is the only thing still missing, so the
@@ -2741,7 +2846,28 @@ const main=async()=>{
           if(requireRelevant && !swaps.length && !touchesNpm){ cl.txs[tx]=2; return; }  // plain transfer — seen, not a cost
           cl.txs[tx]=1;
           cl.gasUsd+=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);
-          for(const sw of swaps) cl.swapFeeUsd+=await swapFeeOf(ck,sw);
+          for(const sw of swaps){
+            const fee=await swapFeeOf(ck,sw); cl.swapFeeUsd+=fee;
+            /* One of this deck's own pools: the part of the fee that came back to its positions —
+               the pool's protocol cut taken off, times this deck's share of the liquidity active
+               at the tick the swap left behind (both from the swap's own event). */
+            const addr=String(sw.address).toLowerCase();
+            const ours=evmPositions.filter(q=>q.chain===ck&&String(q.pool).toLowerCase()===addr);
+            if(ours.length && fee>0){
+              try{
+                const L=BigInt(word(sw.data,3)), tick=Number(toSigned(BigInt(word(sw.data,4)),256));
+                const inR=ours.filter(q=>{ const sc=10**(q.d0-q.d1); const tl=Math.round(Math.log(q.priceLower/sc)/Math.log(1.0001)), tu=Math.round(Math.log(q.priceUpper/sc)/Math.log(1.0001)); return tl<=tick&&tick<tu; });
+                const our=inR.reduce((x,q)=>x+BigInt(q.liq||0),0n);
+                const share=L>0n?Math.min(1,Number(our*1000000n/L)/1e6):0;
+                const a0=toSigned(BigInt(word(sw.data,0)),256);
+                const s0=await evmCall(ck,addr,'0x3850c7bd'); const fp=Number(BigInt('0x'+s0.slice(2+64*5,2+64*6)));
+                const fpIn=a0>0n?(fp%16):(fp>>4), proto=fpIn?1/fpIn:0;
+                const back=fee*(1-proto)*share;
+                if(back>0.0005){ cl.selfEvmUsd=(cl.selfEvmUsd||0)+back;
+                  cl.selfPend=cl.selfPend||[]; cl.selfPend.push({id:'eth:'+tx+':'+sw.logIndex, at:Date.now(), t:Date.now(), chain:ck, pool:addr, back:Math.round(back*1e4)/1e4}); }
+              }catch(e){ logErr('evmSelf '+String(tx).slice(0,10),e); }
+            }
+          }
         }catch(e){ logErr('cost '+String(tx).slice(0,10),e); }
         await sleep(120);
       };
@@ -2787,11 +2913,15 @@ const main=async()=>{
       cl.solOpenUsd=Math.round((cl.solOpenUsd||0)*100)/100;
       cl.solSwapUsd=Math.round((cl.solSwapUsd||0)*100)/100;
       cl.solSwapOwnUsd=Math.round((cl.solSwapOwnUsd||0)*100)/100;
+      cl.selfEvmUsd=Math.round((cl.selfEvmUsd||0)*100)/100; cl.selfSolUsd=Math.round((cl.selfSolUsd||0)*100)/100;
+      /* A fee that came back to this deck's own LPs was never a cost — the wallet paid it to
+         itself. It is out of the total here, and out of fee income in the fee ledger, so net fee
+         income is unchanged and neither side is inflated by it. */
       costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
         solGasUsd:cl.solGasUsd||0, solOpenUsd:cl.solOpenUsd||0, solSwapUsd:cl.solSwapUsd||0,
-        solSwapOwnUsd:cl.solSwapOwnUsd||0,
+        solSwapOwnUsd:cl.solSwapOwnUsd||0, selfEvmUsd:cl.selfEvmUsd, selfSolUsd:cl.selfSolUsd,
         solPartial:!!cl.solPartial, solUnattributed:cl.solUnattributed||0,
-        total:Math.round((cl.gasUsd+cl.swapFeeUsd+(cl.solGasUsd||0)+(cl.solOpenUsd||0)+(cl.solSwapUsd||0))*100)/100,
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd-cl.selfEvmUsd+(cl.solGasUsd||0)+(cl.solOpenUsd||0)+(cl.solSwapUsd||0)-cl.selfSolUsd)*100)/100,
         txCount:counted, prev:cl.months||[]};
       fs.writeFileSync(OUT+'/costs-'+profile.slug+'.json', JSON.stringify(cl,null,1));
     }catch(e){ logErr('costMonth',e); }
@@ -2905,6 +3035,9 @@ const main=async()=>{
           ? (r.chain==='sol' ? (solNativeUsd!=null?r.amount*solNativeUsd:null) : (ethUsd!=null?r.amount*ethUsd:null))
           : (r.chain==='sol' ? (jp[r.addr]!=null?r.amount*jp[r.addr]:null)
                              : (priceCache[CHAINS[r.chain].llama+':'+r.addr]!=null?r.amount*priceCache[CHAINS[r.chain].llama+':'+r.addr]:null));
+        /* The price itself travels with the row. Deriving it from a value rounded to the cent
+           turned 0.0144 USDC worth $0.02 into a "$1.39 USDC" on the page. */
+        if(r.usd!=null && r.amount>0) r.px=Number((r.usd/r.amount).toPrecision(8));
         r.usd = r.usd!=null ? Math.round(r.usd*100)/100 : null;   // null = unpriced, never 0
       }
       rows.sort((x,y)=>(y.usd??-1)-(x.usd??-1));
@@ -3377,7 +3510,16 @@ const main=async()=>{
         for(const t2 of tokens){ delete t2._k; delete t2._px; }
         return {...base, tokens, elsewhere, wallet, rebal:r2(price-tokens.reduce((s2,x)=>s2+x.usd,0)), flow:r2(flow),
                 opened, closed, exact,
-                dFees:(t.fe!=null&&y.fe!=null)?r2(t.fe-y.fe):null};
+                /* Fees earned between the two records, from the fee ledger's running total — the
+                   same record as FEES EARNED and FEE PULSE. The difference of lifetime-fee sums
+                   it replaces re-priced old fees and dropped closed positions' fees. Where the
+                   ledger's readings do not reach back to the older record, nothing is said. */
+                dFees:(()=>{ const tk=feeMonth&&feeMonth.ticks;
+                  if(!tk||tk.length<2||!t.t||!y.t||y.t<tk[0][0]) return null;
+                  const at=ms=>{ if(ms>=tk[tk.length-1][0]) return tk[tk.length-1][1];
+                    for(let i=1;i<tk.length;i++) if(tk[i][0]>=ms) return tk[i-1][1]+(tk[i][1]-tk[i-1][1])*(ms-tk[i-1][0])/(tk[i][0]-tk[i-1][0]);
+                    return null; };
+                  const a=at(y.t), b=at(t.t); return (a!=null&&b!=null)?r2(b-a):null; })()};
       };
       const moves=[];
       for(let i=1;i<daily.length;i++) moves.push(attrib(daily[i-1], daily[i]));
