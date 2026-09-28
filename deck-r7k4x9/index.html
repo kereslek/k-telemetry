@@ -1315,7 +1315,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7362,7 +7362,50 @@ function feeMinStats(){
   const cad=gaps.slice(-12).sort((x,y)=>x-y)[Math.floor(Math.min(12,gaps.length)/2)]||1200000;
   return {w0, now, segs, last, next:last+cad, cad, total:segs.reduce((x,s)=>x+s.usd,0), hourAvg:H?H.avg:null};
 }
+/* ---- the minute recorder (Cloudflare Worker, worker/) ----
+   Reads every position's fee growth once a minute around the clock and keeps the minutes, so the
+   last 60 are there whenever the page is opened. Empty until it is deployed; when it is missing
+   or stale the 60-minute views fall back to the ledger's ~20-minute readings and say so. */
+const PULSE_URL='https://kt-pulse.kereslek.workers.dev';
+function pulseMins(){
+  const P=state.pulse; if(!P||!Array.isArray(P.mins)||!P.last) return null;
+  if(Date.now()-P.last>6*60000) return null;                  // stale: say nothing rather than old news
+  const end=Math.floor(Date.now()/60000)*60000, by=new Map(P.mins.map(r=>[r[0],r]));
+  const mins=[]; for(let t=end-60*60000;t<end;t+=60000){ const r=by.get(t); mins.push({t, usd:r?r[1]:null, part:!!(r&&P.N&&r[2]<P.N)}); }
+  const have=mins.filter(m=>m.usd!=null);
+  if(have.length<5) return null;
+  return {mins, have, total:have.reduce((a,m)=>a+m.usd,0), last:P.last, N:P.N};
+}
+async function loadPulse(){
+  if(!PULSE_URL) return;
+  try{
+    const r=await fetch(PULSE_URL+'/m?n=60',{cache:'no-store'}); if(!r.ok) return;
+    state.pulse=await r.json();
+    // swap in place: the tile link and the panel section, nothing else re-renders
+    const a=document.querySelector('.fp-link60'), h=feePulseLink60();
+    if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; a.replaceWith(d.firstElementChild); }
+    const w=document.getElementById('fp60');
+    if(w){ const d=document.createElement('div'); d.style.width=w.clientWidth+'px'; w.parentElement.insertBefore(d,w); renderFeePulse60(d); w.remove(); d.replaceWith(d.firstElementChild); }
+  }catch(e){}
+}
+if(PULSE_URL){
+  setTimeout(loadPulse,1500);
+  setInterval(()=>{ if(!document.hidden) loadPulse(); },60000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadPulse(); });
+}
 function feePulseLink60(){
+  const M=pulseMins();
+  if(M){
+    const W=300, H=30, n=60, gap=1, bw=(W-gap*(n-1))/n, H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
+    const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 1e-6), y=v=>H-Math.max(1,v/top*(H-2));
+    let bars='';
+    M.mins.forEach((m,i)=>{ if(m.usd==null) return;
+      bars+='<rect class="'+(i===n-1?'fpl-today':(perMin!=null&&m.usd>perMin?'fpl-hi':'fpl-lo'))+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(m.usd).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(m.usd)).toFixed(1)+'"/>'; });
+    const avgLine=perMin!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(perMin).toFixed(1)+'" y2="'+y(perMin).toFixed(1)+'"/>':'';
+    return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — fee income by minute, last 60 minutes">'
+      +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
+      +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
+  }
   const S=feeMinStats(); if(!S) return '';
   const W=300, H=30, X=t=>(t-S.w0)/3600000*W;
   const perMin=S.hourAvg!=null?S.hourAvg/60:null;
@@ -7378,6 +7421,7 @@ function feePulseLink60(){
     +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
 }
 function renderFeePulse60(host){
+  if(pulseMins()) return renderFeePulse60m(host);
   const S=feeMinStats();
   const wrap=el('div','fp24'); wrap.id='fp60';
   wrap.append(el('div','fp24-h','LAST 60 MINUTES · BY LEDGER READING'));
@@ -7431,6 +7475,57 @@ function renderFeePulse60(host){
   say(S.segs[S.segs.length-1]);
   wrap.append(el('div','arch-note','One block per ledger reading, placed over the time it covers, your time · the ledger is read about every '
     +Math.round(S.cad/60000)+' minutes, so this is as fine as the record goes · the dashed box at the end is time since the latest reading, not yet counted · bright blocks earned faster than the 24-hour average.'));
+}
+/* The last 60 minutes, one bar per minute, from the minute recorder. */
+function renderFeePulse60m(host){
+  const M=pulseMins();
+  const wrap=el('div','fp24'); wrap.id='fp60';
+  wrap.append(el('div','fp24-h','LAST 60 MINUTES · BY MINUTE'));
+  host.append(wrap);
+  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  const H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
+  const busy=M.have.filter(m=>m.usd>=0.005), best=M.have.reduce((a,b)=>b.usd>a.usd?b:a);
+  const st=el('div','fp-story');
+  st.innerHTML='Last 60 minutes <span class="big">'+fmtUsd(M.total,2)+'</span>'
+    +(H24&&H24.avg!=null?' · the 24-hour average is <b>'+fmtUsd(H24.avg,2)+'</b> an hour':'')
+    +'<br>Fees came in during <b>'+busy.length+'</b> of '+M.have.length+' minutes'
+    +(best.usd>=0.005?' · busiest <b>'+hl(best.t)+'</b> with <b>'+fmtUsd(best.usd,2)+'</b>'+(M.total>0?' <span class="unit">('+Math.round(best.usd/M.total*100)+'% of the hour)</span>':''):'');
+  wrap.append(st);
+  const read=el('div','fp-read'); wrap.append(read);
+  const rank=v=>1+M.have.filter(x=>x.usd>v).length;
+  const say=m=>{ if(!m) return;
+    if(m.usd==null){ read.innerHTML='▸ <b>'+hl(m.t)+'</b> · no reading that minute — the next one covers it'; return; }
+    read.innerHTML='▸ <b>'+hl(m.t)+'</b> '+(m.usd<0.0005?'nothing earned <span class="unit">· no trades through your ranges that minute':'<b>'+fmtUsd(m.usd,m.usd<1?3:2)+'</b> <span class="unit">· #'+rank(m.usd)+' of '+M.have.length+' minutes')
+      +(m.part?' · not every position was read this minute':'')+'</span>'; };
+  const cw=Math.max(300, host.clientWidth||600);
+  const W=cw, H=cw<560?120:150, padL=40, padR=10, padT=14, padB=22, n=60;
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(t,a,cls)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); return e; };
+  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H},'fp-svg');
+  const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 0.01)*1.2;
+  const stepY=[0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100].find(v=>top/v<=4)||200;
+  const Y=v=>padT+(1-v/top)*(H-padT-padB);
+  const step=(W-padL-padR)/n, bw=Math.max(1,step*0.74), X=i=>padL+step*i+(step-bw)/2;
+  for(let g=0; g<=top; g+=stepY){
+    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g)},'fp-grid'));
+    const t=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end'},'fp-ax'); t.textContent=g===0?'$0':'$'+(g<1?+g.toFixed(2):g); svg.append(t);
+  }
+  M.mins.forEach((m,i)=>{ if(i%15===0||i===n-1){ const t=mk('text',{x:padL+step*i+step/2,y:H-6,'text-anchor':i===0?'start':i===n-1?'end':'middle'},'fp-ax'); t.textContent=hl(m.t); svg.append(t); } });
+  if(perMin!=null){ svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(perMin),y2:Y(perMin)},'fp-avg'));
+    if(cw>=560){ const at=mk('text',{x:W-padR-2,y:Y(perMin)-4,'text-anchor':'end'},'fp-avgt'); at.textContent='24h avg '+fmtUsd(perMin,3)+'/min'; svg.append(at); } }
+  const rects=M.mins.map((m,i)=>{ if(m.usd==null) return null;
+    const r=mk('rect',{x:X(i),y:Y(m.usd),width:bw,height:Math.max(1,Y(0)-Y(m.usd)),rx:0.5},'fp-bar'+(i===n-1?' today':(perMin!=null&&m.usd>perMin?' above':''))+(m.part?' est':''));
+    svg.append(r); return r; });
+  let sel=-1;
+  const pick=i=>{ if(sel>=0&&rects[sel]) rects[sel].classList.remove('sel'); sel=i; if(i>=0&&rects[i]) rects[i].classList.add('sel'); say(M.mins[i]); };
+  const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
+  svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
+  svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
+  svg.addEventListener('pointerleave',()=>pick(n-1));
+  wrap.append(svg);
+  pick(n-1);
+  wrap.append(el('div','arch-note','One bar per minute, your time · recorded around the clock from each pool\'s fee counter, so collecting, adding or withdrawing never shows as income · '
+    +'bright bars beat the 24-hour average per minute, green is the latest minute · includes fees your own swaps paid to your own pools, which the monthly ledger takes out · updates every minute while the page is open.'));
 }
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */
