@@ -1,0 +1,67 @@
+# Deploys the minute fee recorder (worker/) to Cloudflare. Needs one repository secret,
+# CLOUDFLARE_API_TOKEN (template "Edit Cloudflare Workers"); everything else is discovered.
+name: deploy-pulse
+on:
+  push:
+    branches: [claude/new-session-argqhq, main]
+    paths: ['worker/**', '.github/workflows/deploy-pulse.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: { group: deploy-pulse, cancel-in-progress: false }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Token present?
+        id: tok
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set yet - nothing to deploy."
+            echo "ok=0" >> $GITHUB_OUTPUT
+          else echo "ok=1" >> $GITHUB_OUTPUT; fi
+      - name: Account and workers.dev subdomain
+        if: steps.tok.outputs.ok == '1'
+        id: acct
+        run: |
+          api(){ curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'content-type: application/json' "$@"; }
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success,status:.result.status,errors}'
+          ACC=$(api https://api.cloudflare.com/client/v4/accounts | jq -r '.result[0].id // empty')
+          [ -n "$ACC" ] || { echo "::error::The token cannot see any account. Recreate it from the 'Edit Cloudflare Workers' template."; exit 1; }
+          echo "account ${ACC:0:6}…"
+          SUB=$(api https://api.cloudflare.com/client/v4/accounts/$ACC/workers/subdomain | jq -r '.result.subdomain // empty')
+          if [ -z "$SUB" ]; then
+            for c in kereslek kereslek-kt kt-r7k4x9 kt-r7k4x9-$RANDOM; do
+              R=$(api -X PUT https://api.cloudflare.com/client/v4/accounts/$ACC/workers/subdomain -d "{\"subdomain\":\"$c\"}")
+              echo "$R" | jq -c '{success,errors}'
+              if [ "$(echo "$R" | jq -r .success)" = "true" ]; then SUB=$c; break; fi
+            done
+          fi
+          [ -n "$SUB" ] || { echo "::error::Could not register a workers.dev subdomain."; exit 1; }
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACC" >> $GITHUB_ENV
+          echo "sub=$SUB" >> $GITHUB_OUTPUT
+      - name: Deploy
+        if: steps.tok.outputs.ok == '1'
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 deploy
+          if [ -n "$SOL_RPC_URL" ]; then printf '%s' "$SOL_RPC_URL" | npx --yes wrangler@4 secret put SOL_RPC_URL; fi
+      - name: Verify it records
+        if: steps.tok.outputs.ok == '1'
+        run: |
+          URL="https://kt-pulse.${{ steps.acct.outputs.sub }}.workers.dev/m?n=10"
+          echo "PULSE_URL $URL" ; echo "Pulse endpoint: $URL" >> $GITHUB_STEP_SUMMARY
+          for i in $(seq 1 16); do
+            sleep 20
+            B=$(curl -sS -m 15 "$URL" || true)
+            echo "$(date -u +%T) $B" | cut -c1-400
+            echo "$B" | jq -e '.mins|length>0' >/dev/null 2>&1 && { echo "RECORDING OK"; exit 0; }
+          done
+          echo "::warning::Deployed, but no minutes recorded yet (DNS for a new workers.dev subdomain can take a few minutes)."

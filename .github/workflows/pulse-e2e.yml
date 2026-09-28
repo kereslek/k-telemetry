@@ -1,0 +1,30 @@
+# Runs the minute recorder in Cloudflare's local runtime (no account needed): fires the cron
+# a few times a minute apart and reads back what it recorded. Feature branch only.
+name: pulse-e2e
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['worker/**', '.github/workflows/pulse-e2e.yml']
+permissions:
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Run worker locally and fire the cron
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 dev --test-scheduled --port 8787 --ip 127.0.0.1 > /tmp/dev.log 2>&1 &
+          for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8787/m && break; sleep 2; done
+          for i in 1 2 3 4 5 6; do
+            curl -s "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*" ; echo " fired $(date -u +%T)"
+            sleep 5; curl -s "http://127.0.0.1:8787/m?n=10" | cut -c1-600; echo
+            sleep 55
+          done
+          echo "---- /m?n=10"; curl -s -i "http://127.0.0.1:8787/m?n=10"; echo
+          echo "---- /"; curl -s -i http://127.0.0.1:8787/ | head -5
+          echo "---- dev log"; tail -40 /tmp/dev.log
