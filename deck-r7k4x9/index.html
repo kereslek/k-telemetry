@@ -707,6 +707,8 @@
   .fp-avgt{fill:var(--text-secondary);font-size:9px;font-family:var(--mono);opacity:.8}
   .fp-ref{stroke:var(--status-good);stroke-width:1;stroke-dasharray:5 4;opacity:.7}
   .fp-reft{fill:var(--status-good);font-size:9.5px;font-family:var(--mono);font-weight:600}
+  .fpl-wait{fill:none;stroke:var(--text-muted);stroke-dasharray:2 2;opacity:.6;vector-effect:non-scaling-stroke}
+  .fp-wait{fill:rgba(126,151,168,.06);stroke:var(--text-muted);stroke-dasharray:3 3;opacity:.7}
   .fp24{margin-top:22px;padding-top:16px;border-top:1px dashed var(--line)}
   .fp24-h{font-size:10px;letter-spacing:.16em;color:var(--text-muted);font-weight:600;margin-bottom:8px}
   .fp-months{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:11.5px;color:var(--text-muted)}
@@ -1313,7 +1315,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3076,7 +3078,7 @@ function renderTiles(){
          (parts.length?'<span class="unit">'+parts.join('&nbsp; · &nbsp;')+'</span><br>':'')
          +(hrs<23.5?'<span class="unit">over the last '+hrs.toFixed(0)+'h — the record is still filling</span><br>':'')
          +'≈ <b>'+fmtUsd(tot/hrs*24*7,0)+'</b>/wk · <b>'+fmtUsd(tot/hrs*24*30.44,0)+'</b>/mo if the last 24h repeat'
-         +feePulseLink()+feePulseLink24());
+         +feePulseLink()+feePulseLink24()+feePulseLink60());
     } else {
     const dayOf = p => { const a=aprOfWin(p,'d1').v, base=p.valueUsd||p.costUsd;
                          return (a!=null&&base)? a/100*base/365 : null; };
@@ -3094,7 +3096,7 @@ function renderTiles(){
              +(noData?'&nbsp; · &nbsp;'+noData+' position'+(noData>1?'s':'')+' without 24H data':'')+'</span><br>':'')
           +'<span class="unit">estimated from each position\'s 24h fee rate (Solana: the pool\'s) until the ledger\'s 24h record arrives</span><br>'
           +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'
-         +feePulseLink()+feePulseLink24());
+         +feePulseLink()+feePulseLink24()+feePulseLink60());
     } }
   { /* "Portfolio" here is every open LP position, Ethereum and Solana — not wallet tokens. The big
        number is each position's own fee APR over the header window, weighted by what it is worth
@@ -7340,6 +7342,96 @@ function feePulseLink24(){
     +'<span class="fpl-head"><span>FEE PULSE · 24 HOURS</span><i>›</i></span>'
     +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
 }
+/* The last 60 minutes. The ledger is only read every ~20 minutes, so an hour holds about three
+   readings, and finer bars would be invented. Each block is one reading: what was earned since
+   the reading before, spanning the real time between them (clipped to the hour, pro rata). The
+   stretch since the latest reading has no figure yet and is drawn as waiting, not as zero. */
+function feeMinStats(){
+  const tk=(state.feeMonth&&state.feeMonth.ticks)||null;
+  if(!tk||tk.length<2) return null;
+  const now=Date.now(), w0=now-3600000, segs=[];
+  for(let i=1;i<tk.length;i++){
+    const [a,ca]=tk[i-1], [b,cb]=tk[i]; if(!(b>a)||b<=w0) continue;
+    const lo=Math.max(a,w0), hi=Math.min(b,now); if(!(hi>lo)) continue;
+    const gain=Math.max(0,cb-ca);
+    segs.push({from:lo, to:hi, a, b, usd:gain*(hi-lo)/(b-a), full:gain, clipped:lo>a});
+  }
+  const last=tk[tk.length-1][0];
+  const H=feeHourStats();
+  const gaps=[]; for(let i=1;i<tk.length;i++) gaps.push(tk[i][0]-tk[i-1][0]);
+  const cad=gaps.slice(-12).sort((x,y)=>x-y)[Math.floor(Math.min(12,gaps.length)/2)]||1200000;
+  return {w0, now, segs, last, next:last+cad, cad, total:segs.reduce((x,s)=>x+s.usd,0), hourAvg:H?H.avg:null};
+}
+function feePulseLink60(){
+  const S=feeMinStats(); if(!S) return '';
+  const W=300, H=30, X=t=>(t-S.w0)/3600000*W;
+  const perMin=S.hourAvg!=null?S.hourAvg/60:null;
+  const top=Math.max(...S.segs.map(s=>s.usd/((s.to-s.from)/60000)), perMin||0, 1e-6);
+  const y=v=>H-Math.max(1.5,v/top*(H-2));
+  let bars='';
+  for(const s of S.segs){ const r=s.usd/((s.to-s.from)/60000), x0=X(s.from)+1, w=Math.max(1,X(s.to)-X(s.from)-2);
+    bars+='<rect class="'+(perMin!=null&&r>perMin?'fpl-hi':'fpl-lo')+'" x="'+x0.toFixed(1)+'" y="'+y(r).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+(H-y(r)).toFixed(1)+'"/>'; }
+  if(S.last<S.now) bars+='<rect class="fpl-wait" x="'+(X(Math.max(S.last,S.w0))+1).toFixed(1)+'" y="1" width="'+Math.max(1,X(S.now)-X(Math.max(S.last,S.w0))-2).toFixed(1)+'" height="'+(H-2)+'"/>';
+  const avgLine=perMin!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(perMin).toFixed(1)+'" y2="'+y(perMin).toFixed(1)+'"/>':'';
+  return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — fee income over the last 60 minutes">'
+    +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
+}
+function renderFeePulse60(host){
+  const S=feeMinStats();
+  const wrap=el('div','fp24'); wrap.id='fp60';
+  wrap.append(el('div','fp24-h','LAST 60 MINUTES · BY LEDGER READING'));
+  host.append(wrap);
+  if(!S){ wrap.append(el('div','flow-omit','Needs two ledger readings.')); return; }
+  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  const mins=t=>Math.max(0,Math.round((S.now-t)/60000));
+  const st=el('div','fp-story');
+  st.innerHTML='Last 60 minutes <span class="big">'+fmtUsd(S.total,2)+'</span>'
+    +(S.hourAvg!=null?' · the 24-hour average is <b>'+fmtUsd(S.hourAvg,2)+'</b> an hour':'')
+    +'<br><span class="unit">'+S.segs.length+' reading'+(S.segs.length===1?'':'s')+' in the window · latest <b>'+hl(S.last)+'</b> ('+mins(S.last)+' min ago)'
+    +' · next due about <b>'+hl(S.next)+'</b></span>';
+  wrap.append(st);
+  const read=el('div','fp-read'); wrap.append(read);
+  const say=s=>{
+    if(!s){ read.innerHTML='▸ <b>'+hl(S.last)+'–now</b> · no reading yet — counted when the next one lands'; return; }
+    read.innerHTML='▸ <b>'+hl(s.a)+'–'+hl(s.b)+'</b> <b>'+fmtUsd(s.full,2)+'</b> earned between these two readings'
+      +(s.clipped?' <span class="unit">· '+fmtUsd(s.usd,2)+' of it falls inside the last 60 minutes</span>':'');
+  };
+  const cw=Math.max(300, host.clientWidth||600);
+  const W=cw, H=cw<560?120:150, padL=40, padR=10, padT=14, padB=22;
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(t,a,cls)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); return e; };
+  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H},'fp-svg');
+  const X=t=>padL+(t-S.w0)/3600000*(W-padL-padR);
+  const top=Math.max(...S.segs.map(s=>s.usd), 0.05)*1.2;
+  const stepY=[0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100].find(v=>top/v<=4)||200;
+  const Y=v=>padT+(1-v/top)*(H-padT-padB);
+  for(let g=0; g<=top; g+=stepY){
+    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g)},'fp-grid'));
+    const t=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end'},'fp-ax'); t.textContent=g===0?'$0':'$'+(g<1?+g.toFixed(2):g); svg.append(t);
+  }
+  for(let m=0;m<=60;m+=15){ const t=mk('text',{x:X(S.w0+m*60000),y:H-6,'text-anchor':m===0?'start':m===60?'end':'middle'},'fp-ax');
+    t.textContent=m===60?'now':hl(S.w0+m*60000); svg.append(t); }
+  const rects=S.segs.map(s=>{
+    const r=mk('rect',{x:X(s.from)+1,y:Y(s.usd),width:Math.max(1,X(s.to)-X(s.from)-2),height:Math.max(1.5,Y(0)-Y(s.usd)),rx:1},'fp-bar'+(S.hourAvg!=null&&s.usd/((s.to-s.from)/3600000)>S.hourAvg?' above':''));
+    svg.append(r); return r; });
+  if(S.last<S.now){
+    const x0=X(Math.max(S.last,S.w0));
+    svg.append(mk('rect',{x:x0+1,y:padT,width:Math.max(1,X(S.now)-x0-2),height:H-padT-padB,rx:1},'fp-wait'));
+    const t=mk('text',{x:(x0+X(S.now))/2,y:padT+12,'text-anchor':'middle'},'fp-ax'); t.textContent=X(S.now)-x0>70?'waiting…':'…'; svg.append(t);
+  }
+  let sel=null;
+  const pick=ev=>{ const b=svg.getBoundingClientRect(); const t=S.w0+((ev.clientX-b.left)/b.width*W-padL)/(W-padL-padR)*3600000;
+    const i=S.segs.findIndex(s=>t>=s.from&&t<s.to);
+    if(sel!=null&&rects[sel]) rects[sel].classList.remove('sel'); sel=i>=0?i:null; if(sel!=null) rects[sel].classList.add('sel');
+    say(i>=0?S.segs[i]:null); };
+  svg.addEventListener('pointermove',pick); svg.addEventListener('pointerdown',pick);
+  svg.addEventListener('pointerleave',()=>{ if(sel!=null&&rects[sel]) rects[sel].classList.remove('sel'); sel=null; say(S.segs[S.segs.length-1]); });
+  wrap.append(svg);
+  say(S.segs[S.segs.length-1]);
+  wrap.append(el('div','arch-note','One block per ledger reading, placed over the time it covers, your time · the ledger is read about every '
+    +Math.round(S.cad/60000)+' minutes, so this is as fine as the record goes · the dashed box at the end is time since the latest reading, not yet counted · bright blocks earned faster than the 24-hour average.'));
+}
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */
 function feePulseStats(){
@@ -7474,7 +7566,9 @@ function renderFeePulse(){
   host.append(mrow);
   host.append(el('div','arch-note','One bar per day, UTC (starts '+localMidnight+' your time) · all LPs, claimed + unclaimed, not counting fees your own swaps paid to your own pools · '
     +'bright bars beat today\'s pace, grey lines are month averages'
-    +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));  renderFeePulse24(host);
+    +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));
+  renderFeePulse24(host);
+  renderFeePulse60(host);
 }
 /* The last 24 hours, one bar per clock hour, under the day history: the same reading of the
    ledger as the FEE PULSE · 24 HOURS link on the income tile, drawn large enough to read. */
