@@ -832,6 +832,14 @@
   }
   .plink{color:inherit;text-decoration:none;border-bottom:1px dotted var(--text-muted)}
   .plink:hover{color:var(--accent);border-color:var(--accent)}
+  .ol-lead{font-size:12.5px;line-height:1.55;color:var(--text-secondary);max-width:860px}
+  .ol-lead b{color:var(--text-primary)}
+  .ol-tl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;margin-top:12px;background:var(--line);border:1px solid var(--line)}
+  .ol-st{display:flex;flex-direction:column;gap:3px;padding:9px 12px;background:var(--panel)}
+  .ol-k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
+  .ol-v{font-size:19px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .ol-r{font-size:10.5px;color:var(--text-muted)}
+  @media (max-width:760px){ .ol-tl{grid-template-columns:1fr 1fr} .ol-v{font-size:17px} }
   .econ-strip{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border:1px dashed var(--line);font-size:11.5px;color:var(--text-secondary)}
   .econ-strip b{color:var(--text-primary)}
   .arch-row .sub2{display:block;font-size:9.5px;letter-spacing:.03em;color:var(--text-muted);margin-top:2px;font-variant-numeric:tabular-nums}
@@ -1303,7 +1311,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3092,14 +3100,7 @@ function renderTiles(){
        now. Under it, the measured 30 days: fees the ledger actually recorded over the last 30
        complete UTC days, against the average LP value at those days' closes, annualised. Only
        recorded days count (estimated backfill is left out); too thin a record shows nothing. */
-    const fd=(state.feeMonth&&state.feeMonth.daily)||[], todayK=new Date().toISOString().slice(0,10);
-    const vAt=new Map((state.dayMoves||[]).map(m=>[m.d,m.v]));
-    const days=fd.filter(x=>x.d<todayK && !x.est && x.usd!=null).slice(-30);
-    const vals=days.map(x=>vAt.get(x.d)).filter(v=>v>0);
-    let m30=null;
-    if(days.length>=7 && vals.length>=days.length*0.8){
-      const fees=days.reduce((a,x)=>a+x.usd,0), avgV=vals.reduce((a,b)=>a+b,0)/vals.length;
-      m30={apr:fees/avgV*365/days.length*100, fees, avgV, n:days.length, from:days[0].d, to:days[days.length-1].d}; }
+    const m30=feePace(30);
     const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const dd=d=>MN[Number(d.slice(5,7))-1]+' '+Number(d.slice(8,10));
     const big=wApr==null?'—':wApr.toFixed(1)+'<span class="unit"> %</span>';
@@ -3109,13 +3110,24 @@ function renderTiles(){
        '<span class="unit">portfolio = all '+aprs.length+' open LPs, Ethereum + Solana, weighted by value · fees only · wallet tokens not included</span>'
        +(m30?'<br>30-day: <b>'+fmtUsd(m30.fees,0)+'</b> earned '+dd(m30.from)+'–'+dd(m30.to)+' on <b>'+fmtUsd(m30.avgV,0)+'</b> average in LPs, annualised':''));
   }
-  mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
-     pnl==null?'—':'≈<b>'+fmtUsd(pnl/100*cost,0)+'</b> on <b>'+fmtUsd(cost,0)+'</b> deposited'
-       +'<br>what every LP is worth now <i>plus</i> all fees earned, against what you put in'
-       +'<br><span class="unit">weighted by position size · includes price moves, so it is not the same as fee yield'
-       +(()=>{ const known=ps.filter(p=>p.costUsd!=null).length;
-               return known<ps.length ? ' · covers '+known+' of '+ps.length+' positions — Solana deposit history is not recoverable from free RPC' : ''; })()
+  { /* Lifetime P&L of the open LPs, shown as the sum it is so every figure can be traced: value now,
+       plus principal already taken back (valued at today's prices), plus every fee ever earned,
+       minus every deposit. Deposits are gross, so money moved out of one LP and into another is
+       counted in both — the dollar result is unaffected, the percentage is understated by it. */
+    const kn=ps.filter(p=>p.costUsd>0 && p.roiPct!=null);
+    const fOf=p=>p.feesLifeUsd??p.feesEverUsd??0;
+    const S=kn.reduce((a,p)=>{ const pl=p.roiPct/100*p.costUsd, v=p.valueUsd||0, f=fOf(p);
+      a.pl+=pl; a.dep+=p.costUsd; a.v+=v; a.f+=f; a.wd+=Math.max(0,pl+p.costUsd-v-f); return a; },{pl:0,dep:0,v:0,f:0,wd:0});
+    const since=kn.map(p=>p.mintTs).filter(Boolean).sort((x,y)=>x-y)[0];
+    const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    mk('BLENDED P&amp;L', pnl==null?'—':'<span class="'+(pnl>=0?'up':'down')+'" style="color:var(--status-'+(pnl>=0?'good':'critical')+')">'+fmtPct(pnl,2,true)+'</span>',
+     pnl==null?'—':'≈<b>'+fmtUsd(S.pl,0)+'</b> on <b>'+fmtUsd(S.dep,0)+'</b> deposited'
+       +'<br><span class="unit"><b>'+fmtUsd(S.v,0)+'</b> in LPs now + <b>'+fmtUsd(S.wd,0)+'</b> taken back out + <b>'+fmtUsd(S.f,0)+'</b> fees − <b>'+fmtUsd(S.dep,0)+'</b> deposited</span>'
+       +'<br><span class="unit">your '+kn.length+' open LPs over their whole life'+(since?' (oldest opened '+MN[new Date(since).getUTCMonth()]+' '+new Date(since).getUTCFullYear()+')':'')
+       +' · includes price moves · taken-out tokens valued at today\'s prices · closed LPs not counted · money moved from one LP to another counts as deposited in both, so the % reads low'
+       +(kn.length<ps.length?' · '+(ps.length-kn.length)+' LP'+(ps.length-kn.length>1?'s':'')+' without a known deposit left out':'')
        +'</span>');
+  }
   mk('RANGE STATUS', inR+'<span class="unit"> / '+ps.length+' IN RANGE</span>',
      ps.length-inR>0 ? '<span class="down">'+(ps.length-inR)+' position(s) idle</span>' : '<span class="up">all earning</span>');
 }
@@ -5124,70 +5136,105 @@ function renderOutlookSeg(){
     seg.append(b);
   }
 }
+/* Measured fee pace over the last n complete UTC days: what the ledger recorded, against the
+   average LP value at those days' closes. Shared by the APR tile and the outlook so they cannot
+   disagree. Estimated backfill is left out; a thin record returns null rather than a guess. */
+function feePace(n){
+  const fd=(state.feeMonth&&state.feeMonth.daily)||[], todayK=new Date().toISOString().slice(0,10);
+  const vAt=new Map((state.dayMoves||[]).map(m=>[m.d,m.v]));
+  const days=fd.filter(x=>x.d<todayK && !x.est && x.usd!=null).slice(-n);
+  const vals=days.map(x=>vAt.get(x.d)).filter(v=>v>0);
+  if(days.length<Math.min(n,7) || vals.length<days.length*0.8) return null;
+  const fees=days.reduce((a,x)=>a+x.usd,0), avgV=vals.reduce((a,b)=>a+b,0)/vals.length;
+  return {fees, avgV, n:days.length, perDay:fees/days.length, apr:fees/avgV*365/days.length*100,
+          from:days[0].d, to:days[days.length-1].d};
+}
 function renderOutlook(){
   const host=$('#outlookBody'); host.innerHTML='';
   renderOutlookSeg();
-  const win=cfg.outlookWin;
-  const ps=ordered().map(p=>({p,a:aprOfWin(p,win).v,base:p.valueUsd||p.costUsd||0})).filter(x=>x.a!=null&&x.base>0);
-  $('#outlookHint').textContent='AT '+WIN_LABEL[win]+' RATES · fees only, price assumed flat · not a promise';
-  if(!ps.length){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Waiting for APR data for this timeframe…</div>'; return; }
-  const wapr=ps.reduce((s,x)=>s+x.a*x.base,0)/ps.reduce((s,x)=>s+x.base,0);
-  const totBase=ps.reduce((s,x)=>s+x.base,0);
-  const monthly=totBase*wapr/100/12, yearly=totBase*wapr/100;
-  const compounded=totBase*(Math.pow(1+wapr/100/12,12)-1);
-  // headline tiles
-  const strip=el('div','econ-strip');
-  strip.innerHTML='<span>≈ <b>'+fmtUsd(monthly,0)+'</b> / month</span><span>≈ <b>'+fmtUsd(yearly,0)+'</b> / year (simple)</span><span>≈ <b>'+fmtUsd(compounded,0)+'</b> / year if fees are compounded monthly</span><span>blended <b>'+wapr.toFixed(1)+'% APR</b> on '+fmtUsd(totBase,0)+'</span>';
-  host.append(strip);
-  // projection chart: cumulative fees over 12 months, per position + portfolio band
-  const W=1200,H=300,padL=70,padR=20,padT=16,padB=30;
+  const win=cfg.outlookWin, N=win==='d7'?7:30;
+  const pace=feePace(N), other=feePace(N===7?30:7);
+  $('#outlookHint').textContent='AT THE LAST '+N+' DAYS\' PACE · fees only · price moves not included · not a promise';
+  if(!pace){ host.innerHTML='<div style="color:var(--text-muted);font-size:12px">Not enough recorded days yet to measure a '+N+'-day pace.</div>'; return; }
+  const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dd=(d,y)=>MN[Number(d.slice(5,7))-1]+' '+Number(d.slice(8,10))+(y?' '+d.slice(0,4):'');
+  const k$=v=>v>=9950?'$'+(v/1000).toFixed(0)+'k':v>=1000?'$'+(v/1000).toFixed(1)+'k':fmtUsd(v,0);
+  const now=Date.now(), rate=pace.perDay;
+  const lo=other?Math.min(rate,other.perDay):rate, hi=other?Math.max(rate,other.perDay):rate;
+  // what it means, in one sentence
+  host.append(el('div','ol-lead','Over the last '+pace.n+' days ('+dd(pace.from)+'–'+dd(pace.to)+') your LPs earned <b>'
+    +fmtUsd(pace.fees,0)+'</b>, about <b>'+fmtUsd(rate,0)+' a day</b>, which is <b>'+pace.apr.toFixed(1)+'%</b> a year on the <b>'
+    +fmtUsd(pace.avgV,0)+'</b> you had in LPs on average. If trading carries on at that pace, this is what comes in:'));
+  // timeline milestones, counted from now
+  const endOf=(y,m)=>Date.UTC(y,m+1,1)-1;            // last ms of month m (0-based)
+  const t0=new Date(now), Y=t0.getUTCFullYear(), M=t0.getUTCMonth();
+  const qEnd=[2,5,8,11].map(m=>m).find(m=>m>M)??11;
+  const oneYr=new Date(Date.UTC(Y+1,M,t0.getUTCDate())).toISOString().slice(0,10);
+  const leftToday=(endOf(Y,M)-now)/86400000, fm=state.feeMonth||{};
+  const altN=N===7?30:7, alt=v=>(other&&Math.abs(hi-lo)>lo*0.02)?'<span class="ol-r">at the '+altN+'-day pace: '+k$(other.perDay*v)+'</span>':'';
+  const stones=[
+    {k:'end of '+MN[qEnd]+(qEnd===M?' '+(Y+1):''), t:qEnd===M?endOf(Y+1,qEnd):endOf(Y,qEnd)},
+    {k:'in 6 months', t:Date.UTC(Y,M+6,t0.getUTCDate())},
+    {k:dd(oneYr,true)+' · 1 year', t:Date.parse(oneYr+'T00:00Z')},
+  ].filter((s,i,a)=>s.t>now && a.findIndex(x=>x.t===s.t)===i);
+  const tl=el('div','ol-tl');
+  tl.innerHTML=(fm.mtd!=null?'<div class="ol-st"><span class="ol-k">'+MN[M]+' closes at</span><span class="ol-v">≈ '+fmtUsd(fm.mtd+rate*leftToday,0)+'</span>'
+      +'<span class="ol-r">'+fmtUsd(fm.mtd,0)+' so far + '+fmtUsd(rate*leftToday,0)+' to come</span></div>':'')
+    +stones.map(s=>{ const d=(s.t-now)/86400000;
+    return '<div class="ol-st"><span class="ol-k">'+esc(s.k)+'</span><span class="ol-v">+'+fmtUsd(rate*d,0)+'</span>'+alt(d)+'</div>'; }).join('');
+  host.append(tl);
+  // month by month: what was earned, and what this pace adds
+  const curK=fm.month||new Date(now).toISOString().slice(0,7);
+  const months=[];
+  for(const x of (fm.prev||[]).slice(-2)) months.push({k:x.m, act:x.total||0, proj:0});
+  months.push({k:curK, act:fm.mtd||0, proj:rate*Math.max(0,leftToday), cur:true});
+  for(let i=1;i<=12;i++){ const d=new Date(Date.UTC(Y,M+i,1)); const dim=new Date(Date.UTC(Y,M+i+1,0)).getUTCDate();
+    months.push({k:d.toISOString().slice(0,7), act:0, proj:rate*dim, lo:lo*dim, hi:hi*dim}); }
+  // drawn at the width it is shown at, so a phone gets legible text rather than a scaled-down desktop chart
+  const W=Math.max(360,Math.min(1200,host.clientWidth||1200)), H=W<700?230:260, padL=W<700?40:58,padR=8,padT=26,padB=34;
   const NS='http://www.w3.org/2000/svg';
   const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
-  const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='14px';
-  const maxY=Math.max(compounded, yearly)*1.12;
-  const X=m=>padL+m/12*(W-padL-padR);
-  const Y=v=>padT+(1-v/maxY)*(H-padT-padB);
+  const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='12px';
+  const maxY=Math.max(...months.map(m=>Math.max(m.act+m.proj,m.hi||0)))*1.12;
+  const bw=(W-padL-padR)/months.length, Yp=v=>padT+(1-v/maxY)*(H-padT-padB);
   niceTicks(0,maxY,4).forEach(t=>{
-    svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Y(t),y2:Y(t),stroke:'#13233a'}));
-    const tx=mkel('text',{x:padL-8,y:Y(t)+3,'text-anchor':'end','font-size':10,fill:'#7e97a8'}); tx.textContent=fmtUsd(t,0); svg.append(tx);
+    svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Yp(t),y2:Yp(t),stroke:'#13233a'}));
+    const tx=mkel('text',{x:padL-8,y:Yp(t)+3,'text-anchor':'end','font-size':10,fill:'#7e97a8'}); tx.textContent=k$(t); svg.append(tx);
   });
-  for(let m=0;m<=12;m+=3){ const tx=mkel('text',{x:X(m),y:H-8,'text-anchor':'middle','font-size':10,fill:'#7e97a8'}); tx.textContent=m===0?'now':m+'mo'; svg.append(tx); }
-  // uncertainty band from the spread of available windows (portfolio level)
-  const winAprs=['d1','d7','d30'].map(w=>{ const rows=ordered().map(p=>({v:(w==='d1'?p.aprW?.d1??p.poolAprDay: w==='d7'?p.aprW?.d7??p.poolAprWeek: p.aprW?.d30??p.poolAprMonth), b:p.valueUsd||p.costUsd||0})).filter(x=>x.v!=null&&x.b>0);
-    return rows.length? rows.reduce((s,x)=>s+x.v*x.b,0)/rows.reduce((s,x)=>s+x.b,0) : null; }).filter(v=>v!=null);
-  if(winAprs.length>=2){
-    const lo=Math.min(...winAprs), hi=Math.max(...winAprs);
-    let dPath='M'+X(0)+' '+Y(0);
-    for(let m=1;m<=12;m++) dPath+=' L'+X(m)+' '+Y(totBase*(Math.pow(1+hi/100/12,m)-1));
-    for(let m=12;m>=0;m--) dPath+=' L'+X(m)+' '+Y(totBase*(Math.pow(1+lo/100/12,m)-1));
-    svg.append(mkel('path',{d:dPath+' Z',fill:'rgba(53,214,232,.08)'}));
-  }
-  // per-position lines
-  const endLabels=[];
-  ps.forEach(x=>{
-    let d='M'+X(0)+' '+Y(0);
-    for(let m=1;m<=12;m++) d+=' L'+X(m)+' '+Y(x.base*(Math.pow(1+x.a/100/12,m)-1));
-    const path=mkel('path',{d,fill:'none',stroke:seriesHex(cIdx(x.p)),'stroke-width':1.6,opacity:.85});
-    path.style.cursor='pointer';
-    path.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+esc(pairName(x.p))+' '+esc(posRef(x.p))+'</div><div class="tv">'+x.a.toFixed(1)+'% → ≈ <b>'+fmtUsd(x.base*(Math.pow(1+x.a/100/12,12)-1),0)+'</b> fees / year</div>'));
-    path.addEventListener('mouseleave',hideTip);
-    svg.append(path);
-    const endV=x.base*(Math.pow(1+x.a/100/12,12)-1);
-    endLabels.push({y:Y(endV)-4, text:x.p.m0.symbol+'/'+x.p.m1.symbol+(badgeOf(x.p)?'·'+badgeOf(x.p).split(' ')[0]:''), fill:seriesHex(cIdx(x.p))});
+  months.forEach((m,i)=>{
+    const x=padL+i*bw+bw*0.16, w=bw*0.68;
+    if(m.act>0) svg.append(mkel('rect',{x,y:Yp(m.act),width:w,height:Yp(0)-Yp(m.act),fill:'#35d6e8'}));
+    if(m.proj>0) svg.append(mkel('rect',{x:x+0.75,y:Yp(m.act+m.proj),width:w-1.5,height:Yp(m.act)-Yp(m.act+m.proj)-0.75,
+      fill:'rgba(53,214,232,.10)',stroke:'#35d6e8','stroke-dasharray':'3 3','stroke-width':1.2}));
+    const altV=other&&m.lo!=null&&Math.abs(m.hi-m.lo)>m.lo*0.02?(other.perDay>rate?m.hi:m.lo):null;
+    if(altV!=null) svg.append(mkel('line',{x1:x,x2:x+w,y1:Yp(altV),y2:Yp(altV),stroke:'#e0b453','stroke-width':1.5,'stroke-dasharray':'1 3'}));
+    const mo=Number(m.k.slice(5,7))-1;
+    const lb=mkel('text',{x:x+w/2,y:H-18,'text-anchor':'middle','font-size':10.5,fill:m.cur?'#e6f1f8':'#7e97a8','font-weight':m.cur?700:400});
+    lb.textContent=MN[mo]; svg.append(lb);
+    if((mo===0||i===0)&&W>=440){ const yl=mkel('text',{x:x+w/2,y:H-5,'text-anchor':'middle','font-size':9,fill:'#7e97a8'}); yl.textContent=m.k.slice(0,4); svg.append(yl); }
+    const tot=m.act+m.proj;
+    const vl=mkel('text',{x:x+w/2,y:Yp(tot)-6,'text-anchor':'middle','font-size':10,fill:m.act>0?'#e6f1f8':'#7e97a8'});
+    vl.textContent=(m.proj>0&&!m.act?'≈':'')+k$(tot); if(W>=700||m.cur) svg.append(vl);
+    const hit=mkel('rect',{x:padL+i*bw,y:padT,width:bw,height:H-padT-padB,fill:'transparent'});
+    hit.addEventListener('mousemove',ev=>showTip(ev,'<div class="tk">'+MN[mo]+' '+m.k.slice(0,4)+'</div><div class="tv">'
+      +(m.act>0?'earned <b>'+fmtUsd(m.act,0)+'</b>'+(m.proj>0?' so far':''):'')
+      +(m.proj>0?(m.act>0?' + ':'')+'≈ <b>'+fmtUsd(m.proj,0)+'</b> at this pace'+(m.lo!=null&&m.hi>m.lo*1.02?' ('+k$(m.lo)+'–'+k$(m.hi)+')':''):'')+'</div>'));
+    hit.addEventListener('mouseleave',hideTip); svg.append(hit);
   });
-  endLabels.sort((a,b)=>a.y-b.y);
-  for(let i=1;i<endLabels.length;i++) if(endLabels[i].y-endLabels[i-1].y<12) endLabels[i].y=endLabels[i-1].y+12;
-  endLabels.forEach(l=>{ const lb=mkel('text',{x:W-padR-4,y:l.y,'text-anchor':'end','font-size':9.5,fill:l.fill}); lb.textContent=l.text; svg.append(lb); });
-  // portfolio line
-  let dp='M'+X(0)+' '+Y(0);
-  for(let m=1;m<=12;m++) dp+=' L'+X(m)+' '+Y(totBase*(Math.pow(1+wapr/100/12,m)-1));
-  svg.append(mkel('path',{d:dp,fill:'none',stroke:'#35d6e8','stroke-width':3}));
-  const pl=mkel('text',{x:X(11.6),y:Y(compounded)-12,'text-anchor':'end','font-size':11,fill:'#35d6e8','font-weight':'700'});
-  pl.textContent='PORTFOLIO ≈ '+fmtUsd(compounded,0)+'/yr'; svg.append(pl);
+  // the line between what happened and what might
+  const nx=padL+(months.findIndex(m=>m.cur)+1)*bw;
+  svg.append(mkel('line',{x1:nx,x2:nx,y1:padT-14,y2:H-padB,stroke:'#7e97a8','stroke-dasharray':'2 4'}));
+  const nl=mkel('text',{x:nx-6,y:padT-6,'text-anchor':'end','font-size':9.5,fill:'#7e97a8'}); nl.textContent='EARNED ←'; svg.append(nl);
+  const nr=mkel('text',{x:nx+6,y:padT-6,'font-size':9.5,fill:'#7e97a8'}); nr.textContent='→ AT THIS PACE'; svg.append(nr);
+  if(other&&Math.abs(hi-lo)>lo*0.02){ const lg=mkel('text',{x:W-padR,y:padT-6,'text-anchor':'end','font-size':9.5,fill:'#e0b453'});
+    lg.textContent='┄ '+altN+'-day pace'; svg.append(lg); }
   host.append(svg);
-  const leftOut=ordered().filter(p=>!ps.some(x=>x.p===p));
-  host.append(el('div','arch-note','Curves compound monthly at each LP\'s '+WIN_LABEL[win]+' rate'
-    +(leftOut.length?' — '+leftOut.length+' position'+(leftOut.length>1?'s':'')+' ('+fmtUsd(leftOut.reduce((a,p)=>a+(p.valueUsd||0),0),0)+') too new for a '+WIN_LABEL[win]+' rate '+(leftOut.length>1?'are':'is')+' not in these figures':'')+'. Shaded band = portfolio range across 24H/7D/30D observed rates. Real results move with volume, price drift, and range exits — treat as a trajectory, not a target.'));
+  const prevAug=(fm.prev||[]).length;
+  host.append(el('div','arch-note','Solid bars are fees already earned; dashed bars are the '+N+'-day pace carried forward'
+    +(other&&Math.abs(hi-lo)>lo*0.02?'; the dotted gold line is the '+altN+'-day pace ('+fmtUsd(other.perDay,0)+'/day) for comparison':'')+'. '
+    +'Not compounded: reinvesting fees grows what you hold, but fee income is set by trading volume, and you already hold most of the liquidity in your main pools, so extra capital there earns little or nothing extra. '
+    +'Covers every LP, open or closed. Price moves are not included.'
+    +(prevAug?' Past months before September were counted the earlier way.':'')));
 }
 
 /* ----- global scope ----- */
