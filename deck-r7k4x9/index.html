@@ -242,6 +242,8 @@
   #toTop.show{opacity:.92; transform:none; pointer-events:auto}
   #toTop:hover{border-color:var(--accent); opacity:1}
   #toTop:active{transform:translateY(1px)}
+  /* on a phone it sits over the right-hand column of numbers: smaller, and see-through at rest */
+  @media(max-width:760px){ #toTop{width:34px;height:34px;font-size:11px;right:max(8px, env(safe-area-inset-right))} #toTop.show{opacity:.6} }
   @media(prefers-reduced-motion:reduce){ #toTop{transition:none} }
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
@@ -270,6 +272,9 @@
   .banner.show{display:flex;align-items:center;gap:10px}
 
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px;margin-bottom:14px}
+  /* seven tiles: on a wide screen all seven share one row rather than leaving the last one alone,
+     with the headline figures a size down so a five-figure amount still fits its column */
+  @media(min-width:1400px){ .tiles{grid-template-columns:repeat(7,minmax(0,1fr))} .tiles .tile .v{font-size:26px} .tiles .fpl-head{letter-spacing:.03em;font-size:8.5px} }
   .tile{
     position:relative;background:var(--panel);border:1px solid var(--line);
     padding:14px 16px 12px;overflow:hidden;
@@ -684,7 +689,9 @@
   .fpl-ref{stroke:var(--status-good);stroke-width:1;stroke-dasharray:4 3;opacity:.6;vector-effect:non-scaling-stroke}
   .fpl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;
             color:var(--accent);font-size:9px;letter-spacing:.16em;white-space:nowrap}
-  .fpl-head i{font-style:normal;font-size:14px;line-height:1;transition:transform .2s}
+  .fpl-head span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .fpl-head i{font-style:normal;font-size:14px;line-height:1;transition:transform .2s;flex:none;margin-left:4px}
+  @media(max-width:760px){ .fpl-head{letter-spacing:.03em;font-size:8.5px} }
   .fp-link:hover .fpl-head i{transform:translateX(3px)}
   /* fee pulse */
   .fp-story{font-size:14px;line-height:1.55;color:var(--text-secondary)}
@@ -948,8 +955,9 @@
 /* v20: action vector map */
 #flowMap{width:100%;height:300px;display:block;margin-top:14px;border:1px solid #13233a;border-radius:8px;background:radial-gradient(ellipse at 50% 120%,rgba(20,50,80,.35),rgba(6,12,22,.6))}
 @media (max-width:760px){ .gp-apy{margin-left:0} #flowMap{height:240px} }
-.tile .v .apr30{display:flex;align-items:baseline;gap:8px;margin-top:4px;font-size:.52em;line-height:1.1}
-.tile .v .apr30-k{font-size:.42em;letter-spacing:.12em;color:var(--text-muted,#8a9bb0)}
+.tile .v .apr30{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:4px;font-size:.52em;line-height:1.1}
+.tile .v .apr30-v{white-space:nowrap}
+.tile .v .apr30-k{font-size:9.5px;letter-spacing:.12em;color:var(--text-muted,#8a9bb0)}
 </style>
 </head>
 <body>
@@ -1315,7 +1323,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v32.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3012,10 +3020,17 @@ function renderTiles(){
   { const fm=state.feeMonth;
     const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
+    /* Where the month lands: what is earned so far plus the last 30 days' measured pace for the
+       days left — the same figure OUTLOOK shows, so the two can never name different month-ends.
+       Before there are 30 recorded days, the relay's month-to-date average stands in. */
+    const P30=feePace(30);
+    const endM=fm?Date.UTC(Number(fm.month.slice(0,4)),Number(fm.month.slice(5,7)),1):0;
+    const close=fm?(P30?fm.mtd+P30.perDay*Math.max(0,(endM-Date.now())/86400000):fm.proj):null;
+    const closeHow=P30?'so far + the last 30 days\' pace for the days left':'month-to-date average × '+(fm&&fm.daysInMonth)+' days';
     mk('FEES EARNED · '+mName,
        fm?inc(fmtUsd(fm.mtd)):'—',
-       fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth
-              +' <span class="unit">(month-to-date average × '+fm.daysInMonth+' days'
+       fm ? (close!=null?'on pace for <b>'+fmtUsd(close,0)+'</b> by '+mName+' '+fm.daysInMonth
+              +' <span class="unit">('+closeHow
               +((fm.pos24&&fm.pos24.total!=null)?'; the last 24 hours earned '+fmtUsd(fm.pos24.total)
                  :(fm.dayRate?'; open positions currently run at '+fmtUsd(fm.dayRate)+'/day':''))+')</span>'+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
@@ -3042,15 +3057,16 @@ function renderTiles(){
                  any other LPs' share remain as cost. */
               +((cm.selfSolUsd||0)>0.005?' <span class="unit">(paid '+fmtUsd(cm.solSwapUsd)+'; '+fmtUsd(cm.selfSolUsd)+' went to your own LPs, so it was never a cost)</span>'
                 :((cm.solSwapOwnUsd||0)>0.005?' <span class="unit">('+fmtUsd(cm.solSwapOwnUsd)+' of it paid to your own pools, and back to you as LP fees)</span>':'')):'')
+            +((cm.solGasUsd||0)>0.005?' · Solana gas <b>'+fmtUsd(cm.solGasUsd)+'</b> <span class="unit">◎</span>':'')
             +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             /* Gas and swap fees recur, so a rate times the month is the right shape for them.
                Creating a pool is paid once. Extrapolating it made a $18 fee project as $26 of
                cost that will never be charged, so it is held out of the rate and added back
                whole. */
-            +((net!=null&&fm.proj!=null&&fm.elapsedDays>0.25)?(()=>{
+            +((net!=null&&close!=null&&fm.elapsedDays>0.25)?(()=>{
                 const once=cm.solOpenUsd||0, rec=cm.total-once;
-                const projCost=rec/fm.elapsedDays*fm.daysInMonth+once, pn=fm.proj-projCost;
+                const projCost=rec/fm.elapsedDays*fm.daysInMonth+once, pn=close-projCost;
                 return ' · projected net ≈ <b style="color:var(--status-'+(pn>=0?'good':'critical')+')">'
                   +fmtUsd(pn,0)+'</b> by '+mName+' '+fm.daysInMonth
                   +' <span class="unit">(recurring costs extrapolated from this month\'s pace'
@@ -7371,7 +7387,7 @@ function pulseMins(){
   const P=state.pulse; if(!P||!Array.isArray(P.mins)||!P.last) return null;
   if(Date.now()-P.last>6*60000) return null;                  // stale: say nothing rather than old news
   const end=Math.floor(Date.now()/60000)*60000, by=new Map(P.mins.map(r=>[r[0],r]));
-  const mins=[]; for(let t=end-60*60000;t<end;t+=60000){ const r=by.get(t); mins.push({t, usd:r?r[1]:null, part:!!(r&&P.N&&r[2]<P.N)}); }
+  const mins=[]; for(let t=end-60*60000;t<end;t+=60000){ const r=by.get(t); mins.push({t, usd:r?r[1]:null, part:!!(r&&P.N&&r[2]<P.N*0.95)}); }
   const have=mins.filter(m=>m.usd!=null);
   if(have.length<5) return null;
   return {mins, have, total:have.reduce((a,m)=>a+m.usd,0), last:P.last, N:P.N};
@@ -7689,7 +7705,7 @@ function renderFeePulse24(host){
   const read=el('div','fp-read'); wrap.append(read);
   const say=h=>{
     if(!h) return;
-    if(h.usd==null){ read.innerHTML='▸ <b>'+hl(h.t)+'–'+hl(h.t+3600000)+'</b> · before the first reading'; return; }
+    if(h.usd==null){ read.innerHTML='▸ <b>'+hl(h.t)+'–'+hl(h.t+3600000)+'</b> · '+(have.length&&h.t>have[have.length-1].t?'no ledger reading yet this hour — the next one counts it':'before the first reading'); return; }
     const rank=1+have.filter(x=>x.usd>h.usd).length;
     read.innerHTML='▸ <b>'+hl(h.t)+'–'+hl(h.t+3600000)+'</b> <b>'+fmtUsd(h.usd,2)+'</b>'
       +(h.cur?' <span class="unit">· this hour so far · '+(matchMedia('(hover:hover)').matches?'hover':'tap')+' a bar for any other hour</span>'
@@ -7727,9 +7743,10 @@ function renderFeePulse24(host){
   const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
   svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
   svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerleave',()=>pick(n-1));
+    let li=n-1; while(li>0&&hrs[li].usd==null) li--;
+  svg.addEventListener('pointerleave',()=>pick(li));
   wrap.append(svg);
-  pick(n-1);
+  pick(li);
   wrap.append(el('div','arch-note','One bar per hour, your time · same ledger as the day bars above · the ledger is read about every 20 minutes and a gain between two readings is split across the hours it spans · '
     +'bright bars beat the 24-hour average, green is the hour in progress.'));
 }
