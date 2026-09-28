@@ -1,4 +1,4 @@
-// One-off: minute recorder vs the relay's fee ledger over the same stretches of time.
+// One-off: minute recorder vs the relay fee ledger over the same stretches of time (rerun).
 const W='https://kt-pulse.kereslek.workers.dev/m?n=1440';
 const w=await (await fetch(W)).json();
 const d=await (await fetch('https://kereslek.github.io/k-telemetry/deck-r7k4x9/data-main.json?t='+Date.now())).json();
