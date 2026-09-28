@@ -18,12 +18,16 @@ export class Pulse {
 
   async fetch(req){
     const u=new URL(req.url);
-    if(u.pathname==='/tick') return Response.json(await this.tick());
+    if(u.pathname==='/tick'){
+      // a failed minute is kept where /m can show it, instead of vanishing into the logs
+      try{ const r=await this.tick(); await this.s.put('fail',null); return Response.json(r); }
+      catch(e){ const f={at:Date.now(), err:String(e&&e.stack||e).slice(0,400)}; await this.s.put('fail',f); return Response.json(f,{status:500}); }
+    }
     const n=Math.max(1,Math.min(KEEP,Number(u.searchParams.get('n'))||60));
-    const [mins,meta]=await Promise.all([this.s.get('mins'),this.s.get('meta')]);
+    const [mins,meta,fail]=await Promise.all([this.s.get('mins'),this.s.get('meta'),this.s.get('fail')]);
     const since=Math.floor(Date.now()/MIN)*MIN-n*MIN;
     const rows=Object.entries(mins||{}).map(([t,v])=>[Number(t),v[0],v[1]]).filter(r=>r[0]>=since).sort((a,b)=>a[0]-b[0]);
-    return Response.json({now:Date.now(), ...(meta||{}), mins:rows});
+    return Response.json({now:Date.now(), ...(meta||{}), ...(fail?{fail}:{}), mins:rows});
   }
 
   // the dashboard's own position list and prices, refreshed every ten minutes

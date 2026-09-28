@@ -12,7 +12,7 @@ concurrency: { group: deploy-pulse, cancel-in-progress: false }
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
@@ -58,7 +58,7 @@ jobs:
         run: |
           URL="https://kt-pulse.${{ steps.acct.outputs.sub }}.workers.dev/m?n=10"
           echo "PULSE_URL $URL" ; echo "Pulse endpoint: $URL" >> $GITHUB_STEP_SUMMARY
-          for i in $(seq 1 16); do
+          for i in $(seq 1 45); do
             sleep 20
             B=$(curl -sS -m 15 "$URL" || true)
             echo "$(date -u +%T) $B" | cut -c1-400
