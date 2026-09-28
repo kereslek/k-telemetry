@@ -1,4 +1,4 @@
-// rerun 1
+// rerun 2
 /* One-off, read-only: every swap made from this deck's own wallets this month, and how much of
    the fee it paid came straight back to its own LP positions. Per swap: the pool, the fee paid,
    the protocol's cut (read from the pool's on-chain config), and this deck's share of the pool's
@@ -18,7 +18,9 @@ const ERPC=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https:
 let rid=0;
 async function erpc(method,params){ let last;
   for(let k=0;k<3;k++) for(const u of ERPC){ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(20000),body:JSON.stringify({jsonrpc:'2.0',id:++rid,method,params})});
-    const j=await r.json(); if(j.error) throw new Error(j.error.message); return j.result; }catch(e){ last=e; } }
+    const j=await r.json(); if(j.error) throw new Error(j.error.message);
+    if(j.result==null && /Receipt|ByNumber/.test(method)) throw new Error('null from '+u);   // a pruned or lagging node, not an answer
+    return j.result; }catch(e){ last=e; } }
   throw last; }
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const ours={}; // pool -> [ids]
@@ -42,7 +44,8 @@ async function poolMeta(a){ if(meta[a]) return meta[a];
 const evmTx=Object.entries(costs.txs||{}).filter(([,v])=>v===1).map(([k])=>k);
 console.log('Ethereum txs in the cost ledger this month:',evmTx.length);
 for(const h of evmTx){
-  let rc; try{ rc=await erpc('eth_getTransactionReceipt',[h]); }catch(e){ console.log('receipt fail',h); continue; }
+  let rc; try{ rc=await erpc('eth_getTransactionReceipt',[h]); }catch(e){ console.log('receipt fail',h,String(e.message).slice(0,60)); continue; }
+  if(!rc) continue;
   const swaps=(rc.logs||[]).filter(l=>l.topics[0]===SW3); if(!swaps.length) continue;
   const blk=parseInt(rc.blockNumber,16);
   const b=await erpc('eth_getBlockByNumber',[rc.blockNumber,false]); const t=parseInt(b.timestamp,16)*1000;
