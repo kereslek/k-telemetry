@@ -16,3 +16,26 @@ for(let i=1;i<tk.length;i++){
 }
 console.log('TOTAL ledger', tl.toFixed(2), 'recorder', tw.toFixed(2));
 console.log('PULSE_JSON '+JSON.stringify({...w, mins:w.mins.slice(-90)}));
+
+// Third, independent check: the trades themselves, straight from the chains.
+const since=Date.now()-2*3600000;
+const pools={};
+for(const p of d.eth) pools['eth:'+p.pool]=p.pairLabel+' '+p.feeLabel;
+for(const p of d.sol) if(p.poolId) pools['sol:'+p.poolId]=p.pairLabel+' '+p.feeLabel;
+for(const [k,lbl] of Object.entries(pools)){
+  const [ch,addr]=k.split(':');
+  try{
+    if(ch==='eth'){
+      const j=await (await fetch('https://eth.blockscout.com/api/v2/addresses/'+addr+'/logs')).json();
+      const sw=(j.items||[]).filter(x=>x.decoded&&/^Swap/.test(x.decoded.method_call||''));
+      const ts=[];
+      for(const x of sw.slice(0,15)){ const b=await (await fetch('https://eth.blockscout.com/api/v2/blocks/'+x.block_number)).json(); ts.push(Date.parse(b.timestamp)); }
+      const recent=ts.filter(t=>t>=since);
+      console.log('SWAPS', lbl, addr.slice(0,10), 'last 2h:', recent.length, '· latest swap', ts[0]?new Date(ts[0]).toISOString():'none');
+    } else {
+      const r=await (await fetch('https://solana-rpc.publicnode.com',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getSignaturesForAddress',params:[addr,{limit:50}]})})).json();
+      const s=(r.result||[]).filter(x=>!x.err);
+      console.log('POOL TXS', lbl, addr.slice(0,6), 'last 2h:', s.filter(x=>x.blockTime*1000>=since).length, '· latest', s[0]?new Date(s[0].blockTime*1000).toISOString():'none');
+    }
+  }catch(e){ console.log('check failed', lbl, e.message); }
+}
