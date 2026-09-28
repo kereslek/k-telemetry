@@ -1,3 +1,4 @@
+# Minute fee recorder for the ARC deck. Deployed by .github/workflows/deploy-pulse.yml.
 name = "kt-pulse"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
