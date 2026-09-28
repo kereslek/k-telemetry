@@ -1301,7 +1301,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v31.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v31.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2128,12 +2128,24 @@ function aprOfWin(p,w){
   // position opened (Solana has no fee event log). Annualised over the observed window.
   if(w==='incept') return {v: p.feeAprPct ?? null, pool:false, partial:!!p.feesPartial};
   if(p.chain==='sol'){
+    /* The 24-hour window is measured on the position itself — what the fee ledger booked for it
+       over the last 24 hours, on its value — so it is the same record as the FEE INCOME · LAST 24H
+       tile. Longer windows are still Raydium's pool-wide statistic, and say so (◎pool). */
+    if(w==='d1'){ const r=solDay24(p); if(r!=null) return {v:r, pool:false}; }
     const v = {d1:p.poolAprDay, d7:p.poolAprWeek, d30:p.poolAprMonth, d365:null}[w];
     return {v: v ?? null, pool:true};
   }
   return {v: p.aprW ? (p.aprW[w] ?? null) : null, pool:false};
 }
 function aprOf(p){ return aprOfWin(p, cfg.aprWin); }
+/* A Solana position's 24h earnings from the relay's per-position ledger window, as an APR on its
+   value. Only when the window covers most of a day — a partial window would annualise noise. */
+function solDay24(p){
+  const P=state.feeMonth&&state.feeMonth.pos24;
+  if(!P||!Array.isArray(P.byPos)||!(p.valueUsd>0)||(P.to-P.from)<20*3600000) return null;
+  const r=P.byPos.find(x=>x.id===p.id); if(!r) return null;
+  return r.usd/((P.to-P.from)/86400000)/p.valueUsd*365*100;
+}
 
 /* ---- connectivity diagnostics: tests every endpoint from THIS browser ---- */
 const hostOf = u => u.replace('https://','').split('/')[0];
@@ -2991,8 +3003,10 @@ function renderTiles(){
        fm?inc(fmtUsd(fm.mtd)):'—',
        fm ? (fm.proj!=null?'on pace for <b>'+fmtUsd(fm.proj,0)+'</b> by '+mName+' '+fm.daysInMonth
               +' <span class="unit">(month-to-date average × '+fm.daysInMonth+' days'
-              +(fm.dayRate?'; open positions currently run at '+fmtUsd(fm.dayRate)+'/day':'')+')</span>'+' · ':'')
+              +((fm.pos24&&fm.pos24.total!=null)?'; the last 24 hours earned '+fmtUsd(fm.pos24.total)
+                 :(fm.dayRate?'; open positions currently run at '+fmtUsd(fm.dayRate)+'/day':''))+')</span>'+' · ':'')
             +'day '+Math.ceil(fm.elapsedDays)+'/'+fm.daysInMonth+' · incl. closed LPs, claimed + unclaimed'
+            +((fm.selfBack||0)>0.005?' · excludes <b>'+fmtUsd(fm.selfBack)+'</b> your own swaps paid into your own pools':'')
             +((fm.prev||[]).length?'<br>past: '+fm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd(x.total,0)+'</b>').join(' · '):'')
             +' <span class="unit">·</span> <button type="button" class="tile-why" data-jump="telemetry" data-anchor="feeByTok">by token</button>'
           : 'ledger starts with the next relay refresh (~15 min)');
@@ -3000,15 +3014,21 @@ function renderTiles(){
     const net=(fm&&cm)?fm.mtd-cm.total:null;
     mk('COSTS · '+mName,
        cm?outc(fmtUsd(cm.total)):'—',
-       cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd)+'</b> · '+cm.txCount+' LP tx'
+       cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd-(cm.selfEvmUsd||0))+'</b>'
+            +((cm.selfEvmUsd||0)>0.005?' <span class="unit">(paid '+fmtUsd(cm.swapFeeUsd)+'; '+fmtUsd(cm.selfEvmUsd)+' went to your own LPs, so it was never a cost)</span>':'')
+            +' · '+cm.txCount+' LP tx'
             /* Creating a pool is a one-off of a different order to a transaction fee — tens of
                dollars against fractions of a cent — so it is named rather than folded silently
                into the total the net is struck against. */
-            +((cm.solSwapUsd||0)>0.005?' · Solana swap fees <b>'+fmtUsd(cm.solSwapUsd)+'</b> <span class="unit">◎</span>'
+            +((cm.solSwapUsd||0)>0.005?' · Solana swap fees <b>'+fmtUsd(cm.solSwapUsd-(cm.selfSolUsd||0))+'</b> <span class="unit">◎</span>'
               /* Routed through a pool you are the only LP in, the fee is charged and returned in
                  the same breath. Still a cost, but not a loss, and the difference is worth a
                  clause. */
-              +((cm.solSwapOwnUsd||0)>0.005?' <span class="unit">('+fmtUsd(cm.solSwapOwnUsd)+' of it paid to your own pools, and back to you as LP fees)</span>':''):'')
+              /* A fee paid into a pool this deck is the market in comes back to its own LPs. That part is
+                 neither a cost nor income — the relay takes it out of both — and only Raydium's cut and
+                 any other LPs' share remain as cost. */
+              +((cm.selfSolUsd||0)>0.005?' <span class="unit">(paid '+fmtUsd(cm.solSwapUsd)+'; '+fmtUsd(cm.selfSolUsd)+' went to your own LPs, so it was never a cost)</span>'
+                :((cm.solSwapOwnUsd||0)>0.005?' <span class="unit">('+fmtUsd(cm.solSwapOwnUsd)+' of it paid to your own pools, and back to you as LP fees)</span>':'')):'')
             +((cm.solOpenUsd||0)>0.005?' · pool &amp; position setup <b>'+fmtUsd(cm.solOpenUsd)+'</b> <span class="unit">◎</span>':'')
             +(net!=null?'<br>net fee income: <b style="color:var(--status-'+(net>=0?'good':'critical')+')">'+fmtUsd(net)+'</b> after costs':'')
             /* Gas and swap fees recur, so a rate times the month is the right shape for them.
@@ -3023,7 +3043,7 @@ function renderTiles(){
                   +' <span class="unit">(recurring costs extrapolated from this month\'s pace'
                   +(once>0.005?'; setup counted once':'')+')</span>';
               })():'')
-            +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0),0)+'</b>').join(' · '):'')
+            +((cm.prev||[]).length?'<br>past: '+cm.prev.slice(-4).map(x=>'<b>'+MN[Number(x.m.slice(5,7))-1]+' '+fmtUsd((x.gas||0)+(x.swapFee||0)+(x.solGas||0)+(x.solOpen||0)+(x.solSwap||0)-(x.selfEvm||0)-(x.selfSol||0),0)+'</b>').join(' · '):'')
           : 'gas + rebalance swap fees · starts with the next relay refresh'); }
   { /* What was actually earned in the last 24 hours: the relay's fee ledger, per position, over
        the same window as the 24-hour pulse — so this, FEE PULSE and FEES EARNED are one record.
@@ -3609,7 +3629,7 @@ function renderFlow(){
     +'<span>FULL RE-RANGE ≈ <b>'+(rcst!=null?fmtUsd(rcst):'—')+'</b></span>'
     +'<span>SOLANA TX ≈ <b>$0.02</b></span>'
     +(state.costMonth&&state.costMonth.txCount>0
-      ? '<span>YOUR ACTUAL AVG ≈ <b>'+fmtUsd(((state.costMonth.gasUsd||0)+(state.costMonth.swapFeeUsd||0))/state.costMonth.txCount)
+      ? '<span>YOUR ACTUAL AVG ≈ <b>'+fmtUsd(((state.costMonth.gasUsd||0)+(state.costMonth.swapFeeUsd||0)-(state.costMonth.selfEvmUsd||0))/state.costMonth.txCount)
         +'</b> / op <span class="unit">(gas + swap fees, '+state.costMonth.txCount+' ops this month)</span></span>'
       : '')
     +'<span style="color:var(--text-muted)">first three are gas only at current gwei — they exclude the swap fee and price impact of rebalancing, which is usually the larger cost</span>';
@@ -3773,7 +3793,7 @@ function compoundCostUsd(p){
      collect. Each chain is costed from its own numbers. */
   if(p.chain==='sol') return SOL_TX_USD*2 + swapFee;
   const cm=state.costMonth;
-  const perOp=(cm&&cm.txCount>0)?(((cm.gasUsd||0)+(cm.swapFeeUsd||0))/cm.txCount):null;
+  const perOp=(cm&&cm.txCount>0)?(((cm.gasUsd||0)+(cm.swapFeeUsd||0)-(cm.selfEvmUsd||0))/cm.txCount):null;
   const ops=perOp!=null?perOp*3:null;                        // collect + rebalance swap + add
   const base=Math.max(ops??0, gasCostUsd(COMPOUND_GAS)??0);
   return base>0?base+swapFee:null;
@@ -3875,7 +3895,7 @@ function buildTokenBook(){
     const t=get(key, r.native?(r.chain==='sol'?'SOL':'ETH'):r.symbol, r.chain);
     if(!t.addr) t.addr=r.native?null:r.addr;
     t.idle+=r.amount;
-    if(r.usd!=null){ t.idleUsd=(t.idleUsd||0)+r.usd; t.usd=r.usd/r.amount; } else t.unpriced=true;
+    if(r.usd!=null){ t.idleUsd=(t.idleUsd||0)+r.usd; t.usd=r.px!=null?r.px:r.usd/r.amount; } else t.unpriced=true;
   }
   for(const p of ordered()){
     const L=p.liq?Number(p.liq):null;
@@ -3890,8 +3910,12 @@ function buildTokenBook(){
     /* What this token's own pool says it is worth, kept beside the feed price. They normally
        agree; when they do not, one of them is wrong about a real holding and the reader should
        be told rather than shown a single confident number. */
-    if(p.usd1!=null && p.price>0) t0.poolPx=Math.max(t0.poolPx||0, p.price*p.usd1);
-    if(p.usd0!=null && p.price>0) t1.poolPx=Math.max(t1.poolPx||0, p.usd0/p.price);
+    /* The mark comes from the pool carrying most of this token's in-range value — where it
+       actually trades. The highest of all its pools' prices was chosen before, and a resting range
+       order whose pool sits at its edge with nothing trading set a CPOOL "mark" 16% off the market. */
+    const wgt=p.inRange?(p.valueUsd||0):0;
+    if(p.usd1!=null && p.price>0 && wgt>(t0.poolW||0)){ t0.poolPx=p.price*p.usd1; t0.poolW=wgt; }
+    if(p.usd0!=null && p.price>0 && wgt>(t1.poolW||0)){ t1.poolPx=p.usd0/p.price; t1.poolW=wgt; }
     t0.legs.push({p,side:0,amt:p.amt0||0,L});
     t1.legs.push({p,side:1,amt:p.amt1||0,L});
   }
@@ -4030,7 +4054,7 @@ function scnCompute(book, px){
    row equal the tile exactly, which is a claim that can be checked rather than a judgement
    call. A position with no rate is left out of the total rather than counted as zero. */
 function scnFeeDay(p){
-  const a = p.chain==='sol' ? (p.poolAprDay ?? null) : (p.aprW ? (p.aprW.d1 ?? null) : null);
+  const a = aprOfWin(p,'d1').v;
   return (a!=null && p.valueUsd>0) ? p.valueUsd*a/100/365 : null;
 }
 let scnDragging=false, scnRaf=0, scnRepaint=null;
@@ -4814,7 +4838,6 @@ function renderIdle(){
       +(evm.length>1?'s':'')+' where a cost basis exists, pooling is currently <b style="color:var(--status-'
       +(ahead?'good':'critical')+')">'+(ahead?'ahead by ':'behind by ')+fmtUsd(Math.abs(vsHodl))+'</b> versus simply holding the '
       +'same tokens — '+(Math.abs(vsHodl)/evmBase*100).toFixed(1)+'% of the '+fmtUsd(evmBase,0)+' put in. '
-      +'Solana positions are excluded: no deposit history on free RPC means no cost basis to compare against. '
       +'Deploying more only pays if the fee income beats that gap.'));
   }
   const tbl=el('div','idle-tbl');
@@ -4835,7 +4858,7 @@ function renderIdle(){
     const row=el('div','idle-row');
     /* Unit price, at enough decimals to be a number rather than $0.00 — these run from CPOOL at
        two cents to ETH at four figures, and one fixed precision cannot serve both. */
-    const px = (r.priced && r.amount>0) ? r.usd/r.amount : null;
+    const px = r.px!=null ? r.px : ((r.priced && r.amount>0) ? r.usd/r.amount : null);
     /* Keyed on contract, not ticker: the same key the server measured the change on. A token
        first bought today has no previous close and gets a dash, not a zero. */
     /* Four decimals on a 703,750 balance is false precision, and it was the single widest thing
@@ -4866,7 +4889,7 @@ function renderIdle(){
       if(!r.priced || !(r.amount>0)) continue;
       const sym=r.sym.replace(/ ·\w+$/,'');          // drop the contract tag; the ticker is the question
       if(!bySym.has(sym)) bySym.set(sym,[]);
-      bySym.get(sym).push({ch:r.chain, px:r.usd/r.amount});
+      bySym.get(sym).push({ch:r.chain, px:r.px!=null?r.px:r.usd/r.amount});
     }
     const split=[];
     for(const [sym,list] of bySym){
@@ -5139,7 +5162,9 @@ function renderOutlook(){
   const pl=mkel('text',{x:X(11.6),y:Y(compounded)-12,'text-anchor':'end','font-size':11,fill:'#35d6e8','font-weight':'700'});
   pl.textContent='PORTFOLIO ≈ '+fmtUsd(compounded,0)+'/yr'; svg.append(pl);
   host.append(svg);
-  host.append(el('div','arch-note','Curves compound monthly at each LP\'s current '+WIN_LABEL[cfg.aprWin]+' rate. Shaded band = portfolio range across 24H/7D/30D observed rates. Real results move with volume, price drift, and range exits — treat as a trajectory, not a target.'));
+  const leftOut=ordered().filter(p=>!ps.some(x=>x.p===p));
+  host.append(el('div','arch-note','Curves compound monthly at each LP\'s '+WIN_LABEL[win]+' rate'
+    +(leftOut.length?' — '+leftOut.length+' position'+(leftOut.length>1?'s':'')+' ('+fmtUsd(leftOut.reduce((a,p)=>a+(p.valueUsd||0),0),0)+') too new for a '+WIN_LABEL[win]+' rate '+(leftOut.length>1?'are':'is')+' not in these figures':'')+'. Shaded band = portfolio range across 24H/7D/30D observed rates. Real results move with volume, price drift, and range exits — treat as a trajectory, not a target.'));
 }
 
 /* ----- global scope ----- */
@@ -5928,7 +5953,7 @@ function renderTruth(){
     });
     const tot=el('div','arch-row'); tot.style.borderTop='1px solid var(--line-soft)';
     const tBase=ps.reduce((s,p)=>s+(p.costUsd||0),0);
-    tot.append(cell('arch-pos','<b>PORTFOLIO (EVM)</b>'+(tBase>0?'<span class="sub2">'+fmtUsd(tBase,0)+' deposited</span>':'')));
+    tot.append(cell('arch-pos','<b>PORTFOLIO</b>'+(tBase>0?'<span class="sub2">'+fmtUsd(tBase,0)+' deposited</span>':'')));
     tot.append(cell('num',g(tF),'FEES EARNED')); tot.append(cell('num',g(tIl),'IMPERMANENT LOSS'));
     tot.append(cell('num',g(tNet)+(tBase>0?'<span class="sub2">'+(tNet>=0?'+':'−')+Math.abs(tNet/tBase*100).toFixed(2)+'% of deposit</span>':''),'NET vs HODL'));
     tot.append(cell(null,tNet>=0?'<b style="color:var(--status-good)">pooling is ahead</b>':'<b style="color:var(--status-critical)">holding would be ahead</b>','VERDICT'));
@@ -6035,7 +6060,7 @@ function renderTruth(){
       if(solGroup) html+='<br><span style="opacity:.75">◎ Solana: gross fee yield only. No deposit history on free RPC means no cost basis and no IL, so these rates are before divergence, not net of it.</span>';
       box.innerHTML=html; host.append(box);
     }
-    host.append(el('div','arch-note','HOW TO READ — IMPERMANENT LOSS compares your LP (current value + anything withdrawn) against simply holding the deposited tokens at today\'s prices: negative = the pool ratio-shifted you into the weaker token. NET vs HODL = IL + fees earned — the honest answer to “should I have just held?”. Range exits, IL drag and gas are ALL costs; fees must outrun the sum. ◎ Solana positions are excluded (deposit history unavailable — IL not computable from free RPC).'));
+    host.append(el('div','arch-note','HOW TO READ — IMPERMANENT LOSS compares your LP (current value + anything withdrawn) against simply holding the deposited tokens at today\'s prices: negative = the pool ratio-shifted you into the weaker token. NET vs HODL = IL + fees earned — the honest answer to “should I have just held?”. Range exits, IL drag and gas are ALL costs; fees must outrun the sum.'));
   } else {
     host.append(el('div',null,'<span style="color:var(--text-muted);font-size:12px">IL analytics arrive with the next relay refresh.</span>'));
   }
@@ -6247,7 +6272,7 @@ function renderMonths(host){
     : '<b style="color:var(--status-'+(v>=0?'good':'critical')+')">'+(v>=0?'+':'−')+fmtUsd(Math.abs(v))+'</b>';
   const byM={};
   (fm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].fees=x.total; byM[x.m].ilEnd=x.ilEnd; });
-  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0)+(x.solOpen||0)+(x.solSwap||0); });
+  (cm&&cm.prev||[]).forEach(x=>{ byM[x.m]=byM[x.m]||{}; byM[x.m].costs=(x.gas||0)+(x.swapFee||0)+(x.solGas||0)+(x.solOpen||0)+(x.solSwap||0)-(x.selfEvm||0)-(x.selfSol||0); });
   const rows=Object.keys(byM).sort().map(m=>({m,...byM[m],cur:false}));
   rows.push({m:fm.month, fees:fm.mtd, costs:cm?cm.total:null, ilEnd:fm.ilNow, cur:true});
   const wrap=el('div','flow-block');
@@ -6832,7 +6857,7 @@ function renderFeeByToken(host){
   const note=[];
   if(fm.mtd!=null && Math.abs(tot-fm.mtd)>0.05) note.push('The tile reads '+fmtUsd(fm.mtd,2)+'; the gap is rounding between ledgers.');
   if(!byPos) note.push('Split by pool type until the relay\'s next refresh adds the per-position record; the two LCX contracts cannot be told apart until then.');
-  note.push('Month to date, closed LPs included, claimed and unclaimed — the same figure as the FEES EARNED tile.');
+  note.push('Month to date, closed LPs included, claimed and unclaimed — the same figure as the FEES EARNED tile. Fees your own swaps paid into your own pools are not counted: that was your money, not income.');
   note.push('Each pool\'s fees count toward the token it exists for: SOL / CPOOL and CPOOL / USDT are CPOOL income, LCX / ETH is LCX income. Fees are paid out in both tokens of a pool; this is about which market earned them.');
   wrap.append(el('div','arch-note',note.join(' ')));
   host.append(wrap);
@@ -6852,11 +6877,11 @@ function renderCatSplit(host){
      marked unknown rather than treated as zero, because zero is a claim and absence is not. */
   const cprev={}; ((cm&&cm.prev)||[]).forEach(c=>{ if(c&&c.m) cprev[c.m]=c; });
   const cols=[...arch.map(a=>{ const c=cprev[a.m];
-    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)):null,
-            sol:c?((c.solGas||0)+(c.solOpen||0)+(c.solSwap||0)):null, cur:false}; })];
+    return {m:a.m, cat:a.cat, evm:c?((c.gas||0)+(c.swapFee||0)-(c.selfEvm||0)):null,
+            sol:c?((c.solGas||0)+(c.solOpen||0)+(c.solSwap||0)-(c.selfSol||0)):null, cur:false}; })];
   if(cur&&Object.keys(cur).length)
-    cols.push({m:(fm&&fm.month)||'', cat:cur, evm:cm?((cm.gasUsd||0)+(cm.swapFeeUsd||0)):null,
-               sol:cm?((cm.solGasUsd||0)+(cm.solOpenUsd||0)+(cm.solSwapUsd||0)):null, cur:true});
+    cols.push({m:(fm&&fm.month)||'', cat:cur, evm:cm?((cm.gasUsd||0)+(cm.swapFeeUsd||0)-(cm.selfEvmUsd||0)):null,
+               sol:cm?((cm.solGasUsd||0)+(cm.solOpenUsd||0)+(cm.solSwapUsd||0)-(cm.selfSolUsd||0)):null, cur:true});
   if(!cols.length) return;
   const keys=[...new Set(cols.flatMap(c=>Object.keys(c.cat||{})))].sort();
   const wrap=el('div','flow-block');
@@ -7387,7 +7412,7 @@ function renderFeePulse(){
     const cur=mo.m===todayK.slice(0,7);
     mrow.append(el('span',null,MN[Number(mo.m.slice(5,7))-1]+(cur?' so far':'')+' <b>'+fmtUsd(mo.tot,0)+'</b> · <span class="fp-key"></span><b>'+fmtUsd(mo.avg,0)+'</b>/day avg')); });
   host.append(mrow);
-  host.append(el('div','arch-note','One bar per day, UTC (starts '+localMidnight+' your time) · all LPs, claimed + unclaimed · '
+  host.append(el('div','arch-note','One bar per day, UTC (starts '+localMidnight+' your time) · all LPs, claimed + unclaimed, not counting fees your own swaps paid to your own pools · '
     +'bright bars beat today\'s pace, grey lines are month averages'
     +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));
 }
