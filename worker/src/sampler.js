@@ -57,9 +57,10 @@ function decAgg(ret){
     out.push(ok&&len?'0x'+h.slice((b+32)*2,(b+32+len)*2):null); }
   return out;
 }
+// failed calls come back as null, so one bad position (burned, reverted) cannot sink the rest
 async function multi(rpcs, calls){
   const r=decAgg(await one(rpcs,'eth_call',[{to:MC3,data:encAgg(calls)},'latest']));
-  if(r.length!==calls.length||r.some(x=>x==null)) throw new Error('multicall: a call failed');
+  if(r.length!==calls.length) throw new Error('multicall: reply length');
   return r;
 }
 function insideEvm(g,oL,oU,cur,tl,tu){
@@ -73,20 +74,21 @@ async function growthEvm(ps, cache, rpcs){
   const need=ps.filter(p=>!cache[p.id]);
   if(need.length){
     const r=await multi(rpcs, need.map(p=>call(NPM,'0x99fbab88'+u256hex(p.id))));
-    need.forEach((p,i)=>{ cache[p.id]={tl:Number(i256(word(r[i],5))), tu:Number(i256(word(r[i],6)))}; });
+    need.forEach((p,i)=>{ if(r[i]) cache[p.id]={tl:Number(i256(word(r[i],5))), tu:Number(i256(word(r[i],6)))}; });
   }
   const pools=[...new Set(ps.map(p=>p.pool))];
   const calls=[], at={};
   for(const pl of pools){ at[pl]=calls.length; calls.push(call(pl,'0x3850c7bd'),call(pl,'0xf3058399'),call(pl,'0x46141319')); }
-  const tickAt={};
-  for(const p of ps){ const c=cache[p.id];
+  const tickAt={}, live=ps.filter(p=>cache[p.id]);
+  for(const p of live){ const c=cache[p.id];
     for(const t of [c.tl,c.tu]){ const k=p.pool+':'+t; if(tickAt[k]==null){ tickAt[k]=calls.length; calls.push(call(p.pool,'0xf30dba93'+u256hex(t))); } }
     p._i=calls.length; calls.push(call(NPM,'0x99fbab88'+u256hex(p.id))); }
   const r=await multi(rpcs, calls);
-  for(const p of ps){
+  for(const p of live){
     const c=cache[p.id], a=at[p.pool];
-    const cur=Number(i256(word(r[a],1))), g0=word(r[a+1],0), g1=word(r[a+2],0);
     const lo=r[tickAt[p.pool+':'+c.tl]], up=r[tickAt[p.pool+':'+c.tu]];
+    if(!r[a]||!r[a+1]||!r[a+2]||!lo||!up||!r[p._i]) continue;        // a failed call: no reading, not a zero
+    const cur=Number(i256(word(r[a],1))), g0=word(r[a+1],0), g1=word(r[a+2],0);
     out[p.id]={q:128, L:word(r[p._i],7).toString(),
       f0:insideEvm(g0,word(lo,2),word(up,2),cur,c.tl,c.tu).toString(),
       f1:insideEvm(g1,word(lo,3),word(up,3),cur,c.tl,c.tu).toString()};
@@ -177,11 +179,11 @@ export function positionsFrom(data){
 // a different endpoint leads each minute, so no single free provider carries every request
 const rot=(a,k)=>a.map((_,i)=>a[(i+k)%a.length]);
 export async function readGrowth(ps, cache, opt={}){
-  const k=Math.floor(Date.now()/60000), sol=opt.solRpcs||SOL_RPCS, fixed=opt.solFirst?1:0;
+  const t=Date.now(), k=Math.floor(t/60000), sol=opt.solRpcs||SOL_RPCS, fixed=opt.solFirst?1:0;
   const [e,s]=await Promise.allSettled([
     growthEvm(ps.filter(p=>p.chain==='eth'), cache, rot(opt.evmRpcs||EVM_RPCS,k)),
     growthSol(ps.filter(p=>p.chain==='sol'), cache, [...sol.slice(0,fixed),...rot(sol.slice(fixed),k)])]);
-  return { t:Date.now(), g:{...(e.status==='fulfilled'?e.value:{}), ...(s.status==='fulfilled'?s.value:{})},
+  return { t, g:{...(e.status==='fulfilled'?e.value:{}), ...(s.status==='fulfilled'?s.value:{})},
            err:[e,s].filter(x=>x.status==='rejected').map(x=>String(x.reason&&x.reason.message||x.reason)) };
 }
 
@@ -195,7 +197,9 @@ export function earned(prev, cur, ps){
     const mask=b.q===128?M256:M128, half=b.q===128?(1n<<255n):(1n<<127n);
     const L=BigInt(a.L)<BigInt(b.L)?BigInt(a.L):BigInt(b.L);
     let d0=(BigInt(b.f0)-BigInt(a.f0))&mask, d1=(BigInt(b.f1)-BigInt(a.f1))&mask;
-    if(d0>half) d0=0n; if(d1>half) d1=0n;                      // a reading from a lagging node, not income
+    // fee growth never falls: a fall means this node is behind the last one. That is no reading at
+    // all — not a zero — so the position is left out and the caller keeps the newer reading.
+    if(d0>half||d1>half) continue;
     const sh=BigInt(b.q);
     const t0=Number((d0*L)>>sh)/10**p.d0, t1=Number((d1*L)>>sh)/10**p.d1;
     const v=t0*p.usd0+t1*p.usd1;

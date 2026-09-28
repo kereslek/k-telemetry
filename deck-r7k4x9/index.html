@@ -1323,7 +1323,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v32.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v32.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2667,7 +2667,8 @@ function ladderOf(p){
     getSym:  side===0?(p.m1||{}).symbol:(p.m0||{}).symbol,
     sellAmt: side===0?(p.amt0||0):(p.amt1||0),
     gotAmt:  side===0?(p.amt1||0):(p.amt0||0),
-    gotUsd:  side===0?(p.amt1||0)*(p.usd1||0):(p.amt0||0)*(p.usd0||0),
+    // null when the received token has no price: an unknown is not the same as nothing sold
+    gotUsd:  side===0?(p.usd1!=null?(p.amt1||0)*p.usd1:null):(p.usd0!=null?(p.amt0||0)*p.usd0:null),
     filled:  sold!=null?Math.min(1,Math.max(0,sold)):null,
     // what the rest of the climb averages, in the units the range is quoted in
     avgLeft: side===0 ? sqrt(P*Pb) : 1/sqrt(P*Pa),
@@ -3020,13 +3021,7 @@ function renderTiles(){
   { const fm=state.feeMonth;
     const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
-    /* Where the month lands: what is earned so far plus the last 30 days' measured pace for the
-       days left — the same figure OUTLOOK shows, so the two can never name different month-ends.
-       Before there are 30 recorded days, the relay's month-to-date average stands in. */
-    const P30=feePace(30);
-    const endM=fm?Date.UTC(Number(fm.month.slice(0,4)),Number(fm.month.slice(5,7)),1):0;
-    const close=fm?(P30?fm.mtd+P30.perDay*Math.max(0,(endM-Date.now())/86400000):fm.proj):null;
-    const closeHow=P30?'so far + the last 30 days\' pace for the days left':'month-to-date average × '+(fm&&fm.daysInMonth)+' days';
+    const MC=monthClose(), close=MC?MC.close:null, closeHow=MC?MC.how:'';
     mk('FEES EARNED · '+mName,
        fm?inc(fmtUsd(fm.mtd)):'—',
        fm ? (close!=null?'on pace for <b>'+fmtUsd(close,0)+'</b> by '+mName+' '+fm.daysInMonth
@@ -4988,9 +4983,9 @@ function renderActions(){
       const filled=L.filled!=null?(L.filled*100):null;
       const crit=near<=10;
       items.push({r:crit?2.5:6.5, cls:crit?'warn':'watch', tag:'RANGE ORDER',
-        head:ref+' — '+(L.gotUsd<0.01?'<b>not started</b>':filled!=null?'<b>'+filled.toFixed(filled<1?2:0)+'% filled</b>':'<b>a one-sided ladder</b>'),
+        head:ref+' — '+(L.gotUsd!=null&&L.gotUsd<0.01?'<b>not started</b>':filled!=null?'<b>'+filled.toFixed(filled<1?2:0)+'% filled</b>':'<b>a one-sided ladder</b>'),
         /* Under a cent received is rounding dust in the pool maths, not a sale: say nothing has sold. */
-        sub:(L.gotUsd<0.01
+        sub:(L.gotUsd!=null&&L.gotUsd<0.01
             ? 'Nothing sold yet: <b>'+fmtTok(L.sellAmt)+' '+esc(String(L.sellSym||''))+'</b> is waiting to be sold for '
               +esc(String(L.getSym||''))+' as the price climbs. A full fill'
             : 'Selling '+esc(String(L.sellSym||'?'))+' for '+esc(String(L.getSym||'?'))+' as the price climbs: <b>'
@@ -5157,6 +5152,18 @@ function feePace(n){
   return {fees, avgV, n:days.length, perDay:fees/days.length, apr:fees/avgV*365/days.length*100,
           from:days[0].d, to:days[days.length-1].d};
 }
+/* Where the ledger's month lands: earned so far plus the last 30 days' measured pace for the
+   days left in THAT month (the ledger's month, not the clock's: between UTC midnight on the 1st and
+   the relay's first run of the new month, the ledger still holds the old one). One function, so
+   FEES EARNED, the projected net and OUTLOOK can never name different month-ends. */
+function monthClose(){
+  const fm=state.feeMonth; if(!fm||fm.mtd==null) return null;
+  const P=feePace(30), y=Number(fm.month.slice(0,4)), m=Number(fm.month.slice(5,7));   // m is 1-based
+  const left=Math.max(0,(Date.UTC(y,m,1)-Date.now())/86400000);
+  if(P) return {close:fm.mtd+P.perDay*left, add:P.perDay*left, left, y, m0:m-1,
+                how:'so far + the last '+P.n+' days\' pace for the days left'};
+  return fm.proj!=null?{close:fm.proj, add:fm.proj-fm.mtd, left, y, m0:m-1, how:'month-to-date average × '+fm.daysInMonth+' days'}:null;
+}
 function renderOutlook(){
   const host=$('#outlookBody'); host.innerHTML='';
   renderOutlookSeg();
@@ -5178,7 +5185,8 @@ function renderOutlook(){
   const t0=new Date(now), Y=t0.getUTCFullYear(), M=t0.getUTCMonth();
   const qEnd=[2,5,8,11].map(m=>m).find(m=>m>M)??11;
   const oneYr=new Date(Date.UTC(Y+1,M,t0.getUTCDate())).toISOString().slice(0,10);
-  const leftToday=(endOf(Y,M)-now)/86400000, fm=state.feeMonth||{};
+  const fm=state.feeMonth||{}, MC=monthClose();
+  const LY=MC?MC.y:Y, LM=MC?MC.m0:M;               // the ledger's month
   const altN=N===7?30:7, alt=v=>(other&&Math.abs(hi-lo)>lo*0.02)?'<span class="ol-r">at the '+altN+'-day pace: '+k$(other.perDay*v)+'</span>':'';
   const stones=[
     {k:'end of '+MN[qEnd]+(qEnd===M?' '+(Y+1):''), t:qEnd===M?endOf(Y+1,qEnd):endOf(Y,qEnd)},
@@ -5186,8 +5194,8 @@ function renderOutlook(){
     {k:dd(oneYr,true)+' · 1 year', t:Date.parse(oneYr+'T00:00Z')},
   ].filter((s,i,a)=>s.t>now && a.findIndex(x=>x.t===s.t)===i);
   const tl=el('div','ol-tl');
-  tl.innerHTML=(fm.mtd!=null?'<div class="ol-st"><span class="ol-k">'+MN[M]+' closes at</span><span class="ol-v">≈ '+fmtUsd(fm.mtd+rate*leftToday,0)+'</span>'
-      +'<span class="ol-r">'+fmtUsd(fm.mtd,0)+' so far + '+fmtUsd(rate*leftToday,0)+' to come</span></div>':'')
+  tl.innerHTML=(MC?'<div class="ol-st"><span class="ol-k">'+MN[LM]+' closes at</span><span class="ol-v">≈ '+fmtUsd(MC.close,0)+'</span>'
+      +'<span class="ol-r">'+fmtUsd(fm.mtd,0)+' so far + '+fmtUsd(MC.add,0)+' to come'+(N!==30?' (30-day pace, as on FEES EARNED)':'')+'</span></div>':'')
     +stones.map(s=>{ const d=(s.t-now)/86400000;
     return '<div class="ol-st"><span class="ol-k">'+esc(s.k)+'</span><span class="ol-v">+'+fmtUsd(rate*d,0)+'</span>'+alt(d)+'</div>'; }).join('');
   host.append(tl);
@@ -5195,15 +5203,15 @@ function renderOutlook(){
   const curK=fm.month||new Date(now).toISOString().slice(0,7);
   const months=[];
   for(const x of (fm.prev||[]).slice(-2)) months.push({k:x.m, act:x.total||0, proj:0});
-  months.push({k:curK, act:fm.mtd||0, proj:rate*Math.max(0,leftToday), cur:true});
-  for(let i=1;i<=12;i++){ const d=new Date(Date.UTC(Y,M+i,1)); const dim=new Date(Date.UTC(Y,M+i+1,0)).getUTCDate();
+  months.push({k:curK, act:fm.mtd||0, proj:MC?Math.max(0,MC.add):0, cur:true});
+  for(let i=1;i<=12;i++){ const d=new Date(Date.UTC(LY,LM+i,1)); const dim=new Date(Date.UTC(LY,LM+i+1,0)).getUTCDate();
     months.push({k:d.toISOString().slice(0,7), act:0, proj:rate*dim, lo:lo*dim, hi:hi*dim}); }
   // drawn at the width it is shown at, so a phone gets legible text rather than a scaled-down desktop chart
   const W=Math.max(360,Math.min(1200,host.clientWidth||1200)), H=W<700?230:260, padL=W<700?40:58,padR=8,padT=26,padB=34;
   const NS='http://www.w3.org/2000/svg';
   const mkel=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
   const svg=mkel('svg',{viewBox:'0 0 '+W+' '+H}); svg.style.width='100%'; svg.style.marginTop='12px';
-  const maxY=Math.max(...months.map(m=>Math.max(m.act+m.proj,m.hi||0)))*1.12;
+  const maxY=Math.max(1,...months.map(m=>Math.max(m.act+m.proj,m.hi||0)))*1.12;   // all-zero must not divide by zero
   const bw=(W-padL-padR)/months.length, Yp=v=>padT+(1-v/maxY)*(H-padT-padB);
   niceTicks(0,maxY,4).forEach(t=>{
     svg.append(mkel('line',{x1:padL,x2:W-padR,y1:Yp(t),y2:Yp(t),stroke:'#13233a'}));
@@ -5237,7 +5245,7 @@ function renderOutlook(){
   if(other&&Math.abs(hi-lo)>lo*0.02){ const lg=mkel('text',{x:W-padR,y:padT-6,'text-anchor':'end','font-size':9.5,fill:'#e0b453'});
     lg.textContent='┄ '+altN+'-day pace'; svg.append(lg); }
   host.append(svg);
-  const prevAug=(fm.prev||[]).length;
+  const prevAug=(fm.prev||[]).some(x=>x.m<'2026-09');   // months before the token-based ledger
   host.append(el('div','arch-note','Solid bars are fees already earned; dashed bars are the '+N+'-day pace carried forward'
     +(other&&Math.abs(hi-lo)>lo*0.02?'; the dotted gold line is the '+altN+'-day pace ('+fmtUsd(other.perDay,0)+'/day) for comparison':'')+'. '
     +'Not compounded: reinvesting fees grows what you hold, but fee income is set by trading volume, and you already hold most of the liquidity in your main pools, so extra capital there earns little or nothing extra. '
@@ -7443,6 +7451,7 @@ function renderFeePulse60(host){
   wrap.append(el('div','fp24-h','LAST 60 MINUTES · BY LEDGER READING'));
   host.append(wrap);
   if(!S){ wrap.append(el('div','flow-omit','Needs two ledger readings.')); return; }
+  if(!S.segs.length){ wrap.append(el('div','flow-omit','No ledger reading falls inside the last 60 minutes, so there is nothing to show for it yet — the next reading covers it.')); return; }
   const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
   const mins=t=>Math.max(0,Math.round((S.now-t)/60000));
   const st=el('div','fp-story');
@@ -7691,6 +7700,7 @@ function renderFeePulse24(host){
   wrap.append(el('div','fp24-h','LAST 24 HOURS · BY HOUR'));
   host.append(wrap);
   if(!S){ wrap.append(el('div','flow-omit','Needs two ledger readings.')); return; }
+  if(!S.hours.some(h=>h.usd!=null)){ wrap.append(el('div','flow-omit','No ledger reading in the last 24 hours.')); return; }
   const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
   const hrs=S.hours, have=hrs.filter(h=>h.usd!=null&&!h.cur);
   const best=have.length?have.reduce((a,b)=>b.usd>a.usd?b:a):null;

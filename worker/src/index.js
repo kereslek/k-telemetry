@@ -60,11 +60,11 @@ export class Pulse {
     for(const p of ps){
       const b=cur.g[p.id]; if(!b) continue;
       const a=prev[p.id];
-      prev[p.id]={t:cur.t, r:b};
-      if(!a||!(cur.t>a.t)) continue;
-      if(cur.t-a.t>MAX_SPAN*MIN) continue;
+      if(!a||!(cur.t>a.t)||cur.t-a.t>MAX_SPAN*MIN){ prev[p.id]={t:cur.t, r:b}; continue; }
       const e=earned({g:{[p.id]:a.r}}, {g:{[p.id]:b}}, [p]);
+      // a reading from a node behind the last one is dropped; the newer reading stays the base
       if(!(p.id in e.by)) continue;
+      prev[p.id]={t:cur.t, r:b};
       got++;
       const span=cur.t-a.t;
       for(let t=Math.floor(a.t/MIN)*MIN; t<cur.t; t+=MIN){
