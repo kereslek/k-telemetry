@@ -21,3 +21,5 @@ jobs:
       - run: node scripts/selfswap-probe.mjs
         env:
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          SKIP_EVM: '1'
+          SOL_WINDOWS: '1790233860000,1790324700000,1790330100000,1790495640000'

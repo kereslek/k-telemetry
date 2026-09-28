@@ -1,4 +1,4 @@
-// rerun 2
+// rerun 3
 /* One-off, read-only: every swap made from this deck's own wallets this month, and how much of
    the fee it paid came straight back to its own LP positions. Per swap: the pool, the fee paid,
    the protocol's cut (read from the pool's on-chain config), and this deck's share of the pool's
@@ -41,7 +41,7 @@ async function poolMeta(a){ if(meta[a]) return meta[a];
   const fee=Number(BigInt(await erpc('eth_call',[{to:a,data:'0xddca3f43'},'latest'])));
   const dec=async t=>Number(BigInt(await erpc('eth_call',[{to:t,data:'0x313ce567'},'latest'])));
   return meta[a]={t0,t1,fee,d0:await dec(t0),d1:await dec(t1)}; }
-const evmTx=Object.entries(costs.txs||{}).filter(([,v])=>v===1).map(([k])=>k);
+const evmTx=process.env.SKIP_EVM?[]:Object.entries(costs.txs||{}).filter(([,v])=>v===1).map(([k])=>k);
 console.log('Ethereum txs in the cost ledger this month:',evmTx.length);
 for(const h of evmTx){
   let rc; try{ rc=await erpc('eth_getTransactionReceipt',[h]); }catch(e){ console.log('receipt fail',h,String(e.message).slice(0,60)); continue; }
@@ -75,9 +75,13 @@ for(const h of evmTx){
 const KEY=(process.env.SOL_RPC_URL||'').split(',').map(s=>s.trim()).filter(Boolean);
 const SRPC=[...KEY,'https://api.mainnet-beta.solana.com'];
 async function srpc(method,params){ let last;
-  for(let k=0;k<4;k++) for(const u of SRPC){ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(25000),body:JSON.stringify({jsonrpc:'2.0',id:++rid,method,params})});
-    const j=await r.json(); if(j.error) throw new Error(j.error.message); return j.result; }catch(e){ last=e; await sleep(400); } }
+  for(let k=0;k<9;k++) for(const u of SRPC){ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(25000),body:JSON.stringify({jsonrpc:'2.0',id:++rid,method,params})});
+    if(r.status===429) throw new Error('429');
+    const j=await r.json(); if(j.error) throw new Error(j.error.message); if(j.result==null && method==='getTransaction') throw new Error('null tx');
+    return j.result; }catch(e){ last=e; await sleep(800*2**Math.min(k,4)); } }
   throw last; }
+const WIN=(process.env.SOL_WINDOWS||'').split(',').filter(Boolean).map(x=>+x);
+const inWin=ms=>!WIN.length||WIN.some(b=>ms<=b+5*60000&&ms>=b-6*3600000);
 const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const b58=buf=>{ let x=BigInt('0x'+Buffer.from(buf).toString('hex')||'0'), s=''; while(x>0n){ s=B58[Number(x%58n)]+s; x/=58n; } for(const c of buf){ if(c===0) s='1'+s; else break; } return s; };
 const solPos=(d.sol||[]).map(p=>({pool:p.poolId,tl:p.tl,tu:p.tu,L:BigInt(p.liq),m0:p.mint0,m1:p.mint1,u0:p.usd0,u1:p.usd1}));
@@ -101,7 +105,8 @@ for(const wal of wallets.filter(x=>x.chain==='solana').map(x=>x.address)){
     for(const s of sigs){
       if(s.blockTime && s.blockTime*1000<monthStart){ stop=true; break; }
       before=s.signature; if(s.err) continue;
-      let tx; try{ tx=await srpc('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'json'}]); }catch(e){ continue; }
+      if(!inWin((s.blockTime||0)*1000)) continue;
+      let tx; try{ tx=await srpc('getTransaction',[s.signature,{maxSupportedTransactionVersion:0,encoding:'json'}]); }catch(e){ console.log('  tx fail',s.signature.slice(0,10),String(e.message).slice(0,40)); continue; }
       n++;
       for(const line of (tx?.meta?.logMessages||[])){
         if(!line.startsWith('Program data: ')) continue;
@@ -122,7 +127,7 @@ for(const wal of wallets.filter(x=>x.chain==='solana').map(x=>x.address)){
         const t=(tx.blockTime||s.blockTime)*1000;
         out.push({chain:'sol',t,day:day(t),tx:s.signature.slice(0,12),pool:pool.slice(0,8),own:true,fee:info.trade*100+'%',feeUsd,proto:info.protocol+info.fund,share,back});
       }
-      await sleep(40);
+      await sleep(350);
     }
     if(sigs.length<1000) break;
   }
