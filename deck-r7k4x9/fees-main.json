@@ -4,48 +4,48 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 655.04,
+   "last": 648.53,
    "hwm": 670.3,
-   "acc": 467.52,
+   "acc": 468,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 9204.5852016684,
+   "tk0": 9217.287152458886,
    "tk1": 0.11093687796441186,
-   "run": 467.52
+   "run": 468
   },
   "1355918": {
    "m0": 40.62,
-   "last": 576.85,
+   "last": 570.66,
    "hwm": 591.74,
-   "acc": 436.58,
+   "acc": 436.75,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 8386.516667280084,
+   "tk0": 8391.078639251116,
    "tk1": 0.09373008918379919,
-   "run": 436.58
+   "run": 436.75
   },
   "1366332": {
    "m0": 0,
-   "last": 395.81,
+   "last": 392.03,
    "hwm": 404.74,
-   "acc": 360.98,
+   "acc": 361.29,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 5399.177475405711,
+   "tk0": 5407.391392626261,
    "tk1": 0.06933378441602911,
-   "run": 360.98
+   "run": 361.29
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 903.82,
+   "last": 903.84,
    "acc": 616.86,
-   "hwm": 903.82,
+   "hwm": 903.84,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
@@ -67,8 +67,8 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 500.49,
-   "hwm": 500.49,
+   "last": 500.5,
+   "hwm": 500.5,
    "acc": 434.62,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
@@ -80,8 +80,8 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 469.55,
-   "hwm": 469.55,
+   "last": 469.58,
+   "hwm": 469.58,
    "acc": 547.78,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
@@ -138,13 +138,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -282.74,
+ "lastIl": -250.05,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 38.62
  },
- "readAt": 1790691868110,
+ "readAt": 1790693072604,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -205,7 +205,7 @@
   "2026-09-26": 2657.93,
   "2026-09-27": 2986.25,
   "2026-09-28": 3375.2,
-  "2026-09-29": 3443.29
+  "2026-09-29": 3444.25
  },
  "dayEst": [
   "2026-08-01",
@@ -224,10 +224,6 @@
   }
  },
  "ticks": [
-  [
-   1790511957754,
-   4325.09
-  ],
   [
    1790513101314,
    4325.09
@@ -851,24 +847,14 @@
   [
    1790691868110,
    4973.78
+  ],
+  [
+   1790693072604,
+   4974.74
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790511957754,
-   {
-    "1355336": 286.54,
-    "1355918": 345.77,
-    "1366332": 197.46,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 551.37,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 388.51,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 214.13,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 447.64,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790513101314,
    {
@@ -3045,6 +3031,20 @@
     "1355336": 467.52,
     "1355918": 436.58,
     "1366332": 360.98,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 616.86,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.78,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 434.62,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 547.78,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790693072604,
+   {
+    "1355336": 468,
+    "1355918": 436.75,
+    "1366332": 361.29,
     "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 616.86,
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.78,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 434.62,
