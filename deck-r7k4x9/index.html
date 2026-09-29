@@ -716,6 +716,51 @@
   .fp-reft{fill:var(--status-good);font-size:9.5px;font-family:var(--mono);font-weight:600}
   .fpl-wait{fill:none;stroke:var(--text-muted);stroke-dasharray:2 2;opacity:.6;vector-effect:non-scaling-stroke}
   .fp-wait{fill:rgba(126,151,168,.06);stroke:var(--text-muted);stroke-dasharray:3 3;opacity:.7}
+  /* FEE PULSE · 60 MINUTES — hour dial */
+  .fpl-tape{stroke:#22364f;stroke-width:1.2;vector-effect:non-scaling-stroke}
+  .fpl-now{fill:var(--accent);filter:drop-shadow(0 0 4px var(--accent))}
+  .fpd-grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,560px);gap:8px 36px;align-items:center;justify-content:start}
+  @media(max-width:760px){ .fpd-grid{grid-template-columns:minmax(0,1fr)} }
+  .fpd-dial{width:100%;max-width:380px;height:auto;display:block;margin:0 auto;overflow:visible}
+  .fpd-face{fill:#08121f;stroke:var(--line)}
+  .fpd-tick{stroke:#22364f;stroke-width:1} .fpd-tick.big{stroke:#6f879a;stroke-width:2}
+  .fpd-lbl{fill:var(--text-muted);font:10px var(--mono)} .fpd-lbl.now{fill:var(--accent);font-weight:600}
+  .fpd-ring{fill:none;stroke:var(--accent-dim);stroke-opacity:.55}
+  .fpd-track{fill:none;stroke:#12233a;stroke-width:7}
+  .fpd-fill{fill:none;stroke:var(--accent);stroke-width:7;stroke-linecap:round;transition:stroke-dasharray .6s ease}
+  .fpd-fill.over{stroke:var(--status-good)}
+  .fpd-halo{opacity:.5;pointer-events:none}
+  .fpd-dot{stroke:#060b13;stroke-width:1.6;cursor:pointer;transition:r .15s}
+  .fpd-dot.sel,.fpd-dot:focus{stroke:var(--text-primary);stroke-width:2;outline:none}
+  .fpd-amt{fill:var(--text-primary);font:600 10px var(--mono);pointer-events:none}
+  .fpd-total{fill:var(--text-primary);font:600 30px var(--mono);letter-spacing:-.01em}
+  .fpd-sub{fill:var(--text-muted);font:10px var(--mono);letter-spacing:.2em}
+  .fpd-sub2{fill:var(--text-secondary);font:10.5px var(--mono)}
+  .fpd-now{fill:var(--accent)}
+  .fpd-ping{fill:var(--accent);animation:fpdPing 1.8s ease-out infinite;transform-box:fill-box;transform-origin:center}
+  @keyframes fpdPing{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(4)}}
+  .fpd-sweep{transform-origin:150px 150px;animation:fpdSweep 7s linear infinite}
+  @keyframes fpdSweep{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){ .fpd-sweep,.fpd-ping{animation:none} }
+  .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .fpd-read{margin:0}
+  .fpd-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+  .fpd-stats div{background:var(--panel);padding:8px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .fpd-stats span{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted)}
+  .fpd-stats b{font:600 16px var(--mono);color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .fpd-quiet{font-size:13px;color:var(--text-secondary);display:flex;flex-direction:column;gap:6px}
+  .fpd-quiet b{color:var(--text-primary)}
+  .fpd-qbar{height:5px;background:#12233a;border-radius:3px;overflow:hidden}
+  .fpd-qbar i{display:block;height:100%;border-radius:3px}
+  .fpd-qbar.calm i{background:var(--status-good)} .fpd-qbar.warm i{background:#e0b453} .fpd-qbar.hot i{background:var(--status-critical)}
+  .fpd-lh{font-size:9.5px;letter-spacing:.16em;color:var(--text-muted);margin-bottom:-6px}
+  .fpd-feed{list-style:none;margin:0;padding:0;font:12.5px var(--mono);display:flex;flex-direction:column}
+  .fpd-feed li{display:grid;grid-template-columns:44px 10px minmax(0,1fr) auto;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line);color:var(--text-secondary)}
+  .fpd-feed li i{width:8px;height:8px;border-radius:50%}
+  .fpd-feed .pl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fpd-feed .amt{color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .fpd-feed .ago{grid-column:3 / -1;font-size:10.5px;color:var(--text-muted);margin-top:-4px}
+  .fpd-feed .empty{display:block;color:var(--text-muted)}
   .fp24{margin-top:22px;padding-top:16px;border-top:1px dashed var(--line)}
   .fp24-h{font-size:10px;letter-spacing:.16em;color:var(--text-muted);font-weight:600;margin-bottom:8px}
   .fp-months{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:11.5px;color:var(--text-muted)}
@@ -1323,7 +1368,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v32.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7417,18 +7462,33 @@ if(PULSE_URL){
   setInterval(()=>{ if(!document.hidden) loadPulse(); },60000);
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadPulse(); });
 }
+/* Pools get one colour each, in the order the positions list them, so a pool is the same colour
+   on the dial, in the tape and in the latest-fees list. */
+const POOL_HEX=['#35d6e8','#e0b453','#a58cf5','#5fe3c0','#ff8fab','#8fb3ff'];
+function poolColor(lbl){
+  const names=[...new Set(ordered().map(p=>(p.pairLabel||'')+' '+(p.feeLabel||'')))];
+  const i=names.indexOf(lbl); return POOL_HEX[(i<0?names.length:i)%POOL_HEX.length];
+}
+/* The recorder's trades as the views use them: minutes ago, amount, and the pool that paid most. */
+function pulseTrades(){
+  const P=state.pulse; if(!P||!Array.isArray(P.trades)) return [];
+  const now=Date.now();
+  return P.trades.map(t=>{ const pools=Object.entries(t.pools||{}).sort((a,b)=>b[1]-a[1]);
+    return {t:t.t, end:t.end, usd:t.usd, m:(now-(t.t+30000))/60000, pools, lbl:pools.length?pools[0][0]:null}; });
+}
 function feePulseLink60(){
   const M=pulseMins();
   if(M){
-    const W=300, H=30, n=60, gap=1, bw=(W-gap*(n-1))/n, H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
-    const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 1e-6), y=v=>H-Math.max(1,v/top*(H-2));
-    let bars='', li=n-1; while(li>0&&M.mins[li].usd==null) li--;
-    M.mins.forEach((m,i)=>{ if(m.usd==null) return;
-      bars+='<rect class="'+(i===li?'fpl-today':(perMin!=null&&m.usd>perMin?'fpl-hi':'fpl-lo'))+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(m.usd).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(m.usd)).toFixed(1)+'"/>'; });
-    const avgLine=perMin!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(perMin).toFixed(1)+'" y2="'+y(perMin).toFixed(1)+'"/>':'';
-    return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — fee income by minute, last 60 minutes">'
+    // a strip of the hour: now at the right, each trade a dot sized by what it paid
+    const W=300, H=30, tr=pulseTrades().filter(t=>t.m<=60), top=Math.max(0.5,...tr.map(t=>t.usd));
+    let dots='';
+    for(const t of tr){ const x=W-(Math.max(0,t.m)/60)*(W-6)-3, r=2.2+Math.sqrt(t.usd/top)*5.5;
+      dots+='<circle cx="'+x.toFixed(1)+'" cy="15" r="'+r.toFixed(1)+'" fill="'+poolColor(t.lbl)+'"/>'; }
+    return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — the last 60 minutes">'
       +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
-      +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
+      +'<svg viewBox="0 0 '+W+' '+H+'" aria-hidden="true"><line x1="0" x2="'+W+'" y1="15" y2="15" class="fpl-tape"/>'
+      +[15,30,45].map(m=>'<line x1="'+(W-m/60*(W-6)-3).toFixed(1)+'" x2="'+(W-m/60*(W-6)-3).toFixed(1)+'" y1="11" y2="19" class="fpl-tape"/>').join('')
+      +dots+'<circle cx="'+(W-3)+'" cy="15" r="3" class="fpl-now"/></svg></button>';
   }
   const S=feeMinStats(); if(!S) return '';
   const W=300, H=30, X=t=>(t-S.w0)/3600000*W;
@@ -7501,58 +7561,91 @@ function renderFeePulse60(host){
   wrap.append(el('div','arch-note','One block per ledger reading, placed over the time it covers, your time · the ledger is read about every '
     +Math.round(S.cad/60000)+' minutes, so this is as fine as the record goes · the dashed box at the end is time since the latest reading, not yet counted · bright blocks earned faster than the 24-hour average.'));
 }
-/* The last 60 minutes, one bar per minute, from the minute recorder. */
+/* The last 60 minutes as a clock face: now at twelve, the hour running back round the ring, each
+   trade a mark at its minute sized by what it paid and coloured by its pool. The inner ring fills
+   toward a typical hour. Under it, the quiet since the last trade against every lull of the past
+   day, and the latest fees whether or not they fall inside the hour. */
 function renderFeePulse60m(host){
-  const M=pulseMins();
-  const wrap=el('div','fp24'); wrap.id='fp60';
-  wrap.append(el('div','fp24-h','LAST 60 MINUTES · BY MINUTE'));
+  const M=pulseMins(), P=state.pulse, TR=pulseTrades(), inHour=TR.filter(t=>t.m<=60);
+  const wrap=el('div','fp24 fpd'); wrap.id='fp60';
+  wrap.append(el('div','fp24-h','LAST 60 MINUTES'));
   host.append(wrap);
   const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
-  const H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
-  const busy=M.have.filter(m=>m.usd>=0.005), best=M.have.reduce((a,b)=>b.usd>a.usd?b:a);
-  const st=el('div','fp-story');
-  st.innerHTML='Last 60 minutes <span class="big">'+fmtUsd(M.total,2)+'</span>'
-    +(H24&&H24.avg!=null?' · the 24-hour average is <b>'+fmtUsd(H24.avg,2)+'</b> an hour':'')
-    +'<br>Fees came in during <b>'+busy.length+'</b> of '+M.have.length+' minutes'
-    +(best.usd>=0.005?' · busiest <b>'+hl(best.t)+'</b> with <b>'+fmtUsd(best.usd,2)+'</b>'+(M.total>0?' <span class="unit">('+Math.round(best.usd/M.total*100)+'% of the hour)</span>':''):'');
-  wrap.append(st);
-  const read=el('div','fp-read'); wrap.append(read);
-  const rank=v=>1+M.have.filter(x=>x.usd>v).length;
-  const say=m=>{ if(!m) return;
-    if(m.usd==null){ read.innerHTML='▸ <b>'+hl(m.t)+'</b> · no reading that minute — the next one covers it'; return; }
-    read.innerHTML='▸ <b>'+hl(m.t)+'</b> '+(m.usd<0.0005?'nothing earned <span class="unit">· no trades through your ranges that minute':'<b>'+fmtUsd(m.usd,m.usd<1?3:2)+'</b> <span class="unit">· #'+rank(m.usd)+' of '+M.have.length+' minutes')
-      +(m.part?' · not every position was read this minute':'')+'</span>'; };
-  const cw=Math.max(300, host.clientWidth||600);
-  const W=cw, H=cw<560?120:150, padL=40, padR=10, padT=14, padB=22, n=60;
+  const H24=feeHourStats(), typical=H24&&H24.avg!=null?H24.avg:null;
+  const total=M.total;
   const NS='http://www.w3.org/2000/svg';
-  const mk=(t,a,cls)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); return e; };
-  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H},'fp-svg');
-  const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 0.01)*1.2;
-  const stepY=[0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100].find(v=>top/v<=4)||200;
-  const Y=v=>padT+(1-v/top)*(H-padT-padB);
-  const step=(W-padL-padR)/n, bw=Math.max(1,step*0.74), X=i=>padL+step*i+(step-bw)/2;
-  for(let g=0; g<=top; g+=stepY){
-    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g)},'fp-grid'));
-    const t=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end'},'fp-ax'); t.textContent=g===0?'$0':'$'+(g<1?+g.toFixed(2):g); svg.append(t);
-  }
-  M.mins.forEach((m,i)=>{ if(i%15===0||i===n-1){ const t=mk('text',{x:padL+step*i+step/2,y:H-6,'text-anchor':i===0?'start':i===n-1?'end':'middle'},'fp-ax'); t.textContent=hl(m.t); svg.append(t); } });
-  if(perMin!=null){ svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(perMin),y2:Y(perMin)},'fp-avg'));
-    if(cw>=560){ const at=mk('text',{x:W-padR-2,y:Y(perMin)-4,'text-anchor':'end'},'fp-avgt'); at.textContent='24h avg '+fmtUsd(perMin,3)+'/min'; svg.append(at); } }
-  // the minute that just ended is often not written yet: rest on the newest one that is
-  let li=n-1; while(li>0&&M.mins[li].usd==null) li--;
-  const rects=M.mins.map((m,i)=>{ if(m.usd==null) return null;
-    const r=mk('rect',{x:X(i),y:Y(m.usd),width:bw,height:Math.max(1,Y(0)-Y(m.usd)),rx:0.5},'fp-bar'+(i===li?' today':(perMin!=null&&m.usd>perMin?' above':''))+(m.part?' est':''));
-    svg.append(r); return r; });
-  let sel=-1;
-  const pick=i=>{ if(sel>=0&&rects[sel]) rects[sel].classList.remove('sel'); sel=i; if(i>=0&&rects[i]) rects[i].classList.add('sel'); say(M.mins[i]); };
-  const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
-  svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerleave',()=>pick(li));
-  wrap.append(svg);
-  pick(li);
-  wrap.append(el('div','arch-note','One bar per minute, your time · recorded around the clock from each pool\'s fee counter, so collecting, adding or withdrawing never shows as income · '
-    +'bright bars beat the 24-hour average per minute, green is the latest minute · includes fees your own swaps paid to your own pools, which the monthly ledger takes out · updates every minute while the page is open.'));
+  const mk=(t,a,cls,txt)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); if(txt!=null) e.textContent=txt; return e; };
+  const grid=el('div','fpd-grid'); wrap.append(grid);
+  // ---- the dial
+  const C=150, R=118, svg=mk('svg',{viewBox:'-26 -10 352 322',role:'img','aria-label':'The last 60 minutes of fee income as a clock face'},'fpd-dial');
+  const pt=(m,r)=>{ const a=(-m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
+  const defs=mk('defs',{});
+  const gl=mk('radialGradient',{id:'fpdGlow'}); gl.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'.85'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'0'}));
+  const bm=mk('linearGradient',{id:'fpdBeam',x1:'0',y1:'0',x2:'1',y2:'0'}); bm.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'0'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'.2'}));
+  defs.append(gl,bm); svg.append(defs);
+  svg.append(mk('circle',{cx:C,cy:C,r:R+16},'fpd-face'));
+  for(let m=0;m<60;m++){ const big=m%15===0, [x1,y1]=pt(m,R+(big?11:8)), [x2,y2]=pt(m,R+15);
+    svg.append(mk('line',{x1,y1,x2,y2},big?'fpd-tick big':'fpd-tick')); }
+  [[0,'now'],[15,hl(Date.now()-15*60000)],[30,hl(Date.now()-30*60000)],[45,hl(Date.now()-45*60000)]].forEach(([m,l])=>{
+    const [x,y]=pt(m,R+(m%30?24:29)); svg.append(mk('text',{x,y:y+3.5,'text-anchor':m===15?'end':m===45?'start':'middle'},m?'fpd-lbl':'fpd-lbl now',l)); });
+  const beam=mk('g',{},'fpd-sweep'); const [bx,by]=pt(0,R), [ex,ey]=pt(-9,R);
+  beam.append(mk('path',{d:`M${C},${C} L${bx},${by} A${R},${R} 0 0,1 ${ex},${ey} Z`,fill:'url(#fpdBeam)'})); svg.append(beam);
+  svg.append(mk('circle',{cx:C,cy:C,r:R},'fpd-ring'));
+  // inner ring: this hour against a typical one
+  const r2=88, circ=2*Math.PI*r2, frac=typical?Math.min(1,total/typical):0;
+  svg.append(mk('circle',{cx:C,cy:C,r:r2},'fpd-track'));
+  if(typical) svg.append(mk('circle',{cx:C,cy:C,r:r2,'stroke-dasharray':`${(circ*frac).toFixed(1)} ${circ.toFixed(1)}`,transform:`rotate(-90 ${C} ${C})`},'fpd-fill'+(total>=typical?' over':'')));
+  // trades
+  const top=Math.max(0.5,...inHour.map(t=>t.usd)), marks=[];
+  for(const t of inHour){ const m=Math.max(0,Math.min(60,t.m)), [x,y]=pt(m,R), r=4+Math.sqrt(t.usd/top)*9, col=poolColor(t.lbl);
+    svg.append(mk('circle',{cx:x,cy:y,r:r*2.3,fill:'url(#fpdGlow)'},'fpd-halo'));
+    const d=mk('circle',{cx:x,cy:y,r,fill:col,tabindex:0,role:'button','aria-label':hl(t.t)+' '+fmtUsd(t.usd,2)},'fpd-dot'); svg.append(d);
+    if(t.usd>=top*0.35||inHour.length<=3){ const [lx,ly]=pt(m,R-r-15); svg.append(mk('text',{x:lx,y:ly+3.5,'text-anchor':'middle'},'fpd-amt',fmtUsd(t.usd,t.usd<100?2:0))); }
+    marks.push({d,t}); }
+  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); svg.append(mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'));
+  svg.append(mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',fmtUsd(total,2)));
+  svg.append(mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'));
+  if(typical) svg.append(mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',Math.round(total/typical*100)+'% of a typical hour'));
+  grid.append(svg);
+  // ---- beside the dial: the reading, the quiet, the latest fees
+  const side=el('div','fpd-side'); grid.append(side);
+  const read=el('div','fp-read fpd-read'); side.append(read);
+  const say=t=>{ read.innerHTML=t
+    ? '▸ <b>'+hl(t.t)+'</b> <b>+'+fmtUsd(t.usd,2)+'</b> <span class="unit">· '+t.pools.map(([k,v])=>esc(k)+(t.pools.length>1?' '+fmtUsd(v,2):'')).join(' + ')+'</span>'
+    : '▸ '+(inHour.length?(matchMedia('(hover:hover)').matches?'hover':'tap')+' a mark for its trade':'no trades in the last 60 minutes'); };
+  let sel=null;
+  for(const k of marks){ const pick=()=>{ if(sel) sel.classList.remove('sel'); sel=k.d; k.d.classList.add('sel'); say(k.t); };
+    k.d.addEventListener('pointerenter',pick); k.d.addEventListener('click',pick); k.d.addEventListener('focus',pick); }
+  say(null);
+  const stats=el('div','fpd-stats');
+  const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-(last.end+60000))/60000)):null;
+  const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
+  stats.innerHTML=cell('Trades this hour',String(inHour.length))
+    +cell('Last trade',last?(quiet<1?'just now':quiet<120?quiet+' min ago':hl(last.t)):'—')
+    +cell('Typical hour',typical!=null?fmtUsd(typical,2):'—');
+  side.append(stats);
+  // the quiet meter, in one line: this lull against every lull the record holds
+  const gaps=(P&&P.gaps)||[], hrs=P&&P.from?Math.min(24,Math.round((Date.now()-P.from)/3600000)):0;
+  const qm=el('div','fpd-quiet');
+  if(quiet==null) qm.innerHTML='<span class="unit">No trade recorded yet.</span>';
+  else if(quiet<1) qm.innerHTML='<b class="up">Trading now</b> <span class="unit">· a trade in the last minute</span>';
+  else if(gaps.length<5) qm.innerHTML='Quiet for <b>'+quiet+' min</b> <span class="unit">· not enough lulls on record yet to compare</span>';
+  else { const pct=Math.round(gaps.filter(g=>g<quiet).length/gaps.length*100), med=[...gaps].sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
+    const tone=pct>=80?'hot':pct>=50?'warm':'calm';
+    qm.innerHTML='<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
+      +' <span class="unit">(typical lull '+med+' min)</span></div>'
+      +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'; }
+  side.append(qm);
+  // the latest fees, in or out of the hour
+  const list=el('ul','fpd-feed');
+  if(!TR.length) list.innerHTML='<li class="empty">No trades recorded yet.</li>';
+  for(const t of TR.slice(0,5)){ const li=document.createElement('li');
+    li.innerHTML='<span class="tm">'+hl(t.t)+'</span><i style="background:'+poolColor(t.lbl)+'"></i><span class="pl">'+t.pools.map(([k])=>esc(k)).join(' + ')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
+      +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
+    list.append(li); }
+  const lh=el('div','fpd-lh','LATEST FEES'); side.append(lh,list);
+  wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
+    +'A trade here is a run of consecutive earning minutes. Typical hour is the last 24 hours\' average. Includes fees your own swaps paid to your own pools, which the monthly ledger takes out.'));
 }
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */
