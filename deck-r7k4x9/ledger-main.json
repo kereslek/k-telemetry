@@ -9,7 +9,7 @@
   "lastBooked": 111.41,
   "owed0": 0.279677929,
   "owed1": 1002.489753494,
-  "readAt": 1790688216969,
+  "readAt": 1790689439030,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $43.24; credited 2026-09-01",
   "openCost": {
@@ -45,7 +45,7 @@
   "repaired": "harvest lost when the shared transaction was claimed by another position; corrected 2026-08-27",
   "owed0": 0.007324616,
   "owed1": 22.958195457,
-  "readAt": 1790688230550,
+  "readAt": 1790689452638,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $13.32; credited 2026-09-01",
   "openCost": {
@@ -72,7 +72,7 @@
   "repaired": "redeposit counted as income; corrected 2026-08-23",
   "owed0": 0.196853965,
   "owed1": 705.611930198,
-  "readAt": 1790688229896,
+  "readAt": 1790689451945,
   "ceilFactor": 1.1,
   "harvestRepair": "1 Sep harvest booked short by $23.05; credited 2026-09-01",
   "openCost": {
@@ -116,7 +116,7 @@
   "lump": 0,
   "owed0": 0.455113924,
   "owed1": 1600.851675293,
-  "readAt": 1790688230327,
+  "readAt": 1790689452421,
   "ceilFactor": 1.1,
   "lastBooked": 156.62
  },
@@ -136,7 +136,7 @@
   "lump": 0,
   "owed0": 0,
   "owed1": 0,
-  "readAt": 1790688230106,
+  "readAt": 1790689452183,
   "ceilFactor": 1.1,
   "lastBooked": 20.74
  },
@@ -155,7 +155,7 @@
   "lump": 0,
   "owed0": 0,
   "owed1": 0,
-  "readAt": 1790688217216,
+  "readAt": 1790689439376,
   "ceilFactor": 1.1,
   "lastBooked": 6.76
  }
