@@ -4,46 +4,46 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 660.06,
+   "last": 656.79,
    "hwm": 670.3,
-   "acc": 467.2,
+   "acc": 467.52,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 9197.53640202804,
-   "tk1": 0.1109175517790232,
-   "run": 467.2
+   "tk0": 9204.5852016684,
+   "tk1": 0.11093687796441186,
+   "run": 467.52
   },
   "1355918": {
    "m0": 40.62,
-   "last": 581.49,
+   "last": 578.32,
    "hwm": 591.74,
-   "acc": 436.46,
+   "acc": 436.58,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 8383.98505407207,
-   "tk1": 0.09372314808337262,
-   "run": 436.46
+   "tk0": 8386.516667280084,
+   "tk1": 0.09373008918379919,
+   "run": 436.58
   },
   "1366332": {
    "m0": 0,
-   "last": 398.81,
+   "last": 396.91,
    "hwm": 404.74,
-   "acc": 360.77,
+   "acc": 360.98,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 5394.619257718903,
-   "tk1": 0.0693212868328161,
-   "run": 360.77
+   "tk0": 5399.177475405711,
+   "tk1": 0.06933378441602911,
+   "run": 360.98
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 903.38,
+   "last": 903.34,
    "acc": 616.45,
    "hwm": 903.43,
    "cat": "sol|SOL / CPOOL · wide",
@@ -67,7 +67,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 500.18,
+   "last": 500.15,
    "hwm": 500.21,
    "acc": 434.33,
    "ck": "sol",
@@ -80,7 +80,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 468.88,
+   "last": 468.8,
    "hwm": 468.95,
    "acc": 547.15,
    "ck": "sol",
@@ -138,13 +138,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -294.63,
+ "lastIl": -276.14,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 38.62
  },
- "readAt": 1790689452641,
+ "readAt": 1790690674165,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -205,7 +205,7 @@
   "2026-09-26": 2657.93,
   "2026-09-27": 2986.25,
   "2026-09-28": 3375.2,
-  "2026-09-29": 3441.31
+  "2026-09-29": 3441.96
  },
  "dayEst": [
   "2026-08-01",
@@ -224,10 +224,6 @@
   }
  },
  "ticks": [
-  [
-   1790509649514,
-   4319.12
-  ],
   [
    1790510826126,
    4324.88
@@ -851,24 +847,14 @@
   [
    1790689452642,
    4971.8
+  ],
+  [
+   1790690674166,
+   4972.45
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790509649514,
-   {
-    "1355336": 283.78,
-    "1355918": 344.28,
-    "1366332": 195.73,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 551.37,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 388.51,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 214.13,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 447.64,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790510826126,
    {
@@ -3045,6 +3031,20 @@
     "1355336": 467.2,
     "1355918": 436.46,
     "1366332": 360.77,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 616.45,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.78,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 434.33,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 547.15,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790690674166,
+   {
+    "1355336": 467.52,
+    "1355918": 436.58,
+    "1366332": 360.98,
     "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 616.45,
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.78,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 434.33,
