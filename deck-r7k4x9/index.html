@@ -25,7 +25,7 @@
     --accent-glow:rgba(53,214,232,.25);
     --text-primary:#eaf7fa;
     --text-secondary:#b9cdd8;
-    --text-muted:#7e97a8;
+    --text-muted:#8ea6b7;
     --series-1:#0f9db3;
     --series-2:#c9711a;
     --series-3:#e0508f;
@@ -35,7 +35,7 @@
     --status-good:#0ca30c;
     --status-warning:#fab219;
     --status-serious:#ec835a;
-    --status-critical:#d03b3b;
+    --status-critical:#ef5350;
     --mono:ui-monospace,'Cascadia Mono','SF Mono',Consolas,'Roboto Mono',monospace;
     --sans:system-ui,-apple-system,'Segoe UI',sans-serif;
   }
@@ -178,7 +178,7 @@
        to sit under. */
     position:sticky; top:0; z-index:49;
     padding:6px 22px; display:flex; align-items:flex-start; gap:8px;
-    background:linear-gradient(180deg,rgba(7,13,22,.97),rgba(7,13,22,.94));
+    background:#070d16;                 /* opaque: text scrolling under it must not show through */
     border-bottom:1px solid var(--line);
   }
   .qn-track{
@@ -212,7 +212,9 @@
   #quickNav button:hover{color:var(--accent);border-color:var(--accent-dim)}
   #quickNav button:active{color:var(--accent);border-color:var(--accent)}
   /* the scroll target clears both sticky bars */
-  .panel,#feeByTok{scroll-margin-top:calc(var(--nav-h,34px) + 12px)}   /* only the strip is sticky */
+  .panel,#feeByTok,#fp24,#fp60{scroll-margin-top:calc(var(--nav-h,34px) + 12px)}   /* only the strip is sticky */
+  /* the chip for the section on screen */
+  #quickNav button[aria-current="true"]{color:var(--accent);border-color:var(--accent);background:rgba(53,214,232,.1)}
   @media(max-width:560px){
     #quickNav{padding:5px 10px;gap:6px}
     #quickNav button{font-size:9px;padding:4px 7px;letter-spacing:.1em}
@@ -242,8 +244,9 @@
   #toTop.show{opacity:.92; transform:none; pointer-events:auto}
   #toTop:hover{border-color:var(--accent); opacity:1}
   #toTop:active{transform:translateY(1px)}
+  #toTop.show.moving{opacity:0;pointer-events:none}   /* out of the way while the page is moving */
   /* on a phone it sits over the right-hand column of numbers: smaller, and see-through at rest */
-  @media(max-width:760px){ #toTop{width:34px;height:34px;font-size:11px;right:max(8px, env(safe-area-inset-right))} #toTop.show{opacity:.6} }
+  @media(max-width:760px){ #toTop{width:38px;height:38px;font-size:12px;right:auto;left:max(8px, env(safe-area-inset-left))} #toTop.show{opacity:.75} }
   @media(prefers-reduced-motion:reduce){ #toTop{transition:none} }
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
@@ -271,7 +274,7 @@
   }
   .banner.show{display:flex;align-items:center;gap:10px}
 
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px;margin-bottom:14px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px;margin-bottom:14px;align-items:start}
   /* seven tiles: on a wide screen all seven share one row rather than leaving the last one alone,
      with the headline figures a size down so a five-figure amount still fits its column */
   @media(min-width:1400px){ .tiles{grid-template-columns:repeat(7,minmax(0,1fr))} .tiles .tile .v{font-size:26px} .tiles .fpl-head{letter-spacing:.03em;font-size:8.5px} }
@@ -313,7 +316,9 @@
   .pbody{padding:14px 16px}
   .panel.dragging{opacity:.35;border-style:dashed}
   .panel.drag-over{border-color:var(--accent);box-shadow:0 0 16px var(--accent-glow)}
-  .collapse-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-family:var(--mono);font-size:11px}
+  /* a 44px hit area around a small glyph; the negative margin keeps the header's layout as it was */
+  .collapse-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-family:var(--mono);font-size:12px;
+    padding:14px 16px;margin:-14px -16px -14px -4px;touch-action:manipulation}
   .collapse-btn:hover{color:var(--accent)}
   .panel.collapsed .pbody{display:none}
 
@@ -582,7 +587,6 @@
     .metrics{grid-template-columns:1fr 1fr;gap:8px 10px}
     .phead{flex-wrap:wrap;row-gap:6px}
     .phead .hint{display:none}
-    .drawer{width:100%;right:-100%}
     .matrix{min-width:760px}
     footer{font-size:8px}
     .fd-main{font-size:13.5px}
@@ -624,8 +628,9 @@
     gap:10px;align-items:center;font-size:11.5px}
   .scn-lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .scn-val{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  /* pan-y: a vertical swipe that starts on a slider scrolls the page instead of moving the price */
   .scn-sl{-webkit-appearance:none;appearance:none;width:100%;height:3px;background:var(--line);
-    border-radius:2px;outline:none;margin:0}
+    border-radius:2px;outline:none;margin:0;touch-action:pan-y}
   .scn-sl::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
     background:var(--accent);cursor:pointer;border:0}
   .scn-sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--accent);cursor:pointer;border:0}
@@ -651,7 +656,8 @@
      columns are sized to their content rather than to what the label leaves them, because at
      360px a 1fr label was starving them into clipping their own figures. */
   @media (max-width:760px){
-    .scn-row{grid-template-columns:minmax(0,1fr) auto;row-gap:4px;padding-bottom:4px}
+    .scn-rows{row-gap:14px}
+    .scn-row{grid-template-columns:minmax(0,1fr) auto;row-gap:12px;padding-bottom:4px}
     .scn-lab{grid-row:1;grid-column:1}
     .scn-val{grid-row:1;grid-column:2;text-align:right}
     .scn-sl{grid-row:2;grid-column:1 / -1;height:5px}
@@ -716,6 +722,88 @@
   .fp-reft{fill:var(--status-good);font-size:9.5px;font-family:var(--mono);font-weight:600}
   .fpl-wait{fill:none;stroke:var(--text-muted);stroke-dasharray:2 2;opacity:.6;vector-effect:non-scaling-stroke}
   .fp-wait{fill:rgba(126,151,168,.06);stroke:var(--text-muted);stroke-dasharray:3 3;opacity:.7}
+  /* FEE PULSE · 60 MINUTES — hour dial */
+  .fpl-tape{stroke:#22364f;stroke-width:1.2;vector-effect:non-scaling-stroke}
+  .fpl-now{fill:var(--accent);filter:drop-shadow(0 0 4px var(--accent))}
+  .fpd-grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,560px);gap:8px 36px;align-items:center;justify-content:start}
+  @media(max-width:760px){ .fpd-grid{grid-template-columns:minmax(0,1fr)} }
+  .fpd-dial{width:100%;max-width:380px;height:auto;display:block;margin:0 auto;overflow:visible}
+  .fpd-face{fill:#08121f;stroke:var(--line)}
+  .fpd-tick{stroke:#22364f;stroke-width:1} .fpd-tick.big{stroke:#6f879a;stroke-width:2}
+  .fpd-lbl{fill:var(--text-muted);font:10px var(--mono)} .fpd-lbl.now{fill:var(--accent);font-weight:600}
+  .fpd-ring{fill:none;stroke:var(--accent-dim);stroke-opacity:.55}
+  .fpd-track{fill:none;stroke:#12233a;stroke-width:7}
+  .fpd-fill{fill:none;stroke:var(--accent);stroke-width:7;stroke-linecap:round;transition:stroke-dasharray .6s ease}
+  .fpd-fill.over{stroke:var(--status-good)}
+  .fpd-halo{opacity:.5;pointer-events:none}
+  .fpd-dot{stroke:#060b13;stroke-width:1.6;cursor:pointer;transition:r .15s}
+  .fpd-dot.sel,.fpd-dot:focus{stroke:var(--text-primary);stroke-width:2;outline:none}
+  .fpd-amt{fill:var(--text-primary);font:600 10px var(--mono);pointer-events:none}
+  .fpd-total{fill:var(--text-primary);font:600 30px var(--mono);letter-spacing:-.01em}
+  .fpd-sub{fill:var(--text-muted);font:10px var(--mono);letter-spacing:.2em}
+  .fpd-sub2{fill:var(--text-secondary);font:10.5px var(--mono)}
+  .fpd-now{fill:var(--accent)}
+  .fpd-ping{fill:var(--accent);animation:fpdPing 1.8s ease-out infinite;transform-box:fill-box;transform-origin:center}
+  @keyframes fpdPing{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(4)}}
+  .fpd-sweep{transform-origin:150px 150px;animation:fpdSweep 7s linear infinite}
+  @keyframes fpdSweep{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){ .fpd-sweep,.fpd-ping{animation:none} }
+  .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .fpd-read{margin:0}
+  .fpd-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+  .fpd-stats div{background:var(--panel);padding:8px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .fpd-stats span{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted)}
+  .fpd-stats b{font:600 16px var(--mono);color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .fpd-quiet{font-size:13px;color:var(--text-secondary);display:flex;flex-direction:column;gap:6px}
+  .fpd-quiet b{color:var(--text-primary)}
+  .fpd-qbar{height:5px;background:#12233a;border-radius:3px;overflow:hidden}
+  .fpd-qbar i{display:block;height:100%;border-radius:3px}
+  .fpd-qbar.calm i{background:var(--status-good)} .fpd-qbar.warm i{background:#e0b453} .fpd-qbar.hot i{background:var(--status-critical)}
+  .fpd-lh{font-size:9.5px;letter-spacing:.16em;color:var(--text-muted);margin-bottom:-6px}
+  .fpd-feed{list-style:none;margin:0;padding:0;font:12.5px var(--mono);display:flex;flex-direction:column}
+  .fpd-feed li{display:grid;grid-template-columns:44px 10px minmax(0,1fr) auto;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line);color:var(--text-secondary)}
+  .fpd-feed li i{width:8px;height:8px;border-radius:50%}
+  .fpd-feed .pl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fpd-feed .amt{color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .fpd-feed .ago{grid-column:3 / -1;font-size:10.5px;color:var(--text-muted);margin-top:-4px}
+  .fpd-feed .empty{display:block;color:var(--text-muted)}
+
+  /* ---- touch and legibility (UX audit) ---- */
+  @media (max-width:760px){
+    .tiles > .tile:last-child:nth-child(odd){grid-column:1 / -1}
+    .tile .k{letter-spacing:.14em}
+    .seg button{padding:9px 9px;font-size:10.5px;min-height:34px}
+    .hdr-segs{gap:6px}
+    .hbtn{min-height:38px}
+    .qn-more{padding:8px 10px;font-size:10px}
+    #quickNav button{padding:7px 9px}
+    body::after{mix-blend-mode:normal;opacity:.5}   /* the scanline blend cost ~10fps while scrolling */
+  }
+  /* Small inline links get a larger invisible hit area on touch screens; padding on an inline
+     element does not move the text around it. */
+  @media (pointer:coarse){
+    .tile-why,.plink{position:relative}
+    .tile-why::after,.plink::after{content:"";position:absolute;inset:-10px -4px}
+  }
+  .prof-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--accent);padding:4px 8px;border:1px solid var(--line);display:inline-flex;align-items:center}
+  /* wide tables: a fade on the side that has more, a hint, and the first column stays put */
+  .hscroll{position:relative}
+  .hscroll.more-r{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent)}
+  .hscroll.more-l.more-r{-webkit-mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 34px),transparent)}
+  .hscroll.more-l:not(.more-r){-webkit-mask-image:linear-gradient(90deg,transparent,#000 24px);mask-image:linear-gradient(90deg,transparent,#000 24px)}
+  .hs-hint{display:none;font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--accent);margin:0 0 6px}
+  .hs-hint.on{display:block}
+  .matrix th:first-child,.matrix td:first-child{position:sticky;left:0;z-index:1;background:var(--panel)}
+  #toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,12px);z-index:300;
+    max-width:min(520px,calc(100% - 32px));padding:11px 16px;background:#0c1829;border:1px solid var(--accent-dim);color:var(--text-primary);
+    font:12.5px/1.45 var(--mono);box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  #toast.warn{border-color:#e0b453} #toast.good{border-color:var(--status-good)}
+  @media (max-width:760px){
+    .cat-h,.gauge-label,.cc-row.hdr,.scn-out .h,.scn-pos .h,.conc-lad .h,.tok-total-l,.tok-chain,.tok-ladder .h,.cmp-mkt .h,.vgrid .vh,
+    .cc-row>[data-l]::before,.dod-row>[data-l]::before,.arch-row>[data-l]::before,footer{font-size:9.5px;letter-spacing:.1em}
+    .quickadd input,#quickAddInput{min-height:40px}
+  }
   .fp24{margin-top:22px;padding-top:16px;border-top:1px dashed var(--line)}
   .fp24-h{font-size:10px;letter-spacing:.16em;color:var(--text-muted);font-weight:600;margin-bottom:8px}
   .fp-months{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:11.5px;color:var(--text-muted)}
@@ -892,14 +980,23 @@
   .log-row.critical .msg{color:var(--status-critical)}
   .log-row.good .msg{color:var(--status-good)}
 
-  /* settings drawer */
+  /* settings drawer: slides in from the right; on a phone it is the whole width. Its own
+     scroll never hands over to the page behind it. */
   .drawer{
-    position:fixed;top:0;right:-420px;width:400px;height:100%;z-index:200;
+    position:fixed;top:0;right:0;width:min(400px,100%);height:100%;z-index:200;
     background:var(--surface-1);border-left:1px solid var(--accent-dim);
-    transition:right .25s ease;padding:20px;overflow-y:auto;
+    transform:translateX(105%);visibility:hidden;
+    transition:transform .25s ease,visibility 0s linear .25s;padding:0 20px 20px;overflow-y:auto;overscroll-behavior:contain;
     box-shadow:-10px 0 40px rgba(0,0,0,.5);
   }
-  .drawer.open{right:0}
+  .drawer.open{transform:none;visibility:visible;transition:transform .25s ease}
+  .drawer-top{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin:0 -20px 14px;padding:14px 20px 12px;background:var(--surface-1);border-bottom:1px solid var(--line)}
+  .drawer-top h2{margin:0}
+  .drawer-x{background:none;border:1px solid var(--line);color:var(--text-secondary);font:600 16px var(--mono);
+    width:40px;height:40px;cursor:pointer;flex:none}
+  .drawer-x:hover,.drawer-x:focus-visible{color:var(--accent);border-color:var(--accent-dim)}
+  html.drawer-lock,html.drawer-lock body{overflow:hidden}
   .drawer h2{font-size:12px;letter-spacing:.3em;color:var(--accent);margin-bottom:18px}
   .drawer .sec{margin-bottom:22px}
   .drawer .sec h3{font-size:10px;letter-spacing:.22em;color:var(--text-muted);margin-bottom:9px;border-bottom:1px solid var(--line);padding-bottom:5px}
@@ -1128,7 +1225,8 @@
     <section class="panel" data-panel="matrix" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">HEAD-TO-HEAD MATRIX</span><span class="hint">click a column to rank · ◆ = best in class</span><button class="collapse-btn">▾</button></div>
-      <div class="pbody" style="overflow-x:auto"><table class="matrix" id="matrixBody"></table></div>
+      <div class="hs-hint" id="mxHint">swipe sideways for every column →</div>
+      <div class="pbody hscroll" id="mxScroll" style="overflow-x:auto"><table class="matrix" id="matrixBody"></table></div>
     </section>
 
 
@@ -1201,8 +1299,8 @@
 </footer>
 
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer">
-  <h2>⚙ CONFIGURATION</h2>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Configuration" tabindex="-1">
+  <div class="drawer-top"><h2>⚙ CONFIGURATION</h2><button type="button" class="drawer-x" id="drawerX" aria-label="Close configuration">✕</button></div>
   <div class="sec">
     <h3>PROFILES</h3>
     <ul class="pos-list" id="profileList"></ul>
@@ -1323,7 +1421,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v32.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -2839,9 +2937,49 @@ function assignColors(){
   [...cfg.ids, ...solIds].forEach((id,i)=>colorIndex.set(String(id),i));
 }
 
+/* ---- after every render ----
+   Wide tables say they scroll (a fade on the side with more, and the matrix's hint), and on a
+   phone chart labels drawn for a 1200px canvas are brought up to a readable size, with any label
+   that would then collide with its neighbour dropped rather than overprinted. */
+function afterRender(){ try{ wireHScrolls(); readableSvgText(); }catch(e){} }
+function wireHScrolls(){
+  document.querySelectorAll('.cat-scroll,#mxScroll').forEach(sc=>{
+    sc.classList.add('hscroll');
+    const upd=()=>{ const more=sc.scrollWidth-sc.clientWidth>4;
+      sc.classList.toggle('more-r', more && sc.scrollLeft < sc.scrollWidth-sc.clientWidth-4);
+      sc.classList.toggle('more-l', more && sc.scrollLeft > 4);
+      if(sc.id==='mxScroll'){ const h=$('#mxHint'); if(h) h.classList.toggle('on', more && sc.scrollLeft<8); } };
+    if(!sc._hs){ sc._hs=1; sc.addEventListener('scroll',upd,{passive:true}); }
+    upd();
+  });
+}
+function readableSvgText(){
+  if(innerWidth>760) return;
+  const MIN=9.5;                                          // smallest label size on screen, px
+  document.querySelectorAll('#panelStack svg[viewBox]').forEach(svg=>{
+    if(svg.closest('.tile,.fp-link') || svg.classList.contains('fp-svg') || svg.classList.contains('fpd-dial')) return;
+    const vb=svg.viewBox.baseVal; if(!vb||!vb.width||!svg.clientWidth) return;
+    const k=svg.clientWidth/vb.width; if(k>=0.8) return;
+    svg.style.overflow='visible';                         // an enlarged edge label may reach past the drawing
+    const texts=[...svg.querySelectorAll('text')];
+    for(const t of texts){
+      if(t.dataset.fs0==null) t.dataset.fs0=parseFloat(t.getAttribute('font-size')||getComputedStyle(t).fontSize)||10;
+      const want=MIN/k; t.removeAttribute('visibility');
+      if(Number(t.dataset.fs0)<want){ t.setAttribute('font-size',want.toFixed(1)); t.style.fontSize=want.toFixed(1)+'px'; }
+    }
+    // thin out: along each row of labels keep one, drop the next if it would overlap
+    const rows=new Map();
+    for(const t of texts){ let b; try{ b=t.getBBox(); }catch(e){ continue; } if(!b.width) continue;
+      const key=Math.round((b.y+b.height/2)/(MIN/k)); (rows.get(key)||rows.set(key,[]).get(key)).push({t,b}); }
+    for(const row of rows.values()){ row.sort((a,b)=>a.b.x-b.b.x); let edge=-1e9;
+      for(const r of row){ if(r.b.x<edge+2/k) r.t.setAttribute('visibility','hidden'); else edge=r.b.x+r.b.width; } }
+  });
+}
+let arT=0; addEventListener('resize',()=>{ clearTimeout(arT); arT=setTimeout(afterRender,250); },{passive:true});
 function renderAll(){
   assignColors(); assignPools();
   renderHeader(); renderTiles(); renderActions(); renderIdle(); renderSeismo(); renderFeePulse(); renderRank(); renderFlow(); renderOutlook(); renderArch(); renderCosmos(); renderOps(); renderGlobal(); renderRadar(); renderCompare(); renderMatrix(); renderSpark(); renderTruth(); renderPlaybook(); renderCards(); renderTokens(); renderConcentration(); renderCash(); if(!$('#quickNav').children.length) buildQuickNav();
+  setTimeout(afterRender,0);
   // partial-data ribbon: some chains down, rest still current
   {
     const down=[];
@@ -4107,7 +4245,7 @@ function renderScenario(host, book, nameOf){
     const r=el('div','scn-row');
     const lab=el('div','scn-lab'); lab.innerHTML='<b>'+esc(t.sym)+'</b> <span class="dim">'
       +esc(nm.chain)+'</span>'+(nm.badge?' <b class="tok-badge">'+esc(nm.badge)+'</b>':'');
-    const sl=el('input'); sl.type='range'; sl.min='0'; sl.max='1000'; sl.step='1';
+    const sl=el('input'); sl.type='range'; sl.min='1'; sl.max='1000'; sl.step='1';   // never a zero price
     sl.className='scn-sl'; sl.setAttribute('aria-label',(t.sym||'')+' price');
     sl.value=String(Math.round(Math.min(1,(scnPx[t.key]??live[t.key])/ceil)*1000));
     const val=el('div','scn-val');
@@ -4124,6 +4262,10 @@ function renderScenario(host, book, nameOf){
     /* The release is listened for on the window, and on cancel and blur too: a pointerup that
        lands outside the control — or a gesture the browser takes over — would otherwise leave
        the flag set and block every later refresh of this panel. */
+    let startV=null;
+    sl.addEventListener('pointerdown',()=>{ startV=sl.value; });
+    // the browser took the gesture over for scrolling: whatever the touch did to the value is undone
+    sl.addEventListener('pointercancel',()=>{ if(startV!=null&&sl.value!==startV){ sl.value=startV; sl.dispatchEvent(new Event('input')); } startV=null; });
     const down=()=>{scnDragging=true;}, up=()=>{scnDragging=false;};
     sl.addEventListener('pointerdown',down); sl.addEventListener('touchstart',down,{passive:true});
     for(const ev of ['pointerup','pointercancel','touchend','touchcancel','blur'])
@@ -7156,19 +7298,38 @@ function gauge(p, hex){
   return svg;
 }
 
+/* ---- a short message at the bottom of the screen, for actions whose result would otherwise only reach the log ---- */
+function toast(msg,tone){
+  let t=$('#toast'); if(!t){ t=document.createElement('div'); t.id='toast'; t.setAttribute('role','status'); document.body.append(t); }
+  t.textContent=msg; t.className='show '+(tone||''); clearTimeout(toast._t); toast._t=setTimeout(()=>{ t.className=''; },4200);
+}
 /* ================= TOOLTIP ================= */
 const tip=$('#tooltip');
-function showTip(ev,html){ tip.innerHTML=html; tip.style.display='block';
-  const x=Math.min(window.innerWidth-280, ev.clientX+14), y=Math.min(window.innerHeight-90, ev.clientY+14);
+/* On a touch screen a tap arrives as mousemove then mouseleave in the same instant, so the tip
+   would show and vanish at once. After a touch, the tip stays until the next tap elsewhere or a
+   scroll. */
+let tipPtr='mouse', tipAt=0;
+addEventListener('pointerdown',e=>{ tipPtr=e.pointerType||'mouse';
+  if(tipPtr!=='mouse' && !(e.target.closest&&e.target.closest('svg'))) tip.style.display='none'; },{capture:true,passive:true});
+addEventListener('scroll',()=>{ if(tipPtr!=='mouse') tip.style.display='none'; },{passive:true});
+function showTip(ev,html){ tip.innerHTML=html; tip.style.display='block'; tipAt=Date.now();
+  const x=Math.max(8,Math.min(window.innerWidth-280, ev.clientX+14)), y=Math.min(window.innerHeight-90, ev.clientY+14);
   tip.style.left=x+'px'; tip.style.top=y+'px'; }
-function hideTip(){ tip.style.display='none'; }
+function hideTip(){ if(tipPtr!=='mouse' && Date.now()-tipAt<6000) return; tip.style.display='none'; }
 
 /* ================= DRAG & DROP (generic) ================= */
 function wireDrag(container, selector, onOrder){
   let dragEl=null;
+  /* On a touch screen a long press is for scrolling and selecting, not for rearranging the page. */
+  if(matchMedia('(pointer:coarse)').matches){ container.querySelectorAll(selector).forEach(x=>x.draggable=false); return; }
   container.querySelectorAll(selector).forEach(item=>{
+    // with a handle, only the handle starts a drag, so selecting text in the panel works
+    const h=item.querySelector(':scope > .phead .drag-dots, :scope > .drag-dots');
+    if(h){ item.draggable=false; h.style.cursor='grab';
+      h.addEventListener('mousedown',()=>{ item.draggable=true; });
+      addEventListener('mouseup',()=>{ if(!dragEl) item.draggable=false; }); }
     item.addEventListener('dragstart',e=>{ dragEl=item; item.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
-    item.addEventListener('dragend',()=>{ dragEl?.classList.remove('dragging'); container.querySelectorAll(selector).forEach(x=>x.classList.remove('drag-over')); dragEl=null;
+    item.addEventListener('dragend',()=>{ if(h) item.draggable=false; dragEl?.classList.remove('dragging'); container.querySelectorAll(selector).forEach(x=>x.classList.remove('drag-over')); dragEl=null;
       if(onOrder) onOrder([...container.querySelectorAll(selector)].map(x=>x.dataset.id||x.dataset.panel)); });
     item.addEventListener('dragover',e=>{ if(!dragEl||dragEl===item) return; e.preventDefault();
       item.classList.add('drag-over');
@@ -7215,7 +7376,7 @@ document.addEventListener('click', e=>{
   if(!b) return;
   const p=document.querySelector('.panel[data-panel="'+b.getAttribute('data-jump')+'"]');
   if(!p) return;
-  p.classList.remove('collapsed');
+  openPanel(p);
   /* A jump can ask for the destination to be ordered by the column it is about. Only a real
      matrix column is accepted, so a stale attribute cannot leave the table sorted by nothing. */
   const sk=b.getAttribute('data-sort');
@@ -7223,6 +7384,8 @@ document.addEventListener('click', e=>{
     matrixSort={key:sk, dir:-1};
     store.set('matrixSort', matrixSort);
     try{ renderMatrix(); }catch(err){}
+    // the sorted column may be off-screen on a phone: bring it into view inside the table
+    setTimeout(()=>{ const th=document.querySelector('#matrixBody th.sorted'); if(th) th.scrollIntoView({block:'nearest',inline:'center'}); },450);
   }
   const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
   /* A jump can name a block inside the panel, so a link to one table does not land the reader
@@ -7234,6 +7397,24 @@ document.addEventListener('click', e=>{
   tgt.classList.remove('jump-flash'); void tgt.offsetWidth; tgt.classList.add('jump-flash');
   setTimeout(()=>tgt.classList.remove('jump-flash'),1800);
 });
+function openPanel(p){ p.classList.remove('collapsed'); const g=p.querySelector('.collapse-btn'); if(g) g.textContent='▾'; }
+/* The chip of the section on screen is lit, and the chip row keeps it in view. */
+let sectionIO=null;
+function watchSections(nav, panels){
+  if(sectionIO) sectionIO.disconnect();
+  if(!('IntersectionObserver' in window)) return;
+  const vis=new Map();
+  sectionIO=new IntersectionObserver(es=>{
+    for(const e of es) vis.set(e.target, e.isIntersecting?e.intersectionRect.height:0);
+    let best=null, bh=0; for(const [el,h] of vis) if(h>bh){ bh=h; best=el; }
+    nav.querySelectorAll('button[data-nav]').forEach(b=>{
+      const on=!!best && b.dataset.nav===best.dataset.panel;
+      if(on!==(b.getAttribute('aria-current')==='true')){ b.setAttribute('aria-current',String(on));
+        if(on && !nav.classList.contains('expanded')){ const tr=b.parentElement, l=b.offsetLeft-tr.offsetLeft;
+          tr.scrollTo({left:Math.max(0,l-tr.clientWidth/2+b.offsetWidth/2),behavior:'smooth'}); } } });
+  },{rootMargin:'-'+((parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34)+8)+'px 0px -45% 0px',threshold:[0,.01,.25,.5,1]});
+  panels.forEach(p=>sectionIO.observe(p));
+}
 function buildQuickNav(){
   const nav=$('#quickNav'); if(!nav) return;
   const stack=$('#panelStack')||document;
@@ -7255,15 +7436,19 @@ function buildQuickNav(){
     b.type='button';
     b.textContent=navLabel(p);
     b.title='Jump to '+navLabel(p);
+    b.dataset.nav=p.dataset.panel;
     b.addEventListener('click',()=>{
-      p.classList.remove('collapsed');                  // never scroll to a closed panel
+      openPanel(p);                                     // never scroll to a closed panel
       const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
       try{ p.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
       catch(e){ p.scrollIntoView(); }                   // older WebKit: no options object
+      p.classList.remove('jump-flash'); void p.offsetWidth; p.classList.add('jump-flash');
+      setTimeout(()=>p.classList.remove('jump-flash'),1800);
     });
     track.append(b);
   }
-  setMore(!!store.get('navOpen',false));
+  setMore(false);                                   // always opens as one row; ALL is for this visit
+  watchSections(nav, panels);
   measureChrome();
 }
 /* vMAJOR.MINOR, compared numerically so v28.10 sorts after v28.9 rather than before it.
@@ -7417,18 +7602,34 @@ if(PULSE_URL){
   setInterval(()=>{ if(!document.hidden) loadPulse(); },60000);
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadPulse(); });
 }
+/* Pools get one colour each, in the order the positions list them, so a pool is the same colour
+   on the dial, in the tape and in the latest-fees list. */
+const POOL_HEX=['#35d6e8','#e0b453','#a58cf5','#5fe3c0','#ff8fab','#8fb3ff'];
+function poolColor(lbl){
+  if(!lbl) return '#6f879a';                     // a trade from before pools were recorded
+  const names=[...new Set(ordered().map(p=>(p.pairLabel||'')+' '+(p.feeLabel||'')))];
+  const i=names.indexOf(lbl); return POOL_HEX[(i<0?names.length:i)%POOL_HEX.length];
+}
+/* The recorder's trades as the views use them: minutes ago, amount, and the pool that paid most. */
+function pulseTrades(){
+  const P=state.pulse; if(!P||!Array.isArray(P.trades)) return [];
+  const now=Date.now();
+  return P.trades.map(t=>{ const pools=Object.entries(t.pools||{}).sort((a,b)=>b[1]-a[1]);
+    return {t:t.t, end:t.end, usd:t.usd, m:(now-(t.t+30000))/60000, pools, lbl:pools.length?pools[0][0]:null}; });
+}
 function feePulseLink60(){
   const M=pulseMins();
   if(M){
-    const W=300, H=30, n=60, gap=1, bw=(W-gap*(n-1))/n, H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
-    const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 1e-6), y=v=>H-Math.max(1,v/top*(H-2));
-    let bars='', li=n-1; while(li>0&&M.mins[li].usd==null) li--;
-    M.mins.forEach((m,i)=>{ if(m.usd==null) return;
-      bars+='<rect class="'+(i===li?'fpl-today':(perMin!=null&&m.usd>perMin?'fpl-hi':'fpl-lo'))+'" x="'+(i*(bw+gap)).toFixed(1)+'" y="'+y(m.usd).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(H-y(m.usd)).toFixed(1)+'"/>'; });
-    const avgLine=perMin!=null?'<line class="fpl-ref" x1="0" x2="'+W+'" y1="'+y(perMin).toFixed(1)+'" y2="'+y(perMin).toFixed(1)+'"/>':'';
-    return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — fee income by minute, last 60 minutes">'
+    // a strip of the hour: now at the right, each trade a dot sized by what it paid
+    const W=300, H=30, tr=pulseTrades().filter(t=>t.m<=60), top=Math.max(0.5,...tr.map(t=>t.usd));
+    let dots='';
+    for(const t of tr){ const x=W-(Math.max(0,t.m)/60)*(W-6)-3, r=2.2+Math.sqrt(t.usd/top)*5.5;
+      dots+='<circle cx="'+x.toFixed(1)+'" cy="15" r="'+r.toFixed(1)+'" fill="'+poolColor(t.lbl)+'"/>'; }
+    return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — the last 60 minutes">'
       +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
-      +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
+      +'<svg viewBox="0 0 '+W+' '+H+'" aria-hidden="true"><line x1="0" x2="'+W+'" y1="15" y2="15" class="fpl-tape"/>'
+      +[15,30,45].map(m=>'<line x1="'+(W-m/60*(W-6)-3).toFixed(1)+'" x2="'+(W-m/60*(W-6)-3).toFixed(1)+'" y1="11" y2="19" class="fpl-tape"/>').join('')
+      +dots+'<circle cx="'+(W-3)+'" cy="15" r="3" class="fpl-now"/></svg></button>';
   }
   const S=feeMinStats(); if(!S) return '';
   const W=300, H=30, X=t=>(t-S.w0)/3600000*W;
@@ -7495,64 +7696,97 @@ function renderFeePulse60(host){
     if(sel!=null&&rects[sel]) rects[sel].classList.remove('sel'); sel=i>=0?i:null; if(sel!=null) rects[sel].classList.add('sel');
     say(i>=0?S.segs[i]:null); };
   svg.addEventListener('pointermove',pick); svg.addEventListener('pointerdown',pick);
-  svg.addEventListener('pointerleave',()=>{ if(sel!=null&&rects[sel]) rects[sel].classList.remove('sel'); sel=null; say(S.segs[S.segs.length-1]); });
+  svg.addEventListener('pointerleave',ev=>{ if(ev.pointerType!=='mouse') return; if(sel!=null&&rects[sel]) rects[sel].classList.remove('sel'); sel=null; say(S.segs[S.segs.length-1]); });
   wrap.append(svg);
   say(S.segs[S.segs.length-1]);
   wrap.append(el('div','arch-note','One block per ledger reading, placed over the time it covers, your time · the ledger is read about every '
     +Math.round(S.cad/60000)+' minutes, so this is as fine as the record goes · the dashed box at the end is time since the latest reading, not yet counted · bright blocks earned faster than the 24-hour average.'));
 }
-/* The last 60 minutes, one bar per minute, from the minute recorder. */
+/* The last 60 minutes as a clock face: now at twelve, the hour running back round the ring, each
+   trade a mark at its minute sized by what it paid and coloured by its pool. The inner ring fills
+   toward a typical hour. Under it, the quiet since the last trade against every lull of the past
+   day, and the latest fees whether or not they fall inside the hour. */
 function renderFeePulse60m(host){
-  const M=pulseMins();
-  const wrap=el('div','fp24'); wrap.id='fp60';
-  wrap.append(el('div','fp24-h','LAST 60 MINUTES · BY MINUTE'));
+  const M=pulseMins(), P=state.pulse, TR=pulseTrades(), inHour=TR.filter(t=>t.m<=60);
+  const wrap=el('div','fp24 fpd'); wrap.id='fp60';
+  wrap.append(el('div','fp24-h','LAST 60 MINUTES'));
   host.append(wrap);
   const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
-  const H24=feeHourStats(), perMin=H24&&H24.avg!=null?H24.avg/60:null;
-  const busy=M.have.filter(m=>m.usd>=0.005), best=M.have.reduce((a,b)=>b.usd>a.usd?b:a);
-  const st=el('div','fp-story');
-  st.innerHTML='Last 60 minutes <span class="big">'+fmtUsd(M.total,2)+'</span>'
-    +(H24&&H24.avg!=null?' · the 24-hour average is <b>'+fmtUsd(H24.avg,2)+'</b> an hour':'')
-    +'<br>Fees came in during <b>'+busy.length+'</b> of '+M.have.length+' minutes'
-    +(best.usd>=0.005?' · busiest <b>'+hl(best.t)+'</b> with <b>'+fmtUsd(best.usd,2)+'</b>'+(M.total>0?' <span class="unit">('+Math.round(best.usd/M.total*100)+'% of the hour)</span>':''):'');
-  wrap.append(st);
-  const read=el('div','fp-read'); wrap.append(read);
-  const rank=v=>1+M.have.filter(x=>x.usd>v).length;
-  const say=m=>{ if(!m) return;
-    if(m.usd==null){ read.innerHTML='▸ <b>'+hl(m.t)+'</b> · no reading that minute — the next one covers it'; return; }
-    read.innerHTML='▸ <b>'+hl(m.t)+'</b> '+(m.usd<0.0005?'nothing earned <span class="unit">· no trades through your ranges that minute':'<b>'+fmtUsd(m.usd,m.usd<1?3:2)+'</b> <span class="unit">· #'+rank(m.usd)+' of '+M.have.length+' minutes')
-      +(m.part?' · not every position was read this minute':'')+'</span>'; };
-  const cw=Math.max(300, host.clientWidth||600);
-  const W=cw, H=cw<560?120:150, padL=40, padR=10, padT=14, padB=22, n=60;
+  const H24=feeHourStats(), typical=H24&&H24.avg!=null?H24.avg:null;
+  const total=M.total;
   const NS='http://www.w3.org/2000/svg';
-  const mk=(t,a,cls)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); return e; };
-  const svg=mk('svg',{viewBox:'0 0 '+W+' '+H},'fp-svg');
-  const top=Math.max(...M.have.map(m=>m.usd), perMin||0, 0.01)*1.2;
-  const stepY=[0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100].find(v=>top/v<=4)||200;
-  const Y=v=>padT+(1-v/top)*(H-padT-padB);
-  const step=(W-padL-padR)/n, bw=Math.max(1,step*0.74), X=i=>padL+step*i+(step-bw)/2;
-  for(let g=0; g<=top; g+=stepY){
-    svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(g),y2:Y(g)},'fp-grid'));
-    const t=mk('text',{x:padL-6,y:Y(g)+3,'text-anchor':'end'},'fp-ax'); t.textContent=g===0?'$0':'$'+(g<1?+g.toFixed(2):g); svg.append(t);
-  }
-  M.mins.forEach((m,i)=>{ if(i%15===0||i===n-1){ const t=mk('text',{x:padL+step*i+step/2,y:H-6,'text-anchor':i===0?'start':i===n-1?'end':'middle'},'fp-ax'); t.textContent=hl(m.t); svg.append(t); } });
-  if(perMin!=null){ svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(perMin),y2:Y(perMin)},'fp-avg'));
-    if(cw>=560){ const at=mk('text',{x:W-padR-2,y:Y(perMin)-4,'text-anchor':'end'},'fp-avgt'); at.textContent='24h avg '+fmtUsd(perMin,3)+'/min'; svg.append(at); } }
-  // the minute that just ended is often not written yet: rest on the newest one that is
-  let li=n-1; while(li>0&&M.mins[li].usd==null) li--;
-  const rects=M.mins.map((m,i)=>{ if(m.usd==null) return null;
-    const r=mk('rect',{x:X(i),y:Y(m.usd),width:bw,height:Math.max(1,Y(0)-Y(m.usd)),rx:0.5},'fp-bar'+(i===li?' today':(perMin!=null&&m.usd>perMin?' above':''))+(m.part?' est':''));
-    svg.append(r); return r; });
-  let sel=-1;
-  const pick=i=>{ if(sel>=0&&rects[sel]) rects[sel].classList.remove('sel'); sel=i; if(i>=0&&rects[i]) rects[i].classList.add('sel'); say(M.mins[i]); };
-  const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
-  svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerleave',()=>pick(li));
-  wrap.append(svg);
-  pick(li);
-  wrap.append(el('div','arch-note','One bar per minute, your time · recorded around the clock from each pool\'s fee counter, so collecting, adding or withdrawing never shows as income · '
-    +'bright bars beat the 24-hour average per minute, green is the latest minute · includes fees your own swaps paid to your own pools, which the monthly ledger takes out · updates every minute while the page is open.'));
+  const mk=(t,a,cls,txt)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); if(txt!=null) e.textContent=txt; return e; };
+  const grid=el('div','fpd-grid'); wrap.append(grid);
+  // ---- the dial
+  const C=150, R=118, svg=mk('svg',{viewBox:'-26 -10 352 322',role:'img','aria-label':'The last 60 minutes of fee income as a clock face'},'fpd-dial');
+  const pt=(m,r)=>{ const a=(-m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
+  const defs=mk('defs',{});
+  const gl=mk('radialGradient',{id:'fpdGlow'}); gl.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'.85'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'0'}));
+  const bm=mk('linearGradient',{id:'fpdBeam',x1:'0',y1:'0',x2:'1',y2:'0'}); bm.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'0'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'.2'}));
+  defs.append(gl,bm); svg.append(defs);
+  svg.append(mk('circle',{cx:C,cy:C,r:R+16},'fpd-face'));
+  for(let m=0;m<60;m++){ const big=m%15===0, [x1,y1]=pt(m,R+(big?11:8)), [x2,y2]=pt(m,R+15);
+    svg.append(mk('line',{x1,y1,x2,y2},big?'fpd-tick big':'fpd-tick')); }
+  [[0,'now'],[15,hl(Date.now()-15*60000)],[30,hl(Date.now()-30*60000)],[45,hl(Date.now()-45*60000)]].forEach(([m,l])=>{
+    const [x,y]=pt(m,R+(m%30?24:29)); svg.append(mk('text',{x,y:y+3.5,'text-anchor':m===15?'end':m===45?'start':'middle'},m?'fpd-lbl':'fpd-lbl now',l)); });
+  const beam=mk('g',{},'fpd-sweep'); const [bx,by]=pt(0,R), [ex,ey]=pt(-9,R);
+  beam.append(mk('path',{d:`M${C},${C} L${bx},${by} A${R},${R} 0 0,1 ${ex},${ey} Z`,fill:'url(#fpdBeam)'})); svg.append(beam);
+  svg.append(mk('circle',{cx:C,cy:C,r:R},'fpd-ring'));
+  // inner ring: this hour against a typical one
+  const r2=88, circ=2*Math.PI*r2, frac=typical?Math.min(1,total/typical):0;
+  svg.append(mk('circle',{cx:C,cy:C,r:r2},'fpd-track'));
+  if(typical) svg.append(mk('circle',{cx:C,cy:C,r:r2,'stroke-dasharray':`${(circ*frac).toFixed(1)} ${circ.toFixed(1)}`,transform:`rotate(-90 ${C} ${C})`},'fpd-fill'+(total>=typical?' over':'')));
+  // trades
+  const top=Math.max(0.5,...inHour.map(t=>t.usd)), marks=[];
+  for(const t of inHour){ const m=Math.max(0,Math.min(60,t.m)), [x,y]=pt(m,R), r=4+Math.sqrt(t.usd/top)*9, col=poolColor(t.lbl);
+    svg.append(mk('circle',{cx:x,cy:y,r:r*2.3,fill:'url(#fpdGlow)'},'fpd-halo'));
+    const d=mk('circle',{cx:x,cy:y,r,fill:col,tabindex:0,role:'button','aria-label':hl(t.t)+' '+fmtUsd(t.usd,2)},'fpd-dot'); svg.append(d);
+    if(t.usd>=top*0.35||inHour.length<=3){ const [lx,ly]=pt(m,R-r-15); svg.append(mk('text',{x:lx,y:ly+3.5,'text-anchor':'middle'},'fpd-amt',fmtUsd(t.usd,t.usd<100?2:0))); }
+    marks.push({d,t}); }
+  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); svg.append(mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'));
+  svg.append(mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',fmtUsd(total,2)));
+  svg.append(mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'));
+  if(typical) svg.append(mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',Math.round(total/typical*100)+'% of a typical hour'));
+  grid.append(svg);
+  // ---- beside the dial: the reading, the quiet, the latest fees
+  const side=el('div','fpd-side'); grid.append(side);
+  const read=el('div','fp-read fpd-read'); side.append(read);
+  const say=t=>{ read.innerHTML=t
+    ? '▸ <b>'+hl(t.t)+'</b> <b>+'+fmtUsd(t.usd,2)+'</b> <span class="unit">· '+(t.pools.length?t.pools.map(([k,v])=>esc(k)+(t.pools.length>1?' '+fmtUsd(v,2):'')).join(' + '):'pool not recorded')+'</span>'
+    : '▸ '+(inHour.length?(matchMedia('(hover:hover)').matches?'hover':'tap')+' a mark for its trade':'no trades in the last 60 minutes'); };
+  let sel=null;
+  for(const k of marks){ const pick=()=>{ if(sel) sel.classList.remove('sel'); sel=k.d; k.d.classList.add('sel'); say(k.t); };
+    k.d.addEventListener('pointerenter',pick); k.d.addEventListener('click',pick); k.d.addEventListener('focus',pick); }
+  say(null);
+  const stats=el('div','fpd-stats');
+  const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-(last.end+60000))/60000)):null;
+  const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
+  stats.innerHTML=cell('Trades this hour',String(inHour.length))
+    +cell('Last trade',last?(quiet<1?'just now':quiet<120?quiet+' min ago':hl(last.t)):'—')
+    +cell('Typical hour',typical!=null?fmtUsd(typical,2):'—');
+  side.append(stats);
+  // the quiet meter, in one line: this lull against every lull the record holds
+  const gaps=(P&&P.gaps)||[], hrs=P&&P.from?Math.min(24,Math.round((Date.now()-P.from)/3600000)):0;
+  const qm=el('div','fpd-quiet');
+  if(quiet==null) qm.innerHTML='<span class="unit">No trade recorded yet.</span>';
+  else if(quiet<1) qm.innerHTML='<b class="up">Trading now</b> <span class="unit">· a trade in the last minute</span>';
+  else if(gaps.length<5) qm.innerHTML='Quiet for <b>'+quiet+' min</b> <span class="unit">· not enough lulls on record yet to compare</span>';
+  else { const pct=Math.round(gaps.filter(g=>g<quiet).length/gaps.length*100), med=[...gaps].sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
+    const tone=pct>=80?'hot':pct>=50?'warm':'calm';
+    qm.innerHTML='<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
+      +' <span class="unit">(typical lull '+med+' min)</span></div>'
+      +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'; }
+  side.append(qm);
+  // the latest fees, in or out of the hour
+  const list=el('ul','fpd-feed');
+  if(!TR.length) list.innerHTML='<li class="empty">No trades recorded yet.</li>';
+  for(const t of TR.slice(0,5)){ const li=document.createElement('li');
+    li.innerHTML='<span class="tm">'+hl(t.t)+'</span><i style="background:'+poolColor(t.lbl)+'"></i><span class="pl">'+(t.pools.length?t.pools.map(([k])=>esc(k)).join(' + '):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
+      +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
+    list.append(li); }
+  const lh=el('div','fpd-lh','LATEST FEES'); side.append(lh,list);
+  wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
+    +'A trade here is a run of consecutive earning minutes. Typical hour is the last 24 hours\' average. Includes fees your own swaps paid to your own pools, which the monthly ledger takes out.'));
 }
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */
@@ -7676,7 +7910,7 @@ function renderFeePulse(){
   const idxAt=ev=>{ const b=svg.getBoundingClientRect(); const x=(ev.clientX-b.left)/b.width*W; return Math.max(0,Math.min(n-1,Math.floor((x-padL)/step))); };
   svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
   svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
-  svg.addEventListener('pointerleave',()=>pick(n-1));
+  svg.addEventListener('pointerleave',ev=>{ if(ev.pointerType==='mouse') pick(n-1); });   // on touch a lifted finger fires this: keep the tapped bar
   host.append(svg);
   pick(n-1);
 
@@ -7754,7 +7988,7 @@ function renderFeePulse24(host){
   svg.addEventListener('pointermove',ev=>pick(idxAt(ev)));
   svg.addEventListener('pointerdown',ev=>pick(idxAt(ev)));
     let li=n-1; while(li>0&&hrs[li].usd==null) li--;
-  svg.addEventListener('pointerleave',()=>pick(li));
+  svg.addEventListener('pointerleave',ev=>{ if(ev.pointerType==='mouse') pick(li); });
   wrap.append(svg);
   pick(li);
   wrap.append(el('div','arch-note','One bar per hour, your time · same ledger as the day bars above · the ledger is read about every 20 minutes and a gain between two readings is split across the hours it spans · '
@@ -7866,7 +8100,8 @@ function renderProfileSeg(){
   const seg=$('#profileSeg'); if(!seg) return;
   seg.innerHTML='';
   const prs=CONFIG_DATA?.profiles||[];
-  if(prs.length<2 && prs.length){ const b=el('button','on',esc(prs[0].name)); seg.append(b); return; }
+  if(prs.length<2 && prs.length){ seg.classList.add('seg-label'); seg.append(el('span','prof-label',esc(prs[0].name))); return; }
+  seg.classList.remove('seg-label');
   for(const pr of prs){
     const b=el('button', activeProfile()?.slug===pr.slug?'on':null, esc(pr.name));
     b.addEventListener('click',()=>{ switchProfile(pr.slug); });
@@ -7962,7 +8197,9 @@ function renderSolWalletList(){
   });
 }
 function wireSettings(){
-  $('#btnSettings').addEventListener('click',()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); renderPosList(); renderSolWalletList(); renderProfileList(); renderWalletList(); $('#ghTokenInput').value=store.get('ghToken','')?'••••••••':''; });
+  let drawerFrom=null;
+  $('#btnSettings').addEventListener('click',()=>{ drawerFrom=document.activeElement; $('#drawer').classList.add('open'); $('#scrim').classList.add('show');
+    document.documentElement.classList.add('drawer-lock'); setTimeout(()=>{ try{ $('#drawerX').focus(); }catch(e){} },60); renderPosList(); renderSolWalletList(); renderProfileList(); renderWalletList(); $('#ghTokenInput').value=store.get('ghToken','')?'••••••••':''; });
   $('#addProfileBtn').addEventListener('click',()=>{
     const name=$('#addProfileInput').value.trim(); if(!name) return;
     const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||('p'+(CONFIG_DATA.profiles.length+1));
@@ -8008,8 +8245,12 @@ function wireSettings(){
     log('good','Custom Solana RPC set as primary — rescanning.');
     state.solCatalog=null; scan();
   });
-  const close=()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); };
+  const close=()=>{ if(!$('#drawer').classList.contains('open')) return;
+    $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); document.documentElement.classList.remove('drawer-lock');
+    try{ (drawerFrom||$('#btnSettings')).focus(); }catch(e){} };
   $('#btnCloseDrawer').addEventListener('click',close);
+  $('#drawerX').addEventListener('click',close);
+  addEventListener('keydown',e=>{ if(e.key==='Escape') close(); });
   $('#scrim').addEventListener('click',close);
   $('#addPosBtn').addEventListener('click',addPos);
   $('#addPosInput').addEventListener('keydown',e=>{if(e.key==='Enter')addPos();});
@@ -8045,7 +8286,7 @@ function wireSettings(){
     scan();
   });
   $('#btnResetLayout').addEventListener('click',()=>{store.set('panelOrder',null);store.set('cardOrder',[]);location.reload();});
-  $('#btnDiag').addEventListener('click',()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); runDiagnostics(); });
+  $('#btnDiag').addEventListener('click',()=>{ close(); runDiagnostics(); });
   $('#btnCopyLog').addEventListener('click', async e=>{
     e.stopPropagation();
     const lines=[...document.querySelectorAll('.log-row')].map(r=>{
@@ -8243,10 +8484,11 @@ function initSky(){
     }
   }
   if(reduced){ draw(); return; }
-  let last=0;
+  // the sky holds still while the page scrolls: that is when frames are scarcest on a phone
+  let last=0, still=0; addEventListener('scroll',()=>{ still=performance.now()+300; },{passive:true});
   function frame(ts){
     if(document.hidden){ requestAnimationFrame(frame); return; }
-    if(ts-last>33){ // ~30fps is plenty for ambience
+    if(ts-last>33 && ts>still){ // ~30fps is plenty for ambience
       t+=.033; last=ts;
       if(Math.random()<.006 && shoots.length<2)
         shoots.push({x:Math.random()*W*.7+W*.15, y:Math.random()*H*.35, vx:5+Math.random()*6, vy:1.5+Math.random()*2.5, life:1});
@@ -8320,6 +8562,7 @@ async function init(){
       btn.hidden=false;
       const sync=()=>btn.classList.toggle('show', (window.scrollY||document.documentElement.scrollTop||0) > 400);
       addEventListener('scroll', sync, {passive:true});
+      let mv=0; addEventListener('scroll',()=>{ btn.classList.add('moving'); clearTimeout(mv); mv=setTimeout(()=>btn.classList.remove('moving'),500); },{passive:true});
       sync();
       btn.addEventListener('click',()=>{
         const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
@@ -8333,6 +8576,7 @@ async function init(){
   document.querySelectorAll('.collapse-btn').forEach(b=>b.addEventListener('click',e=>{
     e.stopPropagation(); b.closest('.panel').classList.toggle('collapsed');
     b.textContent = b.closest('.panel').classList.contains('collapsed')?'▸':'▾';
+    b.setAttribute('aria-expanded', String(!b.closest('.panel').classList.contains('collapsed')));
   }));
   { let lastTap=0;
     const btn=$('#btnRefresh');
@@ -8344,10 +8588,14 @@ async function init(){
     });
   }
   $('#btnNotify').addEventListener('click',async()=>{
-    if(!('Notification' in window)){ log('warning','This browser does not support notifications.'); return; }
+    // the answer is shown where the tap was, not only in the event log at the foot of the page
+    if(!('Notification' in window)){ const m=/iPhone|iPad/.test(navigator.userAgent)
+        ?'On iPhone, alerts work once this page is added to the Home Screen (Share → Add to Home Screen).'
+        :'This browser does not support notifications.';
+      log('warning',m); toast(m,'warn'); return; }
     const perm = await Notification.requestPermission();
-    if(perm==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').innerHTML='<span class="bi">◉</span><span class="bt"> ARMED</span>'; log('good','Browser notifications armed — you will be pinged near range edges.'); }
-    else log('warning','Notification permission denied.');
+    if(perm==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').innerHTML='<span class="bi">◉</span><span class="bt"> ARMED</span>'; log('good','Browser notifications armed — you will be pinged near range edges.'); toast('Alerts armed — you will be pinged near range edges.','good'); }
+    else { log('warning','Notification permission denied.'); toast('Alerts are blocked for this site. Allow notifications in the browser settings, then tap again.','warn'); }
   });
   if(('Notification' in window) && Notification.permission==='granted'){ $('#btnNotify').classList.add('armed'); $('#btnNotify').innerHTML='<span class="bi">◉</span><span class="bt"> ARMED</span>'; }
   setInterval(tickClock,1000);
