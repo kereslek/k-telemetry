@@ -250,7 +250,7 @@
   #toTop::after{content:"TOP";display:block;font-size:8px;letter-spacing:.14em;margin-top:2px}
   #toTop{display:flex;flex-direction:column;align-items:center;justify-content:center}
   #toTop[hidden]{display:none}
-  @media(max-width:760px){ #toTop{width:46px;height:46px;font-size:14px;right:auto;left:max(10px, env(safe-area-inset-left));background:rgba(7,13,22,.96)} #toTop.show{opacity:.9} }
+  @media(max-width:760px){ #toTop{width:46px;height:46px;font-size:14px;right:max(10px, env(safe-area-inset-right));left:auto;background:rgba(7,13,22,.96)} #toTop.show{opacity:.9} }
   @media(prefers-reduced-motion:reduce){ #toTop{transition:none} }
   .conn{display:flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
   .led{width:8px;height:8px;border-radius:50%;background:var(--status-good);box-shadow:0 0 8px var(--status-good);animation:pulse 2s ease-in-out infinite}
@@ -1425,7 +1425,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
