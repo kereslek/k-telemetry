@@ -7466,6 +7466,7 @@ if(PULSE_URL){
    on the dial, in the tape and in the latest-fees list. */
 const POOL_HEX=['#35d6e8','#e0b453','#a58cf5','#5fe3c0','#ff8fab','#8fb3ff'];
 function poolColor(lbl){
+  if(!lbl) return '#6f879a';                     // a trade from before pools were recorded
   const names=[...new Set(ordered().map(p=>(p.pairLabel||'')+' '+(p.feeLabel||'')))];
   const i=names.indexOf(lbl); return POOL_HEX[(i<0?names.length:i)%POOL_HEX.length];
 }
@@ -7611,7 +7612,7 @@ function renderFeePulse60m(host){
   const side=el('div','fpd-side'); grid.append(side);
   const read=el('div','fp-read fpd-read'); side.append(read);
   const say=t=>{ read.innerHTML=t
-    ? '▸ <b>'+hl(t.t)+'</b> <b>+'+fmtUsd(t.usd,2)+'</b> <span class="unit">· '+t.pools.map(([k,v])=>esc(k)+(t.pools.length>1?' '+fmtUsd(v,2):'')).join(' + ')+'</span>'
+    ? '▸ <b>'+hl(t.t)+'</b> <b>+'+fmtUsd(t.usd,2)+'</b> <span class="unit">· '+(t.pools.length?t.pools.map(([k,v])=>esc(k)+(t.pools.length>1?' '+fmtUsd(v,2):'')).join(' + '):'pool not recorded')+'</span>'
     : '▸ '+(inHour.length?(matchMedia('(hover:hover)').matches?'hover':'tap')+' a mark for its trade':'no trades in the last 60 minutes'); };
   let sel=null;
   for(const k of marks){ const pick=()=>{ if(sel) sel.classList.remove('sel'); sel=k.d; k.d.classList.add('sel'); say(k.t); };
@@ -7640,7 +7641,7 @@ function renderFeePulse60m(host){
   const list=el('ul','fpd-feed');
   if(!TR.length) list.innerHTML='<li class="empty">No trades recorded yet.</li>';
   for(const t of TR.slice(0,5)){ const li=document.createElement('li');
-    li.innerHTML='<span class="tm">'+hl(t.t)+'</span><i style="background:'+poolColor(t.lbl)+'"></i><span class="pl">'+t.pools.map(([k])=>esc(k)).join(' + ')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
+    li.innerHTML='<span class="tm">'+hl(t.t)+'</span><i style="background:'+poolColor(t.lbl)+'"></i><span class="pl">'+(t.pools.length?t.pools.map(([k])=>esc(k)).join(' + '):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
       +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
     list.append(li); }
   const lh=el('div','fpd-lh','LATEST FEES'); side.append(lh,list);
