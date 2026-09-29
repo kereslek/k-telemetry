@@ -13,6 +13,27 @@ import {positionsFrom, readGrowth, earned, SOL_RPCS} from './sampler.js';
 const KEEP=1440, MAX_SPAN=30, MIN=60000;
 const cors={'access-control-allow-origin':'*','x-robots-tag':'noindex'};
 
+/* Trades, as the dashboard shows them: a run of consecutive minutes that earned anything is one
+   trade (a reading that straddles a minute boundary splits one trade across two minutes, and two
+   trades a minute apart are not worth telling apart here). Newest first, with the pools they came
+   from. The gaps between them are the quiet stretches the lull meter compares against, and `from`
+   says how far back the record reaches, so a short record is never read as a quiet day. */
+const TRADE_MIN=0.005;
+function tradesOf(all){
+  const ev=[]; let cur=null;
+  for(const [t,usd,,pools] of all){
+    if(!(usd>=TRADE_MIN)){ cur=null; continue; }
+    if(cur && t-cur.end===MIN){ cur.usd+=usd; cur.end=t; if(usd>cur.peak){ cur.peak=usd; cur.t=t; } }
+    else { cur={t, start:t, end:t, peak:usd, usd, pools:{}}; ev.push(cur); }
+    if(pools) for(const k in pools) cur.pools[k]=(cur.pools[k]||0)+pools[k];
+  }
+  const gaps=[]; for(let i=1;i<ev.length;i++) gaps.push(Math.round((ev[i].start-ev[i-1].end)/MIN)-1);
+  const r=x=>Math.round(x*1e4)/1e4;
+  return { trades: ev.slice(-20).reverse().map(e=>({t:e.t, start:e.start, end:e.end, usd:r(e.usd),
+             pools:Object.fromEntries(Object.entries(e.pools).map(([k,v])=>[k,r(v)]))})),
+           gaps, from: all.length?all[0][0]:null };
+}
+
 export class Pulse {
   constructor(ctx, env){ this.ctx=ctx; this.env=env; this.s=ctx.storage; }
 
@@ -26,8 +47,9 @@ export class Pulse {
     const n=Math.max(1,Math.min(KEEP,Number(u.searchParams.get('n'))||60));
     const [mins,meta,fail]=await Promise.all([this.s.get('mins'),this.s.get('meta'),this.s.get('fail')]);
     const since=Math.floor(Date.now()/MIN)*MIN-n*MIN;
-    const rows=Object.entries(mins||{}).map(([t,v])=>[Number(t),v[0],v[1]]).filter(r=>r[0]>=since).sort((a,b)=>a[0]-b[0]);
-    return Response.json({now:Date.now(), ...(meta||{}), ...(fail?{fail}:{}), mins:rows});
+    const all=Object.entries(mins||{}).map(([t,v])=>[Number(t),v[0],v[1],v[2]||null]).sort((a,b)=>a[0]-b[0]);
+    const rows=all.filter(r=>r[0]>=since).map(r=>r[3]?r:r.slice(0,3));
+    return Response.json({now:Date.now(), ...(meta||{}), ...(fail?{fail}:{}), mins:rows, ...tradesOf(all)});
   }
 
   // the dashboard's own position list and prices, refreshed every ten minutes
@@ -69,15 +91,18 @@ export class Pulse {
       const span=cur.t-a.t;
       for(let t=Math.floor(a.t/MIN)*MIN; t<cur.t; t+=MIN){
         const lo=Math.max(a.t,t), hi=Math.min(cur.t,t+MIN); if(!(hi>lo)) continue;
-        const v=mins[t]||(mins[t]=[0,0]);
-        v[0]+=e.by[p.id]*(hi-lo)/span; v[1]+=(hi-lo)/MIN;
+        const v=mins[t]||(mins[t]=[0,0]), part=e.by[p.id]*(hi-lo)/span;
+        v[0]+=part; v[1]+=(hi-lo)/MIN;
+        // which pool it came from, so the dashboard can colour and list trades by pool
+        if(part>=0.0005){ const k=p.lbl||p.id; (v[2]||(v[2]={}))[k]=(v[2][k]||0)+part; }
       }
     }
     const slot=Math.floor(cur.t/MIN)*MIN;
     // forget positions that are no longer listed, and minutes older than a day
     for(const id of Object.keys(prev)) if(!ps.some(p=>p.id===id)) delete prev[id];
     const cut=slot-KEEP*MIN;
-    for(const t of Object.keys(mins)){ if(Number(t)<cut) delete mins[t]; else { mins[t][0]=Math.round(mins[t][0]*1e6)/1e6; mins[t][1]=Math.round(mins[t][1]*100)/100; } }
+    for(const t of Object.keys(mins)){ if(Number(t)<cut) delete mins[t]; else { const v=mins[t]; v[0]=Math.round(v[0]*1e6)/1e6; v[1]=Math.round(v[1]*100)/100;
+      if(v[2]) for(const k in v[2]) v[2][k]=Math.round(v[2][k]*1e6)/1e6; } }
     const meta={N:ps.length, last:cur.t, read:Object.keys(cur.g).length, err:cur.err};
     await this.s.put({prev, mins, meta});
     return {slot, got, ...meta};
