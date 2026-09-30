@@ -2441,11 +2441,28 @@ const main=async()=>{
       try{
         const pend=(JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')).selfPend)||[];
         fl.selfDone=Array.isArray(fl.selfDone)?fl.selfDone:[];
+        const curStart=Date.parse(monthKey+'-01T00:00:00Z');
         for(const x of pend){
           if(!x||!x.id||fl.selfDone.includes(x.id)||!(x.back>0)) continue;
           const inPool=[...evmPositions,...solPositions].filter(q=>String(q.chain==='sol'?q.poolId:q.pool).toLowerCase()===String(x.pool).toLowerCase());
           const tgt=inPool.filter(q=>q.inRange).length?inPool.filter(q=>q.inRange):inPool;
           const w=tgt.map(q=>Number(q.liq)||0), W=w.reduce((a,b)=>a+b,0);
+          /* A swap made before the month turned paid its fee into the month that has just been
+             archived: the queue is applied a run later, and the last run of a month queues what
+             the first run of the next one applies. That fee is inside the archived total, so it
+             comes out of the archive — total, its split, and the closing day — not out of a month
+             that never earned it. */
+          const arc=(x.t && x.t<curStart) ? (fl.months||[]).find(a=>a && a.m===new Date(x.t).toISOString().slice(0,7)) : null;
+          if(arc){
+            tgt.forEach((q,i)=>{ const e=fl.pos[q.id]; const amt=W>0?x.back*w[i]/W:x.back/tgt.length;
+              const k=(e&&e.cat)||'—'; if(arc.cat&&arc.cat[k]!=null) arc.cat[k]=Math.round((arc.cat[k]-amt)*100)/100;
+              if(e&&e.tk&&arc.tok&&arc.tok[e.tk]!=null) arc.tok[e.tk]=Math.round((arc.tok[e.tk]-amt)*100)/100; });
+            arc.total=Math.round((arc.total-x.back)*100)/100; arc.self=Math.round(((arc.self||0)+x.back)*100)/100;
+            const ld=new Date(Date.UTC(Number(arc.m.slice(0,4)),Number(arc.m.slice(5,7)),0)).toISOString().slice(0,10);
+            if(fl.dayEnd&&fl.dayEnd[ld]!=null) fl.dayEnd[ld]=Math.round((fl.dayEnd[ld]-x.back)*100)/100;
+            console.log('own-swap fee $'+x.back.toFixed(2)+' taken out of '+arc.m+' (swap made before the month turned)');
+            fl.selfDone.push(x.id); continue;
+          }
           let left=x.back;
           tgt.forEach((q,i)=>{ const e=fl.pos[q.id]; if(!e) return;
             const amt=W>0?x.back*w[i]/W:x.back/tgt.length;
@@ -2654,12 +2671,18 @@ const main=async()=>{
       let cl={month:monthKey, gasUsd:0, swapFeeUsd:0, txs:{}, scan:{}, months:[]};
       try{ cl=JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')); }catch(e){}
       cl.scan=cl.scan||{};
+      const r2=v=>Math.round(v*100)/100;
       if(cl.month!==monthKey){
         cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
                      solGas:Math.round((cl.solGasUsd||0)*100)/100,
                      solOpen:Math.round((cl.solOpenUsd||0)*100)/100,
                      solSwap:Math.round((cl.solSwapUsd||0)*100)/100,
                      selfEvm:Math.round((cl.selfEvmUsd||0)*100)/100, selfSol:Math.round((cl.selfSolUsd||0)*100)/100}].slice(-12);
+        /* What the closed month already counted stays known for one more month. The new month's
+           first runs look back past the boundary — its first block is an estimate, and the
+           wallet sweep resumes wherever the last run stopped — and without this a transaction
+           the old month already paid for would be paid for again. */
+        cl.prevTxs={...(cl.txs||{})}; cl.prevSolTxs={...(cl.solTxs||{})};
         cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0;
         cl.solSwapUsd=0; cl.solSwapOwnUsd=0; cl.solUnattributed=0; cl.selfEvmUsd=0; cl.selfSolUsd=0;
         cl.txs={}; cl.solTxs={}; cl.solOpenPend={}; cl.solWalletTx={};
@@ -2668,6 +2691,13 @@ const main=async()=>{
            next run back through everything it has already accounted for. */
         cl.solPartial=false;
       }
+      /* A cost is booked to the month its transaction was made in. Between the last run of a month
+         and midnight there are up to twenty minutes the old month never scanned; the new month's
+         first run finds them and, by time stamp, hands them back to the archive. */
+      const monthStartMs=Date.parse(monthKey+'-01T00:00:00Z');
+      const prevKey=new Date(monthStartMs-1).toISOString().slice(0,7);
+      const prevArc=(cl.months||[]).find(a=>a && a.m===prevKey) || null;
+      cl.prevTxs=cl.prevTxs||{}; cl.prevSolTxs=cl.prevSolTxs||{};
       /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
          into a CLMM position pay no pool fee — only a swap does — so for this portfolio the
          transaction fee IS the Solana cost. Any swap fee remains uncounted and solPartial says so
@@ -2778,7 +2808,19 @@ const main=async()=>{
         for(const sig in cl.solWalletTx){
           const t=cl.solWalletTx[sig];
           delete cl.solWalletTx[sig];
-          if(cl.solTxs[sig]) continue;
+          if(cl.solTxs[sig]||cl.prevSolTxs[sig]) continue;
+          if(prevArc && t.t && t.t<monthStartMs){
+            cl.prevSolTxs[sig]=1;
+            prevArc.solGas=r2((prevArc.solGas||0)+((t.lamports||0)/1e9)*solUsd);
+            prevArc.solSwap=r2((prevArc.solSwap||0)+(t.swapUsd||0));
+            for(const [pool,paid] of Object.entries(t.ownBy||{})){
+              const back=paid*(await solShareOf(pool));
+              if(back>0.0005){ prevArc.selfSol=r2((prevArc.selfSol||0)+back); cl.selfPend.push({id:'sol:'+sig+':'+pool, at:Date.now(), t:t.t, chain:'sol', pool, back:Math.round(back*1e4)/1e4}); }
+            }
+            prevArc.late=(prevArc.late||0)+1;
+            console.log('cost: Solana tx '+sig.slice(0,8)+' made before the month turned — booked to '+prevArc.m);
+            continue;
+          }
           cl.solTxs[sig]=1;
           cl.solGasUsd+=((t.lamports||0)/1e9)*solUsd;
           cl.solSwapUsd+=t.swapUsd||0;
@@ -2836,18 +2878,38 @@ const main=async()=>{
         }
         return inUsd*pc.fee/1e6;
       };
+      const btMemo={};
+      const blockTimeOf=async(ck,bnHex)=>{
+        const k=ck+':'+bnHex; if(btMemo[k]!==undefined) return btMemo[k];
+        btMemo[k]=null;
+        try{ const b=await evm(ck,'eth_getBlockByNumber',[bnHex,false]); if(b&&b.timestamp) btMemo[k]=Number(BigInt(b.timestamp))*1000; }
+        catch(e){ logErr('blockTime '+ck,e); }
+        return btMemo[k];
+      };
       const countReceipt=async(ck,tx,requireRelevant)=>{
-        if(cl.txs[tx]) return;
+        if(cl.txs[tx]||cl.prevTxs[tx]) return;
         try{
           const rc=await evm(ck,'eth_getTransactionReceipt',[tx]);
           if(!rc){ return; }
           const swaps=(rc.logs||[]).filter(l=>l.topics&&(l.topics[0]===SWAP_V3||l.topics[0]===SWAP_V2));
           const touchesNpm=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===CHAINS[ck].npm.toLowerCase());
           if(requireRelevant && !swaps.length && !touchesNpm){ cl.txs[tx]=2; return; }  // plain transfer — seen, not a cost
-          cl.txs[tx]=1;
-          cl.gasUsd+=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);
+          /* Only a transaction within a few hours of the estimated first block is dated exactly;
+             past that it cannot belong to the month before. */
+          let tMs=null;
+          if(prevArc && Number(rc.blockNumber)<=msBlockOf(ck)+1800) tMs=await blockTimeOf(ck,rc.blockNumber);
+          const late=tMs!=null && tMs<monthStartMs;
+          const gas=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);
+          if(late){
+            cl.prevTxs[tx]=1; prevArc.gas=r2((prevArc.gas||0)+gas); prevArc.late=(prevArc.late||0)+1;
+            console.log('cost: '+ck+' tx '+tx.slice(0,10)+' made before the month turned — booked to '+prevArc.m);
+          } else {
+            cl.txs[tx]=1;
+            cl.gasUsd+=gas;
+          }
           for(const sw of swaps){
-            const fee=await swapFeeOf(ck,sw); cl.swapFeeUsd+=fee;
+            const fee=await swapFeeOf(ck,sw);
+            if(late) prevArc.swapFee=r2((prevArc.swapFee||0)+fee); else cl.swapFeeUsd+=fee;
             /* One of this deck's own pools: the part of the fee that came back to its positions —
                the pool's protocol cut taken off, times this deck's share of the liquidity active
                at the tick the swap left behind (both from the swap's own event). */
@@ -2863,8 +2925,8 @@ const main=async()=>{
                 const s0=await evmCall(ck,addr,'0x3850c7bd'); const fp=Number(BigInt('0x'+s0.slice(2+64*5,2+64*6)));
                 const fpIn=a0>0n?(fp%16):(fp>>4), proto=fpIn?1/fpIn:0;
                 const back=fee*(1-proto)*share;
-                if(back>0.0005){ cl.selfEvmUsd=(cl.selfEvmUsd||0)+back;
-                  cl.selfPend=cl.selfPend||[]; cl.selfPend.push({id:'eth:'+tx+':'+sw.logIndex, at:Date.now(), t:Date.now(), chain:ck, pool:addr, back:Math.round(back*1e4)/1e4}); }
+                if(back>0.0005){ if(late) prevArc.selfEvm=r2((prevArc.selfEvm||0)+back); else cl.selfEvmUsd=(cl.selfEvmUsd||0)+back;
+                  cl.selfPend=cl.selfPend||[]; cl.selfPend.push({id:'eth:'+tx+':'+sw.logIndex, at:Date.now(), t:tMs||Date.now(), chain:ck, pool:addr, back:Math.round(back*1e4)/1e4}); }
               }catch(e){ logErr('evmSelf '+String(tx).slice(0,10),e); }
             }
           }
