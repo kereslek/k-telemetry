@@ -1426,7 +1426,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -3179,7 +3179,7 @@ function renderTiles(){
     const cm=state.costMonth;
     const net=(fm&&cm)?fm.mtd-cm.total:null;
     mk('COSTS · '+mName,
-       cm?outc(fmtUsd(cm.total)):'—',
+       cm?(cm.total>=0.005?outc(fmtUsd(cm.total)):fmtUsd(0)):'—',
        cm ? '⛽ gas <b>'+fmtUsd(cm.gasUsd)+'</b> · rebalance swap fees <b>'+fmtUsd(cm.swapFeeUsd-(cm.selfEvmUsd||0))+'</b>'
             +((cm.selfEvmUsd||0)>0.005?' <span class="unit">(paid '+fmtUsd(cm.swapFeeUsd)+'; '+fmtUsd(cm.selfEvmUsd)+' went to your own LPs, so it was never a cost)</span>':'')
             +' · '+cm.txCount+' LP tx'
@@ -7034,6 +7034,7 @@ function renderFeeByToken(host){
   const groups=Object.values(g).filter(x=>x.amt>0.004).sort((a,b)=>b.amt-a.amt);
   const tot=groups.reduce((s,x)=>s+x.amt,0);
   const name=k=>{ if(TOKEN_NAME[k]) return TOKEN_NAME[k];
+    if(k==='?') return ['Not traced','to a token'];
     if(k.startsWith('cat:')){ const [ch,sym]=k.slice(4).split('|'); return [sym, (ch==='sol'?'Solana':'Ethereum')+' · contract not recorded']; }
     const i=k.indexOf(':'); return [symOf(k)||k.slice(i+1,i+7)+'…', k.startsWith('sol:')?'Solana':k.slice(0,i)]; };
   const ref=id=>String(id).startsWith('sol:')?String(id).slice(4,8)+'…'+String(id).slice(-4):'#'+id;
@@ -7043,6 +7044,10 @@ function renderFeeByToken(host){
   const mcols=(fm.prev||[]).filter(x=>x&&x.m).map(x=>{
     let t=x.tok;
     if(!t){ t={}; for(const [cat,a] of Object.entries(x.cat||{})){ const k=tokFromCat(cat); t[k]=(t[k]||0)+a; } }
+    /* A month's column adds up to the month: anything its token split could not place is shown
+       as such, not dropped, so this table and every other month total agree. */
+    const gap=(x.total||0)-Object.values(t).reduce((a,b)=>a+b,0);
+    if(Math.abs(gap)>0.5) t={...t, '?':gap};
     return {m:x.m, tok:t, total:x.total, est:!!x.tokNote, cur:false};
   });
   { const t={}; groups.forEach(x=>{ t[x.tk]=x.amt; }); mcols.push({m:fm.month, tok:t, total:tot, cur:true}); }
@@ -7921,8 +7926,13 @@ function renderFeePulse(){
 
   // ---- the months in one line each ----
   const mrow=el('div','fp-months');
-  mons.forEach(mo=>{ if(mo.avg==null) return;
+  mons.forEach(mo=>{
     const cur=mo.m===todayK.slice(0,7);
+    /* The first day of a month has no finished day to average, but the month has begun and is
+       named with what it has so far rather than left off the line. */
+    if(mo.avg==null){ const t=days[mo.i1]; if(cur&&t&&t.today&&t.usd!=null)
+        mrow.append(el('span',null,MN[Number(mo.m.slice(5,7))-1]+' so far <b>'+fmtUsd(t.usd,0)+'</b> · <span class="unit">daily average from tomorrow</span>'));
+      return; }
     mrow.append(el('span',null,MN[Number(mo.m.slice(5,7))-1]+(cur?' so far':'')+' <b>'+fmtUsd(mo.tot,0)+'</b> · <span class="fp-key"></span><b>'+fmtUsd(mo.avg,0)+'</b>/day avg')); });
   host.append(mrow);
   host.append(el('div','arch-note','One bar per day, UTC (starts '+localMidnight+' your time) · all LPs, claimed + unclaimed, not counting fees your own swaps paid to your own pools · '

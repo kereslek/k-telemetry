@@ -2271,6 +2271,22 @@ const main=async()=>{
           const e=fl.pos[id]; if(!e.tk) continue;
           prevTok[e.tk]=(prevTok[e.tk]||0)+(e.acc!=null?e.acc:Math.max(0,e.last-e.m0))+(tailOf[id]||0);
         }
+        /* Closes banked before entries carried a token survive only in their category's total
+           (catClosed minus what closedPos accounts for, the page's closedByCatOnly). Left out,
+           the archived month's token split falls short of its total by exactly that — $261.94
+           of CPOOL for September. A category whose positions all earn one token is that token's
+           income; one that maps to several is left out and named in the log. */
+        { const catTk={};
+          for(const e of [...Object.values(fl.pos||{}),...Object.values(fl.closedPos||{})])
+            if(e&&e.cat&&e.tk) (catTk[e.cat]=catTk[e.cat]||new Set()).add(e.tk);
+          const only={...(fl.catClosed||{})};
+          for(const c of Object.values(fl.closedPos||{})) if(c.cat&&only[c.cat]!=null) only[c.cat]-=c.acc||0;
+          for(const [k,a] of Object.entries(only)){
+            if(!(a>0.004)) continue;
+            const tks=[...(catTk[k]||[])];
+            if(tks.length===1) prevTok[tks[0]]=(prevTok[tks[0]]||0)+a;
+            else console.log('month cut: $'+a.toFixed(2)+' of '+k+' closes has no single token ('+tks.length+' candidates) — left out of the token split');
+          } }
         for(const k in prevTok) prevTok[k]=Math.round(prevTok[k]*100)/100;
         fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,
                                        ilEnd:fl.lastIl??null,cat:prevCat,
