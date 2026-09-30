@@ -237,15 +237,15 @@
     border:1px solid var(--accent-dim); border-radius:3px;
     cursor:pointer; touch-action:manipulation;
     -webkit-user-select:none; user-select:none;
-    backdrop-filter:blur(3px);
-    opacity:0; transform:translateY(6px); pointer-events:none;
+    opacity:0; transform:translate3d(0,6px,0); pointer-events:none;
+    /* own compositing layer: iOS Safari otherwise drops a fixed element for a frame or two
+       while the address bar collapses or the page is still gliding after a flick */
+    will-change:opacity,transform; -webkit-backface-visibility:hidden; backface-visibility:hidden;
     transition:opacity .18s ease, transform .18s ease, border-color .15s;
   }
-  #toTop.show{opacity:.92; transform:none; pointer-events:auto}
+  #toTop.show{opacity:.92; transform:translate3d(0,0,0); pointer-events:auto}
   #toTop:hover{border-color:var(--accent); opacity:1}
-  #toTop:active{transform:translateY(1px)}
-  #toTop.show.moving{opacity:0;pointer-events:none}   /* out of the way while the page is moving */
-  /* on a phone it sits over the right-hand column of numbers: smaller, and see-through at rest */
+  #toTop:active{transform:translate3d(0,1px,0)}
   #toTop.show.up{opacity:1;border-color:var(--accent);box-shadow:0 0 18px rgba(53,214,232,.35)}
   #toTop::after{content:"TOP";display:block;font-size:8px;letter-spacing:.14em;margin-top:2px}
   #toTop{display:flex;flex-direction:column;align-items:center;justify-content:center}
@@ -807,6 +807,7 @@
     .cat-h,.gauge-label,.cc-row.hdr,.scn-out .h,.scn-pos .h,.conc-lad .h,.tok-total-l,.tok-chain,.tok-ladder .h,.cmp-mkt .h,.vgrid .vh,
     .cc-row>[data-l]::before,.dod-row>[data-l]::before,.arch-row>[data-l]::before,footer{font-size:9.5px;letter-spacing:.1em}
     .quickadd input,#quickAddInput{min-height:40px}
+    #toast{bottom:calc(74px + env(safe-area-inset-bottom,0px))}   /* clear of the TOP button */
   }
   .fp24{margin-top:22px;padding-top:16px;border-top:1px dashed var(--line)}
   .fp24-h{font-size:10px;letter-spacing:.16em;color:var(--text-muted);font-weight:600;margin-bottom:8px}
@@ -1425,7 +1426,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -8564,15 +8565,20 @@ async function init(){
     const btn=$('#toTop');
     if(btn){
       btn.hidden=false;
-      const sync=()=>btn.classList.toggle('show', (window.scrollY||document.documentElement.scrollTop||0) > 400);
+      /* Always there once the page is scrolled, and lit while heading back up. It used to hide
+         while scrolling down, but on an iPhone a flick glides on for a second or more, so it
+         was missing exactly when it was reached for. iOS rubber-banding reports positions past
+         both ends of the page; clamping them stops the button flickering at the top and bottom. */
+      const posY=()=>{ const max=Math.max(0,document.documentElement.scrollHeight-innerHeight);
+        return Math.min(max, Math.max(0, window.scrollY||document.documentElement.scrollTop||0)); };
+      let lastY=posY(), lit=0;
+      const sync=()=>{ const y=posY();
+        btn.classList.toggle('show', y>400);
+        if(y<lastY-2){ btn.classList.add('up'); clearTimeout(lit); lit=setTimeout(()=>btn.classList.remove('up'),900); }
+        else if(y>lastY+2) btn.classList.remove('up');
+        lastY=y; };
       addEventListener('scroll', sync, {passive:true});
-      /* Out of the way while reading down the page; front and centre the moment the reader heads
-         back up, which is when it is wanted. */
-      let lastY=scrollY, mv=0;
-      addEventListener('scroll',()=>{ const y=scrollY, up=y<lastY-2, down=y>lastY+2; lastY=y;
-        if(down){ btn.classList.add('moving'); btn.classList.remove('up'); }
-        else if(up){ btn.classList.remove('moving'); btn.classList.add('up'); }
-        clearTimeout(mv); mv=setTimeout(()=>{ btn.classList.remove('moving'); btn.classList.remove('up'); },900); },{passive:true});
+      addEventListener('pageshow', sync);            // back/forward cache restores mid-page
       sync();
       btn.addEventListener('click',()=>{
         const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
