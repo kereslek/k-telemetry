@@ -4,46 +4,46 @@
  "pos": {
   "1355336": {
    "m0": 92.2,
-   "last": 698.9,
+   "last": 694.71,
    "hwm": 699.9,
-   "acc": 484.48,
+   "acc": 487.03,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 9375.91113013282,
-   "tk1": 0.11471502834538347,
-   "run": 484.48
+   "tk0": 9421.257730773526,
+   "tk1": 0.11496907600877204,
+   "run": 487.03
   },
   "1355918": {
    "m0": 40.62,
-   "last": 607.65,
+   "last": 602.52,
    "hwm": 608.55,
-   "acc": 442.66,
+   "acc": 443.57,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 8448.04926935497,
-   "tk1": 0.09508703162710064,
-   "run": 442.66
+   "tk0": 8464.33573782873,
+   "tk1": 0.0951782741723444,
+   "run": 443.57
   },
   "1366332": {
    "m0": 0,
-   "last": 422.37,
+   "last": 420.04,
    "hwm": 422.95,
-   "acc": 371.96,
+   "acc": 373.61,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 5509.968094685593,
-   "tk1": 0.0717769850698478,
-   "run": 371.96
+   "tk0": 5539.29219064848,
+   "tk1": 0.07194126900635231,
+   "run": 373.61
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 303.88,
-   "last": 914,
+   "last": 913.94,
    "acc": 630.34,
    "hwm": 916.54,
    "cat": "sol|SOL / CPOOL · wide",
@@ -67,7 +67,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 77.47,
-   "last": 507.66,
+   "last": 507.61,
    "hwm": 509.44,
    "acc": 444.1,
    "ck": "sol",
@@ -80,7 +80,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 0,
-   "last": 484.92,
+   "last": 484.82,
    "hwm": 488.96,
    "acc": 568.43,
    "ck": "sol",
@@ -138,13 +138,13 @@
    "tokNote": "LCX contract split of closed narrow positions reconstructed from payload history"
   }
  ],
- "lastIl": -551.37,
+ "lastIl": -506.82,
  "catClosed": {
   "sol|SOL / CPOOL · wide": 242.07,
   "sol|CPOOL / USDT · wide": 19.87,
   "evm|LCX / ETH · wide": 38.62
  },
- "readAt": 1790748937492,
+ "readAt": 1790750023774,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -206,7 +206,7 @@
   "2026-09-27": 2986.25,
   "2026-09-28": 3375.2,
   "2026-09-29": 3500.57,
-  "2026-09-30": 3521.27
+  "2026-09-30": 3526.38
  },
  "dayEst": [
   "2026-08-01",
@@ -225,10 +225,6 @@
   }
  },
  "ticks": [
-  [
-   1790569368205,
-   4693.69
-  ],
   [
    1790570558691,
    4717.89
@@ -844,24 +840,14 @@
   [
    1790748937493,
    5051.76
+  ],
+  [
+   1790750023774,
+   5056.87
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790569368205,
-   {
-    "1355336": 380.41,
-    "1355918": 396.39,
-    "1366332": 288.6,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 592.29,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 417.31,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 214.87,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 510.14,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790570558691,
    {
@@ -3010,6 +2996,20 @@
     "1355336": 484.48,
     "1355918": 442.66,
     "1366332": 371.96,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 630.34,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 216.13,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 444.1,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 568.43,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790750023774,
+   {
+    "1355336": 487.03,
+    "1355918": 443.57,
+    "1366332": 373.61,
     "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 630.34,
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 216.13,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 444.1,
