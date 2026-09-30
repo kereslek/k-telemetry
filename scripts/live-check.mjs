@@ -8,5 +8,11 @@ console.log('BUILD', await pg.evaluate(()=>typeof BUILD!=='undefined'?BUILD:null
 const w=await pg.$('#fp60'); console.log(w?(await w.innerText()).slice(0,700):'no #fp60');
 console.log('dial marks', await pg.evaluate(()=>document.querySelectorAll('.fpd-dot').length), 'dial present', await pg.evaluate(()=>!!document.querySelector('.fpd-dial')));
 console.log('tile link', await pg.evaluate(()=>{const a=document.querySelector('.fp-link60'); return a?a.getAttribute('aria-label')+' bars='+a.querySelectorAll('rect').length:null;}));
+const topAt=async lbl=>console.log('TOP', lbl, JSON.stringify(await pg.evaluate(()=>{const b=document.querySelector('#toTop'),r=b.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+  return {y:Math.round(scrollY),cls:b.className,op:getComputedStyle(b).opacity,right:Math.round(innerWidth-r.right),tappable:h===b};})));
+await topAt('at top');
+for(let i=0;i<12;i++){ await pg.evaluate(()=>scrollBy(0,120)); await pg.waitForTimeout(40); if(i===11) await topAt('mid scroll-down'); }
+for(let i=0;i<5;i++){ await pg.evaluate(()=>scrollBy(0,-80)); await pg.waitForTimeout(40); } await topAt('scrolling up');
+await pg.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight)); await pg.waitForTimeout(400); await topAt('page bottom');
 console.log('errors', errs);
 await b.close();
