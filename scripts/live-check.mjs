@@ -19,5 +19,8 @@ const dialPos=()=>pg.evaluate(()=>[...document.querySelectorAll('#fp60 .fpd-dot'
 console.log('dial labels', await pg.evaluate(()=>[...document.querySelectorAll('#fp60 .fpd-lbl')].map(e=>e.textContent+'@x'+Math.round(e.getAttribute('x'))).join(' ')));
 { const a=await dialPos(); await pg.waitForTimeout(6000); const b2=await dialPos();
   a.forEach((m,i)=>console.log('DIAL', m[0], 'clock deg', m[1], '->', b2[i]&&b2[i][1], 'delta', b2[i]?(b2[i][1]-m[1]).toFixed(3):'?')); }
+console.log('SWEEP', JSON.stringify(await pg.evaluate(()=>{ const sw=document.querySelector('#fp60 .fpd-sweep'); if(!sw) return null;
+  const m=new DOMMatrix(getComputedStyle(sw).transform), deg=((Math.atan2(m.b,m.a)*180/Math.PI)+360)%360;
+  return {build:BUILD, running:sw.getAnimations().map(a=>a.playState).join(), deg:+deg.toFixed(1), clock:+((Date.now()%7000)/7000*360).toFixed(1), w:sw.offsetWidth, ring:Math.round(document.querySelector('#fp60 .fpd-ring').getBoundingClientRect().width)}; })));
 console.log('errors', errs);
 await b.close();
