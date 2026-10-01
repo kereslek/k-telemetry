@@ -1,8 +1,50 @@
 {
- "month": "2026-09",
- "gasUsd": 37.8,
- "swapFeeUsd": 86.48,
- "txs": {
+ "month": "2026-10",
+ "gasUsd": 0,
+ "swapFeeUsd": 0,
+ "txs": {},
+ "months": [
+  {
+   "m": "2026-08",
+   "gas": 77.93,
+   "swapFee": 70.01,
+   "solGas": 0.01
+  },
+  {
+   "m": "2026-09",
+   "gas": 37.8,
+   "swapFee": 86.48,
+   "solGas": 0.45,
+   "solOpen": 39.24,
+   "solSwap": 84.56,
+   "selfEvm": 5.49,
+   "selfSol": 66.9
+  }
+ ],
+ "scan": {
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26093811,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26093811,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26093811,
+  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26093811
+ },
+ "solTxs": {},
+ "solPartial": false,
+ "solGasUsd": 0,
+ "solOpenUsd": 0,
+ "solOpenPend": {},
+ "solScan": {
+  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "3a8ufsvAXa5pnDTdZd2H9NXkLvFVyBAozCNVUFry5ERoXbzGTaDMHCgz9ExsbaaqysAVfobg1imsFx6xrZhiQbWD",
+  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "2joLsJnUG2aFk5FLvY8gmChW9PLJCG8A9ubXw4w1D6mTeYi8tiiMJHtG8Nc7mVyAiumD4LCeVSFSMknkBFcUnUAQ"
+ },
+ "solWalletTx": {},
+ "solSwapUsd": 0,
+ "solUnattributed": 0,
+ "solSwapOwnUsd": 0,
+ "selfSolUsd": 0,
+ "selfEvmUsd": 0,
+ "selfPend": [],
+ "selfRestated202609": 1,
+ "prevTxs": {
   "0x8536f69fc7a1ef8f3732b983bed598eab95b8b105b8c59336de6983efbe0a9de": 1,
   "0x6f4e561595188c3f23eea8ab922f1b073ecf3377f7de9458165c4b7745d1a821": 1,
   "0x608bd305e205257b5c2daedaa5020d40209fe4c585841f1908e54b44e1473d22": 1,
@@ -57,21 +99,7 @@
   "0x434be12ba07b6e9e4b6378aca8d1919ea2dc1c856fa99b3567832d99482090fc": 2,
   "0x280954975b9a4cae0eedba46fe510275f9c12736cc91aa7d3783dfdf87cc0e86": 1
  },
- "months": [
-  {
-   "m": "2026-08",
-   "gas": 77.93,
-   "swapFee": 70.01,
-   "solGas": 0.01
-  }
- ],
- "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26093723,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26093723,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26093723,
-  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26093723
- },
- "solTxs": {
+ "prevSolTxs": {
   "2y25uR7jC2uj9YHYXHkaWMudAYcpEZNpDaoKuiKEAVEyEkjXzoawS126PfmKJzpqR1DmGYn4Uh5cbArMM2HXUY2M": 1,
   "5PTVpvE8MWnuEqoXmsFKHaSoSEvoCfsjiLe16s2vfqh7ewXCcTwC1dTMsV3EEVNQMbbCt6qbHTnkrfpH3RPkujCD": 1,
   "LDzpTBrRdgmnxYqw8Jwdfr2f7fHTpKWeDvMA4bPEjk52DguNiXG9PiZCSL5XpXMdcRhdAyL6qNB9jAb2pxMzAcF": 1,
@@ -192,23 +220,5 @@
   "2joLsJnUG2aFk5FLvY8gmChW9PLJCG8A9ubXw4w1D6mTeYi8tiiMJHtG8Nc7mVyAiumD4LCeVSFSMknkBFcUnUAQ": 1,
   "2qHNFk2NM5JouPjU4UZ4yiCbVTCEEDfwjTBmNiFHR8KEDZDcfvYbnaBnC4UFK8KVbZoRH2N48DcAcsZAoUJ7HHVm": 1,
   "3LJ3WLM6YGyQuNr1EvMafZguBVjCsGirKwFGh9M3PYM7XHNV6uheUHTDcKFwkn6NL1AXsa6cR6fJRzqgHXRdiXHF": 1
- },
- "solPartial": true,
- "solGasUsd": 0.45477866649024923,
- "solOpenUsd": 39.24,
- "solOpenPend": {},
- "solScan": {
-  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "3a8ufsvAXa5pnDTdZd2H9NXkLvFVyBAozCNVUFry5ERoXbzGTaDMHCgz9ExsbaaqysAVfobg1imsFx6xrZhiQbWD",
-  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "2joLsJnUG2aFk5FLvY8gmChW9PLJCG8A9ubXw4w1D6mTeYi8tiiMJHtG8Nc7mVyAiumD4LCeVSFSMknkBFcUnUAQ"
- },
- "solWalletTx": {},
- "solSwapUsd": 84.56,
- "solUnattributed": 4,
- "solSwapOwnUsd": 79.64,
- "selfSolUsd": 66.9,
- "selfEvmUsd": 5.49,
- "selfPend": [],
- "selfRestated202609": 1,
- "prevTxs": {},
- "prevSolTxs": {}
+ }
 }
