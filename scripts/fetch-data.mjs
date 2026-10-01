@@ -2863,6 +2863,7 @@ const main=async()=>{
       const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
       const SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822';
       const TRANSFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const NEW_LCX='0x8cd41041505885ef0ad3858181d66f17be8aae7e';
       const nowD=new Date();
       const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
       const msBlockOf=ck=>Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*CHAINS[ck].bph));
@@ -2909,7 +2910,14 @@ const main=async()=>{
           if(!rc){ return; }
           const swaps=(rc.logs||[]).filter(l=>l.topics&&(l.topics[0]===SWAP_V3||l.topics[0]===SWAP_V2));
           const touchesNpm=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===CHAINS[ck].npm.toLowerCase());
-          if(requireRelevant && !swaps.length && !touchesNpm){ cl.txs[tx]=2; return; }  // plain transfer — seen, not a cost
+          /* Moving LCX from the old contract to the new one is a step of every rebalance that buys
+             LCX (the only deep market is the old contract's pool), so its gas is a cost of the
+             operation like the swap before it. It has no swap and never touches a position, and
+             was being filed as a plain transfer; it is recognised by its effect instead — the
+             new contract minting tokens to the wallet. */
+          const ZERO32='0x'+'0'.repeat(64);
+          const migrates=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===NEW_LCX && l.topics && l.topics[0]===TRANSFER && l.topics[1]===ZERO32);
+          if(requireRelevant && !swaps.length && !touchesNpm && !migrates){ cl.txs[tx]=2; return; }  // plain transfer — seen, not a cost
           /* Only a transaction within a few hours of the estimated first block is dated exactly;
              past that it cannot belong to the month before. */
           let tMs=null;
@@ -2958,6 +2966,12 @@ const main=async()=>{
         try{ const h=await evmHistory(jc.ck,Number(jc.id)||jc.id,msBlockOf(jc.ck),blockNums[jc.ck]);
           for(const x of [...h.inc,...h.dec,...h.col]) if(x.tx&&blockNums[jc.ck]!=null&&x.block>=msBlockOf(jc.ck)) await countReceipt(jc.ck,x.tx,false);
         }catch(e){ logErr('cost closed#'+jc.id,e); }
+      }
+      /* Transactions this month set aside as plain transfers before migrations were recognised
+         are looked at once more under the rule above. */
+      if(!cl.migRule){
+        for(const [tx,v] of Object.entries(cl.txs)) if(v===2){ delete cl.txs[tx]; await countReceipt('ethereum',tx,true); }
+        cl.migRule=1;
       }
       // 3) wallet swap sweep: every tx this month where a wallet sent or received tokens,
       //    kept only if it contains swap events or touches the position manager
