@@ -4,60 +4,60 @@
  "pos": {
   "1355336": {
    "m0": 915.7,
-   "last": 871.18,
+   "last": 879.43,
    "hwm": 954.88,
-   "acc": 25.31,
+   "acc": 25.66,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
    "tk0": 10610.086940755775,
-   "tk1": 0.1388260567424086,
-   "run": 608.47
+   "tk1": 0.13895483314321422,
+   "run": 608.82
   },
   "1355918": {
    "m0": 747.08,
-   "last": 695.38,
+   "last": 702.12,
    "hwm": 773.72,
-   "acc": 8.86,
+   "acc": 8.98,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
    "tk0": 8883.449177409602,
-   "tk1": 0.10359589318230558,
-   "run": 486.38
+   "tk1": 0.10363963765195822,
+   "run": 486.5
   },
   "1366332": {
    "m0": 562.69,
-   "last": 538.76,
+   "last": 543.76,
    "hwm": 587.34,
-   "acc": 18.02,
+   "acc": 18.26,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
    "tk0": 6385.800607075702,
-   "tk1": 0.08891353047526555,
-   "run": 460.05
+   "tk1": 0.08900229503918475,
+   "run": 460.29
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 926.78,
-   "last": 976.74,
-   "acc": 53.86,
-   "hwm": 976.84,
+   "last": 985.41,
+   "acc": 56.52,
+   "hwm": 985.41,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 692.5,
-   "tk0": 11.304650178000001,
+   "run": 695.16,
+   "tk0": 11.327184214,
    "tk1": 29503.560113385
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 422.27,
-   "last": 422.99,
+   "last": 423.11,
    "acc": 0.8,
-   "hwm": 422.99,
+   "hwm": 423.11,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 1%",
@@ -67,28 +67,28 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 516.65,
-   "last": 551.82,
-   "hwm": 551.88,
-   "acc": 37.94,
+   "last": 557.92,
+   "hwm": 557.92,
+   "acc": 39.81,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 487.87,
-   "tk0": 2.55955051,
+   "run": 489.74,
+   "tk0": 2.575411305,
    "tk1": 6331.220005972
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 504.72,
-   "last": 581.06,
-   "hwm": 581.21,
-   "acc": 82.53,
+   "last": 594.53,
+   "hwm": 594.53,
+   "acc": 86.6,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 663.65,
-   "tk0": 2.993597173,
+   "run": 667.72,
+   "tk0": 3.028115343,
    "tk1": 8753.768427621
   },
   "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
@@ -154,9 +154,9 @@
    }
   }
  ],
- "lastIl": -907.8,
+ "lastIl": -954.62,
  "catClosed": {},
- "readAt": 1790892896760,
+ "readAt": 1790894166998,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -219,7 +219,7 @@
   "2026-09-28": 3375.2,
   "2026-09-29": 3500.57,
   "2026-09-30": 3751.86,
-  "2026-10-01": 227.32
+  "2026-10-01": 236.63
  },
  "dayEst": [
   "2026-08-01",
@@ -230,10 +230,6 @@
  "daySeeded": 1,
  "closedPos": {},
  "ticks": [
-  [
-   1790714040270,
-   5001.14
-  ],
   [
    1790714899926,
    5001.2
@@ -877,24 +873,14 @@
   [
    1790892896760,
    5509.67
+  ],
+  [
+   1790894166998,
+   5518.98
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790714040270,
-   {
-    "1355336": 475.93,
-    "1355918": 439.59,
-    "1366332": 366.43,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 620.08,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.86,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 436.88,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 552.71,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790714899926,
    {
@@ -3145,6 +3131,20 @@
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.09,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 487.87,
     "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 663.65,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790894166999,
+   {
+    "1355336": 608.82,
+    "1355918": 486.5,
+    "1366332": 460.29,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 695.16,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.09,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 489.74,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 667.72,
     "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
     "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
    }
