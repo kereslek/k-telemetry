@@ -749,8 +749,16 @@
   .fpd-now{fill:var(--accent)}
   .fpd-ping{fill:var(--accent);animation:fpdPing 1.8s ease-out infinite;transform-box:fill-box;transform-origin:center}
   @keyframes fpdPing{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(4)}}
-  .fpd-sweep{transform-origin:150px 150px;animation:fpdSweep 7s linear infinite}
-  @keyframes fpdSweep{to{transform:rotate(360deg)}}
+  /* The sweep is an HTML layer over the dial, not an SVG shape: a CSS transform on a plain element
+     is rotated by the compositor on its own thread, so it keeps turning smoothly while the page
+     is busy (redrawing marks, loading data, scrolling). An SVG group is animated on the main thread
+     and stutters whenever that thread is busy. Its box is the dial's outer ring, in the SVG's own
+     proportions: centre (150,150), radius 118, viewBox -26 -10 352 322. */
+  .fpd-dw{position:relative;width:100%;max-width:380px;margin:0 auto}
+  .fpd-sweep{position:absolute;left:16.477%;top:13.043%;width:67.045%;height:73.292%;border-radius:50%;pointer-events:none;
+    background:conic-gradient(from 0deg,rgba(53,214,232,0) 0deg 304deg,rgba(53,214,232,.2) 359deg,rgba(53,214,232,.45) 359.4deg,rgba(53,214,232,0) 360deg);
+    will-change:transform;transform:translateZ(0);animation:fpdSweep 7s linear infinite;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+  @keyframes fpdSweep{from{transform:rotate(0deg) translateZ(0)}to{transform:rotate(360deg) translateZ(0)}}
   @media(prefers-reduced-motion:reduce){ .fpd-sweep,.fpd-ping{animation:none} }
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
   .fpd-read{margin:0}
@@ -1426,7 +1434,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7734,8 +7742,7 @@ function renderFeePulse60m(host){
   const pt=(m,r)=>{ const a=(m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
   const defs=mk('defs',{});
   const gl=mk('radialGradient',{id:'fpdGlow'}); gl.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'.85'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'0'}));
-  const bm=mk('linearGradient',{id:'fpdBeam',x1:'0',y1:'0',x2:'1',y2:'0'}); bm.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'0'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'.2'}));
-  defs.append(gl,bm); svg.append(defs);
+  defs.append(gl); svg.append(defs);
   svg.append(mk('circle',{cx:C,cy:C,r:R+16},'fpd-face'));
   for(let m=0;m<60;m++){ const big=m%15===0, [x1,y1]=pt(m,R+(big?11:8)), [x2,y2]=pt(m,R+15);
     svg.append(mk('line',{x1,y1,x2,y2},big?'fpd-tick big':'fpd-tick')); }
@@ -7743,8 +7750,6 @@ function renderFeePulse60m(host){
   [[0,'now'],[15,hl(Date.now()-15*60000)],[30,hl(Date.now()-30*60000)],[45,hl(Date.now()-45*60000)]].forEach(([m,l])=>{
     const [x,y]=pt(m,R+(m%30?24:29)), e=mk('text',{x,y:y+3.5,'text-anchor':m===15?'start':m===45?'end':'middle'},m?'fpd-lbl':'fpd-lbl now',l);
     svg.append(e); if(m) tLbls.push([m,e]); });
-  const beam=mk('g',{},'fpd-sweep'); const [bx,by]=pt(0,R), [ex,ey]=pt(-9,R);
-  beam.append(mk('path',{d:`M${C},${C} L${bx},${by} A${R},${R} 0 0,0 ${ex},${ey} Z`,fill:'url(#fpdBeam)'})); svg.append(beam);
   svg.append(mk('circle',{cx:C,cy:C,r:R},'fpd-ring'));
   // inner ring: this hour against a typical one
   const r2=88, circ=2*Math.PI*r2, frac=typical?Math.min(1,total/typical):0;
@@ -7762,7 +7767,11 @@ function renderFeePulse60m(host){
   svg.append(mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',fmtUsd(total,2)));
   svg.append(mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'));
   if(typical) svg.append(mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',Math.round(total/typical*100)+'% of a typical hour'));
-  grid.append(svg);
+  /* The sweep's phase comes from the clock, not from when this dial was drawn: the dial is redrawn
+     every minute with fresh data, and a sweep that restarted at twelve each time jumped. */
+  const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'); sw.setAttribute('aria-hidden','true');
+  sw.style.animationDelay=(-(Date.now()%7000))+'ms';
+  dw.append(svg,sw); grid.append(dw);
   /* The dial keeps time between data reloads: every mark is placed from its own timestamp on
      each frame, so it glides round instead of jumping once a minute, and fades out over its
      last two minutes as it reaches the top again. A few frames a second is smooth at this
