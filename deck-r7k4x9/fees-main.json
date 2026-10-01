@@ -4,46 +4,46 @@
  "pos": {
   "1355336": {
    "m0": 915.7,
-   "last": 870.31,
+   "last": 851.37,
    "hwm": 954.88,
-   "acc": 26.13,
+   "acc": 27.85,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 10620.101598181313,
-   "tk1": 0.13895483314321422,
-   "run": 609.29
+   "tk0": 10654.545040515291,
+   "tk1": 0.1390212297929922,
+   "run": 611.01
   },
   "1355918": {
    "m0": 747.08,
-   "last": 694.17,
+   "last": 677.46,
    "hwm": 773.72,
-   "acc": 9.14,
+   "acc": 9.72,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 8886.85108859125,
-   "tk1": 0.10363963765195822,
-   "run": 486.66
+   "tk0": 8898.551292265875,
+   "tk1": 0.10366219214341067,
+   "run": 487.24
   },
   "1366332": {
    "m0": 562.69,
-   "last": 538.34,
+   "last": 527.09,
    "hwm": 587.34,
-   "acc": 18.58,
+   "acc": 19.76,
    "ck": "ethereum",
    "cat": "evm|LCX / ETH · wide",
    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
    "lbl": "LCX / ETH 1%",
-   "tk0": 6392.703631959274,
-   "tk1": 0.08900229503918475,
-   "run": 460.61
+   "tk0": 6416.445226844092,
+   "tk1": 0.08904806172955945,
+   "run": 461.79
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 926.78,
-   "last": 980.96,
+   "last": 981.05,
    "acc": 56.52,
    "hwm": 985.41,
    "cat": "sol|SOL / CPOOL · wide",
@@ -55,7 +55,7 @@
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 422.27,
-   "last": 423.05,
+   "last": 423.06,
    "acc": 0.84,
    "hwm": 423.11,
    "cat": "sol|SOL / CPOOL · wide",
@@ -67,7 +67,7 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 516.65,
-   "last": 554.79,
+   "last": 554.85,
    "hwm": 557.92,
    "acc": 39.81,
    "ck": "sol",
@@ -80,7 +80,7 @@
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 504.72,
-   "last": 587.58,
+   "last": 587.72,
    "hwm": 594.53,
    "acc": 86.6,
    "ck": "sol",
@@ -154,9 +154,9 @@
    }
   }
  ],
- "lastIl": -864.62,
+ "lastIl": -697.9,
  "catClosed": {},
- "readAt": 1790896499325,
+ "readAt": 1790897651139,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -219,7 +219,7 @@
   "2026-09-28": 3375.2,
   "2026-09-29": 3500.57,
   "2026-09-30": 3751.86,
-  "2026-10-01": 237.62
+  "2026-10-01": 241.1
  },
  "dayEst": [
   "2026-08-01",
@@ -230,10 +230,6 @@
  "daySeeded": 1,
  "closedPos": {},
  "ticks": [
-  [
-   1790717181230,
-   5002.97
-  ],
   [
    1790718292368,
    5008.18
@@ -877,24 +873,14 @@
   [
    1790896499325,
    5519.97
+  ],
+  [
+   1790897651140,
+   5523.45
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790717181230,
-   {
-    "1355336": 476.68,
-    "1355918": 439.86,
-    "1366332": 366.92,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 620.18,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 215.86,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 436.95,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 552.86,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790718292368,
    {
@@ -3141,6 +3127,20 @@
     "1355336": 609.29,
     "1355918": 486.66,
     "1366332": 460.61,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 695.16,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.13,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 489.74,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 667.72,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790897651140,
+   {
+    "1355336": 611.01,
+    "1355918": 487.24,
+    "1366332": 461.79,
     "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 695.16,
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.13,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 489.74,
