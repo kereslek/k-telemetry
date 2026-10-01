@@ -1,13 +1,13 @@
 {
  "month": "2026-10",
- "gasUsd": 2.81,
+ "gasUsd": 3.94,
  "swapFeeUsd": 7.9,
  "txs": {
   "0x9c23f2f7668fc16375d2b436ef838ecee68a35ed6b08a5c9148fb2d5f5c20683": 1,
-  "0xde6b97398da10ca2ee288b4f609ea831fbadeb7c105cb51f1884777760c937db": 2,
   "0xd3f15c282e7e2842f4e7e1d78517281e271f6804c6241fe94f08724afcdc2f7b": 1,
-  "0x5a8bd21a965270f642df5bffa209a237c0e823b706b62c12a1a9c16af6fa9fc7": 2,
-  "0x970fc33f0330f1fc1a6aa3d80b3c8d93741bab73e1d64aa67c989f4d053bb4f9": 1
+  "0x970fc33f0330f1fc1a6aa3d80b3c8d93741bab73e1d64aa67c989f4d053bb4f9": 1,
+  "0xde6b97398da10ca2ee288b4f609ea831fbadeb7c105cb51f1884777760c937db": 2,
+  "0x5a8bd21a965270f642df5bffa209a237c0e823b706b62c12a1a9c16af6fa9fc7": 1
  },
  "months": [
   {
@@ -28,10 +28,10 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26096540,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26096540,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26096540,
-  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26096540
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26096636,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26096636,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26096636,
+  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26096636
  },
  "solTxs": {
   "2uFF4CG47C8iq312XzUBdebFaFNqMAeZpN9Hdw12mr2K7GA9D79HNvQNcfcJDgHcT8CqqUdnX3EEjc21q86sFpnA": 1,
@@ -240,5 +240,6 @@
   "2joLsJnUG2aFk5FLvY8gmChW9PLJCG8A9ubXw4w1D6mTeYi8tiiMJHtG8Nc7mVyAiumD4LCeVSFSMknkBFcUnUAQ": 1,
   "2qHNFk2NM5JouPjU4UZ4yiCbVTCEEDfwjTBmNiFHR8KEDZDcfvYbnaBnC4UFK8KVbZoRH2N48DcAcsZAoUJ7HHVm": 1,
   "3LJ3WLM6YGyQuNr1EvMafZguBVjCsGirKwFGh9M3PYM7XHNV6uheUHTDcKFwkn6NL1AXsa6cR6fJRzqgHXRdiXHF": 1
- }
+ },
+ "migRule": 1
 }
