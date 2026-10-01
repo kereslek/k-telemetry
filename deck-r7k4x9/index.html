@@ -1434,7 +1434,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7612,7 +7612,10 @@ async function loadPulse(){
     const a=document.querySelector('.fp-link60'), h=feePulseLink60();
     if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; a.replaceWith(d.firstElementChild); }
     const w=document.getElementById('fp60');
-    if(w){ const d=document.createElement('div'); d.style.width=w.clientWidth+'px'; w.parentElement.insertBefore(d,w); renderFeePulse60(d); w.remove(); d.replaceWith(d.firstElementChild); }
+    /* The minute dial updates itself in place, so its marks keep moving without a redraw; the
+       ledger fallback (or a switch between the two) is rebuilt. */
+    if(w && w._sync && pulseMins()) w._sync();
+    else if(w){ const d=document.createElement('div'); d.style.width=w.clientWidth+'px'; w.parentElement.insertBefore(d,w); renderFeePulse60(d); w.remove(); d.replaceWith(d.firstElementChild); }
   }catch(e){}
 }
 if(PULSE_URL){
@@ -7725,26 +7728,26 @@ function renderFeePulse60(host){
    toward a typical hour. Under it, the quiet since the last trade against every lull of the past
    day, and the latest fees whether or not they fall inside the hour. */
 function renderFeePulse60m(host){
-  const M=pulseMins(), P=state.pulse, TR=pulseTrades(), inHour=TR.filter(t=>t.m<=60);
   const wrap=el('div','fp24 fpd'); wrap.id='fp60';
   wrap.append(el('div','fp24-h','LAST 60 MINUTES'));
   host.append(wrap);
   const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
-  const H24=feeHourStats(), typical=H24&&H24.avg!=null?H24.avg:null;
-  const total=M.total;
   const NS='http://www.w3.org/2000/svg';
   const mk=(t,a,cls,txt)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); if(txt!=null) e.textContent=txt; return e; };
   const grid=el('div','fpd-grid'); wrap.append(grid);
-  // ---- the dial
+  // ---- the dial: drawn once; the marks on it are kept up to date in place
   const C=150, R=118, svg=mk('svg',{viewBox:'-26 -10 352 322',role:'img','aria-label':'The last 60 minutes of fee income as a clock face'},'fpd-dial');
   /* Time runs clockwise round the face, as on a clock: 45 minutes ago at three, half an hour at
      six, 15 minutes ago at nine, now at twelve. With now fixed at the top, a trade therefore
      drifts anticlockwise as it ages — from twelve to nine, six, three — always sitting at its
      own time. */
   const pt=(m,r)=>{ const a=(-m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
-  const defs=mk('defs',{});
-  const gl=mk('radialGradient',{id:'fpdGlow'}); gl.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'.85'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'0'}));
-  defs.append(gl); svg.append(defs);
+  const defs=mk('defs',{}); svg.append(defs);
+  // one soft glow per pool colour, so a mark's halo is its own colour
+  const glowOf={}, uid=Math.random().toString(36).slice(2,7);
+  const glow=col=>{ if(glowOf[col]) return glowOf[col]; const id='fpdG'+uid+Object.keys(glowOf).length;
+    const g=mk('radialGradient',{id}); g.append(mk('stop',{offset:'0%','stop-color':col,'stop-opacity':'.9'}),mk('stop',{offset:'100%','stop-color':col,'stop-opacity':'0'}));
+    defs.append(g); return glowOf[col]='url(#'+id+')'; };
   svg.append(mk('circle',{cx:C,cy:C,r:R+16},'fpd-face'));
   for(let m=0;m<60;m++){ const big=m%15===0, [x1,y1]=pt(m,R+(big?11:8)), [x2,y2]=pt(m,R+15);
     svg.append(mk('line',{x1,y1,x2,y2},big?'fpd-tick big':'fpd-tick')); }
@@ -7754,84 +7757,119 @@ function renderFeePulse60m(host){
     svg.append(e); if(m) tLbls.push([m,e]); });
   svg.append(mk('circle',{cx:C,cy:C,r:R},'fpd-ring'));
   // inner ring: this hour against a typical one
-  const r2=88, circ=2*Math.PI*r2, frac=typical?Math.min(1,total/typical):0;
+  const r2=88, circ=2*Math.PI*r2;
   svg.append(mk('circle',{cx:C,cy:C,r:r2},'fpd-track'));
-  if(typical) svg.append(mk('circle',{cx:C,cy:C,r:r2,'stroke-dasharray':`${(circ*frac).toFixed(1)} ${circ.toFixed(1)}`,transform:`rotate(-90 ${C} ${C})`},'fpd-fill'+(total>=typical?' over':'')));
-  // trades
-  const top=Math.max(0.5,...inHour.map(t=>t.usd)), marks=[];
-  for(const t of inHour){ const m=Math.max(0,Math.min(60,t.m)), [x,y]=pt(m,R), r=4+Math.sqrt(t.usd/top)*9, col=poolColor(t.lbl);
-    const h=mk('circle',{cx:x,cy:y,r:r*2.3,fill:'url(#fpdGlow)'},'fpd-halo'); svg.append(h);
-    const d=mk('circle',{cx:x,cy:y,r,fill:col,tabindex:0,role:'button','aria-label':hl(t.t)+' '+fmtUsd(t.usd,2)},'fpd-dot'); svg.append(d);
-    let a=null;
-    if(t.usd>=top*0.35||inHour.length<=3){ const [lx,ly]=pt(m,R-r-15); a=mk('text',{x:lx,y:ly+3.5,'text-anchor':'middle'},'fpd-amt',fmtUsd(t.usd,t.usd<100?2:0)); svg.append(a); }
-    marks.push({d,h,a,r,t}); }
-  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); svg.append(mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'));
-  svg.append(mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',fmtUsd(total,2)));
+  const fill=mk('circle',{cx:C,cy:C,r:r2,'stroke-dasharray':`0 ${circ.toFixed(1)}`,transform:`rotate(-90 ${C} ${C})`},'fpd-fill'); svg.append(fill);
+  const totT=mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',''); svg.append(totT);
   svg.append(mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'));
-  if(typical) svg.append(mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',Math.round(total/typical*100)+'% of a typical hour'));
-  /* The sweep's phase comes from the clock, not from when this dial was drawn: the dial is redrawn
-     every minute with fresh data, and a sweep that restarted at twelve each time jumped. */
+  const subT=mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',''); svg.append(subT);
+  const layer=mk('g',{}); svg.append(layer);                       // the trades, above the faces and rings
+  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); svg.append(mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'));
+  /* The sweep's phase comes from the clock, not from when this dial was drawn, so a redraw
+     carries on where the last one was. */
   const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'); sw.setAttribute('aria-hidden','true');
   sw.style.animationDelay=(-(Date.now()%7000))+'ms';
   dw.append(svg,sw); grid.append(dw);
-  /* The dial keeps time between data reloads: every mark is placed from its own timestamp on
-     each frame, so it glides round instead of jumping once a minute, and fades out over its
-     last two minutes as it reaches the top again. A few frames a second is smooth at this
-     speed (a tenth of a degree a second) and costs nothing; it stops when the dial is replaced
-     or removed, and the browser pauses it while the page is hidden. */
-  { let last=0, lblMin=-1;
-    const turn=ts=>{
-      if(!svg.isConnected) return;
-      if(ts-last>=250){ last=ts;
-        const now=Date.now();
-        for(const k of marks){ const m=(now-(k.t.t+30000))/60000;
-          const vis=m<=60, op=m>58?Math.max(0,(60-m)/2):1, mc=Math.max(0,Math.min(60,m));
-          const [x,y]=pt(mc,R); k.d.setAttribute('cx',x); k.d.setAttribute('cy',y); k.h.setAttribute('cx',x); k.h.setAttribute('cy',y);
-          k.d.style.display=k.h.style.display=vis?'':'none'; k.d.style.opacity=op; k.h.style.opacity=op*.5;
-          if(k.a){ const [lx,ly]=pt(mc,R-k.r-15); k.a.setAttribute('x',lx); k.a.setAttribute('y',ly+3.5); k.a.style.display=vis?'':'none'; k.a.style.opacity=op; } }
-        const mn=Math.floor(now/60000);
-        if(mn!==lblMin){ lblMin=mn; for(const [m,e] of tLbls) e.textContent=hl(now-m*60000); } }
-      requestAnimationFrame(turn); };
-    requestAnimationFrame(turn); }
   // ---- beside the dial: the reading, the quiet, the latest fees
   const side=el('div','fpd-side'); grid.append(side);
-  const read=el('div','fp-read fpd-read'); side.append(read);
+  const read=el('div','fp-read fpd-read'), stats=el('div','fpd-stats'), qm=el('div','fpd-quiet'), lh=el('div','fpd-lh','LATEST FEES'), list=el('ul','fpd-feed');
+  side.append(read,stats,qm,lh,list);
+  wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
+    +'A trade here is a run of consecutive earning minutes; a new one arrives bright and dims as it goes round, fading out over its last quarter-hour. Typical hour is the last 24 hours\' average. Includes fees your own swaps paid to your own pools, which the monthly ledger takes out.'));
+
+  /* ---- the marks ----
+     Each trade keeps one mark for as long as it is on the face. The mark is placed from the
+     trade's own time on every frame, so it moves round continuously; new data only adds marks,
+     updates an amount that grew, and lets marks leave when they reach the hour. Its size depends
+     on its own amount alone (not on the hour's largest), so nothing on the face resizes when
+     another trade arrives or leaves. A new trade comes in bright — lifted toward white, with a
+     wide glow — and settles to its pool colour over its first minutes; it dims slowly as it goes
+     round and fades to nothing over its last quarter-hour. */
+  const live=new Map(); let sel=null;
+  const dotR=usd=>Math.min(14, 4+3.2*Math.sqrt(Math.max(0,usd)));
+  const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+  const lift=(h,k)=>{ const c=rgb(h); return 'rgb('+c.map(v=>Math.round(v+(255-v)*k)).join(',')+')'; };
   const say=t=>{ read.innerHTML=t
     ? '▸ <b>'+hl(t.t)+'</b> <b>+'+fmtUsd(t.usd,2)+'</b> <span class="unit">· '+(t.pools.length?t.pools.map(([k,v])=>esc(k)+(t.pools.length>1?' '+fmtUsd(v,2):'')).join(' + '):'pool not recorded')+'</span>'
-    : '▸ '+(inHour.length?(matchMedia('(hover:hover)').matches?'hover':'tap')+' a mark for its trade':'no trades in the last 60 minutes'); };
-  let sel=null;
-  for(const k of marks){ const pick=()=>{ if(sel) sel.classList.remove('sel'); sel=k.d; k.d.classList.add('sel'); say(k.t); };
-    k.d.addEventListener('pointerenter',pick); k.d.addEventListener('click',pick); k.d.addEventListener('focus',pick); }
-  say(null);
-  const stats=el('div','fpd-stats');
-  const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-(last.end+60000))/60000)):null;
-  const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
-  stats.innerHTML=cell('Trades this hour',String(inHour.length))
-    +cell('Last trade',last?(quiet<1?'just now':quiet<120?quiet+' min ago':hl(last.t)):'—')
-    +cell('Typical hour',typical!=null?fmtUsd(typical,2):'—');
-  side.append(stats);
-  // the quiet meter, in one line: this lull against every lull the record holds
-  const gaps=(P&&P.gaps)||[], hrs=P&&P.from?Math.min(24,Math.round((Date.now()-P.from)/3600000)):0;
-  const qm=el('div','fpd-quiet');
-  if(quiet==null) qm.innerHTML='<span class="unit">No trade recorded yet.</span>';
-  else if(quiet<1) qm.innerHTML='<b class="up">Trading now</b> <span class="unit">· a trade in the last minute</span>';
-  else if(gaps.length<5) qm.innerHTML='Quiet for <b>'+quiet+' min</b> <span class="unit">· not enough lulls on record yet to compare</span>';
-  else { const pct=Math.round(gaps.filter(g=>g<quiet).length/gaps.length*100), med=[...gaps].sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
-    const tone=pct>=80?'hot':pct>=50?'warm':'calm';
-    qm.innerHTML='<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
-      +' <span class="unit">(typical lull '+med+' min)</span></div>'
-      +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'; }
-  side.append(qm);
-  // the latest fees, in or out of the hour
-  const list=el('ul','fpd-feed');
-  if(!TR.length) list.innerHTML='<li class="empty">No trades recorded yet.</li>';
-  for(const t of TR.slice(0,5)){ const li=document.createElement('li');
-    li.innerHTML='<span class="tm">'+hl(t.t)+'</span><i style="background:'+poolColor(t.lbl)+'"></i><span class="pl">'+(t.pools.length?t.pools.map(([k])=>esc(k)).join(' + '):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
-      +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
-    list.append(li); }
-  const lh=el('div','fpd-lh','LATEST FEES'); side.append(lh,list);
-  wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
-    +'A trade here is a run of consecutive earning minutes. Typical hour is the last 24 hours\' average. Includes fees your own swaps paid to your own pools, which the monthly ledger takes out.'));
+    : '▸ '+(live.size?(matchMedia('(hover:hover)').matches?'hover':'tap')+' a mark for its trade':'no trades in the last 60 minutes'); };
+  const sync=fresh=>{
+    const M=pulseMins(), P=state.pulse, TR=pulseTrades(), inHour=TR.filter(t=>t.m<=60);
+    const H24=feeHourStats(), typical=H24&&H24.avg!=null?H24.avg:null, total=M?M.total:0;
+    for(const t of inHour){ const k=String(t.t); let e=live.get(k);
+      if(!e){
+        const h=mk('circle',{r:0},'fpd-halo'), d=mk('circle',{r:0,tabindex:0,role:'button'},'fpd-dot'), a=mk('text',{'text-anchor':'middle'},'fpd-amt','');
+        d.style.transition='none'; layer.append(h,d,a);
+        e={k,h,d,a,born:fresh?performance.now():0};
+        const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
+        d.addEventListener('pointerenter',pick); d.addEventListener('click',pick); d.addEventListener('focus',pick);
+        live.set(k,e); }
+      e.t=t; e.r=dotR(t.usd); e.col=poolColor(t.lbl);
+      e.h.setAttribute('fill',glow(e.col)); e.d.setAttribute('aria-label',hl(t.t)+' '+fmtUsd(t.usd,2));
+      e.a.textContent=fmtUsd(t.usd,t.usd<100?2:0); }
+    // amounts are written beside the three largest of the hour, so the face does not crowd
+    const big=new Set([...inHour].filter(t=>t.usd>=0.5).sort((x,y)=>y.usd-x.usd).slice(0,3).map(t=>String(t.t)));
+    for(const [k,e] of live) e.lbl=big.has(k);
+    // centre and inner ring
+    totT.textContent=fmtUsd(total,2);
+    const frac=typical?Math.min(1,total/typical):0;
+    fill.setAttribute('stroke-dasharray',`${(circ*frac).toFixed(1)} ${circ.toFixed(1)}`); fill.setAttribute('class','fpd-fill'+(typical&&total>=typical?' over':''));
+    fill.style.display=typical?'':'none';
+    subT.textContent=typical?Math.round(total/typical*100)+'% of a typical hour':'';
+    say(sel&&live.get(sel)?live.get(sel).t:null);
+    // stats, quiet meter, latest fees
+    const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-(last.end+60000))/60000)):null;
+    const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
+    stats.innerHTML=cell('Trades this hour',String(inHour.length))
+      +cell('Last trade',last?(quiet<1?'just now':quiet<120?quiet+' min ago':hl(last.t)):'—')
+      +cell('Typical hour',typical!=null?fmtUsd(typical,2):'—');
+    const gaps=(P&&P.gaps)||[], hrs=P&&P.from?Math.min(24,Math.round((Date.now()-P.from)/3600000)):0;
+    if(quiet==null) qm.innerHTML='<span class="unit">No trade recorded yet.</span>';
+    else if(quiet<1) qm.innerHTML='<b class="up">Trading now</b> <span class="unit">· a trade in the last minute</span>';
+    else if(gaps.length<5) qm.innerHTML='Quiet for <b>'+quiet+' min</b> <span class="unit">· not enough lulls on record yet to compare</span>';
+    else { const pct=Math.round(gaps.filter(g=>g<quiet).length/gaps.length*100), med=[...gaps].sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
+      const tone=pct>=80?'hot':pct>=50?'warm':'calm';
+      qm.innerHTML='<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
+        +' <span class="unit">(typical lull '+med+' min)</span></div>'
+        +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'; }
+    list.innerHTML=TR.length?'':'<li class="empty">No trades recorded yet.</li>';
+    for(const t of TR.slice(0,5)){ const li=document.createElement('li');
+      li.innerHTML='<span class="tm">'+hl(t.t)+'</span><i style="background:'+poolColor(t.lbl)+'"></i><span class="pl">'+(t.pools.length?t.pools.map(([k])=>esc(k)).join(' + '):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
+        +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
+      list.append(li); }
+  };
+  wrap._sync=()=>sync(true);
+  sync(false);
+  /* Every frame while a new mark is arriving, a few times a second otherwise: at a tenth of a
+     degree a second that is already continuous to the eye, and it costs next to nothing. It stops
+     when the dial is replaced or removed, and the browser pauses it while the page is hidden. */
+  { let last=0, lblMin=-1;
+    const turn=ts=>{
+      if(!wrap.isConnected) return;
+      const arriving=[...live.values()].some(e=>e.born && ts-e.born<1200);
+      if(arriving || ts-last>=250){ last=ts;
+        const now=Date.now();
+        for(const [k,e] of live){
+          const m=(now-(e.t.t+30000))/60000;
+          if(m>60.1){ e.h.remove(); e.d.remove(); e.a.remove(); live.delete(k); if(sel===k){ sel=null; say(null); } continue; }
+          const age=Math.max(0,m);
+          const op=age<=45 ? 1-0.3*age/45 : 0.7*Math.pow(Math.max(0,60-age)/15,1.4);   // dims slowly, then fades out
+          const fresh=Math.max(0,1-age/6);                                                // 1 when new, gone by six minutes
+          let r=e.r, flash=0;
+          if(e.born){ const p=Math.min(1,(ts-e.born)/1000); if(p>=1) e.born=0;
+            r=e.r*(p<0.6?1.35*p/0.6:1.35-0.35*(p-0.6)/0.4); flash=1-p; }               // grows in past full size, settles
+          const [x,y]=pt(age,R);
+          e.d.setAttribute('cx',x); e.d.setAttribute('cy',y); e.d.setAttribute('r',r.toFixed(2));
+          e.d.setAttribute('fill',lift(e.col,Math.min(.85,0.55*fresh+0.6*flash)));
+          e.d.style.opacity=op.toFixed(3);
+          e.h.setAttribute('cx',x); e.h.setAttribute('cy',y); e.h.setAttribute('r',(r*(2.2+1.8*fresh+1.5*flash)).toFixed(2));
+          e.h.style.opacity=(op*(0.3+0.65*fresh)+0.4*flash).toFixed(3);
+          if(e.lbl){ const [lx,ly]=pt(age,R-e.r-15); e.a.setAttribute('x',lx); e.a.setAttribute('y',ly+3.5); e.a.style.display=''; e.a.style.opacity=op.toFixed(3); }
+          else e.a.style.display='none';
+        }
+        const mn=Math.floor(now/60000);
+        if(mn!==lblMin){ lblMin=mn; for(const [m,el2] of tLbls) el2.textContent=hl(now-m*60000); } }
+      requestAnimationFrame(turn); };
+    requestAnimationFrame(turn); }
 }
 /* The day series and today's standing in it. One function so the panel and the tile link that
    points at it can never tell two different stories. */
