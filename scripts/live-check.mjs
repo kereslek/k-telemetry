@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (rerun v33.8)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v33.9)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
@@ -22,5 +22,10 @@ console.log('dial labels', await pg.evaluate(()=>[...document.querySelectorAll('
 console.log('SWEEP', JSON.stringify(await pg.evaluate(()=>{ const sw=document.querySelector('#fp60 .fpd-sweep'); if(!sw) return null;
   const m=new DOMMatrix(getComputedStyle(sw).transform), deg=((Math.atan2(m.b,m.a)*180/Math.PI)+360)%360;
   return {build:BUILD, running:sw.getAnimations().map(a=>a.playState).join(), deg:+deg.toFixed(1), clock:+((Date.now()%7000)/7000*360).toFixed(1), w:sw.offsetWidth, ring:Math.round(document.querySelector('#fp60 .fpd-ring').getBoundingClientRect().width)}; })));
+{ const tag=()=>pg.evaluate(()=>[...document.querySelectorAll('#fp60 .fpd-dot')].map(d=>{ d.dataset.n=d.dataset.n||String(Math.random()).slice(2,8);
+    return [d.dataset.n, d.getAttribute('aria-label'), +(+d.style.opacity).toFixed(3), d.getAttribute('fill')]; }));
+  const a=await tag(); await pg.evaluate(()=>loadPulse()); await pg.waitForTimeout(2500); const b2=await tag();
+  for(const x of b2){ const o=a.find(y=>y[1]===x[1]); console.log('MARK', x[1], 'opacity', x[2], x[3], o?(o[0]===x[0]?'kept across refresh':'REBUILT'):'new'); }
+  console.log('MARKS', a.length, '->', b2.length, 'build', await pg.evaluate(()=>BUILD)); }
 console.log('errors', errs);
 await b.close();
