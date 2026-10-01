@@ -14,5 +14,10 @@ await topAt('at top');
 for(let i=0;i<12;i++){ await pg.evaluate(()=>scrollBy(0,120)); await pg.waitForTimeout(40); if(i===11) await topAt('mid scroll-down'); }
 for(let i=0;i<5;i++){ await pg.evaluate(()=>scrollBy(0,-80)); await pg.waitForTimeout(40); } await topAt('scrolling up');
 await pg.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight)); await pg.waitForTimeout(400); await topAt('page bottom');
+const dialPos=()=>pg.evaluate(()=>[...document.querySelectorAll('#fp60 .fpd-dot')].map(d=>{ const x=+d.getAttribute('cx')-150, y=+d.getAttribute('cy')-150;
+  return [d.getAttribute('aria-label'), +(((Math.atan2(y,x)*180/Math.PI)+90+360)%360).toFixed(3)]; }));
+console.log('dial labels', await pg.evaluate(()=>[...document.querySelectorAll('#fp60 .fpd-lbl')].map(e=>e.textContent+'@x'+Math.round(e.getAttribute('x'))).join(' ')));
+{ const a=await dialPos(); await pg.waitForTimeout(6000); const b2=await dialPos();
+  a.forEach((m,i)=>console.log('DIAL', m[0], 'clock deg', m[1], '->', b2[i]&&b2[i][1], 'delta', b2[i]?(b2[i][1]-m[1]).toFixed(3):'?')); }
 console.log('errors', errs);
 await b.close();
