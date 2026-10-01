@@ -22,19 +22,33 @@
   }
  ],
  "scan": {
-  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26096069,
-  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26096069,
-  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26096069,
-  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26096069
+  "ethereum:0x22fe6188f048ad8116f746cc1a31705d30e2fc4e": 26096164,
+  "ethereum:0xd14492909dfd4d1012b0c7b6efb34057d0ce1d5d": 26096164,
+  "ethereum:0x9e9a57a538093c800e821f9a47b850dadca4c728": 26096164,
+  "ethereum:0xd28520457ae0c774ac9548c83f697139d32f01c0": 26096164
  },
- "solTxs": {},
+ "solTxs": {
+  "2uFF4CG47C8iq312XzUBdebFaFNqMAeZpN9Hdw12mr2K7GA9D79HNvQNcfcJDgHcT8CqqUdnX3EEjc21q86sFpnA": 1,
+  "5VpcefYAgKfpJAFevMq3e2Ye4DczkXkMrGJfmFeUcmUL9YAvWBSyet8n4aEpxDsKWmNLLnuRKrsa7kfymBNep1Mw": 1,
+  "nkvwJ8itSAsU4bRudGtbvK7maNDDstz9eunqFTsCKXih5tVgiba8d2FQkND6RFM5fSLhZnxcSE87yeTCRgRboJ2": 1,
+  "3PvgJnhrwKm9CUXBFQTo9ygKo27AJ2cKS2qiN7ZuzHYzpvMTRPk1CQL8kSZGQJr9baiuvrJyJqmDzbUKQG784Vvq": 1,
+  "4TYcfLXeiof9gpjQX1rcJPrH2ZKUQ15HuHu8wtNQG8icvAkeztJEJysXS7oMvqUhjqu4Mx7AZUHpxTWkHWEojBg1": 1,
+  "2JsPirDZM7uqfTTbcrvdZXXFgf3GMQ3mY77usgdK7vniQNwCzzR2KCGEK9TUotQ9FnruM3xGCA3v6WxXMQ1cDkrB": 1,
+  "5RJLz6jgs97RWMmPfwkBDMvpCzcEzQbvzKcydWnztPkR7u21pt8vdUTQBs7upi8g94SPe4xnSnaW7SzAiRd3Fesw": 1,
+  "CXjRgWwCQMucumTf5tnYb7a6dM8dEoz1haNVKf6LUbpo7pLXs3Y5BrLH9PrrGJWgg33Vbdpzoiy8m89MNgFyorz": 1,
+  "4AfXY2YiGPvtZz9mJ8anZzde7QkKMiamjjY7n9ftqVbAdpCYSW2sxCuJMjNmdRvYAFRswRtbH7DxCgy3XcpCinGK": 1,
+  "3YHCSWHn3uL47GirqgMdQhFgyK8EqMoDmSMGeyrsUZV8oABGhnaR8sjfpLu76GpZFW44jb6RNCMVMetWfJKQpT1L": 1,
+  "2xq8nGtWNGoUB8GHVLwpfdd9fS8PpbkyFG7UT1DgNmwFAjfjemaXmygaaA94E7BEtPz5yAMn4mGLtUfAMgiCUW8K": 1,
+  "5TUyEQQBgUPzBA1mHYpt8jo68repUxa1SQegGytiQAXoweSYMzXEwKBTKEi9q6TE42rEdLvaYhfQ2Q7KVabhFcgG": 1,
+  "2xREHYBRGgNESCZ7i8P1enGZNuozv9tnMN5uMY1nH9zZn6k8ngPa86iLYUkayJh2U9XsWv2UhhQv4Y6ZpN6geSGC": 1
+ },
  "solPartial": false,
- "solGasUsd": 0,
+ "solGasUsd": 0.0258603350467102,
  "solOpenUsd": 0,
  "solOpenPend": {},
  "solScan": {
-  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "3a8ufsvAXa5pnDTdZd2H9NXkLvFVyBAozCNVUFry5ERoXbzGTaDMHCgz9ExsbaaqysAVfobg1imsFx6xrZhiQbWD",
-  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "2joLsJnUG2aFk5FLvY8gmChW9PLJCG8A9ubXw4w1D6mTeYi8tiiMJHtG8Nc7mVyAiumD4LCeVSFSMknkBFcUnUAQ"
+  "3MwYtBaC5eM3JAaZX4XB4SrXhDempfXZsvX3rcZ1Syn2": "2uFF4CG47C8iq312XzUBdebFaFNqMAeZpN9Hdw12mr2K7GA9D79HNvQNcfcJDgHcT8CqqUdnX3EEjc21q86sFpnA",
+  "5RbHAKi1Yrj9amYo5cgN7fpLx13CJXb7RyVi5bYTicca": "2xq8nGtWNGoUB8GHVLwpfdd9fS8PpbkyFG7UT1DgNmwFAjfjemaXmygaaA94E7BEtPz5yAMn4mGLtUfAMgiCUW8K"
  },
  "solWalletTx": {},
  "solSwapUsd": 0,
