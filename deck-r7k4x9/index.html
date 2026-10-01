@@ -1434,7 +1434,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v33.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7737,9 +7737,11 @@ function renderFeePulse60m(host){
   const grid=el('div','fpd-grid'); wrap.append(grid);
   // ---- the dial
   const C=150, R=118, svg=mk('svg',{viewBox:'-26 -10 352 322',role:'img','aria-label':'The last 60 minutes of fee income as a clock face'},'fpd-dial');
-  /* Minutes ago run clockwise from twelve, the way a clock hand moves: a trade appears at the
-     top and is carried round to three, six and nine as it ages. */
-  const pt=(m,r)=>{ const a=(m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
+  /* Time runs clockwise round the face, as on a clock: 45 minutes ago at three, half an hour at
+     six, 15 minutes ago at nine, now at twelve. With now fixed at the top, a trade therefore
+     drifts anticlockwise as it ages — from twelve to nine, six, three — always sitting at its
+     own time. */
+  const pt=(m,r)=>{ const a=(-m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
   const defs=mk('defs',{});
   const gl=mk('radialGradient',{id:'fpdGlow'}); gl.append(mk('stop',{offset:'0%','stop-color':'#35d6e8','stop-opacity':'.85'}),mk('stop',{offset:'100%','stop-color':'#35d6e8','stop-opacity':'0'}));
   defs.append(gl); svg.append(defs);
@@ -7748,7 +7750,7 @@ function renderFeePulse60m(host){
     svg.append(mk('line',{x1,y1,x2,y2},big?'fpd-tick big':'fpd-tick')); }
   const tLbls=[];
   [[0,'now'],[15,hl(Date.now()-15*60000)],[30,hl(Date.now()-30*60000)],[45,hl(Date.now()-45*60000)]].forEach(([m,l])=>{
-    const [x,y]=pt(m,R+(m%30?24:29)), e=mk('text',{x,y:y+3.5,'text-anchor':m===15?'start':m===45?'end':'middle'},m?'fpd-lbl':'fpd-lbl now',l);
+    const [x,y]=pt(m,R+(m%30?24:29)), e=mk('text',{x,y:y+3.5,'text-anchor':m===15?'end':m===45?'start':'middle'},m?'fpd-lbl':'fpd-lbl now',l);
     svg.append(e); if(m) tLbls.push([m,e]); });
   svg.append(mk('circle',{cx:C,cy:C,r:R},'fpd-ring'));
   // inner ring: this hour against a typical one
