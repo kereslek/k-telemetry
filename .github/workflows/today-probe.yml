@@ -17,4 +17,4 @@ jobs:
       - run: node scripts/today-probe.mjs
         env:
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
-          SINCE: '2026-10-01T19:00:00Z'
+          SINCE: '2026-10-02T08:00:00Z'
