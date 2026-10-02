@@ -758,6 +758,13 @@
   .fpd-sweep{position:absolute;left:16.477%;top:13.043%;width:67.045%;height:73.292%;border-radius:50%;pointer-events:none;
     background:conic-gradient(from 0deg,rgba(53,214,232,0) 0deg 304deg,rgba(53,214,232,.2) 359deg,rgba(53,214,232,.45) 359.4deg,rgba(53,214,232,0) 360deg);
     will-change:transform;transform:translateZ(0);animation:fpdSweep 7s linear infinite;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+  /* the strike: the same box as the sweep, a brighter beam that whips to twelve when a trade is born */
+  .fpd-strike{position:absolute;left:16.477%;top:13.043%;width:67.045%;height:73.292%;border-radius:50%;pointer-events:none;opacity:0;
+    background:conic-gradient(from 0deg,rgba(53,214,232,0) 0deg 318deg,rgba(53,214,232,.42) 356deg,rgba(255,255,255,.95) 359.2deg,rgba(53,214,232,0) 360deg);
+    will-change:transform,opacity;transform:rotate(0deg) translateZ(0);backface-visibility:hidden;-webkit-backface-visibility:hidden}
+  .fpd-dw{will-change:transform}
+  .fpd-amt-birth{font-size:15px;fill:#fff;stroke-width:4px}
+  @media(prefers-reduced-motion:reduce){ .fpd-strike{display:none} }
   @keyframes fpdSweep{from{transform:rotate(0deg) translateZ(0)}to{transform:rotate(360deg) translateZ(0)}}
   @media(prefers-reduced-motion:reduce){ .fpd-sweep,.fpd-ping{animation:none} }
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
@@ -1434,7 +1441,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v33.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v34.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7737,11 +7744,10 @@ function renderFeePulse60m(host){
   const grid=el('div','fpd-grid'); wrap.append(grid);
   // ---- the dial: drawn once; the marks on it are kept up to date in place
   const C=150, R=118, svg=mk('svg',{viewBox:'-26 -10 352 322',role:'img','aria-label':'The last 60 minutes of fee income as a clock face'},'fpd-dial');
-  /* Time runs clockwise round the face, as on a clock: 45 minutes ago at three, half an hour at
-     six, 15 minutes ago at nine, now at twelve. With now fixed at the top, a trade therefore
-     drifts anticlockwise as it ages — from twelve to nine, six, three — always sitting at its
-     own time. */
-  const pt=(m,r)=>{ const a=(-m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
+  /* A trade is born at now, at twelve, and travels clockwise as it ages, like a clock hand: 15
+     minutes ago at three, half an hour at six, 45 minutes at nine. The time labels follow, so
+     every mark sits next to its own time. */
+  const pt=(m,r)=>{ const a=(m*6-90)*Math.PI/180; return [C+r*Math.cos(a), C+r*Math.sin(a)]; };
   const defs=mk('defs',{}); svg.append(defs);
   // one soft glow per pool colour, so a mark's halo is its own colour
   const glowOf={}, uid=Math.random().toString(36).slice(2,7);
@@ -7753,7 +7759,7 @@ function renderFeePulse60m(host){
     svg.append(mk('line',{x1,y1,x2,y2},big?'fpd-tick big':'fpd-tick')); }
   const tLbls=[];
   [[0,'now'],[15,hl(Date.now()-15*60000)],[30,hl(Date.now()-30*60000)],[45,hl(Date.now()-45*60000)]].forEach(([m,l])=>{
-    const [x,y]=pt(m,R+(m%30?24:29)), e=mk('text',{x,y:y+3.5,'text-anchor':m===15?'end':m===45?'start':'middle'},m?'fpd-lbl':'fpd-lbl now',l);
+    const [x,y]=pt(m,R+(m%30?24:29)), e=mk('text',{x,y:y+3.5,'text-anchor':m===15?'start':m===45?'end':'middle'},m?'fpd-lbl':'fpd-lbl now',l);
     svg.append(e); if(m) tLbls.push([m,e]); });
   svg.append(mk('circle',{cx:C,cy:C,r:R},'fpd-ring'));
   // inner ring: this hour against a typical one
@@ -7763,13 +7769,15 @@ function renderFeePulse60m(host){
   const totT=mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',''); svg.append(totT);
   svg.append(mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'));
   const subT=mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',''); svg.append(subT);
+  const glint=mk('circle',{r:5,fill:'#fff',opacity:0}); svg.append(glint);
   const layer=mk('g',{}); svg.append(layer);                       // the trades, above the faces and rings
+  const fx=mk('g',{'pointer-events':'none'}); svg.append(fx);       // birth effects, above the trades
   const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); svg.append(mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'));
   /* The sweep's phase comes from the clock, not from when this dial was drawn, so a redraw
      carries on where the last one was. */
-  const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'); sw.setAttribute('aria-hidden','true');
+  const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'), strikeEl=el('div','fpd-strike'); sw.setAttribute('aria-hidden','true'); strikeEl.setAttribute('aria-hidden','true');
   sw.style.animationDelay=(-(Date.now()%7000))+'ms';
-  dw.append(svg,sw); grid.append(dw);
+  dw.append(svg,sw,strikeEl); grid.append(dw);
   // ---- beside the dial: the reading, the quiet, the latest fees
   const side=el('div','fpd-side'); grid.append(side);
   const read=el('div','fp-read fpd-read'), stats=el('div','fpd-stats'), qm=el('div','fpd-quiet'), lh=el('div','fpd-lh','LATEST FEES'), list=el('ul','fpd-feed');
@@ -7786,6 +7794,76 @@ function renderFeePulse60m(host){
      wide glow — and settles to its pool colour over its first minutes; it dims slowly as it goes
      round and fades to nothing over its last quarter-hour. */
   const live=new Map(); let sel=null;
+  const D={typical:null,target:0,shown:0,counting:false};
+  const setTotal=v=>{ D.shown=v; totT.textContent=fmtUsd(v,2);
+    const f=D.typical?Math.min(1,v/D.typical):0;
+    fill.setAttribute('stroke-dasharray',`${(circ*f).toFixed(1)} ${circ.toFixed(1)}`); fill.setAttribute('class','fpd-fill'+(D.typical&&v>=D.typical?' over':''));
+    subT.textContent=D.typical?Math.round(v/D.typical*100)+'% of a typical hour':''; return f; };
+  /* ---- birth: radar contact ----
+     A trade that arrives while the dial is open is born at now. The beam whips to twelve and
+     strikes, the dial kicks, a flare and three sonar rings go out, the mark springs in white-hot
+     and its amount rises beside it, its fee streams into the hour's total, which counts up, and a
+     trade bigger than a typical hour sends a gold shockwave round the dial. Then it glides
+     clockwise to its real time. Several arriving together are born one after another; coming back
+     to the tab replays the ones that came in meanwhile. Reduced motion gets a plain fade. */
+  const tw=[];
+  const tween=(dur,fn,delay=0)=>new Promise(res=>tw.push({t0:performance.now()+delay,dur,fn,res}));
+  const ez={out:p=>1-Math.pow(1-p,3), inOut:p=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2,
+    spring:p=>{ const c1=2.6,c3=c1+1; return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2); }};
+  const births=[]; let birthing=false;
+  const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const runBirths=async()=>{
+    if(birthing) return; birthing=true;
+    // the newest few get the full treatment; any more simply appear
+    births.splice(0,Math.max(0,births.length-4)).forEach(e=>{ e.show=1; e.glide=1; });
+    while(births.length){ const e=births.shift(); if(live.get(e.k)!==e) continue; await birth(e); await tween(250,()=>{}); }
+    if(!D.counting) setTotal(D.target);
+    birthing=false; };
+  const birth=async e=>{
+    const [x,y]=pt(0,R), col=e.col, usd=e.t.usd, big=D.typical!=null && usd>=D.typical;
+    if(still){ e.glide=1; e.show=1; e.scale=0; await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
+    // 1 — the beam whips round to twelve and strikes
+    const from=(Date.now()%7000)/7000*360;
+    try{ sw.animate([{opacity:1},{opacity:.15},{opacity:.15},{opacity:1}],{duration:1500,easing:'ease-out'});
+      strikeEl.animate([{transform:`rotate(${from}deg)`,opacity:.9},{transform:'rotate(360deg)',opacity:1,offset:.3},{transform:'rotate(360deg)',opacity:1,offset:.45},{transform:'rotate(366deg)',opacity:0}],{duration:1000,easing:'cubic-bezier(.3,.7,.2,1)'}); }catch(err){}
+    await tween(300,()=>{});
+    // 2 — impact: the dial kicks, a flare, three sonar rings and an echo from the centre
+    try{ dw.animate([{transform:'scale(1)'},{transform:'scale(1.03)'},{transform:'scale(.995)'},{transform:'scale(1)'}],{duration:520,easing:'cubic-bezier(.2,.8,.2,1)'}); }catch(err){}
+    const fl=mk('g',{}); fl.append(mk('line',{x1:x-70,y1:y,x2:x+70,y2:y,stroke:'#fff','stroke-width':1.6,'stroke-linecap':'round'}),
+      mk('line',{x1:x,y1:y-42,x2:x,y2:y+42,stroke:'#fff','stroke-width':1.2,'stroke-linecap':'round'}), mk('circle',{cx:x,cy:y,r:9,fill:'#fff'}));
+    fx.append(fl);
+    tween(750,p=>{ const s=p<.25?p/.25:1-(p-.25)/.75; fl.setAttribute('opacity',(s*.95).toFixed(3));
+      fl.setAttribute('transform',`translate(${x} ${y}) scale(${(0.4+0.8*ez.out(Math.min(1,p*2.5))).toFixed(3)} 1) translate(${-x} ${-y})`); }).then(()=>fl.remove());
+    for(let i=0;i<3;i++){ const c=mk('circle',{cx:x,cy:y,r:4,fill:'none',stroke:i?col:'#35d6e8','stroke-width':2.6}); fx.append(c);
+      tween(1500,p=>{ const q=ez.out(p); c.setAttribute('r',(4+165*q).toFixed(1)); c.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); c.setAttribute('stroke-width',(2.6*(1-p)+0.3).toFixed(2)); },i*220).then(()=>c.remove()); }
+    const echo=mk('circle',{cx:C,cy:C,r:20,fill:'none',stroke:'#35d6e8','stroke-width':1.2}); fx.append(echo);
+    tween(1200,p=>{ echo.setAttribute('r',(20+(R-20)*ez.out(p)).toFixed(1)); echo.setAttribute('opacity',(0.45*(1-p)).toFixed(3)); },180).then(()=>echo.remove());
+    if(big){ for(let i=0;i<2;i++){ const g=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:'#f5c451','stroke-width':3.5}); fx.append(g);
+        tween(1300,p=>{ g.setAttribute('r',(R+4+46*ez.out(p)).toFixed(1)); g.setAttribute('opacity',(0.95*(1-p)).toFixed(3)); g.setAttribute('stroke-width',(3.5*(1-p)+.3).toFixed(2)); },i*260).then(()=>g.remove()); }
+      const ring=svg.querySelector('.fpd-ring'); if(ring){ ring.style.stroke='#f5c451'; tween(1400,p=>{ ring.style.strokeOpacity=String(1-p*.45); }).then(()=>{ ring.style.stroke=''; ring.style.strokeOpacity=''; }); } }
+    // 3 — the mark springs in white-hot, its amount rises beside it
+    e.show=1; e.flash=1;
+    tween(700,p=>{ e.scale=ez.spring(p); });
+    const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
+    tween(2000,p=>{ ft.setAttribute('y',(y+8-26*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); },150).then(()=>ft.remove());
+    await tween(380,()=>{});
+    // 4 — its fee streams into the hour's total, which counts up; the ring extends with a glint
+    D.counting=true;
+    const ps=[];
+    for(let i=0;i<16;i++){ const c=mk('circle',{r:2.3,fill:lift(col,.45),opacity:0}); fx.append(c);
+      const side=(i%2?1:-1)*(16+Math.random()*34), qx=(x+C)/2+side, qy=(y+C)/2;
+      ps.push(tween(700,p=>{ const q=ez.inOut(p), u=1-q; c.setAttribute('cx',(u*u*x+2*u*q*qx+q*q*C).toFixed(1)); c.setAttribute('cy',(u*u*y+2*u*q*qy+q*q*(C-12)).toFixed(1));
+        c.setAttribute('opacity',(p<.85?1:(1-p)/.15).toFixed(3)); },i*30).then(()=>c.remove())); }
+    await Promise.all(ps);
+    const v0=D.shown, v1=Math.max(v0, Math.min(D.target, v0+usd*1.0001)) , pulse=v1>v0;
+    await tween(800,p=>{ const q=ez.out(p), f=setTotal(v0+(v1-v0)*q);
+      if(pulse){ const s=1+0.12*Math.sin(Math.PI*Math.min(1,p*1.6)); totT.setAttribute('transform',`translate(${C} ${C-12}) scale(${s.toFixed(3)}) translate(${-C} ${-(C-12)})`);
+        const [gx,gy]=pt(f*60,r2); glint.setAttribute('cx',gx); glint.setAttribute('cy',gy); glint.setAttribute('opacity',(Math.sin(p*Math.PI)*.95).toFixed(3)); } });
+    totT.removeAttribute('transform'); glint.setAttribute('opacity',0); D.counting=false;
+    // 5 — it cools and glides clockwise to its real time
+    tween(2800,p=>{ e.flash=1-p; });
+    await tween(1400,p=>{ e.glide=ez.inOut(p); });
+  };
   const dotR=usd=>Math.min(14, 4+3.2*Math.sqrt(Math.max(0,usd)));
   const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
   const lift=(h,k)=>{ const c=rgb(h); return 'rgb('+c.map(v=>Math.round(v+(255-v)*k)).join(',')+')'; };
@@ -7799,7 +7877,10 @@ function renderFeePulse60m(host){
       if(!e){
         const h=mk('circle',{r:0},'fpd-halo'), d=mk('circle',{r:0,tabindex:0,role:'button'},'fpd-dot'), a=mk('text',{'text-anchor':'middle'},'fpd-amt','');
         d.style.transition='none'; layer.append(h,d,a);
-        e={k,h,d,a,born:fresh?performance.now():0};
+        // a trade that arrives while the dial is on screen is born at now and glides to its time;
+        // one already there when the dial is drawn simply sits at its time
+        e={k,h,d,a,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0};
+        if(fresh) births.push(e);
         const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
         d.addEventListener('pointerenter',pick); d.addEventListener('click',pick); d.addEventListener('focus',pick);
         live.set(k,e); }
@@ -7809,12 +7890,10 @@ function renderFeePulse60m(host){
     // amounts are written beside the three largest of the hour, so the face does not crowd
     const big=new Set([...inHour].filter(t=>t.usd>=0.5).sort((x,y)=>y.usd-x.usd).slice(0,3).map(t=>String(t.t)));
     for(const [k,e] of live) e.lbl=big.has(k);
-    // centre and inner ring
-    totT.textContent=fmtUsd(total,2);
-    const frac=typical?Math.min(1,total/typical):0;
-    fill.setAttribute('stroke-dasharray',`${(circ*frac).toFixed(1)} ${circ.toFixed(1)}`); fill.setAttribute('class','fpd-fill'+(typical&&total>=typical?' over':''));
+    // centre and inner ring; while a birth is playing it counts these up itself
+    D.typical=typical; D.target=total;
+    if(!births.length && !D.counting) setTotal(total);
     fill.style.display=typical?'':'none';
-    subT.textContent=typical?Math.round(total/typical*100)+'% of a typical hour':'';
     say(sel&&live.get(sel)?live.get(sel).t:null);
     // stats, quiet meter, latest fees
     const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-(last.end+60000))/60000)):null;
@@ -7837,7 +7916,7 @@ function renderFeePulse60m(host){
         +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
       list.append(li); }
   };
-  wrap._sync=()=>sync(true);
+  wrap._sync=()=>{ sync(true); runBirths(); };
   sync(false);
   /* Every frame while a new mark is arriving, a few times a second otherwise: at a tenth of a
      degree a second that is already continuous to the eye, and it costs next to nothing. It stops
@@ -7845,8 +7924,8 @@ function renderFeePulse60m(host){
   { let last=0, lblMin=-1;
     const turn=ts=>{
       if(!wrap.isConnected) return;
-      const arriving=[...live.values()].some(e=>e.born && ts-e.born<1200);
-      if(arriving || ts-last>=250){ last=ts;
+      for(const t of tw.slice()){ const p=(ts-t.t0)/t.dur; if(p<0) continue; t.fn(Math.min(1,p)); if(p>=1){ tw.splice(tw.indexOf(t),1); t.res(); } }
+      if(tw.length || birthing || ts-last>=250){ last=ts;
         const now=Date.now();
         for(const [k,e] of live){
           const m=(now-(e.t.t+30000))/60000;
@@ -7854,16 +7933,14 @@ function renderFeePulse60m(host){
           const age=Math.max(0,m);
           const op=age<=45 ? 1-0.3*age/45 : 0.7*Math.pow(Math.max(0,60-age)/15,1.4);   // dims slowly, then fades out
           const fresh=Math.max(0,1-age/6);                                                // 1 when new, gone by six minutes
-          let r=e.r, flash=0;
-          if(e.born){ const p=Math.min(1,(ts-e.born)/1000); if(p>=1) e.born=0;
-            r=e.r*(p<0.6?1.35*p/0.6:1.35-0.35*(p-0.6)/0.4); flash=1-p; }               // grows in past full size, settles
-          const [x,y]=pt(age,R);
+          const flash=e.flash, r=e.show?e.r*Math.max(0,e.scale):0, pos=age*e.glide;   // held at now until it glides to its age
+          const [x,y]=pt(pos,R);
           e.d.setAttribute('cx',x); e.d.setAttribute('cy',y); e.d.setAttribute('r',r.toFixed(2));
-          e.d.setAttribute('fill',lift(e.col,Math.min(.85,0.55*fresh+0.6*flash)));
-          e.d.style.opacity=op.toFixed(3);
-          e.h.setAttribute('cx',x); e.h.setAttribute('cy',y); e.h.setAttribute('r',(r*(2.2+1.8*fresh+1.5*flash)).toFixed(2));
-          e.h.style.opacity=(op*(0.3+0.65*fresh)+0.4*flash).toFixed(3);
-          if(e.lbl){ const [lx,ly]=pt(age,R-e.r-15); e.a.setAttribute('x',lx); e.a.setAttribute('y',ly+3.5); e.a.style.display=''; e.a.style.opacity=op.toFixed(3); }
+          e.d.setAttribute('fill',lift(e.col,Math.min(.92,Math.max(0.55*fresh,0.92*flash))));
+          e.d.style.opacity=(e.show?op:0).toFixed(3);
+          e.h.setAttribute('cx',x); e.h.setAttribute('cy',y); e.h.setAttribute('r',(r*(2.2+1.8*fresh+2.2*flash)).toFixed(2));
+          e.h.style.opacity=(e.show?op*(0.3+0.65*fresh)+0.5*flash:0).toFixed(3);
+          if(e.lbl && e.show && e.glide>=1){ const [lx,ly]=pt(pos,R-e.r-15); e.a.setAttribute('x',lx); e.a.setAttribute('y',ly+3.5); e.a.style.display=''; e.a.style.opacity=op.toFixed(3); }
           else e.a.style.display='none';
         }
         const mn=Math.floor(now/60000);
