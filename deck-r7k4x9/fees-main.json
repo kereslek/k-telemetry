@@ -4,7 +4,7 @@
  "pos": {
   "1355336": {
    "m0": 915.7,
-   "last": 928.97,
+   "last": 947.57,
    "hwm": 1019.09,
    "acc": 84.68,
    "ck": "ethereum",
@@ -17,7 +17,7 @@
   },
   "1355918": {
    "m0": 747.08,
-   "last": 724.34,
+   "last": 739.61,
    "hwm": 800.68,
    "acc": 31.83,
    "ck": "ethereum",
@@ -30,7 +30,7 @@
   },
   "1366332": {
    "m0": 562.69,
-   "last": 582.33,
+   "last": 593.67,
    "hwm": 635.09,
    "acc": 64.63,
    "ck": "ethereum",
@@ -43,8 +43,8 @@
   },
   "1377051": {
    "m0": 0,
-   "last": 9.38,
-   "hwm": 9.38,
+   "last": 9.53,
+   "hwm": 9.53,
    "acc": 10.01,
    "ck": "ethereum",
    "run": 10.01,
@@ -56,19 +56,19 @@
   },
   "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": {
    "m0": 926.78,
-   "last": 1033.24,
-   "acc": 104.02,
+   "last": 1032.28,
+   "acc": 104.45,
    "hwm": 1033.68,
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 742.66,
+   "run": 743.09,
    "tk0": 11.520666512,
-   "tk1": 30177.687901572997
+   "tk1": 30190.044375261998
   },
   "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": {
    "m0": 422.27,
-   "last": 423.79,
+   "last": 423.77,
    "acc": 1.48,
    "hwm": 423.79,
    "cat": "sol|SOL / CPOOL · wide",
@@ -80,29 +80,29 @@
   },
   "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": {
    "m0": 516.65,
-   "last": 591.58,
+   "last": 590.9,
    "hwm": 591.89,
-   "acc": 73.24,
+   "acc": 73.54,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 523.17,
+   "run": 523.47,
    "tk0": 2.711595657,
-   "tk1": 6805.711249563
+   "tk1": 6814.408470876
   },
   "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": {
    "m0": 504.72,
-   "last": 667.83,
+   "last": 666.36,
    "hwm": 668.5,
-   "acc": 159.35,
+   "acc": 160,
    "ck": "sol",
    "cat": "sol|SOL / CPOOL · wide",
    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
    "lbl": "SOL / CPOOL 4%",
-   "run": 740.47,
+   "run": 741.12,
    "tk0": 3.3244961049999997,
-   "tk1": 9786.413325567999
+   "tk1": 9805.341264358
   },
   "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": {
    "m0": 50.08,
@@ -167,9 +167,9 @@
    }
   }
  ],
- "lastIl": -1070.96,
+ "lastIl": -1280.89,
  "catClosed": {},
- "readAt": 1790968116319,
+ "readAt": 1790969342448,
  "dayEnd": {
   "2026-08-01": 27.71,
   "2026-08-02": 57.94,
@@ -233,7 +233,7 @@
   "2026-09-29": 3489.93,
   "2026-09-30": 3735.52,
   "2026-10-01": 252.22,
-  "2026-10-02": 529.39
+  "2026-10-02": 530.77
  },
  "dayEst": [
   "2026-08-01",
@@ -244,10 +244,6 @@
  "daySeeded": 1,
  "closedPos": {},
  "ticks": [
-  [
-   1790788531342,
-   5135.15
-  ],
   [
    1790789653273,
    5135.69
@@ -863,24 +859,14 @@
   [
    1790968116319,
    5785.32
+  ],
+  [
+   1790969342449,
+   5786.7
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790788531342,
-   {
-    "1355336": 524.8,
-    "1355918": 456.95,
-    "1366332": 400.25,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 630.47,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 216.22,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 444.18,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 568.62,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790789653273,
    {
@@ -3063,6 +3049,21 @@
     "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.77,
     "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 523.17,
     "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 740.47,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.91
+   }
+  ],
+  [
+   1790969342449,
+   {
+    "1355336": 655.07,
+    "1355918": 504.85,
+    "1366332": 497.51,
+    "1377051": 10.01,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 743.09,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.77,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 523.47,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 741.12,
     "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
     "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.91
    }
