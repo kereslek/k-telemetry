@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v34.1 rerun)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.0: Budapest days)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
@@ -38,5 +38,9 @@ console.log('SWEEP', JSON.stringify(await pg.evaluate(()=>{ const sw=document.qu
     const deg=d?(((Math.atan2(+d.getAttribute('cy')-150,+d.getAttribute('cx')-150)*180/Math.PI)+90+360)%360).toFixed(1):null;
     return {build:BUILD, effectsMidBirth:fx, newDotDeg:deg, opacity:d&&d.style.opacity}; });
   console.log('BIRTH', JSON.stringify(r)); }
+console.log('BUDAPEST', JSON.stringify(await pg.evaluate(()=>{ const fm=state.feeMonth||{}, dl=fm.daily||[];
+  return {build:BUILD, today:bpDay(Date.now()), month:fm.month, mtd:fm.mtd, lastBar:dl[dl.length-1], prev:(fm.prev||[]).map(x=>[x.m,x.total]),
+    note:(document.querySelector('#fpBody .arch-note')||{}).textContent, story:(document.querySelector('.fp-story')||{}).innerText,
+    strip:(document.querySelector('#fp60 .fpd-today')||{}).textContent, fees:[...document.querySelectorAll('#tiles .tile')].map(t=>t.innerText.replace(/\s+/g,' ')).find(x=>x.startsWith('FEES EARNED'))}; })));
 console.log('errors', errs);
 await b.close();
