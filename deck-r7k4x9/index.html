@@ -1480,7 +1480,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v35.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v35.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7671,11 +7671,13 @@ let pulseBusy=false;
    first visit in a browser sweeps the whole hour. */
 const PULSE_SEEN='kt.pulse.seen';
 const pulseSeen={at:(()=>{ try{ const v=Number(localStorage.getItem(PULSE_SEEN)); return v>0?v:null; }catch(e){ return null; } })(),
-  catchFrom:null, first:false, hiddenAt:null, needN:null};
+  catchFrom:null, catchUntil:null, first:false, hiddenAt:null, needN:null};
 const markSeen=()=>{ try{ localStorage.setItem(PULSE_SEEN,String(Date.now())); }catch(e){} };
 { const S0=pulseSeen.at, now=Date.now();
+  // the sweep covers the absence only: from when you left to when you came back
   if(S0==null){ pulseSeen.catchFrom=now-60*60000; pulseSeen.first=true; }
   else if(now-S0>=2*60000) pulseSeen.catchFrom=S0;
+  pulseSeen.catchUntil=now;
   // away longer than the dial's hour: read back far enough for the card to count the rest
   if(S0!=null && now-S0>60*60000) pulseSeen.needN=Math.min(1440,Math.ceil((now-S0)/60000)+2); }
 document.addEventListener('visibilitychange',()=>{
@@ -7683,6 +7685,7 @@ document.addEventListener('visibilitychange',()=>{
   const h=pulseSeen.hiddenAt, now=Date.now(); pulseSeen.hiddenAt=null;
   if(h && now-h>=60000){
     if(pulseSeen.catchFrom==null||h<pulseSeen.catchFrom){ pulseSeen.catchFrom=h; pulseSeen.first=false; }
+    pulseSeen.catchUntil=now;
     if(now-h>60*60000) pulseSeen.needN=Math.min(1440,Math.ceil((now-h)/60000)+2); } });
 addEventListener('pagehide',markSeen);
 async function loadPulse(){
@@ -8116,7 +8119,8 @@ function renderFeePulse60m(host){
         // a trade that arrives while the dial is on screen is born at now and glides to its time;
         // one already there when the dial is drawn simply sits at its time
         // one that came in while you were away waits in place, dark, for the catch-up sweep to paint it
-        const hold=pulseSeen.catchFrom!=null && t.at>pulseSeen.catchFrom;
+        // (a trade after you came back is born live as usual, wherever the page is scrolled)
+        const hold=pulseSeen.catchFrom!=null && t.at>pulseSeen.catchFrom && t.at<=pulseSeen.catchUntil;
         e={k,h,d,a,hit,show:(fresh||hold)?0:1,glide:(fresh&&!hold)?0:1,scale:1,flash:0,push:null,tier:sfxTier(t.usd),lit:1};
         if(fresh&&!hold) births.push(e);
         const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
@@ -8189,7 +8193,7 @@ function renderFeePulse60m(host){
     let tot=0, early=0; const byPool={};
     for(const r of rows){ const a=r[0], b=a+60000; if(b<=f) continue; const k=(b-Math.max(a,f))/60000, v=r[1]*k; tot+=v; if(b<=now-60*60000) early+=v;
       if(r[3]) for(const q in r[3]) byPool[q]=(byPool[q]||0)+r[3][q]*k; }
-    const TRa=pulseTrades(), TR=TRa.filter(t=>t.at>from), more=TRa.length>=20 && TR.length===TRa.length;
+    const TRa=pulseTrades(), TR=TRa.filter(t=>t.endAt>from), more=TRa.length>=20 && TR.length===TRa.length;
     const big=TR.reduce((b,t)=>!b||t.usd>b.usd?t:b,null), mins=Math.max(1,Math.round((now-f)/60000));
     const away=mins>=60?Math.floor(mins/60)+' h '+(mins%60)+' min':mins+' min';
     const c=el('div','fpd-away'); c.setAttribute('role','status');
@@ -8207,10 +8211,10 @@ function renderFeePulse60m(host){
     side.prepend(c); setTimeout(()=>c.remove(),15*60000); };
   const sweepCatch=async()=>{
     if(sweeping||pulseSeen.catchFrom==null||!wrap.isConnected) return;
-    const from=pulseSeen.catchFrom, first=pulseSeen.first; pulseSeen.catchFrom=null; pulseSeen.first=false;
+    const from=pulseSeen.catchFrom, until=pulseSeen.catchUntil||Date.now(), first=pulseSeen.first; pulseSeen.catchFrom=null; pulseSeen.first=false;
     if(io){ io.disconnect(); io=null; }
     sweeping=true; birthing=true; D.counting=true;
-    const t0=Date.now(), all=[...live.values()].filter(e=>e.t&&(t0-e.t.at)/60000<=60), isNew=e=>e.t.at>from;
+    const t0=Date.now(), all=[...live.values()].filter(e=>e.t&&(t0-e.t.at)/60000<=60), isNew=e=>e.t.at>from&&e.t.at<=until;
     const fresh=all.filter(isNew), top=fresh.reduce((b,e)=>!b||e.t.usd>b.t.usd?e:b,null);
     const done=()=>{ for(const e of all){ e.show=1; e.lit=1; e.glide=1; } D.counting=false; setTotal(D.target); subH.textContent='THIS HOUR';
       sweeping=false; birthing=false; awayCard(from,first); say(null); runBirths(); };
