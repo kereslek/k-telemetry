@@ -19,7 +19,7 @@ for(const w of W.filter(x=>x.chain==='ethereum')){
     console.log(t.timestamp, t.hash, 'status',t.status, 'method',t.method, nm(t.from),'->',nm(t.to), 'value',Number(t.value)/1e18,'ETH', 'fee',Number(t.fee&&t.fee.value)/1e18,'ETH');
     if(seen.has(t.hash)) continue; seen.add(t.hash);
     const tt=await j(BS+'/transactions/'+t.hash+'/token-transfers');
-    for(const x of (tt&&tt.items)||[]) console.log('    tok',x.token&&x.token.symbol, Number(x.total&&x.total.value)/10**Number(x.total&&x.total.decimals||18), nm(x.from),'->',nm(x.to));
+    for(const x of (tt&&tt.items)||[]) console.log('    tok',x.token&&x.token.symbol, Number(x.total&&x.total.value)/10**Number(x.total&&x.total.decimals||18), nm(x.from),'->',nm(x.to), '| to', x.to&&x.to.hash, x.to&&x.to.is_contract?'(contract)':'(wallet)');
     const it=await j(BS+'/transactions/'+t.hash+'/internal-transactions');
     for(const x of (it&&it.items)||[]) if(Number(x.value)>0) console.log('    int',Number(x.value)/1e18,'ETH', nm(x.from),'->',nm(x.to));
     const lg=await j(BS+'/transactions/'+t.hash+'/logs');
