@@ -62,6 +62,12 @@ jobs:
             sleep 20
             B=$(curl -sS -m 15 "$URL" || true)
             echo "$(date -u +%T) $B" | cut -c1-400
-            echo "$B" | jq -e '.mins|length>0' >/dev/null 2>&1 && { echo "RECORDING OK"; exit 0; }
+            echo "$B" | jq -e '.mins|length>0' >/dev/null 2>&1 && { echo "RECORDING OK"; ok=1; break; }
           done
-          echo "::warning::Deployed, but no minutes recorded yet (DNS for a new workers.dev subdomain can take a few minutes)."
+          [ -n "$ok" ] || { echo "::warning::Deployed, but no minutes recorded yet (DNS for a new workers.dev subdomain can take a few minutes)."; exit 0; }
+          # watched mode: ask the way the open dashboard does, every 3 s for a minute
+          for i in $(seq 1 20); do
+            S=$(date +%s%3N); B=$(curl -sS -m 15 "${URL%n=10}n=5&live=1" || true); E=$(date +%s%3N)
+            echo "$B" | jq -c --arg ms "$((E-S))" '{answer_ms:($ms|tonumber), fast, last_read_s_ago:((.now-.last)/1000|floor), read, N, err, exact_trades:([.trades[]|select(.x)]|length), newest:(.trades[0]|{t:(.t/1000|todate), usd, x})}' 2>/dev/null || echo "$B" | cut -c1-300
+            sleep 3
+          done

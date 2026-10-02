@@ -178,11 +178,12 @@ export function positionsFrom(data){
    tick spacing, tick-array addresses) and is the caller's to keep between readings. */
 // a different endpoint leads each minute, so no single free provider carries every request
 const rot=(a,k)=>a.map((_,i)=>a[(i+k)%a.length]);
+// `opt.chains` reads only those chains ('eth', 'sol'); both by default
 export async function readGrowth(ps, cache, opt={}){
-  const t=Date.now(), k=Math.floor(t/60000), sol=opt.solRpcs||SOL_RPCS, fixed=opt.solFirst?1:0;
+  const t=Date.now(), k=Math.floor(t/60000), sol=opt.solRpcs||SOL_RPCS, fixed=opt.solFirst?1:0, on=c=>!opt.chains||opt.chains.includes(c);
   const [e,s]=await Promise.allSettled([
-    growthEvm(ps.filter(p=>p.chain==='eth'), cache, rot(opt.evmRpcs||EVM_RPCS,k)),
-    growthSol(ps.filter(p=>p.chain==='sol'), cache, [...sol.slice(0,fixed),...rot(sol.slice(fixed),k)])]);
+    on('eth')?growthEvm(ps.filter(p=>p.chain==='eth'), cache, rot(opt.evmRpcs||EVM_RPCS,k)):{},
+    on('sol')?growthSol(ps.filter(p=>p.chain==='sol'), cache, [...sol.slice(0,fixed),...rot(sol.slice(fixed),k)]):{}]);
   return { t, g:{...(e.status==='fulfilled'?e.value:{}), ...(s.status==='fulfilled'?s.value:{})},
            err:[e,s].filter(x=>x.status==='rejected').map(x=>String(x.reason&&x.reason.message||x.reason)) };
 }
