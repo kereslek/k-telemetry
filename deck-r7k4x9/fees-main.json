@@ -4,7 +4,7 @@
  "pos": {
   "1355336": {
    "m0": 915.7,
-   "last": 962.87,
+   "last": 974.15,
    "hwm": 980.37,
    "acc": 48.62,
    "ck": "ethereum",
@@ -17,7 +17,7 @@
   },
   "1355918": {
    "m0": 747.08,
-   "last": 759.36,
+   "last": 768.81,
    "hwm": 773.87,
    "acc": 16.78,
    "ck": "ethereum",
@@ -30,7 +30,7 @@
   },
   "1366332": {
    "m0": 562.69,
-   "last": 596.4,
+   "last": 603.17,
    "hwm": 606.96,
    "acc": 34.08,
    "ck": "ethereum",
@@ -167,9 +167,9 @@
    }
   }
  ],
- "lastIl": -1354.17,
+ "lastIl": -1497.03,
  "catClosed": {},
- "readAt": 1790932139813,
+ "readAt": 1790933262546,
  "dayEnd": {
   "2026-08-01": 30.23,
   "2026-08-02": 60.46,
@@ -244,10 +244,6 @@
  "daySeeded": 1,
  "closedPos": {},
  "ticks": [
-  [
-   1790752268073,
-   5059.43
-  ],
   [
    1790753355670,
    5067.97
@@ -883,24 +879,14 @@
   [
    1790932139813,
    5576.4
+  ],
+  [
+   1790933262546,
+   5576.4
   ]
  ],
  "ticksSeeded": 1,
  "posHist": [
-  [
-   1790752268073,
-   {
-    "1355336": 488.31,
-    "1355918": 444.03,
-    "1366332": 374.43,
-    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 630.34,
-    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 216.13,
-    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 444.1,
-    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 568.43,
-    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
-    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
-   }
-  ],
   [
    1790753355670,
    {
@@ -3116,6 +3102,21 @@
   ],
   [
    1790932139813,
+   {
+    "1355336": 631.78,
+    "1355918": 494.3,
+    "1366332": 476.11,
+    "1377051": 0,
+    "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM": 698.46,
+    "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s": 217.25,
+    "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6": 492.07,
+    "sol:AWf56C196Fw7tEt2m6k5fJ7FginXQoQKMbktqApx3tNu": 672.77,
+    "sol:CkVsz6qZWAuDxTeE1kr3vxzJHWtcLAcFGKVHbBaeAX8j": 55.85,
+    "sol:5f5yxrZim3TkgWuW22TuAgMHPAtpVXJMehqCxifkAErv": 6.76
+   }
+  ],
+  [
+   1790933262546,
    {
     "1355336": 631.78,
     "1355918": 494.3,
