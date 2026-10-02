@@ -765,6 +765,16 @@
   .fpd-dw{will-change:transform}
   .fpd-amt-birth{font-size:15px;fill:#fff;stroke-width:4px}
   .fpd-sub-hot{fill:var(--text-primary);letter-spacing:.06em}
+  .fpd-strip{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:4px;padding:8px 12px;margin:4px 0 12px;max-width:976px;
+    font:600 10.5px var(--mono);letter-spacing:.12em;color:var(--text-muted)}
+  .fpd-strip .k{white-space:nowrap;flex:none}
+  .fpd-strip b{color:var(--text-primary);font-size:14px;letter-spacing:0;font-variant-numeric:tabular-nums;margin-left:4px}
+  .fpd-tape{flex:1;min-width:40px;height:22px;display:block;overflow:visible}
+  .fpd-tline{stroke:var(--line);stroke-width:1}
+  .fpd-tnow{fill:var(--accent)}
+  @media(max-width:430px){ .fpd-strip{gap:8px;padding:7px 10px} .fpd-strip .lg{display:none}
+    .fpd-lbl{font-size:10.5px} .fpd-sub,.fpd-sub2{font-size:11px} .fpd-amt{font-size:11.5px} }
+  .fpd-hit{cursor:pointer;-webkit-tap-highlight-color:transparent}
   .fpd-cur{display:inline-block;width:.6em;height:1em;background:var(--accent);vertical-align:-2px;margin-left:2px;animation:fpdBlink 1s steps(2) infinite}
   @keyframes fpdBlink{to{opacity:0}}
   @media(prefers-reduced-motion:reduce){ .fpd-strike{display:none} }
@@ -773,7 +783,7 @@
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
   .fpd-read{margin:0}
   .fpd-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
-  .fpd-stats div{background:var(--panel);padding:8px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .fpd-stats div{background:var(--panel);padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;gap:2px;min-width:0}
   .fpd-stats span{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted)}
   .fpd-stats b{font:600 16px var(--mono);color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
   .fpd-quiet{font-size:13px;color:var(--text-secondary);display:flex;flex-direction:column;gap:6px}
@@ -1444,7 +1454,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v34.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v34.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7740,6 +7750,14 @@ function renderFeePulse60(host){
 function renderFeePulse60m(host){
   const wrap=el('div','fp24 fpd'); wrap.id='fp60';
   wrap.append(el('div','fp24-h','LAST 60 MINUTES'));
+  /* A strip over the dial: the hour as a tape (now at the right) and today's fees so far. Today is
+     the ledger's figure at its last reading plus what the minute recorder has measured since, so it
+     moves with each trade instead of every quarter-hour; when the ledger next reads, those minutes
+     pass to it and nothing is counted twice. The day starts at midnight Budapest time. */
+  const strip=el('div','fpd-strip');
+  strip.innerHTML='<span class="k"><span class="lg">FEE PULSE · </span>60 MIN</span><svg class="fpd-tape" aria-hidden="true"></svg><span class="k">TODAY <b class="fpd-today">—</b></span>';
+  wrap.append(strip);
+  const tape=strip.querySelector('svg'), todayEl=strip.querySelector('.fpd-today');
   host.append(wrap);
   const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
   const NS='http://www.w3.org/2000/svg';
@@ -7776,7 +7794,9 @@ function renderFeePulse60m(host){
   const layer=mk('g',{}); svg.append(layer);                       // the trades, above the faces and rings
   const veil=mk('circle',{cx:C,cy:C,r:R+16,fill:'#000',opacity:0,'pointer-events':'none'}); svg.append(veil);
   const trails=mk('g',{'pointer-events':'none'}); svg.insertBefore(trails,layer);   // light trails, under the marks
-  const fx=mk('g',{'pointer-events':'none'}); svg.append(fx);       // birth effects, above the trades
+  // birth effects stay inside a circle just outside the dial, never over the text around it
+  { const cp=mk('clipPath',{id:'fpdClip'+uid}); cp.append(mk('circle',{cx:C,cy:C,r:R+46})); defs.append(cp); }
+  const fx=mk('g',{'pointer-events':'none','clip-path':`url(#fpdClip${uid})`}); svg.append(fx);       // birth effects, above the trades
   const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); const nowDot=mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'); svg.append(nowDot);
   /* The sweep's phase comes from the clock, not from when this dial was drawn, so a redraw
      carries on where the last one was. */
@@ -7799,7 +7819,24 @@ function renderFeePulse60m(host){
      wide glow — and settles to its pool colour over its first minutes; it dims slowly as it goes
      round and fades to nothing over its last quarter-hour. */
   const live=new Map(); let sel=null;
-  const D={typical:null,target:0,shown:0,counting:false,pulse:0};
+  const D={typical:null,target:0,shown:0,counting:false,pulse:0,today:null,todayShown:null};
+  /* Today runs from midnight Budapest time (CET/CEST), not UTC: the ledger's running total at that
+     midnight (interpolated between its readings, which come every ~18 minutes and reach back more
+     than a day) against its latest reading, plus what the minute recorder measured since. */
+  const tzMidnight=now=>{ const pp={}; for(const x of new Intl.DateTimeFormat('en-GB',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(now)) pp[x.type]=x.value;
+    const asUtc=Date.UTC(+pp.year,+pp.month-1,+pp.day,+pp.hour,+pp.minute,+pp.second), off=asUtc-Math.floor(now/1000)*1000;
+    return Date.UTC(+pp.year,+pp.month-1,+pp.day)-off; };
+  const cumAt=(tk,t)=>{ if(!tk.length||t<tk[0][0]) return null; for(let i=1;i<tk.length;i++) if(tk[i][0]>=t){ const [a,va]=tk[i-1],[b,vb]=tk[i]; return va+(vb-va)*(t-a)/Math.max(1,b-a); } return tk[tk.length-1][1]; };
+  const todayNow=()=>{
+    const fm=state.feeMonth; if(!fm||!Array.isArray(fm.ticks)||fm.ticks.length<2) return null;
+    const tk=fm.ticks, day0=tzMidnight(Date.now()), atMid=cumAt(tk,day0); if(atMid==null) return null;
+    const tick=tk[tk.length-1][0], base=Math.max(0,tk[tk.length-1][1]-atMid), from=Math.max(day0,tick);
+    const P=state.pulse; let add=0, covered=!!(P&&Array.isArray(P.mins)&&P.mins.length);
+    if(covered){ const first=Math.min(...P.mins.map(r=>r[0])); if(first>from+60000) covered=false;
+      // a minute the ledger's reading falls inside counts only for the part after it
+      for(const r of P.mins){ if(r[1]==null) continue; const a=r[0], b=a+60000; if(b<=from) continue; add+=r[1]*(b-Math.max(a,from))/60000; } }
+    return {v:base+(covered?add:0), base, add:covered?add:0, tick, covered}; };
+  const setToday=v=>{ D.todayShown=v; todayEl.textContent=v==null?'—':fmtUsd(v,2); };
   const setTotal=v=>{ D.shown=v; totT.textContent=fmtUsd(v,2);
     const f=D.typical?Math.min(1,v/D.typical):0;
     fill.setAttribute('stroke-dasharray',`${(circ*f).toFixed(1)} ${circ.toFixed(1)}`); fill.setAttribute('class','fpd-fill'+(D.typical&&v>=D.typical?' over':''));
@@ -7815,7 +7852,7 @@ function renderFeePulse60m(host){
   const tween=(dur,fn,delay=0)=>new Promise(res=>tw.push({t0:performance.now()+delay,dur,fn,res}));
   const ez={out:p=>1-Math.pow(1-p,3), inOut:p=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2,
     spring:p=>{ const c1=2.6,c3=c1+1; return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2); }};
-  const births=[]; let birthing=false;
+  const births=[]; let birthing=false; const tapeDots=new Map();
   const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const runBirths=async()=>{
     if(birthing) return; birthing=true;
@@ -7824,6 +7861,7 @@ function renderFeePulse60m(host){
     let n=0;
     while(births.length){ const e=births.shift(); if(live.get(e.k)!==e) continue; await birth(e,{compact:n++>0}); await tween(250,()=>{}); }
     if(!D.counting) setTotal(D.target);
+    setToday(D.today);
     say(sel&&live.get(sel)?live.get(sel).t:null);
     birthing=false; };
   /* ---- the pieces of a birth ---- */
@@ -7856,6 +7894,8 @@ function renderFeePulse60m(host){
       c.remove(); })()));
   const countUp=(usd,dur,roll)=>{
     D.counting=true;
+    if(D.today!=null){ const t0=D.todayShown??D.today, t1=Math.max(t0,Math.min(D.today,t0+usd));
+      tween(dur,p=>setToday(t0+(t1-t0)*ez.out(p))); }
     const v0=D.shown, v1=Math.max(v0,Math.min(D.target,v0+usd*1.0001));
     return tween(dur,p=>{ const q=ez.out(p), v=v0+(v1-v0)*q, f=setTotal(v);
       if(roll && p<1){ const txt=fmtUsd(v,2); totT.textContent=''; [...txt].forEach((ch,i)=>{ const t=mk('tspan',{},null,ch); if(i>=txt.length-4+Math.floor(p*3)) t.setAttribute('opacity',(0.55+0.45*Math.random()).toFixed(2)); totT.append(t); }); }
@@ -7867,12 +7907,17 @@ function renderFeePulse60m(host){
   const trailGlide=(e,dur)=>{ const path=mk('path',{fill:'none',stroke:e.col,'stroke-width':4,'stroke-linecap':'round',opacity:.9}); trails.append(path);
     const draw=()=>{ const ag=Math.max(0.01,((Date.now()-(e.t.t+30000))/60000)*e.glide), [x0,y0]=pt(0,R), [x1,y1]=pt(ag,R); path.setAttribute('d',`M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}`); };
     tween(dur,draw).then(()=>tween(3200,p=>{ draw(); path.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); path.setAttribute('stroke-width',(4*(1-p)+.5).toFixed(2)); }).then(()=>path.remove())); };
+  let tapeWc=0, tapeWt=0; const tapeW=()=>{ const n=performance.now(); if(n-tapeWt>1000){ tapeWt=n; tapeWc=tape.getBoundingClientRect().width||300;
+      if(!tape.querySelector('.fpd-tnow')){ tape.append(mk('line',{x1:0,x2:'100%',y1:11,y2:11},'fpd-tline')); tape.append(mk('circle',{cy:11,r:2.6},'fpd-tnow')); }
+      const nw=tape.querySelector('.fpd-tnow'); nw.setAttribute('cx',tapeWc-4); }
+    return tapeWc; };
   const brackets=(x,y)=>{ const g=mk('g',{stroke:'#35d6e8','stroke-width':2,fill:'none','stroke-linecap':'round'}), parts=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx,sy])=>{ const p=mk('path',{}); g.append(p); return [p,sx,sy]; }); fx.append(g);
     return (p,done)=>{ if(done){ tween(500,q=>g.setAttribute('opacity',(1-q).toFixed(3))).then(()=>g.remove()); return; }
       const d=34-20*ez.out(p), L=7; g.setAttribute('opacity',Math.min(1,p*2.5).toFixed(3));
       for(const [path,sx,sy] of parts){ const cx=x+sx*d, cy=y+sy*d; path.setAttribute('d',`M${cx} ${cy-sy*L} L${cx} ${cy} L${cx-sx*L} ${cy}`); } }; };
-  const flashTape=t=>{ const c=document.querySelector('.fp-link60 circle[data-t="'+t+'"]'); if(!c) return;
-    try{ c.style.transformBox='fill-box'; c.style.transformOrigin='center'; c.animate([{transform:'scale(1)',fill:'#ffffff'},{transform:'scale(2.4)',fill:'#ffffff',offset:.3},{transform:'scale(1)'}],{duration:1400,easing:'ease-out'}); }catch(err){} };
+  const flashTape=t=>{ for(const c of document.querySelectorAll('.fp-link60 circle[data-t="'+t+'"], .fpd-tape circle[data-t="'+t+'"]')){
+    try{ c.style.transformBox='fill-box'; c.style.transformOrigin='center'; c.animate([{transform:'scale(1)',fill:'#ffffff'},{transform:'scale(2.4)',fill:'#ffffff',offset:.3},{transform:'scale(1)'}],{duration:1400,easing:'ease-out'}); }catch(err){} }
+    try{ todayEl.animate([{color:'#ffffff',textShadow:'0 0 10px rgba(53,214,232,.9)'},{color:'',textShadow:'none'}],{duration:1600,easing:'ease-out'}); }catch(err){} };
   /* ---- birth: radar contact, extended ----
      Three parts. Anticipation (about a second): the face dims, the beam slows on its way round,
      brackets close on now and a contact line starts typing. Impact, slowed: the beam whips to
@@ -7951,13 +7996,15 @@ function renderFeePulse60m(host){
     for(const t of inHour){ const k=String(t.t); let e=live.get(k);
       if(!e){
         const h=mk('circle',{r:0},'fpd-halo'), d=mk('circle',{r:0,tabindex:0,role:'button'},'fpd-dot'), a=mk('text',{'text-anchor':'middle'},'fpd-amt','');
-        d.style.transition='none'; layer.append(h,d,a);
+        const hit=mk('circle',{r:16,fill:'transparent'},'fpd-hit');      // a finger-sized target over a small mark
+        d.style.transition='none'; layer.append(h,d,a,hit);
         // a trade that arrives while the dial is on screen is born at now and glides to its time;
         // one already there when the dial is drawn simply sits at its time
-        e={k,h,d,a,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0,push:null};
+        e={k,h,d,a,hit,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0,push:null};
         if(fresh) births.push(e);
         const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
         d.addEventListener('pointerenter',pick); d.addEventListener('click',pick); d.addEventListener('focus',pick);
+        hit.addEventListener('pointerenter',pick); hit.addEventListener('click',pick);
         live.set(k,e); }
       e.t=t; e.r=dotR(t.usd); e.col=poolColor(t.lbl);
       e.h.setAttribute('fill',glow(e.col)); e.d.setAttribute('aria-label',hl(t.t)+' '+fmtUsd(t.usd,2));
@@ -7965,6 +8012,14 @@ function renderFeePulse60m(host){
     // amounts are written beside the three largest of the hour, so the face does not crowd
     const big=new Set([...inHour].filter(t=>t.usd>=0.5).sort((x,y)=>y.usd-x.usd).slice(0,3).map(t=>String(t.t)));
     for(const [k,e] of live) e.lbl=big.has(k);
+    // today, held while a birth plays (the birth counts it up)
+    const T=todayNow(); D.today=T?T.v:null;
+    if(T) strip.title='Today since midnight Budapest time: '+fmtUsd(T.base,2)+' in the ledger to '+(T.tick?hl(T.tick):'—')+(T.covered?' + '+fmtUsd(T.add,2)+' recorded since':' (the minute record does not reach back to that reading)');
+    if(!births.length && !D.counting) setToday(D.today);
+    // the tape: one dot per trade of the hour, same colours as the dial
+    for(const t of inHour){ const k=String(t.t); let c=tapeDots.get(k);
+      if(!c){ c=mk('circle',{cy:11,'data-t':String(t.t)}); tape.append(c); tapeDots.set(k,c); }
+      c.setAttribute('r',(1.8+Math.min(4.2,1.3*Math.sqrt(t.usd))).toFixed(2)); c.setAttribute('fill',poolColor(t.lbl)); }
     // centre and inner ring; while a birth is playing it counts these up itself
     D.typical=typical; D.target=total;
     if(!births.length && !D.counting) setTotal(total);
@@ -8005,13 +8060,15 @@ function renderFeePulse60m(host){
         const now=Date.now();
         for(const [k,e] of live){
           const m=(now-(e.t.t+30000))/60000;
-          if(m>60.1){ e.h.remove(); e.d.remove(); e.a.remove(); live.delete(k); if(sel===k){ sel=null; say(null); } continue; }
+          if(m>60.1){ e.h.remove(); e.d.remove(); e.a.remove(); e.hit.remove(); live.delete(k); const tc=tapeDots.get(k); if(tc){ tc.remove(); tapeDots.delete(k); } if(sel===k){ sel=null; say(null); } continue; }
+          { const tc=tapeDots.get(k); if(tc){ const tw2=tapeW(), ag=Math.max(0,m)*e.glide; tc.setAttribute('cx',(tw2-4-(ag/60)*(tw2-8)).toFixed(1)); tc.style.opacity=(e.show?1:0); } }
           const age=Math.max(0,m);
           const op=age<=45 ? 1-0.3*age/45 : 0.7*Math.pow(Math.max(0,60-age)/15,1.4);   // dims slowly, then fades out
           const fresh=Math.max(0,1-age/6);                                                // 1 when new, gone by six minutes
           const flash=e.flash, r=e.show?e.r*Math.max(0,e.scale):0, pos=age*e.glide;   // held at now until it glides to its age
           let [x,y]=pt(pos,R); if(e.push){ x+=e.push[0]; y+=e.push[1]; }
           e.d.setAttribute('cx',x); e.d.setAttribute('cy',y); e.d.setAttribute('r',r.toFixed(2));
+          e.hit.setAttribute('cx',x); e.hit.setAttribute('cy',y); e.hit.style.display=e.show?'':'none';
           e.d.setAttribute('fill',lift(e.col,Math.min(.92,Math.max(0.55*fresh,0.92*flash))));
           e.d.style.opacity=(e.show?op:0).toFixed(3);
           e.h.setAttribute('cx',x); e.h.setAttribute('cy',y); e.h.setAttribute('r',(r*(2.2+1.8*fresh+2.2*flash)).toFixed(2));
