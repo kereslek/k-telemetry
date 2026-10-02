@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v33.9)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v34.0)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
@@ -27,5 +27,16 @@ console.log('SWEEP', JSON.stringify(await pg.evaluate(()=>{ const sw=document.qu
   const a=await tag(); await pg.evaluate(()=>loadPulse()); await pg.waitForTimeout(2500); const b2=await tag();
   for(const x of b2){ const o=a.find(y=>y[1]===x[1]); console.log('MARK', x[1], 'opacity', x[2], x[3], o?(o[0]===x[0]?'kept across refresh':'REBUILT'):'new'); }
   console.log('MARKS', a.length, '->', b2.length, 'build', await pg.evaluate(()=>BUILD)); }
+{ // a birth on the live page: a test trade injected into this browser only
+  const r=await pg.evaluate(async()=>{ const w=document.getElementById('fp60'); if(!w||!w._sync) return 'no live dial';
+    const P=state.pulse, t=Math.floor(Date.now()/60000)*60000-60000;
+    P.trades=[{t,start:t,end:t,usd:2.5,pools:{'LCX / ETH 1%':2.5}},...(P.trades||[])];
+    w._sync(); await new Promise(r=>setTimeout(r,700));
+    const fx=w.querySelectorAll('svg g[pointer-events="none"] > *').length;
+    await new Promise(r=>setTimeout(r,3800));
+    const d=[...w.querySelectorAll('.fpd-dot')].find(x=>(x.getAttribute('aria-label')||'').includes('2.50'));
+    const deg=d?(((Math.atan2(+d.getAttribute('cy')-150,+d.getAttribute('cx')-150)*180/Math.PI)+90+360)%360).toFixed(1):null;
+    return {build:BUILD, effectsMidBirth:fx, newDotDeg:deg, opacity:d&&d.style.opacity}; });
+  console.log('BIRTH', JSON.stringify(r)); }
 console.log('errors', errs);
 await b.close();
