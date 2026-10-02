@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v34.1)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v34.1 rerun)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
