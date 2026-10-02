@@ -1463,7 +1463,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v35.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v35.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7637,29 +7637,37 @@ function pulseMins(){
   const P=state.pulse; if(!P||!Array.isArray(P.mins)||!P.last) return null;
   if(Date.now()-P.last>6*60000) return null;                  // stale: say nothing rather than old news
   const end=Math.floor(Date.now()/60000)*60000, by=new Map(P.mins.map(r=>[r[0],r]));
-  const mins=[]; for(let t=end-60*60000;t<end;t+=60000){ const r=by.get(t); mins.push({t, usd:r?r[1]:null, part:!!(r&&P.N&&r[2]<P.N*0.95)}); }
+  /* the minute under way is included (readings every few seconds fill it as it goes), so a fee the
+     dial has just shown is already in the total beside it; the oldest minute makes way */
+  const mins=[]; for(let t=end-59*60000;t<=end;t+=60000){ const r=by.get(t); mins.push({t, usd:r?r[1]:null, part:!!(r&&P.N&&r[2]<P.N*0.95)}); }
   const have=mins.filter(m=>m.usd!=null);
   if(have.length<5) return null;
   return {mins, have, total:have.reduce((a,m)=>a+m.usd,0), last:P.last, N:P.N};
 }
+/* While the page is open and in view it asks every three seconds, and each ask tells the recorder
+   someone is watching: Solana is then read every 3 s and Ethereum every block (12 s). Hidden or
+   closed, the asking stops and the recorder goes back to reading once a minute on its own. */
+let pulseBusy=false;
 async function loadPulse(){
-  if(!PULSE_URL) return;
+  if(!PULSE_URL || pulseBusy) return;
+  pulseBusy=true;
   try{
-    const r=await fetch(PULSE_URL+'/m?n=60',{cache:'no-store'}); if(!r.ok) return;
+    const r=await fetch(PULSE_URL+'/m?n=60&live=1',{cache:'no-store'}); if(!r.ok) return;
     state.pulse=await r.json();
-    // swap in place: the tile link and the panel section, nothing else re-renders
+    // swap in place: the tile link and the panel section, nothing else re-renders (and the link only when it changed)
     const a=document.querySelector('.fp-link60'), h=feePulseLink60();
-    if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; a.replaceWith(d.firstElementChild); }
+    if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; if(d.firstElementChild.outerHTML!==a.outerHTML) a.replaceWith(d.firstElementChild); }
     const w=document.getElementById('fp60');
     /* The minute dial updates itself in place, so its marks keep moving without a redraw; the
        ledger fallback (or a switch between the two) is rebuilt. */
     if(w && w._sync && pulseMins()) w._sync();
     else if(w){ const d=document.createElement('div'); d.style.width=w.clientWidth+'px'; w.parentElement.insertBefore(d,w); renderFeePulse60(d); w.remove(); d.replaceWith(d.firstElementChild); }
   }catch(e){}
+  finally{ pulseBusy=false; }
 }
 if(PULSE_URL){
   setTimeout(loadPulse,1500);
-  setInterval(()=>{ if(!document.hidden) loadPulse(); },60000);
+  setInterval(()=>{ if(!document.hidden) loadPulse(); },3000);
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadPulse(); });
 }
 /* Pools get one colour each, in the order the positions list them, so a pool is the same colour
@@ -7670,12 +7678,14 @@ function poolColor(lbl){
   const names=[...new Set(ordered().map(p=>(p.pairLabel||'')+' '+(p.feeLabel||'')))];
   const i=names.indexOf(lbl); return POOL_HEX[(i<0?names.length:i)%POOL_HEX.length];
 }
-/* The recorder's trades as the views use them: minutes ago, amount, and the pool that paid most. */
+/* The recorder's trades as the views use them: minutes ago, amount, and the pool that paid most.
+   A trade read while someone watched carries its exact time (x) and a key that stays put while it
+   grows; an older one is a minute, placed at the minute's middle and keyed by it. */
 function pulseTrades(){
   const P=state.pulse; if(!P||!Array.isArray(P.trades)) return [];
   const now=Date.now();
-  return P.trades.map(t=>{ const pools=Object.entries(t.pools||{}).sort((a,b)=>b[1]-a[1]);
-    return {t:t.t, end:t.end, usd:t.usd, m:(now-(t.t+30000))/60000, pools, lbl:pools.length?pools[0][0]:null}; });
+  return P.trades.map(t=>{ const pools=Object.entries(t.pools||{}).sort((a,b)=>b[1]-a[1]), at=t.x?t.t:t.t+30000;
+    return {k:String(t.k??t.t), t:t.t, at, end:t.end, endAt:t.x?t.end:t.end+60000, usd:t.usd, m:(now-at)/60000, pools, lbl:pools.length?pools[0][0]:null}; });
 }
 function feePulseLink60(){
   const M=pulseMins();
@@ -7774,9 +7784,10 @@ function renderFeePulse60(host){
    limit for flashing content), warm white rather than red, and at most one strobe every eight
    seconds however many big fees arrive together. Reduced motion gets a single soft glow. */
 const SFX={strobeAt:0};
+const sfxTier=v=>v>=100?3:v>=25?2:v>=5?1:0;
 function screenFx(v, from){
   if(document.hidden || !(v>=5)) return;
-  const tier=v>=100?3:v>=25?2:1;
+  const tier=sfxTier(v);
   let L=document.getElementById('sfx');
   if(!L){ L=document.createElement('div'); L.id='sfx'; L.setAttribute('aria-hidden','true'); document.body.append(L); }
   const W=innerWidth, H=innerHeight, r=from&&from.getBoundingClientRect?from.getBoundingClientRect():null;
@@ -7939,7 +7950,7 @@ function renderFeePulse60m(host){
     for(let i=0;i<n;i++){ const c=mk('circle',{cx:x,cy:y,r:4,fill:'none',stroke:i?col:'#35d6e8','stroke-width':2.6}); fx.append(c);
       tween(dur,p=>{ const rr=4+reach*ez.out(p); c.setAttribute('r',rr.toFixed(1)); c.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); c.setAttribute('stroke-width',(2.6*(1-p)+0.3).toFixed(2));
         // the first ring shoves the other marks aside as it passes; they spring back
-        if(push&&i===0) for(const o of live.values()){ if(!o.show||o.glide<1) continue; const ag=(Date.now()-(o.t.t+30000))/60000, [ox,oy]=pt(Math.max(0,ag),R), dx=ox-x, dy=oy-y, dist=Math.hypot(dx,dy)||1;
+        if(push&&i===0) for(const o of live.values()){ if(!o.show||o.glide<1) continue; const ag=(Date.now()-o.t.at)/60000, [ox,oy]=pt(Math.max(0,ag),R), dx=ox-x, dy=oy-y, dist=Math.hypot(dx,dy)||1;
           const k=7*Math.exp(-Math.pow((rr-dist)/16,2))*(1-p); o.push=[dx/dist*k,dy/dist*k]; } },i*gap).then(()=>{ c.remove(); if(push&&i===0) for(const o of live.values()) o.push=null; }); }
     const echo=mk('circle',{cx:C,cy:C,r:20,fill:'none',stroke:'#35d6e8','stroke-width':1.2}); fx.append(echo);
     tween(dur*0.8,p=>{ echo.setAttribute('r',(20+(R-20)*ez.out(p)).toFixed(1)); echo.setAttribute('opacity',(0.45*(1-p)).toFixed(3)); },180).then(()=>echo.remove()); };
@@ -7969,7 +7980,7 @@ function renderFeePulse60m(host){
   const lap=col=>{ const L=2*Math.PI*R, arc=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:col,'stroke-width':3,'stroke-linecap':'round',transform:`rotate(-90 ${C} ${C})`}); fx.append(arc);
     tween(1300,p=>{ const head=L*ez.inOut(p), seg=L*0.08; arc.setAttribute('stroke-dasharray',`${seg.toFixed(1)} ${L}`); arc.setAttribute('stroke-dashoffset',(-(head-seg)).toFixed(1)); arc.setAttribute('opacity',(p<.9?1:(1-p)/.1).toFixed(3)); }).then(()=>arc.remove()); };
   const trailGlide=(e,dur)=>{ const path=mk('path',{fill:'none',stroke:e.col,'stroke-width':4,'stroke-linecap':'round',opacity:.9}); trails.append(path);
-    const draw=()=>{ const ag=Math.max(0.01,((Date.now()-(e.t.t+30000))/60000)*e.glide), [x0,y0]=pt(0,R), [x1,y1]=pt(ag,R); path.setAttribute('d',`M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}`); };
+    const draw=()=>{ const ag=Math.max(0.01,((Date.now()-e.t.at)/60000)*e.glide), [x0,y0]=pt(0,R), [x1,y1]=pt(ag,R); path.setAttribute('d',`M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}`); };
     tween(dur,draw).then(()=>tween(3200,p=>{ draw(); path.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); path.setAttribute('stroke-width',(4*(1-p)+.5).toFixed(2)); }).then(()=>path.remove())); };
   let tapeWc=0, tapeWt=0; const tapeW=()=>{ const n=performance.now(); if(n-tapeWt>1000){ tapeWt=n; tapeWc=tape.getBoundingClientRect().width||300;
       if(!tape.querySelector('.fpd-tnow')){ tape.append(mk('line',{x1:0,x2:'100%',y1:11,y2:11},'fpd-tline')); tape.append(mk('circle',{cy:11,r:2.6},'fpd-tnow')); }
@@ -8058,32 +8069,36 @@ function renderFeePulse60m(host){
   const sync=fresh=>{
     const M=pulseMins(), P=state.pulse, TR=pulseTrades(), inHour=TR.filter(t=>t.m<=60);
     const H24=feeHourStats(), typical=H24&&H24.avg!=null?H24.avg:null, total=M?M.total:0;
-    for(const t of inHour){ const k=String(t.t); let e=live.get(k);
+    for(const t of inHour){ const k=t.k; let e=live.get(k);
       if(!e){
         const h=mk('circle',{r:0},'fpd-halo'), d=mk('circle',{r:0,tabindex:0,role:'button'},'fpd-dot'), a=mk('text',{'text-anchor':'middle'},'fpd-amt','');
         const hit=mk('circle',{r:16,fill:'transparent'},'fpd-hit');      // a finger-sized target over a small mark
         d.style.transition='none'; layer.append(h,d,a,hit);
         // a trade that arrives while the dial is on screen is born at now and glides to its time;
         // one already there when the dial is drawn simply sits at its time
-        e={k,h,d,a,hit,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0,push:null};
+        e={k,h,d,a,hit,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0,push:null,tier:sfxTier(t.usd)};
         if(fresh) births.push(e);
         const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
         d.addEventListener('pointerenter',pick); d.addEventListener('click',pick); d.addEventListener('focus',pick);
         hit.addEventListener('pointerenter',pick); hit.addEventListener('click',pick);
         live.set(k,e); }
+      /* A trade still growing (readings every few seconds add to it) can cross into a bigger tier
+         after its birth; the screen answers then, once per tier. */
+      if(e.show && e.glide>=1 && sfxTier(t.usd)>e.tier){ e.tier=sfxTier(t.usd); screenFx(t.usd,dw); }
       e.t=t; e.r=dotR(t.usd); e.col=poolColor(t.lbl);
       e.h.setAttribute('fill',glow(e.col)); e.d.setAttribute('aria-label',hl(t.t)+' '+fmtUsd(t.usd,2));
       e.a.textContent=fmtUsd(t.usd,t.usd<100?2:0); }
     // amounts are written beside the three largest of the hour, so the face does not crowd
-    const big=new Set([...inHour].filter(t=>t.usd>=0.5).sort((x,y)=>y.usd-x.usd).slice(0,3).map(t=>String(t.t)));
+    const big=new Set([...inHour].filter(t=>t.usd>=0.5).sort((x,y)=>y.usd-x.usd).slice(0,3).map(t=>t.k));
     for(const [k,e] of live) e.lbl=big.has(k);
     // today, held while a birth plays (the birth counts it up)
     const T=todayNow(); D.today=T?T.v:null;
     if(T) strip.title='Today since midnight Budapest time: '+fmtUsd(T.base,2)+' in the ledger to '+(T.tick?hl(T.tick):'—')+(T.covered?' + '+fmtUsd(T.add,2)+' recorded since':' (the minute record does not reach back to that reading)');
     if(!births.length && !D.counting) setToday(D.today);
     // the tape: one dot per trade of the hour, same colours as the dial
-    for(const t of inHour){ const k=String(t.t); let c=tapeDots.get(k);
-      if(!c){ c=mk('circle',{cy:11,'data-t':String(t.t)}); tape.append(c); tapeDots.set(k,c); }
+    for(const t of inHour){ const k=t.k; let c=tapeDots.get(k);
+      if(!c){ c=mk('circle',{cy:11}); tape.append(c); tapeDots.set(k,c); }
+      c.setAttribute('data-t',String(t.t));
       c.setAttribute('r',(1.8+Math.min(4.2,1.3*Math.sqrt(t.usd))).toFixed(2)); c.setAttribute('fill',poolColor(t.lbl)); }
     // centre and inner ring; while a birth is playing it counts these up itself
     D.typical=typical; D.target=total;
@@ -8091,7 +8106,7 @@ function renderFeePulse60m(host){
     fill.style.display=typical?'':'none';
     say(sel&&live.get(sel)?live.get(sel).t:null);
     // stats, quiet meter, latest fees
-    const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-(last.end+60000))/60000)):null;
+    const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-last.endAt)/60000)):null;
     const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
     stats.innerHTML=cell('Trades this hour',String(inHour.length))
       +cell('Last trade',last?(quiet<1?'just now':quiet<120?quiet+' min ago':hl(last.t)):'—')
@@ -8124,7 +8139,7 @@ function renderFeePulse60m(host){
         nowDot.setAttribute('r',(3.6+(D.pulse?2.2*D.pulse*Math.abs(Math.sin(ts/90)):0)).toFixed(2));
         const now=Date.now();
         for(const [k,e] of live){
-          const m=(now-(e.t.t+30000))/60000;
+          const m=(now-e.t.at)/60000;
           if(m>60.1){ e.h.remove(); e.d.remove(); e.a.remove(); e.hit.remove(); live.delete(k); const tc=tapeDots.get(k); if(tc){ tc.remove(); tapeDots.delete(k); } if(sel===k){ sel=null; say(null); } continue; }
           { const tc=tapeDots.get(k); if(tc){ const tw2=tapeW(), ag=Math.max(0,m)*e.glide; tc.setAttribute('cx',(tw2-4-(ag/60)*(tw2-8)).toFixed(1)); tc.style.opacity=(e.show?1:0); } }
           const age=Math.max(0,m);
