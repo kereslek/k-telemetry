@@ -2864,6 +2864,11 @@ const main=async()=>{
       const SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822';
       const TRANSFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
       const NEW_LCX='0x8cd41041505885ef0ad3858181d66f17be8aae7e';
+      /* Uniswap v4 keeps every pool inside one PoolManager contract and reports a swap with its own
+         event: Swap(bytes32 id, address sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96,
+         uint128 liquidity, int24 tick, uint24 fee). Amounts are the swapper's: negative is what was
+         paid in. The fee is in millionths and is on the event itself. */
+      const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f';
       const nowD=new Date();
       const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
       const msBlockOf=ck=>Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*CHAINS[ck].bph));
@@ -2895,6 +2900,23 @@ const main=async()=>{
         }
         return inUsd*pc.fee/1e6;
       };
+      /* The event names a pool id, not its tokens. What was paid in is found the way it arrived: an
+         ERC-20 is transferred to the PoolManager in the same transaction for exactly the amount;
+         ether is not a token and sends no such transfer, and when it is one side of a v4 pool it is
+         always currency0 (address zero sorts first). */
+      const v4FeeOf=async(ck,rc,lg)=>{
+        const a0=toSigned(BigInt(word(lg.data,0)),256), a1=toSigned(BigInt(word(lg.data,1)),256), fee=Number(BigInt(word(lg.data,5)));
+        const paid=a0<0n?-a0:a1<0n?-a1:0n; if(!paid || !(fee>0)) return 0;
+        const pm=String(lg.address).toLowerCase();
+        const tl=(rc.logs||[]).find(l=>l.topics && l.topics[0]===TRANSFER && l.topics.length===3
+          && ('0x'+l.topics[2].slice(26)).toLowerCase()===pm && (()=>{ try{ return BigInt(l.data)===paid; }catch(e){ return false; } })());
+        let usd=null;
+        if(tl){ const t=String(tl.address).toLowerCase(), k=CHAINS[ck].llama+':'+t;
+          try{ const m=await meta(ck,t); await llamaPrices([k]); if(priceCache[k]!=null) usd=bigToFloat(paid,m.decimals)*priceCache[k]; }catch(e){} }
+        else if(a0<0n) usd=bigToFloat(paid,18)*(ethUsd||0);
+        if(usd==null){ logErr('v4fee '+String(rc.transactionHash).slice(0,10), new Error('input not priced')); return 0; }
+        return usd*fee/1e6;
+      };
       const btMemo={};
       const blockTimeOf=async(ck,bnHex)=>{
         const k=ck+':'+bnHex; if(btMemo[k]!==undefined) return btMemo[k];
@@ -2908,7 +2930,7 @@ const main=async()=>{
         try{
           const rc=await evm(ck,'eth_getTransactionReceipt',[tx]);
           if(!rc){ return; }
-          const swaps=(rc.logs||[]).filter(l=>l.topics&&(l.topics[0]===SWAP_V3||l.topics[0]===SWAP_V2));
+          const swaps=(rc.logs||[]).filter(l=>l.topics&&(l.topics[0]===SWAP_V3||l.topics[0]===SWAP_V2||l.topics[0]===SWAP_V4));
           const touchesNpm=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===CHAINS[ck].npm.toLowerCase());
           /* Moving LCX from the old contract to the new one is a step of every rebalance that buys
              LCX (the only deep market is the old contract's pool), so its gas is a cost of the
@@ -2932,13 +2954,13 @@ const main=async()=>{
             cl.gasUsd+=gas;
           }
           for(const sw of swaps){
-            const fee=await swapFeeOf(ck,sw);
+            const fee=sw.topics[0]===SWAP_V4 ? await v4FeeOf(ck,rc,sw) : await swapFeeOf(ck,sw);
             if(late) prevArc.swapFee=r2((prevArc.swapFee||0)+fee); else cl.swapFeeUsd+=fee;
             /* One of this deck's own pools: the part of the fee that came back to its positions —
                the pool's protocol cut taken off, times this deck's share of the liquidity active
                at the tick the swap left behind (both from the swap's own event). */
             const addr=String(sw.address).toLowerCase();
-            const ours=evmPositions.filter(q=>q.chain===ck&&String(q.pool).toLowerCase()===addr);
+            const ours=sw.topics[0]===SWAP_V4?[]:evmPositions.filter(q=>q.chain===ck&&String(q.pool).toLowerCase()===addr);   // v4 pools are not this deck's
             if(ours.length && fee>0){
               try{
                 const L=BigInt(word(sw.data,3)), tick=Number(toSigned(BigInt(word(sw.data,4)),256));
@@ -2967,11 +2989,12 @@ const main=async()=>{
           for(const x of [...h.inc,...h.dec,...h.col]) if(x.tx&&blockNums[jc.ck]!=null&&x.block>=msBlockOf(jc.ck)) await countReceipt(jc.ck,x.tx,false);
         }catch(e){ logErr('cost closed#'+jc.id,e); }
       }
-      /* Transactions this month set aside as plain transfers before migrations were recognised
-         are looked at once more under the rule above. */
-      if(!cl.migRule){
+      /* Each time the rule for what counts widens — migrations (1), Uniswap v4 swaps (2) — this
+         month's transactions set aside as plain transfers are looked at once more under it. */
+      const COST_RULES=2;
+      if((cl.rulesV||(cl.migRule?1:0))<COST_RULES){
         for(const [tx,v] of Object.entries(cl.txs)) if(v===2){ delete cl.txs[tx]; await countReceipt('ethereum',tx,true); }
-        cl.migRule=1;
+        cl.rulesV=COST_RULES;
       }
       // 3) wallet swap sweep: every tx this month where a wallet sent or received tokens,
       //    kept only if it contains swap events or touches the position manager
