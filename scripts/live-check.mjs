@@ -1,7 +1,8 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.1: big-fee screen effects)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.2: fast while watched)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
+const asks=[]; pg.on('request',r=>{ if(r.url().includes('kt-pulse')) asks.push([Date.now(),r.url().split('?')[1]]); });
 await pg.goto('https://kereslek.github.io/k-telemetry/deck-r7k4x9/?v='+Date.now(),{waitUntil:'domcontentloaded'});
 await pg.waitForTimeout(25000);
 console.log('BUILD', await pg.evaluate(()=>typeof BUILD!=='undefined'?BUILD:null));
@@ -50,5 +51,9 @@ console.log('BUDAPEST', JSON.stringify(await pg.evaluate(()=>{ const fm=state.fe
       const seen=new Set(); for(let i=0;i<14;i++){ await new Promise(r=>setTimeout(r,250)); const L=document.getElementById('sfx'); if(L) for(const c of L.children) seen.add(c.className); }
       return [...seen].join(','); },u);
     console.log('SFX', u, r); } }
+{ const t1=Date.now(); await pg.waitForTimeout(15000); const n=asks.filter(a=>a[0]>=t1);
+  console.log('ASKS in 15 s', n.length, n.length?n[n.length-1][1]:'');
+  console.log('FAST', JSON.stringify(await pg.evaluate(()=>{ const P=state.pulse||{}; return {build:BUILD, fast:P.fast, readAgoS:P.now&&P.last?Math.round((P.now-P.last)/1000):null, read:P.read, N:P.N,
+    exact:(P.trades||[]).filter(t=>t.x).map(t=>new Date(t.t).toISOString().slice(11,19)+' $'+t.usd).slice(0,6), centre:(document.querySelector('#fp60 .fpd-total')||{}).textContent}; }))); }
 console.log('errors', errs);
 await b.close();
