@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.0: Budapest days)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.1: big-fee screen effects)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
@@ -42,5 +42,13 @@ console.log('BUDAPEST', JSON.stringify(await pg.evaluate(()=>{ const fm=state.fe
   return {build:BUILD, today:bpDay(Date.now()), month:fm.month, mtd:fm.mtd, lastBar:dl[dl.length-1], prev:(fm.prev||[]).map(x=>[x.m,x.total]),
     note:(document.querySelector('#fpBody .arch-note')||{}).textContent, story:(document.querySelector('.fp-story')||{}).innerText,
     strip:(document.querySelector('#fp60 .fpd-today')||{}).textContent, fees:[...document.querySelectorAll('#tiles .tile')].map(t=>t.innerText.replace(/\s+/g,' ')).find(x=>x.startsWith('FEES EARNED'))}; })));
+{ // big-fee screen effects: test trades injected into this browser only, one per tier
+  for(const u of [12,48,111.82]){ await pg.waitForTimeout(9000);
+    const r=await pg.evaluate(async u=>{ const w=document.getElementById('fp60'); if(!w||!w._sync) return 'no live dial';
+      const P=state.pulse, t=Math.floor(Date.now()/60000)*60000-60000-Math.round(u*10)*10;
+      P.trades=[{t,start:t,end:t,usd:u,pools:{'LCX / ETH 1%':u}},...(P.trades||[])]; w._sync();
+      const seen=new Set(); for(let i=0;i<14;i++){ await new Promise(r=>setTimeout(r,250)); const L=document.getElementById('sfx'); if(L) for(const c of L.children) seen.add(c.className); }
+      return [...seen].join(','); },u);
+    console.log('SFX', u, r); } }
 console.log('errors', errs);
 await b.close();
