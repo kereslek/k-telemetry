@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.2: fast while watched)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.3: catch-up sweep)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
@@ -55,5 +55,15 @@ console.log('BUDAPEST', JSON.stringify(await pg.evaluate(()=>{ const fm=state.fe
   console.log('ASKS in 15 s', n.length, n.length?n[n.length-1][1]:'');
   console.log('FAST', JSON.stringify(await pg.evaluate(()=>{ const P=state.pulse||{}; return {build:BUILD, fast:P.fast, readAgoS:P.now&&P.last?Math.round((P.now-P.last)/1000):null, read:P.read, N:P.N,
     exact:(P.trades||[]).filter(t=>t.x).map(t=>new Date(t.t).toISOString().slice(11,19)+' $'+t.usd).slice(0,6), centre:(document.querySelector('#fp60 .fpd-total')||{}).textContent}; }))); }
+{ // catch-up: a browser that last looked 47 minutes ago, with the dial scrolled into view
+  const c2=await b.newContext({viewport:{width:390,height:844}}); await c2.addInitScript(v=>{ try{ localStorage.setItem('kt.pulse.seen',String(v)); }catch(e){} }, Date.now()-47*60000);
+  const p2=await c2.newPage(); p2.on('pageerror',e=>errs.push('catchup: '+e.message));
+  await p2.goto('https://kereslek.github.io/k-telemetry/deck-r7k4x9/?v='+Date.now(),{waitUntil:'domcontentloaded'}); await p2.waitForTimeout(22000);
+  const s2=()=>p2.evaluate(()=>{ const w=document.getElementById('fp60'); if(!w) return null; return {build:BUILD, sub:(w.querySelector('.fpd-sub')||{}).textContent, read:(w.querySelector('.fpd-read')||{}).textContent,
+    veil:(w.querySelector('svg circle[fill="#000"]')||{getAttribute:()=>null}).getAttribute('opacity'), card:(w.querySelector('.fpd-away')||{}).innerText||null, dots:w.querySelectorAll('.fpd-dot').length}; });
+  console.log('CATCHUP before', JSON.stringify(await s2()));
+  const dw=await p2.$('#fp60 .fpd-dw'); if(dw){ await dw.scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500); console.log('CATCHUP mid', JSON.stringify(await s2()));
+    await p2.waitForTimeout(5000); console.log('CATCHUP after', JSON.stringify(await s2())); }
+  await c2.close(); }
 console.log('errors', errs);
 await b.close();
