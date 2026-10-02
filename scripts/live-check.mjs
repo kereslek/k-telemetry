@@ -1,6 +1,9 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.4: catch-up holds only the absence)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.4 rerun)
 import {chromium} from 'playwright';
-const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
+const b=await chromium.launch();
+// a browser that looked a moment ago, so nothing is held for a catch-up and test trades are born live
+const c1=await b.newContext({viewport:{width:390,height:844}}); await c1.addInitScript(()=>{ try{ localStorage.setItem('kt.pulse.seen',String(Date.now())); }catch(e){} });
+const pg=await c1.newPage();
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
 const asks=[]; pg.on('request',r=>{ if(r.url().includes('kt-pulse')) asks.push([Date.now(),r.url().split('?')[1]]); });
 await pg.goto('https://kereslek.github.io/k-telemetry/deck-r7k4x9/?v='+Date.now(),{waitUntil:'domcontentloaded'});
