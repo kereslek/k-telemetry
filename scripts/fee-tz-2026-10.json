@@ -1,0 +1,127 @@
+{
+ "note": "Days and months moved from UTC to Budapest time (00:00 there is 22:00 UTC the evening before while summer time lasts). slices[D] is the fee income between Budapest midnight and UTC midnight at the end of UTC day D, read from this ledger's own running total in the payload history (a reading about every 18 minutes, interpolated to the minute). Moved from day D to day D+1, it turns every UTC day into a Budapest day; at a month end it moves from one month to the next. 25-27 Sep are read from the restated September readings (scripts/fee-restate-2026-09*.json) rather than the pre-restatement payloads. 1-3 Aug predate the readings and take 2/24 of the estimated day. Month-end slices are split by position, read the same way, so the archived months keep their pair and token splits whole.",
+ "slices": {
+  "2026-08-01": 2.52,
+  "2026-08-02": 2.52,
+  "2026-08-03": 2.52,
+  "2026-08-04": 5.56,
+  "2026-08-05": 1,
+  "2026-08-06": 2.59,
+  "2026-08-07": 0.57,
+  "2026-08-08": 1.77,
+  "2026-08-09": 14.01,
+  "2026-08-10": 0.2,
+  "2026-08-11": 1.17,
+  "2026-08-12": 0,
+  "2026-08-13": 0.11,
+  "2026-08-14": 0.49,
+  "2026-08-15": 9.22,
+  "2026-08-16": 0.44,
+  "2026-08-17": 0.48,
+  "2026-08-18": 5,
+  "2026-08-19": 3.1,
+  "2026-08-20": 11.52,
+  "2026-08-21": 23.67,
+  "2026-08-22": 2.74,
+  "2026-08-23": 0.49,
+  "2026-08-24": 5.77,
+  "2026-08-25": 2.59,
+  "2026-08-26": 4.2,
+  "2026-08-27": 10.03,
+  "2026-08-28": 0.03,
+  "2026-08-29": 3.41,
+  "2026-08-30": 0,
+  "2026-08-31": 10.08,
+  "2026-09-01": 3.9,
+  "2026-09-02": 14.98,
+  "2026-09-03": 4.68,
+  "2026-09-04": 0.23,
+  "2026-09-05": 5.31,
+  "2026-09-06": 5.18,
+  "2026-09-07": 3.67,
+  "2026-09-08": 2.78,
+  "2026-09-09": 0,
+  "2026-09-10": 0.55,
+  "2026-09-11": 0,
+  "2026-09-12": 3.89,
+  "2026-09-13": 0.07,
+  "2026-09-14": 0,
+  "2026-09-15": 0.01,
+  "2026-09-16": 5.78,
+  "2026-09-17": 5.59,
+  "2026-09-18": 0.42,
+  "2026-09-19": 3.34,
+  "2026-09-20": 2.24,
+  "2026-09-21": 0.04,
+  "2026-09-22": 7.18,
+  "2026-09-23": 81.7,
+  "2026-09-24": 0,
+  "2026-09-25": 11.48,
+  "2026-09-26": 45.86,
+  "2026-09-27": 122.89,
+  "2026-09-28": 22.18,
+  "2026-09-29": 20.72,
+  "2026-09-30": 26.42,
+  "2026-10-01": 15.35
+ },
+ "bySlice": {
+  "2026-08-31": [
+   {
+    "id": "1355331",
+    "cat": "evm|LCX / ETH · wide",
+    "tk": "ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41",
+    "usd": 1.08
+   },
+   {
+    "id": "1355918",
+    "cat": "evm|LCX / ETH · wide",
+    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
+    "usd": 1.69
+   },
+   {
+    "id": "sol:4j7pUWRaejEA5SyCg71MqGAU3A3WxvNeH5AQAbmkB2EM",
+    "cat": "sol|SOL / CPOOL · wide",
+    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
+    "usd": 2.06
+   },
+   {
+    "id": "sol:KYpoY8hHJA8FqdS56ZPJPQzSamUTmYcAdv1VCt4QnaF",
+    "cat": "sol|SOL / CPOOL · wide",
+    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
+    "usd": 2.12
+   },
+   {
+    "id": "sol:Gibrf6n2hyNDTkK7DPTTrA7AbmV7FWVMED1TEbx5DG5s",
+    "cat": "sol|SOL / CPOOL · wide",
+    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
+    "usd": 1.63
+   },
+   {
+    "id": "sol:6sGWezkabcbbBLSNUi5vhJsYVpjCezARWgStJGVV6PS6",
+    "cat": "sol|SOL / CPOOL · wide",
+    "tk": "sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg",
+    "usd": 1.5
+   }
+  ],
+  "2026-09-30": [
+   {
+    "id": "1355336",
+    "cat": "evm|LCX / ETH · wide",
+    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
+    "usd": 12.77
+   },
+   {
+    "id": "1355918",
+    "cat": "evm|LCX / ETH · wide",
+    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
+    "usd": 4.5
+   },
+   {
+    "id": "1366332",
+    "cat": "evm|LCX / ETH · wide",
+    "tk": "ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e",
+    "usd": 9.15
+   }
+  ]
+ }
+}

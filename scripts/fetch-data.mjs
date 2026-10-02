@@ -7,6 +7,21 @@ import { pathToFileURL } from 'node:url';
 import fs from 'fs';
 import { makeRpc, syncPositionLedger, valueDeposits, summarizeLedger } from './sol-history.mjs';
 const OUT='deck-r7k4x9';
+/* Days and months are the owner's, in Budapest: a day starts at 00:00 there, which is 22:00 or
+   23:00 UTC the evening before depending on daylight saving. Every day and month key the ledgers
+   write goes through these, so the cut, the closing day and "today" all agree. */
+const TZ='Europe/Budapest';
+const tzFmt=new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',
+  hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+const tzParts=ms=>{ const o={}; for(const x of tzFmt.formatToParts(new Date(ms))) o[x.type]=x.value; return o; };
+export const localDay=ms=>{ const o=tzParts(ms); return o.year+'-'+o.month+'-'+o.day; };
+export const localMonth=ms=>localDay(ms).slice(0,7);
+const tzOffset=ms=>{ const o=tzParts(ms);
+  return Date.UTC(+o.year,+o.month-1,+o.day,+o.hour,+o.minute,+o.second)-Math.floor(ms/1000)*1000; };
+// the instant a Budapest calendar date begins (month and day may overflow, as with Date.UTC)
+export const localMidnight=(y,m,d)=>{ const g=Date.UTC(y,m-1,d); return g-tzOffset(g-tzOffset(g)); };
+export const monthStart=key=>localMidnight(+key.slice(0,4),+key.slice(5,7),1);
+export const dayStart=key=>localMidnight(+key.slice(0,4),+key.slice(5,7),+key.slice(8,10));
 const CONFIG = JSON.parse(fs.readFileSync(OUT+'/config.json','utf8'));
 /* Solana endpoints, chosen by measurement (scripts/sol-probe.mjs, 2026-09-25), not by habit.
 
@@ -470,8 +485,7 @@ async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
   let feesMonthStartUsd=null;
   try{
     if(usd0!=null&&usd1!=null&&mintTs!=null&&!histPartial){
-      const nowD=new Date();
-      const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
+      const msTs=monthStart(localMonth(Date.now()));
       if(mintTs>=msTs) feesMonthStartUsd=0;
       else{
         const hoursAgo=(Date.now()-msTs)/3600000;
@@ -1716,12 +1730,12 @@ const walletOf=(idle)=>{
     .map(e=>({k:e.k, s:e.s, a:r6(e.a), u:r6(e.u)}));
 };
 
-/* One record per UTC day, rewritten in place while that day is current, frozen once it is not.
+/* One record per day (Budapest), rewritten in place while that day is current, frozen once it is not.
    A day is the right grain: shorter and the record is noise, longer and a move has too many
    causes to name. */
 export function dailyRecord(evmPositions, solPositions, idle, tsMs){
   const all=[...(evmPositions||[]),...(solPositions||[])];
-  return { d:new Date(tsMs).toISOString().slice(0,10), t:tsMs, w:walletOf(idle),
+  return { d:localDay(tsMs), t:tsMs, w:walletOf(idle),
     v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
     f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
     fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
@@ -2026,8 +2040,8 @@ const main=async()=>{
            whose opening date could not be established exactly is left alone entirely rather
            than charged against a date that is only the edge of what was scanned. */
         if(L.openCost===undefined && p.chain==='sol'){
-          const opened=(p.openExact&&p.mintTs)?new Date(p.mintTs).toISOString().slice(0,7):null;
-          if(opened && opened===new Date().toISOString().slice(0,7)){
+          const opened=(p.openExact&&p.mintTs)?localMonth(p.mintTs):null;
+          if(opened && opened===localMonth(Date.now())){
             try{
               const sigs=[...new Set([p.openSig,p.poolOpenSig].filter(Boolean))];
               let lam=0, got=0;
@@ -2173,7 +2187,7 @@ const main=async()=>{
     let feeMonth=null;
     const justClosed=[];   // evm positions that vanished this run — their final close tx still owes gas accounting
     try{
-      const monthKey=new Date().toISOString().slice(0,7);
+      const monthKey=localMonth(Date.now());
       /* A position's identity is dropped the moment it closes — only the pooled total survived,
          which is why August's wide/narrow split had to be reconstructed by hand. The category is
          now stamped on the entry while the position is still alive, and closes are banked per
@@ -2207,6 +2221,74 @@ const main=async()=>{
       };
       let fl={month:monthKey, closed:0, pos:{}, months:[], catClosed:{}};
       try{ fl=JSON.parse(fs.readFileSync(OUT+'/fees-'+profile.slug+'.json','utf8')); }catch(e){}
+      /* Budapest days, applied once (scripts/fee-tz-2026-10.json says how the slices were read).
+         Until October the ledger cut its days and months at UTC midnight, two hours after the
+         owner's. Every UTC day hands its last two hours to the next day, so the month-to-date
+         closes are rebuilt; at a month end that slice moves to the next month, split by position
+         so each archived month keeps its pair and token splits whole, and this month's positions
+         take theirs from September's last evening. Money only moves between days — the running
+         total, and with it the 50-hour readings, is unchanged. Worked on a copy and adopted only
+         if every slice it needs is known. */
+      if(!fl.tzLocal && fl.dayEnd && fl.month===monthKey){
+        try{
+          if(profile.slug!=='main') fl.tzLocal={at:Date.now(), restated:false};
+          else{
+            const R=JSON.parse(fs.readFileSync(new URL('./fee-tz-2026-10.json', import.meta.url),'utf8'));
+            const W=structuredClone(fl);
+            const tk=(W.ticks||[]).filter(x=>x&&x[1]!=null).sort((a,b)=>a[0]-b[0]);
+            const T=tk.length?tk[tk.length-1][0]:Date.now();   // the reading the latest day close was taken at
+            const cumAt=t=>{ for(let i=1;i<tk.length;i++) if(tk[i-1][0]<=t&&tk[i][0]>=t){
+              const [a,va]=tk[i-1],[b,vb]=tk[i]; return va+(vb-va)*(t-a)/((b-a)||1); } return null; };
+            const utcEnd=d=>Date.parse(d+'T00:00:00Z')+86400000;
+            const nextDay=d=>new Date(utcEnd(d)).toISOString().slice(0,10);
+            const lastOf=m=>new Date(Date.UTC(+m.slice(0,4),+m.slice(5,7),0)).toISOString().slice(0,10);
+            const lastBefore=m=>new Date(Date.parse(m+'-01T00:00:00Z')-86400000).toISOString().slice(0,10);
+            // what fell between Budapest midnight and UTC midnight at the end of UTC day d
+            const slice=d=>{ if(R.slices[d]!=null) return R.slices[d];
+              const a=cumAt(dayStart(nextDay(d))), b=cumAt(Math.min(utcEnd(d),T));
+              return (a!=null&&b!=null)?Math.max(0,b-a):null; };
+            const days=Object.keys(W.dayEnd).sort(), first=days[0].slice(0,7);
+            const sum=l=>l.reduce((a,x)=>a+x.usd,0);
+            let miss=null;
+            const de={};
+            for(const d of days){
+              const m=d.slice(0,7);
+              const open=m===first?0:slice(lastBefore(m));        // the month now begins this much earlier
+              const shut=dayStart(nextDay(d))<=T?slice(d):0;      // and the day this much earlier
+              if(open==null||shut==null){ miss=d; break; }
+              de[d]=r2(W.dayEnd[d]-shut+open);
+            }
+            const moveInto=(a,l,sg)=>{ for(const x of l){
+              a.cat=a.cat||{}; a.cat[x.cat]=r2((a.cat[x.cat]||0)+sg*x.usd);
+              if(a.tok) a.tok[x.tk]=r2((a.tok[x.tk]||0)+sg*x.usd); } };
+            for(const a of (W.months||[])){
+              if(miss) break;
+              const out=R.bySlice[lastOf(a.m)], inn=a.m===first?[]:R.bySlice[lastBefore(a.m)];
+              if(!out||!inn){ miss=a.m; break; }
+              a.total=r2(a.total-sum(out)+sum(inn)); moveInto(a,out,-1); moveInto(a,inn,1);
+            }
+            const inn=R.bySlice[lastBefore(W.month)];
+            if(!miss && !inn) miss=W.month;
+            if(miss) console.log('Budapest days: no slice for '+miss+' — ledger left on UTC days for now');
+            else{
+              for(const x of inn){
+                const e=W.pos[x.id], c=(W.closedPos||{})[x.id];
+                if(e) e.acc=r2((e.acc||0)+x.usd);
+                else{
+                  if(c) c.acc=r2((c.acc||0)+x.usd);
+                  W.closed=r2((W.closed||0)+x.usd);
+                  W.catClosed=W.catClosed||{}; W.catClosed[x.cat]=r2((W.catClosed[x.cat]||0)+x.usd);
+                }
+              }
+              W.dayEnd=de;
+              W.tzLocal={at:Date.now(), tz:TZ, moved:Object.fromEntries((W.months||[]).map(a=>[a.m,
+                r2(a.total-(fl.months.find(b=>b.m===a.m)||{}).total)])), intoMonth:r2(sum(inn))};
+              fl=W;
+              console.log('Budapest days: ledger restated —',JSON.stringify(fl.tzLocal));
+            }
+          }
+        }catch(e){ logErr('feeTz',e); }
+      }
       if(fl.month!==monthKey){
         /* The cut lands at midnight, not at whenever the old month was last read. Runs can be
            hours apart when the schedule is throttled, and everything earned in that gap would
@@ -2232,7 +2314,7 @@ const main=async()=>{
            $680 of August's $1,551 and runs at $0.94 an hour; an eleven-hour gap between the last
            August read and the first September one would otherwise misplace about $10. */
         const nowMs=Date.now();
-        const boundary=Date.parse(monthKey+'-01T00:00:00Z');
+        const boundary=monthStart(monthKey);
         const lastRead=fl.readAt||null;
         let beforeFrac=0;
         if(lastRead && nowMs>lastRead)
@@ -2457,7 +2539,7 @@ const main=async()=>{
       try{
         const pend=(JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')).selfPend)||[];
         fl.selfDone=Array.isArray(fl.selfDone)?fl.selfDone:[];
-        const curStart=Date.parse(monthKey+'-01T00:00:00Z');
+        const curStart=monthStart(monthKey);
         for(const x of pend){
           if(!x||!x.id||fl.selfDone.includes(x.id)||!(x.back>0)) continue;
           const inPool=[...evmPositions,...solPositions].filter(q=>String(q.chain==='sol'?q.poolId:q.pool).toLowerCase()===String(x.pool).toLowerCase());
@@ -2468,7 +2550,7 @@ const main=async()=>{
              the first run of the next one applies. That fee is inside the archived total, so it
              comes out of the archive — total, its split, and the closing day — not out of a month
              that never earned it. */
-          const arc=(x.t && x.t<curStart) ? (fl.months||[]).find(a=>a && a.m===new Date(x.t).toISOString().slice(0,7)) : null;
+          const arc=(x.t && x.t<curStart) ? (fl.months||[]).find(a=>a && a.m===localMonth(x.t)) : null;
           if(arc){
             tgt.forEach((q,i)=>{ const e=fl.pos[q.id]; const amt=W>0?x.back*w[i]/W:x.back/tgt.length;
               const k=(e&&e.cat)||'—'; if(arc.cat&&arc.cat[k]!=null) arc.cat[k]=Math.round((arc.cat[k]-amt)*100)/100;
@@ -2496,7 +2578,7 @@ const main=async()=>{
         seen.add(String(p.id));
         const e=fl.pos[p.id];
         if(!e){
-          const mintedThisMonth=p.mintTs && new Date(p.mintTs).toISOString().slice(0,7)===monthKey;
+          const mintedThisMonth=p.mintTs && localMonth(p.mintTs)===monthKey;
           // baseline priority: 0 if minted this month → archive-read month-start fees → first-seen value
           const m0=mintedThisMonth?0:(p.feesMonthStartUsd!=null?Math.min(p.feesMonthStartUsd,cum):cum);
           fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100,
@@ -2578,9 +2660,8 @@ const main=async()=>{
       for(const k in catMtd) catMtd[k]=Math.round(catMtd[k]*100)/100;
       catMonths=(fl.months||[]).filter(x=>x&&x.cat);
       fl.catClosed=fl.catClosed||{};
-      const nowD=new Date();
-      const daysInMonth=new Date(Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth()+1,0)).getUTCDate();
-      const elapsed=(Date.now()-Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1))/86400000;
+      const daysInMonth=new Date(Date.UTC(+monthKey.slice(0,4),+monthKey.slice(5,7),0)).getUTCDate();
+      const elapsed=(Date.now()-monthStart(monthKey))/86400000;
       // every position with an IL figure — Solana has one now that its deposits are known
       fl.lastIl=Math.round([...evmPositions,...solPositions].reduce((s,p)=>s+(p.ilUsd||0),0)*100)/100;
       /* Straight extrapolation of the month-to-date average: what has been earned so far,
@@ -2608,7 +2689,7 @@ const main=async()=>{
             fl.dayEst=seed.est||[]; fl.daySeeded=1;
           }catch(e){ logErr('feeSeed',e); }
         }
-        const today=new Date().toISOString().slice(0,10);
+        const today=localDay(Date.now());
         if(today.slice(0,7)===monthKey) fl.dayEnd[today]=Math.round(mtd*100)/100;
         const ds=Object.keys(fl.dayEnd).sort().slice(-400);
         for(const d of Object.keys(fl.dayEnd)) if(!ds.includes(d)) delete fl.dayEnd[d];
@@ -2683,7 +2764,7 @@ const main=async()=>{
     // ---- monthly COST ledger: gas for every LP op + ALL rebalance swap fees (any pool, any route) ----
     let costMonth=null;
     try{
-      const monthKey=new Date().toISOString().slice(0,7);
+      const monthKey=localMonth(Date.now());
       let cl={month:monthKey, gasUsd:0, swapFeeUsd:0, txs:{}, scan:{}, months:[]};
       try{ cl=JSON.parse(fs.readFileSync(OUT+'/costs-'+profile.slug+'.json','utf8')); }catch(e){}
       cl.scan=cl.scan||{};
@@ -2710,8 +2791,8 @@ const main=async()=>{
       /* A cost is booked to the month its transaction was made in. Between the last run of a month
          and midnight there are up to twenty minutes the old month never scanned; the new month's
          first run finds them and, by time stamp, hands them back to the archive. */
-      const monthStartMs=Date.parse(monthKey+'-01T00:00:00Z');
-      const prevKey=new Date(monthStartMs-1).toISOString().slice(0,7);
+      const monthStartMs=monthStart(monthKey);
+      const prevKey=localMonth(monthStartMs-1);
       const prevArc=(cl.months||[]).find(a=>a && a.m===prevKey) || null;
       cl.prevTxs=cl.prevTxs||{}; cl.prevSolTxs=cl.prevSolTxs||{};
       /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
@@ -2770,7 +2851,7 @@ const main=async()=>{
                if(js && js[m] && js[m].usdPrice!=null) pxMemo[m]=Number(js[m].usdPrice); }catch(e){}
           return pxMemo[m];
         };
-        const monthStartSec=Math.floor(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),1)/1000);
+        const monthStartSec=Math.floor(monthStart(monthKey)/1000);
         const myPools=new Set(solPositions.map(sp=>sp.poolId).filter(Boolean));
         for(const w of (profile.wallets||[]).filter(x=>x.chain==='solana')){
           const r=await solWalletCosts(w.address, cl.solScan[w.address]||null, poolCache, priceOf, monthStartSec, myPools);
@@ -2869,8 +2950,7 @@ const main=async()=>{
          uint128 liquidity, int24 tick, uint24 fee). Amounts are the swapper's: negative is what was
          paid in. The fee is in millionths and is on the event itself. */
       const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f';
-      const nowD=new Date();
-      const msTs=Date.UTC(nowD.getUTCFullYear(),nowD.getUTCMonth(),1);
+      const msTs=monthStart(monthKey);
       const msBlockOf=ck=>Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*CHAINS[ck].bph));
       // pool metadata cache (fee tier, tokens, prices) for ANY pool a swap routes through
       const poolCache={};
@@ -3213,7 +3293,7 @@ const main=async()=>{
        from the amounts and the range: for a concentrated position L is exactly recoverable, and
        storing it once beats every reader re-deriving it.
 
-       One record per UTC day, rewritten in place while that day is current, frozen once it is
+       One record per day (Budapest), rewritten in place while that day is current, frozen once it is
        not. A day is the right grain: shorter and the record is noise, longer and a move has too
        many causes to name. */
     try{
@@ -3226,7 +3306,7 @@ const main=async()=>{
       if(!daily.some(x=>x.ps)){
         const byDay=new Map();
         for(const h of history){
-          const d=new Date(h.t).toISOString().slice(0,10);
+          const d=localDay(h.t);
           if(d===rec.d) continue;                       // today is the live record's job
           byDay.set(d, {d, t:h.t, v:h.v, f:h.f, ps:null});   // last sample of each day wins
         }

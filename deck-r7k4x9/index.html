@@ -1454,7 +1454,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v34.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v35.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -1565,6 +1565,16 @@ const fmtAge = days => days==null ? '—' : days<1 ? Math.round(days*24)+'h' : d
 const TZ='Europe/Budapest';
 const fmtT=(t,withSec=true)=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour12:false,hour:'2-digit',minute:'2-digit',...(withSec?{second:'2-digit'}:{})});
 const tzAbbr=t=>{try{return new Intl.DateTimeFormat('en-GB',{timeZone:TZ,timeZoneName:'short'}).formatToParts(t?new Date(t):new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return 'CET';}};
+/* Days and months are Budapest's too: the relay keys its ledgers that way, so "today", a month's
+   end and every day bar start at 00:00 there. Calendar arithmetic on a date key stays plain UTC
+   (a key is a label, not an instant); these turn instants into keys and keys into instants. */
+const bpFmt=new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+const bpParts=t=>{ const o={}; for(const x of bpFmt.formatToParts(new Date(t))) o[x.type]=x.value; return o; };
+const bpDay=t=>{ const o=bpParts(t); return o.year+'-'+o.month+'-'+o.day; };
+const bpMonth=t=>bpDay(t).slice(0,7);
+const bpOff=t=>{ const o=bpParts(t); return Date.UTC(+o.year,+o.month-1,+o.day,+o.hour,+o.minute,+o.second)-Math.floor(t/1000)*1000; };
+const bpMidnight=(y,m,d)=>{ const g=Date.UTC(y,m-1,d); return g-bpOff(g-bpOff(g)); };   // m 1-based; overflow ok
+const bpDayStart=k=>bpMidnight(+k.slice(0,4),+k.slice(5,7),+k.slice(8,10));
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pad32 = h => h.replace(/^0x/,'').padStart(64,'0');
 const hexToBig = h => BigInt(h);
@@ -3113,7 +3123,7 @@ function dayRef(){
   const mv=state.dayMoves||[];
   const m=mv[mv.length-1];
   if(!m) return null;
-  const today=new Date().toISOString().slice(0,10);
+  const today=bpDay(Date.now());
   /* The move is carried back only when its span is the one being measured. When the newest
      record is an earlier day, the reference is its own close and the change since then has no
      recorded breakdown — naming that move's drivers would explain the wrong span. */
@@ -3191,7 +3201,7 @@ function renderTiles(){
        +' data-sort="feesUsd">per-LP breakdown</button>'); }
   { const fm=state.feeMonth;
     const MN=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[new Date().getUTCMonth()];
+    const mName=fm?MN[Number(fm.month.slice(5,7))-1]:MN[Number(bpMonth(Date.now()).slice(5,7))-1];
     const MC=monthClose(), close=MC?MC.close:null, closeHow=MC?MC.how:'';
     mk('FEES EARNED · '+mName,
        fm?inc(fmtUsd(fm.mtd)):'—',
@@ -3283,7 +3293,7 @@ function renderTiles(){
   { /* "Portfolio" here is every open LP position, Ethereum and Solana — not wallet tokens. The big
        number is each position's own fee APR over the header window, weighted by what it is worth
        now. Under it, the measured 30 days: fees the ledger actually recorded over the last 30
-       complete UTC days, against the average LP value at those days' closes, annualised. Only
+       complete days, against the average LP value at those days' closes, annualised. Only
        recorded days count (estimated backfill is left out); too thin a record shows nothing. */
     const m30=feePace(30);
     const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -5314,11 +5324,11 @@ function renderOutlookSeg(){
     seg.append(b);
   }
 }
-/* Measured fee pace over the last n complete UTC days: what the ledger recorded, against the
+/* Measured fee pace over the last n complete days: what the ledger recorded, against the
    average LP value at those days' closes. Shared by the APR tile and the outlook so they cannot
    disagree. Estimated backfill is left out; a thin record returns null rather than a guess. */
 function feePace(n){
-  const fd=(state.feeMonth&&state.feeMonth.daily)||[], todayK=new Date().toISOString().slice(0,10);
+  const fd=(state.feeMonth&&state.feeMonth.daily)||[], todayK=bpDay(Date.now());
   const vAt=new Map((state.dayMoves||[]).map(m=>[m.d,m.v]));
   const days=fd.filter(x=>x.d<todayK && !x.est && x.usd!=null).slice(-n);
   const vals=days.map(x=>vAt.get(x.d)).filter(v=>v>0);
@@ -5328,13 +5338,13 @@ function feePace(n){
           from:days[0].d, to:days[days.length-1].d};
 }
 /* Where the ledger's month lands: earned so far plus the last 30 days' measured pace for the
-   days left in THAT month (the ledger's month, not the clock's: between UTC midnight on the 1st and
+   days left in THAT month (the ledger's month, not the clock's: between midnight on the 1st and
    the relay's first run of the new month, the ledger still holds the old one). One function, so
    FEES EARNED, the projected net and OUTLOOK can never name different month-ends. */
 function monthClose(){
   const fm=state.feeMonth; if(!fm||fm.mtd==null) return null;
   const P=feePace(30), y=Number(fm.month.slice(0,4)), m=Number(fm.month.slice(5,7));   // m is 1-based
-  const left=Math.max(0,(Date.UTC(y,m,1)-Date.now())/86400000);
+  const left=Math.max(0,(bpMidnight(y,m+1,1)-Date.now())/86400000);
   if(P) return {close:fm.mtd+P.perDay*left, add:P.perDay*left, left, y, m0:m-1,
                 how:'so far + the last '+P.n+' days\' pace for the days left'};
   return fm.proj!=null?{close:fm.proj, add:fm.proj-fm.mtd, left, y, m0:m-1, how:'month-to-date average × '+fm.daysInMonth+' days'}:null;
@@ -5356,17 +5366,17 @@ function renderOutlook(){
     +fmtUsd(pace.fees,0)+'</b>, about <b>'+fmtUsd(rate,0)+' a day</b>, which is <b>'+pace.apr.toFixed(1)+'%</b> a year on the <b>'
     +fmtUsd(pace.avgV,0)+'</b> you had in LPs on average. If trading carries on at that pace, this is what comes in:'));
   // timeline milestones, counted from now
-  const endOf=(y,m)=>Date.UTC(y,m+1,1)-1;            // last ms of month m (0-based)
-  const t0=new Date(now), Y=t0.getUTCFullYear(), M=t0.getUTCMonth();
+  const endOf=(y,m)=>bpMidnight(y,m+2,1)-1;          // last ms of month m (0-based), Budapest
+  const tK=bpDay(now), Y=+tK.slice(0,4), M=+tK.slice(5,7)-1, D=+tK.slice(8,10);
   const qEnd=[2,5,8,11].map(m=>m).find(m=>m>M)??11;
-  const oneYr=new Date(Date.UTC(Y+1,M,t0.getUTCDate())).toISOString().slice(0,10);
+  const oneYr=new Date(Date.UTC(Y+1,M,D)).toISOString().slice(0,10);
   const fm=state.feeMonth||{}, MC=monthClose();
   const LY=MC?MC.y:Y, LM=MC?MC.m0:M;               // the ledger's month
   const altN=N===7?30:7, alt=v=>(other&&Math.abs(hi-lo)>lo*0.02)?'<span class="ol-r">at the '+altN+'-day pace: '+k$(other.perDay*v)+'</span>':'';
   const stones=[
     {k:'end of '+MN[qEnd]+(qEnd===M?' '+(Y+1):''), t:qEnd===M?endOf(Y+1,qEnd):endOf(Y,qEnd)},
-    {k:'in 6 months', t:Date.UTC(Y,M+6,t0.getUTCDate())},
-    {k:dd(oneYr,true)+' · 1 year', t:Date.parse(oneYr+'T00:00Z')},
+    {k:'in 6 months', t:bpMidnight(Y,M+7,D)},
+    {k:dd(oneYr,true)+' · 1 year', t:bpDayStart(oneYr)},
   ].filter((s,i,a)=>s.t>now && a.findIndex(x=>x.t===s.t)===i);
   const tl=el('div','ol-tl');
   tl.innerHTML=(MC?'<div class="ol-st"><span class="ol-k">'+MN[LM]+' closes at</span><span class="ol-v">≈ '+fmtUsd(MC.close,0)+'</span>'
@@ -5375,7 +5385,7 @@ function renderOutlook(){
     return '<div class="ol-st"><span class="ol-k">'+esc(s.k)+'</span><span class="ol-v">+'+fmtUsd(rate*d,0)+'</span>'+alt(d)+'</div>'; }).join('');
   host.append(tl);
   // month by month: what was earned, and what this pace adds
-  const curK=fm.month||new Date(now).toISOString().slice(0,7);
+  const curK=fm.month||bpMonth(now);
   const months=[];
   for(const x of (fm.prev||[]).slice(-2)) months.push({k:x.m, act:x.total||0, proj:0});
   months.push({k:curK, act:fm.mtd||0, proj:MC?Math.max(0,MC.add):0, cur:true});
@@ -5852,12 +5862,12 @@ function renderSpark(){
   });
   // day boundaries on the x-axis when the span covers multiple days
   if(spanMs>86400000){
-    for(let d=new Date(t0); d.getTime()<t1; d.setUTCDate(d.getUTCDate()+1)){
-      const mid=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()+1);
-      if(mid<=t0||mid>=t1) continue;
+    for(let k=bpDay(t0), g=0; g<400; g++){
+      const mid=bpMidnight(+k.slice(0,4),+k.slice(5,7),+k.slice(8,10)+1); k=bpDay(mid);
+      if(mid>=t1) break; if(mid<=t0) continue;
       svg.append(mkel('line',{x1:X(mid),x2:X(mid),y1:padT,y2:H-padB,stroke:'#13233a','stroke-width':1,'stroke-dasharray':'2 4'}));
       const tx=mkel('text',{x:X(mid),y:H-8,'text-anchor':'middle','font-size':8.5,fill:'#5d7889'});
-      tx.textContent=new Date(mid).toUTCString().slice(5,11); svg.append(tx);
+      tx.textContent=new Date(Date.parse(k+'T12:00Z')).toUTCString().slice(5,11); svg.append(tx);
     }
   }
   const pts=s.map(x=>X(x.t)+','+Y(x.v)).join(' ');
@@ -6367,7 +6377,7 @@ function renderDaily(host){
     head.style.cssText='display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-bottom:2px';
     const pct=top.vPrev ? top.dV/top.vPrev*100 : null;
     /* The newest record is rewritten all day, so calling it a finished day would overstate it. */
-    const liveDay = top.d === new Date().toISOString().slice(0,10);
+    const liveDay = top.d === bpDay(Date.now());
     head.innerHTML='<span style="font-size:13px"><b>'+dlab(top.d)+'</b>'
       +(liveDay?' <span style="color:var(--accent);font-size:9px">SO FAR TODAY</span>':'')+' '+fmtUsd(top.v,0)+'</span>'
       +'<span style="font-size:13px">'+sgn(top.dV)+(pct!=null?' <span style="color:var(--text-muted)">('
@@ -6474,7 +6484,7 @@ function renderDaily(host){
     months.set(k,g);
   }
   const mrows=[...months.values()];
-  const curM=new Date().toISOString().slice(0,7);
+  const curM=bpMonth(Date.now());
   const hdr=el('div','dod-row hdr');
   ['MONTH','VALUE AT END','CHANGE','WHAT MOVED IT'].forEach(h=>hdr.append(el('div',null,h)));
   wrap.append(hdr);
@@ -7245,7 +7255,7 @@ function renderCards(){
     mkm('RANGE', fmtPrice(lo)+' – '+fmtPrice(up),true);
     mkm('POSITION VALUE', fmtUsd(p.valueUsd,0));
     mkm(isSol?'FEES OWED':'UNCLAIMED FEES', fmtUsd(p.feesUsd));
-    mkm(isSol?'OPENED':'DEPLOYED', (p.mintTs?new Date(p.mintTs).toISOString().slice(0,10):'…')+' <span class="unit">'+fmtAge(p.ageDays)+'</span>',true);
+    mkm(isSol?'OPENED':'DEPLOYED', (p.mintTs?bpDay(p.mintTs):'…')+' <span class="unit">'+fmtAge(p.ageDays)+'</span>',true);
     { const a=aprOf(p);
       mkm((a.pool?'POOL':'FEE')+' APR · '+WIN_LABEL[cfg.aprWin],
           a.v==null?'…':'<b>'+a.v.toFixed(1)+'</b><span class="unit"> %'+(a.pool?' ◎pool':'')+'</span>'); }
@@ -7531,7 +7541,7 @@ function applyStoredOrders(){
    the story follows the finger or the pointer and falls back to today.
 
    Source is the relay's own monthly fee ledger (all LPs, open and closed, claimed + unclaimed),
-   read at the close of each UTC day — so the days of a month add up to that month's FEES EARNED. */
+   read at the close of each day (Budapest) — so the days of a month add up to that month's FEES EARNED. */
 /* The FEE INCOME · LAST 24H tile's way into FEE PULSE. The tile is a rolling 24-hour rate; this
    is the calendar day it belongs to, set against the last 30 — so it answers the question the
    tile's number raises (is that good?) and says where the full answer is. The whole card is the
@@ -8086,14 +8096,14 @@ function renderFeePulse60m(host){
 function feePulseStats(){
   const raw=(state.feeMonth&&state.feeMonth.daily)||null;
   if(!raw||raw.length<2) return null;
-  const now=new Date(), todayK=now.toISOString().slice(0,10);
+  const now=new Date(), todayK=bpDay(now);
   // every calendar day from the first record to today, so a missing day shows as a gap, not as nothing
   const by={}; raw.forEach(r=>{ by[r.d]=r; });
   const days=[]; for(let t=Date.parse(raw[0].d+'T00:00Z'); t<=Date.parse(todayK+'T00:00Z'); t+=86400000){
     const d=new Date(t).toISOString().slice(0,10); days.push({d, usd:by[d]?by[d].usd:null, est:!!(by[d]&&by[d].est), today:d===todayK}); }
   const today=days[days.length-1];
   const done=days.filter(x=>!x.today && x.usd!=null && !x.est);
-  const hrs=(now-Date.parse(todayK+'T00:00Z'))/3600000;
+  const hrs=(now-bpDayStart(todayK))/3600000;
   const soFar=today.usd;
   // too few hours in and one arbitrage burst would project to a record day
   const pace=(soFar!=null && hrs>=4) ? soFar/(hrs/24) : null;
@@ -8117,7 +8127,6 @@ function renderFeePulse(){
   const {now,todayK,days,today,done,hrs,soFar,pace,ref,last30,med,beat}=S;
   const dlab=d=>{ const t=new Date(d+'T12:00Z'); const m=MN[t.getUTCMonth()]; return DW[t.getUTCDay()]+' '+t.getUTCDate()+' '+m[0]+m.slice(1).toLowerCase(); };
   const f0=v=>fmtUsd(v,v<100?2:0);
-  const localMidnight=new Date(Date.parse(todayK+'T00:00Z')).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
 
   // ---- the story, two lines ----
   const st=el('div','fp-story');
@@ -8126,7 +8135,7 @@ function renderFeePulse(){
     let l1='Today <span class="big">'+f0(soFar)+'</span> so far'
       +(pace!=null?' · on pace for <b>~'+fmtUsd(pace,0)+'</b>':'');
     let l2='';
-    if(pace==null) l2='Too early to judge — the day began at '+localMidnight+' your time'
+    if(pace==null) l2='Too early to judge — the day is '+Math.floor(hrs)+'h old'
       +(done.length?'; yesterday earned <b>'+f0(done[done.length-1].usd)+'</b>.':'.');
     else if(med){
       const x=pace/med;
@@ -8218,7 +8227,7 @@ function renderFeePulse(){
       return; }
     mrow.append(el('span',null,MN[Number(mo.m.slice(5,7))-1]+(cur?' so far':'')+' <b>'+fmtUsd(mo.tot,0)+'</b> · <span class="fp-key"></span><b>'+fmtUsd(mo.avg,0)+'</b>/day avg')); });
   host.append(mrow);
-  host.append(el('div','arch-note','One bar per day, UTC (starts '+localMidnight+' your time) · all LPs, claimed + unclaimed, not counting fees your own swaps paid to your own pools · '
+  host.append(el('div','arch-note','One bar per day, midnight to midnight '+tzAbbr()+' · all LPs, claimed + unclaimed, not counting fees your own swaps paid to your own pools · '
     +'bright bars beat today\'s pace, grey lines are month averages'
     +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));
   renderFeePulse24(host);
