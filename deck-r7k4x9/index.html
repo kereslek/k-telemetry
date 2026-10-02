@@ -790,6 +790,23 @@
     text-shadow:0 0 22px rgba(245,196,81,.8),0 0 2px #000;white-space:nowrap;opacity:0;font-variant-numeric:tabular-nums}
   @media(max-width:430px){ .sfx-stamp{font-size:40px} }
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
+  /* the catch-up sweep draws on a canvas over the dial; the card beside it says what came in */
+  .fpd-cv{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+  .fpd-away{border:1px solid var(--line);border-left:2px solid var(--accent);background:rgba(53,214,232,.045);padding:10px 12px;display:grid;gap:7px;
+    animation:fpdAwayIn .7s cubic-bezier(.2,.8,.2,1)}
+  @keyframes fpdAwayIn{from{opacity:0;transform:translateY(8px)}}
+  .fpd-away .hd{display:flex;align-items:center;gap:8px;font:600 10px var(--mono);letter-spacing:.14em;color:var(--text-muted)}
+  .fpd-away .hd .when{margin-left:auto;letter-spacing:.04em;font-weight:400}
+  .fpd-away .x{background:none;border:0;color:var(--text-muted);font:15px/1 var(--mono);cursor:pointer;min-width:30px;min-height:30px;margin:-6px -8px -6px 0}
+  .fpd-away .x:hover{color:var(--text-primary)}
+  .fpd-away .big{font:700 22px var(--mono);font-variant-numeric:tabular-nums;color:var(--text-primary)}
+  .fpd-away .big small{font:500 12px var(--mono);color:var(--text-muted);margin-left:6px}
+  .fpd-away .rows{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;font:12px var(--mono);color:var(--text-secondary)}
+  .fpd-away .rows span:nth-child(odd){color:var(--text-muted)}
+  .fpd-away .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .fpd-away .chip{font:11px var(--mono);color:var(--text-secondary);border:1px solid var(--line);padding:2px 6px;display:inline-flex;gap:6px;align-items:center}
+  .fpd-away .chip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .fpd-away .note{font:11px var(--mono);color:var(--text-muted)}
   .fpd-read{margin:0}
   .fpd-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
   .fpd-stats div{background:var(--panel);padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;gap:2px;min-width:0}
@@ -1463,7 +1480,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v35.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v35.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7648,12 +7665,33 @@ function pulseMins(){
    someone is watching: Solana is then read every 3 s and Ethereum every block (12 s). Hidden or
    closed, the asking stops and the recorder goes back to reading once a minute on its own. */
 let pulseBusy=false;
+/* Since you last looked. Each browser keeps the moment it last had the dashboard in front of it;
+   coming back after more than two minutes (or to the tab after more than one), the dial catches up
+   with one radar sweep that paints everything that came in meanwhile (renderFeePulse60m). The
+   first visit in a browser sweeps the whole hour. */
+const PULSE_SEEN='kt.pulse.seen';
+const pulseSeen={at:(()=>{ try{ const v=Number(localStorage.getItem(PULSE_SEEN)); return v>0?v:null; }catch(e){ return null; } })(),
+  catchFrom:null, first:false, hiddenAt:null, needN:null};
+const markSeen=()=>{ try{ localStorage.setItem(PULSE_SEEN,String(Date.now())); }catch(e){} };
+{ const S0=pulseSeen.at, now=Date.now();
+  if(S0==null){ pulseSeen.catchFrom=now-60*60000; pulseSeen.first=true; }
+  else if(now-S0>=2*60000) pulseSeen.catchFrom=S0;
+  // away longer than the dial's hour: read back far enough for the card to count the rest
+  if(S0!=null && now-S0>60*60000) pulseSeen.needN=Math.min(1440,Math.ceil((now-S0)/60000)+2); }
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ pulseSeen.hiddenAt=Date.now(); markSeen(); return; }
+  const h=pulseSeen.hiddenAt, now=Date.now(); pulseSeen.hiddenAt=null;
+  if(h && now-h>=60000){
+    if(pulseSeen.catchFrom==null||h<pulseSeen.catchFrom){ pulseSeen.catchFrom=h; pulseSeen.first=false; }
+    if(now-h>60*60000) pulseSeen.needN=Math.min(1440,Math.ceil((now-h)/60000)+2); } });
+addEventListener('pagehide',markSeen);
 async function loadPulse(){
   if(!PULSE_URL || pulseBusy) return;
   pulseBusy=true;
   try{
-    const r=await fetch(PULSE_URL+'/m?n=60&live=1',{cache:'no-store'}); if(!r.ok) return;
-    state.pulse=await r.json();
+    const r=await fetch(PULSE_URL+'/m?n='+(pulseSeen.needN||60)+'&live=1',{cache:'no-store'}); if(!r.ok) return;
+    state.pulse=await r.json(); pulseSeen.needN=null;
+    if(!document.hidden) markSeen();
     // swap in place: the tile link and the panel section, nothing else re-renders (and the link only when it changed)
     const a=document.querySelector('.fp-link60'), h=feePulseLink60();
     if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; if(d.firstElementChild.outerHTML!==a.outerHTML) a.replaceWith(d.firstElementChild); }
@@ -7877,7 +7915,8 @@ function renderFeePulse60m(host){
      carries on where the last one was. */
   const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'), strikeEl=el('div','fpd-strike'); sw.setAttribute('aria-hidden','true'); strikeEl.setAttribute('aria-hidden','true');
   sw.style.animationDelay=(-(Date.now()%7000))+'ms';
-  dw.append(svg,sw,strikeEl); grid.append(dw);
+  const cv=document.createElement('canvas'); cv.className='fpd-cv'; cv.setAttribute('aria-hidden','true'); const pc=cv.getContext('2d');
+  dw.append(svg,sw,strikeEl,cv); grid.append(dw);
   // ---- beside the dial: the reading, the quiet, the latest fees
   const side=el('div','fpd-side'); grid.append(side);
   const read=el('div','fp-read fpd-read'), stats=el('div','fpd-stats'), qm=el('div','fpd-quiet'), lh=el('div','fpd-lh','LATEST FEES'), list=el('ul','fpd-feed');
@@ -8076,8 +8115,10 @@ function renderFeePulse60m(host){
         d.style.transition='none'; layer.append(h,d,a,hit);
         // a trade that arrives while the dial is on screen is born at now and glides to its time;
         // one already there when the dial is drawn simply sits at its time
-        e={k,h,d,a,hit,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0,push:null,tier:sfxTier(t.usd)};
-        if(fresh) births.push(e);
+        // one that came in while you were away waits in place, dark, for the catch-up sweep to paint it
+        const hold=pulseSeen.catchFrom!=null && t.at>pulseSeen.catchFrom;
+        e={k,h,d,a,hit,show:(fresh||hold)?0:1,glide:(fresh&&!hold)?0:1,scale:1,flash:0,push:null,tier:sfxTier(t.usd),lit:1};
+        if(fresh&&!hold) births.push(e);
         const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
         d.addEventListener('pointerenter',pick); d.addEventListener('click',pick); d.addEventListener('focus',pick);
         hit.addEventListener('pointerenter',pick); hit.addEventListener('click',pick);
@@ -8104,7 +8145,7 @@ function renderFeePulse60m(host){
     D.typical=typical; D.target=total;
     if(!births.length && !D.counting) setTotal(total);
     fill.style.display=typical?'':'none';
-    say(sel&&live.get(sel)?live.get(sel).t:null);
+    if(!sweeping) say(sel&&live.get(sel)?live.get(sel).t:null);      // the catch-up sweep writes its own line
     // stats, quiet meter, latest fees
     const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-last.endAt)/60000)):null;
     const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
@@ -8126,8 +8167,136 @@ function renderFeePulse60m(host){
         +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
       list.append(li); }
   };
-  wrap._sync=()=>{ sync(true); runBirths(); };
+  /* ---- catch-up: the first sweep ----
+     Coming back, the scope goes dark and powers up like a radar tube: a line of light across the
+     face that opens into a ring. Then the beam makes one revolution from twelve, through the whole
+     hour from now backwards. Everything it passes is painted: a trade from before you left glows
+     back quietly; one that came in while you were away blooms white-hot, pings twice, shows its
+     amount and its bearing, and cools into its pool colour, while the centre counts the contacts
+     and the hour's total climbs. The phosphor keeps a long afterglow, there is receiver noise on
+     the scope, and the range rings light up where the beam crosses them. The biggest new trade
+     gets the screen effect its size calls for. Tap the dial to skip. It waits until the dial is on
+     screen, so it is never played to nobody; reduced motion just shows the marks and the card. */
+  let sweeping=false, io=null;
+  const fitCv=()=>{ const w=dw.clientWidth||300, dpr=Math.min(2,devicePixelRatio||1); cv.width=Math.round(w*dpr); cv.height=Math.round(w*322/352*dpr);
+    const k=w/352*dpr; pc.setTransform(k,0,0,k,26*k,10*k); };
+  const clearCv=()=>{ pc.save(); pc.setTransform(1,0,0,1,0,0); pc.clearRect(0,0,cv.width,cv.height); pc.restore(); };
+  const rgbaOf=(h,a)=>{ const c=rgb(h); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; };
+  const awayCard=(from,first)=>{
+    side.querySelector('.fpd-away')?.remove();
+    const P=state.pulse; if(!P||!Array.isArray(P.mins)) return;
+    const now=Date.now(), rows=P.mins.filter(r=>r[1]!=null), start=rows.length?Math.min(...rows.map(r=>r[0])):now, f=Math.max(from,start);
+    let tot=0, early=0; const byPool={};
+    for(const r of rows){ const a=r[0], b=a+60000; if(b<=f) continue; const k=(b-Math.max(a,f))/60000, v=r[1]*k; tot+=v; if(b<=now-60*60000) early+=v;
+      if(r[3]) for(const q in r[3]) byPool[q]=(byPool[q]||0)+r[3][q]*k; }
+    const TRa=pulseTrades(), TR=TRa.filter(t=>t.at>from), more=TRa.length>=20 && TR.length===TRa.length;
+    const big=TR.reduce((b,t)=>!b||t.usd>b.usd?t:b,null), mins=Math.max(1,Math.round((now-f)/60000));
+    const away=mins>=60?Math.floor(mins/60)+' h '+(mins%60)+' min':mins+' min';
+    const c=el('div','fpd-away'); c.setAttribute('role','status');
+    c.innerHTML='<div class="hd"><span>'+(first?'THE LAST HOUR':'WHILE YOU WERE AWAY')+'</span><span class="when">'+hl(f)+' – '+hl(now)+'</span>'
+      +'<button type="button" class="x" aria-label="Dismiss">×</button></div>'
+      +(TR.length||tot>=0.005
+        ? '<div class="big">+'+fmtUsd(tot,2)+'<small>'+(more?'20+':TR.length)+' trade'+(TR.length===1?'':'s')+' in '+away+'</small></div>'
+          +(big?'<div class="rows"><span>Biggest</span><span>+'+fmtUsd(big.usd,2)+' · '+esc(big.lbl||'pool not recorded')+' · '+hl(big.t)+'</span>'
+            +'<span>Pace</span><span>'+fmtUsd(tot/mins*60,2)+' an hour</span></div>':'')
+          +'<div class="chips">'+Object.entries(byPool).filter(([,v])=>v>=0.005).sort((a,b)=>b[1]-a[1]).map(([q,v])=>'<span class="chip"><i style="background:'+poolColor(q)+'"></i>'+esc(q)+' '+fmtUsd(v,2)+'</span>').join('')+'</div>'
+          +(early>=0.005?'<div class="note">Before this hour: +'+fmtUsd(early,2)+' · the dial shows the last 60 minutes</div>':'')
+        : '<div class="big">Quiet<small>no trades in '+away+'</small></div>')
+      +(start>from+60000?'<div class="note">The minute record starts at '+hl(start)+'.</div>':'');
+    c.querySelector('.x').addEventListener('click',()=>c.remove());
+    side.prepend(c); setTimeout(()=>c.remove(),15*60000); };
+  const sweepCatch=async()=>{
+    if(sweeping||pulseSeen.catchFrom==null||!wrap.isConnected) return;
+    const from=pulseSeen.catchFrom, first=pulseSeen.first; pulseSeen.catchFrom=null; pulseSeen.first=false;
+    if(io){ io.disconnect(); io=null; }
+    sweeping=true; birthing=true; D.counting=true;
+    const t0=Date.now(), all=[...live.values()].filter(e=>e.t&&(t0-e.t.at)/60000<=60), isNew=e=>e.t.at>from;
+    const fresh=all.filter(isNew), top=fresh.reduce((b,e)=>!b||e.t.usd>b.t.usd?e:b,null);
+    const done=()=>{ for(const e of all){ e.show=1; e.lit=1; e.glide=1; } D.counting=false; setTotal(D.target); subH.textContent='THIS HOUR';
+      sweeping=false; birthing=false; awayCard(from,first); say(null); runBirths(); };
+    if(still){ done(); return; }
+    for(const e of all){ e.glide=1; e.flash=0; e.scale=1; e.lit=0; if(isNew(e)) e.show=0; }
+    let skip=false; const onSkip=()=>{ skip=true; }; dw.addEventListener('click',onSkip);
+    fitCv(); clearCv(); cv.getAnimations().forEach(a=>a.cancel()); cv.style.opacity=1;
+    const fade=(()=>{ try{ return sw.animate([{opacity:1},{opacity:0}],{duration:300,fill:'forwards'}); }catch(err){ return null; } })();
+    svg.insertBefore(veil,svg.querySelector('.fpd-face').nextSibling);   // the dark goes on the face only: marks, rings and the counter shine through
+    const base=Math.max(0,D.target-fresh.reduce((a,e)=>a+e.t.usd,0)); setTotal(base);
+    subH.textContent=fresh.length?'CONTACTS 0 OF '+fresh.length:'FIRST SWEEP';
+    read.innerHTML='▸ <b>'+(first?'FIRST SWEEP':'CATCHING UP')+'</b> <span class="unit">· '+(fresh.length?fresh.length+' new since '+hl(from):'nothing new since '+hl(from))+' · tap the dial to skip</span>';
+    const frame=(dur,fn)=>new Promise(res=>{ const T=performance.now(); const go=ts=>{ if(!wrap.isConnected) return res(); const p=skip?1:Math.min(1,(ts-T)/dur); fn(p); if(p<1) requestAnimationFrame(go); else res(); }; requestAnimationFrame(go); });
+    // 1 — power-up: a line of light that opens into a ring, the face going dark behind it
+    await frame(700,p=>{ veil.setAttribute('opacity',(0.6*ez.out(Math.min(1,p*1.6))).toFixed(3)); clearCv();
+      pc.save(); pc.globalCompositeOperation='lighter';
+      if(p<.4){ const q=ez.out(p/.4), w=(R+16)*q; pc.fillStyle='rgba(200,250,255,.9)'; pc.shadowColor='#35d6e8'; pc.shadowBlur=14; pc.fillRect(C-w,C-1,2*w,2); }
+      else { const q=(p-.4)/.6, rr=(R+16)*ez.out(q); pc.strokeStyle='rgba(190,246,255,'+(0.9*(1-q)).toFixed(3)+')'; pc.lineWidth=2.2; pc.shadowColor='#35d6e8'; pc.shadowBlur=16;
+        pc.beginPath(); pc.arc(C,C,rr,0,7); pc.stroke(); const g=pc.createRadialGradient(C,C,0,C,C,R+16); g.addColorStop(0,'rgba(53,214,232,'+(0.16*(1-q)).toFixed(3)+')'); g.addColorStop(1,'rgba(53,214,232,0)');
+        pc.fillStyle=g; pc.shadowBlur=0; pc.beginPath(); pc.arc(C,C,R+16,0,7); pc.fill(); }
+      pc.restore(); });
+    // 2 — one revolution from twelve
+    let n=0, shown=base, lastA=0;
+    const ping=(x,y,col,reach,i)=>{ const c=mk('circle',{cx:x,cy:y,r:3,fill:'none',stroke:col,'stroke-width':2}); fx.append(c);
+      tween(1300,q=>{ c.setAttribute('r',(3+reach*ez.out(q)).toFixed(1)); c.setAttribute('opacity',(0.9*(1-q)).toFixed(3)); c.setAttribute('stroke-width',(2*(1-q)+.3).toFixed(2)); },i*240).then(()=>c.remove()); };
+    const paint=e=>{ e.painted=1; const age=Math.max(0,(Date.now()-e.t.at)/60000), [x,y]=pt(age,R), col=e.col, isN=isNew(e), bigT=e.t.usd>=5;
+      pc.save(); pc.globalCompositeOperation='lighter';
+      if(isN){
+        // bearing line from the centre, then a bloom that cools from white into the pool's colour
+        pc.strokeStyle=rgbaOf(bigT?'#f5c451':col,.55); pc.lineWidth=1.2; pc.beginPath(); pc.moveTo(C,C); pc.lineTo(x,y); pc.stroke();
+        const rr=bigT?46:30, g=pc.createRadialGradient(x,y,0,x,y,rr); g.addColorStop(0,'rgba(255,255,255,.95)'); g.addColorStop(.28,rgbaOf(bigT?'#f5c451':col,.75)); g.addColorStop(1,rgbaOf(col,0));
+        pc.fillStyle=g; pc.beginPath(); pc.arc(x,y,rr,0,7); pc.fill();
+        e.show=1; e.lit=1; e.flash=1; e.scale=0; tween(800,q=>{ e.scale=ez.spring(q); }); tween(2600,q=>{ e.flash=1-q; },300);
+        ping(x,y,bigT?'#f5c451':'#bff6ff',bigT?84:52,0); ping(x,y,bigT?'#f5c451':col,bigT?110:70,1);
+        const [lx,ly]=pt(age,R-30), tx=mk('text',{x:lx,y:ly+5,'text-anchor':'middle'},'fpd-amt fpd-amt-birth','+'+fmtUsd(e.t.usd,2)); fx.append(tx);
+        tween(2200,q=>{ tx.setAttribute('y',(ly+5-10*ez.out(q)).toFixed(1)); tx.setAttribute('opacity',(q<.65?1:1-(q-.65)/.35).toFixed(3)); }).then(()=>tx.remove());
+        n++; subH.textContent='CONTACTS '+n+' OF '+fresh.length; shown+=e.t.usd; setTotal(shown);
+        if(e===top && bigT) screenFx(e.t.usd,dw);
+      } else {
+        const g=pc.createRadialGradient(x,y,0,x,y,14); g.addColorStop(0,rgbaOf(col,.55)); g.addColorStop(1,rgbaOf(col,0)); pc.fillStyle=g; pc.beginPath(); pc.arc(x,y,14,0,7); pc.fill();
+        e.show=1; e.flash=.3; tween(500,q=>{ e.lit=q; }); tween(900,q=>{ e.flash=.3*(1-q); });
+      }
+      pc.restore(); };
+    let lastT=performance.now();
+    // the beam's edge lives in the SVG and is moved, never drawn into the phosphor, so it leaves no spokes
+    const edge=mk('g',{}); edge.append(mk('line',{x1:C,y1:C,x2:C,y2:C-R-14,stroke:'#35d6e8','stroke-width':7,'stroke-opacity':.22,'stroke-linecap':'round'}),
+      mk('line',{x1:C,y1:C,x2:C,y2:C-R-14,stroke:'#e2fdff','stroke-width':1.5,'stroke-linecap':'round'})); fx.append(edge);
+    await frame(4200,p=>{
+      const A=360*p, rad=d=>(d-90)*Math.PI/180, nowT=performance.now(), dt=Math.min(.1,(nowT-lastT)/1000); lastT=nowT;
+      pc.save(); pc.beginPath(); pc.arc(C,C,R+30,0,7); pc.clip();
+      /* phosphor: what is drawn fades with a time constant, not per frame, so the afterglow is the
+         same length on a slow phone as on a fast screen; the wake behind the beam is that fade */
+      pc.globalCompositeOperation='destination-out'; pc.fillStyle='rgba(0,0,0,'+(1-Math.exp(-dt/0.55)).toFixed(4)+')'; pc.fillRect(-26,-10,352,322);
+      pc.globalCompositeOperation='lighter';
+      // the beam paints the whole wedge it covered since the last frame, so there are no spokes
+      const g=pc.createRadialGradient(C,C,8,C,C,R+14); g.addColorStop(0,'rgba(53,214,232,.05)'); g.addColorStop(.6,'rgba(53,214,232,.16)'); g.addColorStop(1,'rgba(120,235,250,.26)');
+      pc.fillStyle=g; pc.beginPath(); pc.moveTo(C,C); pc.arc(C,C,R+14,rad(lastA-.3),rad(A)); pc.closePath(); pc.fill();
+      edge.setAttribute('transform','rotate('+A.toFixed(2)+' '+C+' '+C+')');
+      // range rings and bearing lines light up where the beam crosses them
+      pc.strokeStyle='rgba(53,214,232,.32)'; pc.lineWidth=1;
+      for(const rr of [R*.33,R*.66,R]){ pc.beginPath(); pc.arc(C,C,rr,rad(lastA),rad(A+.6)); pc.stroke(); }
+      for(let b=0;b<360;b+=30) if(b>lastA-.01&&b<=A){ pc.strokeStyle='rgba(53,214,232,.22)'; pc.beginPath(); pc.moveTo(C,C); pc.lineTo(C+(R+14)*Math.cos(rad(b)),C+(R+14)*Math.sin(rad(b))); pc.stroke(); }
+      // receiver noise, a little clutter near the centre
+      for(let k=0;k<12;k++){ const rr=Math.sqrt(Math.random())*(R+10), th=Math.random()*6.283; pc.fillStyle='rgba(150,235,245,.13)'; pc.fillRect(C+rr*Math.cos(th),C+rr*Math.sin(th),1.2,1.2); }
+      for(let k=0;k<3;k++){ const rr=Math.random()*26, th=Math.random()*6.283; pc.fillStyle='rgba(150,235,245,.2)'; pc.fillRect(C+rr*Math.cos(th),C+rr*Math.sin(th),1.4,1.4); }
+      pc.restore();
+      for(const e of all) if(!e.painted && Math.max(0,(Date.now()-e.t.at)/60000)*6<=A+.5) paint(e);
+      lastA=A; });
+    dw.removeEventListener('click',onSkip); edge.remove();
+    for(const e of all){ if(!e.painted) paint(e); delete e.painted; }
+    // 3 — back to the live dial: the dark lifts, the live beam fades in, the afterglow dies away
+    tween(800,q=>{ veil.setAttribute('opacity',(0.6*(1-q)).toFixed(3)); }).then(()=>{ svg.insertBefore(veil,fx); });
+    try{ sw.style.animationDelay=(-(Date.now()%7000))+'ms'; if(fade) fade.cancel(); sw.animate([{opacity:0},{opacity:1}],{duration:1400,easing:'ease-out'}); }catch(err){}
+    try{ cv.animate([{opacity:1},{opacity:0}],{duration:2800,easing:'ease-in',fill:'forwards'}).onfinish=()=>{ clearCv(); cv.getAnimations().forEach(a=>a.cancel()); }; }catch(err){ clearCv(); }
+    await tween(skip?0:600,()=>{});
+    done();
+  };
+  // played when the dial is actually on screen, not while it sits below the fold
+  const armCatch=()=>{
+    if(pulseSeen.catchFrom==null||sweeping||io) return;
+    if(!('IntersectionObserver' in window)){ sweepCatch(); return; }
+    io=new IntersectionObserver(es=>{ if(es.some(x=>x.isIntersecting&&x.intersectionRatio>=0.5) && !document.hidden) sweepCatch(); },{threshold:[0.5]});
+    io.observe(dw); };
+  wrap._sync=()=>{ sync(true); if(pulseSeen.catchFrom!=null) armCatch(); runBirths(); };
   sync(false);
+  if(pulseSeen.catchFrom!=null) armCatch();
   /* Every frame while a new mark is arriving, a few times a second otherwise: at a tenth of a
      degree a second that is already continuous to the eye, and it costs next to nothing. It stops
      when the dial is replaced or removed, and the browser pauses it while the page is hidden. */
@@ -8150,10 +8319,11 @@ function renderFeePulse60m(host){
           e.d.setAttribute('cx',x); e.d.setAttribute('cy',y); e.d.setAttribute('r',r.toFixed(2));
           e.hit.setAttribute('cx',x); e.hit.setAttribute('cy',y); e.hit.style.display=e.show?'':'none';
           e.d.setAttribute('fill',lift(e.col,Math.min(.92,Math.max(0.55*fresh,0.92*flash))));
-          e.d.style.opacity=(e.show?op:0).toFixed(3);
+          const lit=0.05+0.95*(e.lit??1);                                                 // dark until the sweep paints it
+          e.d.style.opacity=(e.show?op*lit:0).toFixed(3);
           e.h.setAttribute('cx',x); e.h.setAttribute('cy',y); e.h.setAttribute('r',(r*(2.2+1.8*fresh+2.2*flash)).toFixed(2));
-          e.h.style.opacity=(e.show?op*(0.3+0.65*fresh)+0.5*flash:0).toFixed(3);
-          if(e.lbl && e.show && e.glide>=1){ const [lx,ly]=pt(pos,R-e.r-15); e.a.setAttribute('x',lx); e.a.setAttribute('y',ly+3.5); e.a.style.display=''; e.a.style.opacity=op.toFixed(3); }
+          e.h.style.opacity=(e.show?(op*(0.3+0.65*fresh)+0.5*flash)*lit:0).toFixed(3);
+          if(e.lbl && e.show && e.glide>=1 && lit>0.9 && !sweeping){ const [lx,ly]=pt(pos,R-e.r-15); e.a.setAttribute('x',lx); e.a.setAttribute('y',ly+3.5); e.a.style.display=''; e.a.style.opacity=op.toFixed(3); }
           else e.a.style.display='none';
         }
         const mn=Math.floor(now/60000);
