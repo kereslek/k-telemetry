@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v34.0)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v34.1)
 import {chromium} from 'playwright';
 const b=await chromium.launch(); const pg=await b.newPage({viewport:{width:390,height:844}});
 const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
@@ -33,7 +33,7 @@ console.log('SWEEP', JSON.stringify(await pg.evaluate(()=>{ const sw=document.qu
     P.trades=[{t,start:t,end:t,usd:2.5,pools:{'LCX / ETH 1%':2.5}},...(P.trades||[])];
     w._sync(); await new Promise(r=>setTimeout(r,700));
     const fx=w.querySelectorAll('svg g[pointer-events="none"] > *').length;
-    await new Promise(r=>setTimeout(r,3800));
+    await new Promise(r=>setTimeout(r,8200));
     const d=[...w.querySelectorAll('.fpd-dot')].find(x=>(x.getAttribute('aria-label')||'').includes('2.50'));
     const deg=d?(((Math.atan2(+d.getAttribute('cy')-150,+d.getAttribute('cx')-150)*180/Math.PI)+90+360)%360).toFixed(1):null;
     return {build:BUILD, effectsMidBirth:fx, newDotDeg:deg, opacity:d&&d.style.opacity}; });

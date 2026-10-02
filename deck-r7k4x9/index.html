@@ -764,6 +764,9 @@
     will-change:transform,opacity;transform:rotate(0deg) translateZ(0);backface-visibility:hidden;-webkit-backface-visibility:hidden}
   .fpd-dw{will-change:transform}
   .fpd-amt-birth{font-size:15px;fill:#fff;stroke-width:4px}
+  .fpd-sub-hot{fill:var(--text-primary);letter-spacing:.06em}
+  .fpd-cur{display:inline-block;width:.6em;height:1em;background:var(--accent);vertical-align:-2px;margin-left:2px;animation:fpdBlink 1s steps(2) infinite}
+  @keyframes fpdBlink{to{opacity:0}}
   @media(prefers-reduced-motion:reduce){ .fpd-strike{display:none} }
   @keyframes fpdSweep{from{transform:rotate(0deg) translateZ(0)}to{transform:rotate(360deg) translateZ(0)}}
   @media(prefers-reduced-motion:reduce){ .fpd-sweep,.fpd-ping{animation:none} }
@@ -1441,7 +1444,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v34.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v34.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7652,7 +7655,7 @@ function feePulseLink60(){
     const W=300, H=30, tr=pulseTrades().filter(t=>t.m<=60), top=Math.max(0.5,...tr.map(t=>t.usd));
     let dots='';
     for(const t of tr){ const x=W-(Math.max(0,t.m)/60)*(W-6)-3, r=2.2+Math.sqrt(t.usd/top)*5.5;
-      dots+='<circle cx="'+x.toFixed(1)+'" cy="15" r="'+r.toFixed(1)+'" fill="'+poolColor(t.lbl)+'"/>'; }
+      dots+='<circle data-t="'+t.t+'" cx="'+x.toFixed(1)+'" cy="15" r="'+r.toFixed(1)+'" fill="'+poolColor(t.lbl)+'"/>'; }
     return '<button type="button" class="tile-why fp-link fp-link60" data-jump="feepulse" data-anchor="fp60" aria-label="Open FEE PULSE — the last 60 minutes">'
       +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
       +'<svg viewBox="0 0 '+W+' '+H+'" aria-hidden="true"><line x1="0" x2="'+W+'" y1="15" y2="15" class="fpl-tape"/>'
@@ -7767,12 +7770,14 @@ function renderFeePulse60m(host){
   svg.append(mk('circle',{cx:C,cy:C,r:r2},'fpd-track'));
   const fill=mk('circle',{cx:C,cy:C,r:r2,'stroke-dasharray':`0 ${circ.toFixed(1)}`,transform:`rotate(-90 ${C} ${C})`},'fpd-fill'); svg.append(fill);
   const totT=mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',''); svg.append(totT);
-  svg.append(mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'));
+  const subH=mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'); svg.append(subH);
   const subT=mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',''); svg.append(subT);
   const glint=mk('circle',{r:5,fill:'#fff',opacity:0}); svg.append(glint);
   const layer=mk('g',{}); svg.append(layer);                       // the trades, above the faces and rings
+  const veil=mk('circle',{cx:C,cy:C,r:R+16,fill:'#000',opacity:0,'pointer-events':'none'}); svg.append(veil);
+  const trails=mk('g',{'pointer-events':'none'}); svg.insertBefore(trails,layer);   // light trails, under the marks
   const fx=mk('g',{'pointer-events':'none'}); svg.append(fx);       // birth effects, above the trades
-  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); svg.append(mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'));
+  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); const nowDot=mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'); svg.append(nowDot);
   /* The sweep's phase comes from the clock, not from when this dial was drawn, so a redraw
      carries on where the last one was. */
   const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'), strikeEl=el('div','fpd-strike'); sw.setAttribute('aria-hidden','true'); strikeEl.setAttribute('aria-hidden','true');
@@ -7794,7 +7799,7 @@ function renderFeePulse60m(host){
      wide glow — and settles to its pool colour over its first minutes; it dims slowly as it goes
      round and fades to nothing over its last quarter-hour. */
   const live=new Map(); let sel=null;
-  const D={typical:null,target:0,shown:0,counting:false};
+  const D={typical:null,target:0,shown:0,counting:false,pulse:0};
   const setTotal=v=>{ D.shown=v; totT.textContent=fmtUsd(v,2);
     const f=D.typical?Math.min(1,v/D.typical):0;
     fill.setAttribute('stroke-dasharray',`${(circ*f).toFixed(1)} ${circ.toFixed(1)}`); fill.setAttribute('class','fpd-fill'+(D.typical&&v>=D.typical?' over':''));
@@ -7814,55 +7819,125 @@ function renderFeePulse60m(host){
   const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const runBirths=async()=>{
     if(birthing) return; birthing=true;
-    // the newest few get the full treatment; any more simply appear
+    // the newest few get a birth; any more simply appear
     births.splice(0,Math.max(0,births.length-4)).forEach(e=>{ e.show=1; e.glide=1; });
-    while(births.length){ const e=births.shift(); if(live.get(e.k)!==e) continue; await birth(e); await tween(250,()=>{}); }
+    let n=0;
+    while(births.length){ const e=births.shift(); if(live.get(e.k)!==e) continue; await birth(e,{compact:n++>0}); await tween(250,()=>{}); }
     if(!D.counting) setTotal(D.target);
+    say(sel&&live.get(sel)?live.get(sel).t:null);
     birthing=false; };
-  const birth=async e=>{
-    const [x,y]=pt(0,R), col=e.col, usd=e.t.usd, big=D.typical!=null && usd>=D.typical;
-    if(still){ e.glide=1; e.show=1; e.scale=0; await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
-    // 1 — the beam whips round to twelve and strikes
-    const from=(Date.now()%7000)/7000*360;
-    try{ sw.animate([{opacity:1},{opacity:.15},{opacity:.15},{opacity:1}],{duration:1500,easing:'ease-out'});
-      strikeEl.animate([{transform:`rotate(${from}deg)`,opacity:.9},{transform:'rotate(360deg)',opacity:1,offset:.3},{transform:'rotate(360deg)',opacity:1,offset:.45},{transform:'rotate(366deg)',opacity:0}],{duration:1000,easing:'cubic-bezier(.3,.7,.2,1)'}); }catch(err){}
-    await tween(300,()=>{});
-    // 2 — impact: the dial kicks, a flare, three sonar rings and an echo from the centre
-    try{ dw.animate([{transform:'scale(1)'},{transform:'scale(1.03)'},{transform:'scale(.995)'},{transform:'scale(1)'}],{duration:520,easing:'cubic-bezier(.2,.8,.2,1)'}); }catch(err){}
-    const fl=mk('g',{}); fl.append(mk('line',{x1:x-70,y1:y,x2:x+70,y2:y,stroke:'#fff','stroke-width':1.6,'stroke-linecap':'round'}),
-      mk('line',{x1:x,y1:y-42,x2:x,y2:y+42,stroke:'#fff','stroke-width':1.2,'stroke-linecap':'round'}), mk('circle',{cx:x,cy:y,r:9,fill:'#fff'}));
-    fx.append(fl);
-    tween(750,p=>{ const s=p<.25?p/.25:1-(p-.25)/.75; fl.setAttribute('opacity',(s*.95).toFixed(3));
-      fl.setAttribute('transform',`translate(${x} ${y}) scale(${(0.4+0.8*ez.out(Math.min(1,p*2.5))).toFixed(3)} 1) translate(${-x} ${-y})`); }).then(()=>fl.remove());
-    for(let i=0;i<3;i++){ const c=mk('circle',{cx:x,cy:y,r:4,fill:'none',stroke:i?col:'#35d6e8','stroke-width':2.6}); fx.append(c);
-      tween(1500,p=>{ const q=ez.out(p); c.setAttribute('r',(4+165*q).toFixed(1)); c.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); c.setAttribute('stroke-width',(2.6*(1-p)+0.3).toFixed(2)); },i*220).then(()=>c.remove()); }
+  /* ---- the pieces of a birth ---- */
+  const sweepAnim=()=>{ try{ return sw.getAnimations()[0]||null; }catch(err){ return null; } };
+  const typeTo=(text,from)=>{ let i=from.length; const go=()=>{ if(!wrap.isConnected) return; read.innerHTML='▸ '+esc(text.slice(0,i))+'<span class="fpd-cur"></span>'; if(i<text.length){ i++; setTimeout(go,26); } }; go(); };
+  const flare=(x,y,dur)=>{ const g=mk('g',{}); g.append(mk('line',{x1:x-70,y1:y,x2:x+70,y2:y,stroke:'#fff','stroke-width':1.6,'stroke-linecap':'round'}),
+      mk('line',{x1:x,y1:y-42,x2:x,y2:y+42,stroke:'#fff','stroke-width':1.2,'stroke-linecap':'round'}), mk('circle',{cx:x,cy:y,r:9,fill:'#fff'})); fx.append(g);
+    return tween(dur,p=>{ const s=p<.2?p/.2:1-(p-.2)/.8; g.setAttribute('opacity',(s*.95).toFixed(3));
+      g.setAttribute('transform',`translate(${x} ${y}) scale(${(0.4+0.8*ez.out(Math.min(1,p*2.5))).toFixed(3)} 1) translate(${-x} ${-y})`); }).then(()=>g.remove()); };
+  const rings=(x,y,col,{n,dur,gap,reach,push})=>{
+    for(let i=0;i<n;i++){ const c=mk('circle',{cx:x,cy:y,r:4,fill:'none',stroke:i?col:'#35d6e8','stroke-width':2.6}); fx.append(c);
+      tween(dur,p=>{ const rr=4+reach*ez.out(p); c.setAttribute('r',rr.toFixed(1)); c.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); c.setAttribute('stroke-width',(2.6*(1-p)+0.3).toFixed(2));
+        // the first ring shoves the other marks aside as it passes; they spring back
+        if(push&&i===0) for(const o of live.values()){ if(!o.show||o.glide<1) continue; const ag=(Date.now()-(o.t.t+30000))/60000, [ox,oy]=pt(Math.max(0,ag),R), dx=ox-x, dy=oy-y, dist=Math.hypot(dx,dy)||1;
+          const k=7*Math.exp(-Math.pow((rr-dist)/16,2))*(1-p); o.push=[dx/dist*k,dy/dist*k]; } },i*gap).then(()=>{ c.remove(); if(push&&i===0) for(const o of live.values()) o.push=null; }); }
     const echo=mk('circle',{cx:C,cy:C,r:20,fill:'none',stroke:'#35d6e8','stroke-width':1.2}); fx.append(echo);
-    tween(1200,p=>{ echo.setAttribute('r',(20+(R-20)*ez.out(p)).toFixed(1)); echo.setAttribute('opacity',(0.45*(1-p)).toFixed(3)); },180).then(()=>echo.remove());
-    if(big){ for(let i=0;i<2;i++){ const g=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:'#f5c451','stroke-width':3.5}); fx.append(g);
-        tween(1300,p=>{ g.setAttribute('r',(R+4+46*ez.out(p)).toFixed(1)); g.setAttribute('opacity',(0.95*(1-p)).toFixed(3)); g.setAttribute('stroke-width',(3.5*(1-p)+.3).toFixed(2)); },i*260).then(()=>g.remove()); }
-      const ring=svg.querySelector('.fpd-ring'); if(ring){ ring.style.stroke='#f5c451'; tween(1400,p=>{ ring.style.strokeOpacity=String(1-p*.45); }).then(()=>{ ring.style.stroke=''; ring.style.strokeOpacity=''; }); } }
-    // 3 — the mark springs in white-hot, its amount rises beside it
-    e.show=1; e.flash=1;
-    tween(700,p=>{ e.scale=ez.spring(p); });
-    const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
-    tween(2000,p=>{ ft.setAttribute('y',(y+8-26*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); },150).then(()=>ft.remove());
-    await tween(380,()=>{});
-    // 4 — its fee streams into the hour's total, which counts up; the ring extends with a glint
+    tween(dur*0.8,p=>{ echo.setAttribute('r',(20+(R-20)*ez.out(p)).toFixed(1)); echo.setAttribute('opacity',(0.45*(1-p)).toFixed(3)); },180).then(()=>echo.remove()); };
+  const goldWaves=n=>{ for(let i=0;i<n;i++){ const g=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:'#f5c451','stroke-width':3.5}); fx.append(g);
+      tween(1300,p=>{ g.setAttribute('r',(R+4+46*ez.out(p)).toFixed(1)); g.setAttribute('opacity',(0.95*(1-p)).toFixed(3)); g.setAttribute('stroke-width',(3.5*(1-p)+.3).toFixed(2)); },i*260).then(()=>g.remove()); }
+    const ring=svg.querySelector('.fpd-ring'); if(ring){ ring.style.stroke='#f5c451'; tween(1400,p=>{ ring.style.strokeOpacity=String(1-p*.45); }).then(()=>{ ring.style.stroke=''; ring.style.strokeOpacity=''; }); } };
+  const goldRain=()=>{ for(let i=0;i<26;i++){ const c=mk('circle',{r:2,fill:'#f5c451',opacity:0}); fx.append(c); const x0=C-70+Math.random()*140, y0=C-120-Math.random()*40;
+      tween(900+Math.random()*500,p=>{ const q=ez.inOut(p); c.setAttribute('cx',(x0+(C-x0)*q).toFixed(1)); c.setAttribute('cy',(y0+(C-12-y0)*q).toFixed(1)); c.setAttribute('opacity',(p<.8?1:(1-p)/.2).toFixed(3)); },i*45).then(()=>c.remove()); } };
+  const goldEdge=()=>{ const panel=wrap.closest('.panel')||wrap; try{ panel.animate([{boxShadow:'0 0 0 1px #f5c451, 0 0 0 rgba(245,196,81,0)'},{boxShadow:'0 0 0 1px #f5c451, 0 0 38px rgba(245,196,81,.5)'},{boxShadow:'0 0 0 1px rgba(245,196,81,0), 0 0 0 rgba(245,196,81,0)'}],{duration:3200,easing:'ease-out'}); }catch(err){} };
+  const stream=(x,y,col,{n,dur,orbit})=>Promise.all([...Array(n)].map((_,i)=>(async()=>{
+      const c=mk('circle',{r:2.3,fill:lift(col,.45),opacity:0}); fx.append(c);
+      const a0=(i/n)*Math.PI*2, side=(i%2?1:-1)*(16+Math.random()*34), qx=(x+C)/2+side, qy=(y+C)/2;
+      if(orbit) await tween(orbit,p=>{ const a=a0+p*Math.PI*2, rr=22*ez.out(Math.min(1,p*2)); c.setAttribute('cx',(x+Math.cos(a)*rr).toFixed(1)); c.setAttribute('cy',(y+Math.sin(a)*rr).toFixed(1)); c.setAttribute('opacity',Math.min(1,p*3).toFixed(3)); });
+      const sx=orbit?x+Math.cos(a0)*22:x, sy=orbit?y+Math.sin(a0)*22:y;
+      await tween(dur,p=>{ const q=ez.inOut(p), u=1-q; c.setAttribute('cx',(u*u*sx+2*u*q*qx+q*q*C).toFixed(1)); c.setAttribute('cy',(u*u*sy+2*u*q*qy+q*q*(C-12)).toFixed(1)); c.setAttribute('opacity',(p<.85?1:(1-p)/.15).toFixed(3)); },orbit?0:i*30);
+      c.remove(); })()));
+  const countUp=(usd,dur,roll)=>{
     D.counting=true;
-    const ps=[];
-    for(let i=0;i<16;i++){ const c=mk('circle',{r:2.3,fill:lift(col,.45),opacity:0}); fx.append(c);
-      const side=(i%2?1:-1)*(16+Math.random()*34), qx=(x+C)/2+side, qy=(y+C)/2;
-      ps.push(tween(700,p=>{ const q=ez.inOut(p), u=1-q; c.setAttribute('cx',(u*u*x+2*u*q*qx+q*q*C).toFixed(1)); c.setAttribute('cy',(u*u*y+2*u*q*qy+q*q*(C-12)).toFixed(1));
-        c.setAttribute('opacity',(p<.85?1:(1-p)/.15).toFixed(3)); },i*30).then(()=>c.remove())); }
-    await Promise.all(ps);
-    const v0=D.shown, v1=Math.max(v0, Math.min(D.target, v0+usd*1.0001)) , pulse=v1>v0;
-    await tween(800,p=>{ const q=ez.out(p), f=setTotal(v0+(v1-v0)*q);
-      if(pulse){ const s=1+0.12*Math.sin(Math.PI*Math.min(1,p*1.6)); totT.setAttribute('transform',`translate(${C} ${C-12}) scale(${s.toFixed(3)}) translate(${-C} ${-(C-12)})`);
-        const [gx,gy]=pt(f*60,r2); glint.setAttribute('cx',gx); glint.setAttribute('cy',gy); glint.setAttribute('opacity',(Math.sin(p*Math.PI)*.95).toFixed(3)); } });
-    totT.removeAttribute('transform'); glint.setAttribute('opacity',0); D.counting=false;
-    // 5 — it cools and glides clockwise to its real time
-    tween(2800,p=>{ e.flash=1-p; });
-    await tween(1400,p=>{ e.glide=ez.inOut(p); });
+    const v0=D.shown, v1=Math.max(v0,Math.min(D.target,v0+usd*1.0001));
+    return tween(dur,p=>{ const q=ez.out(p), v=v0+(v1-v0)*q, f=setTotal(v);
+      if(roll && p<1){ const txt=fmtUsd(v,2); totT.textContent=''; [...txt].forEach((ch,i)=>{ const t=mk('tspan',{},null,ch); if(i>=txt.length-4+Math.floor(p*3)) t.setAttribute('opacity',(0.55+0.45*Math.random()).toFixed(2)); totT.append(t); }); }
+      if(v1>v0){ const s=1+0.12*Math.sin(Math.PI*Math.min(1,p*1.6)); totT.setAttribute('transform',`translate(${C} ${C-12}) scale(${s.toFixed(3)}) translate(${-C} ${-(C-12)})`);
+        const [gx,gy]=pt(f*60,r2); glint.setAttribute('cx',gx); glint.setAttribute('cy',gy); glint.setAttribute('opacity',(Math.sin(p*Math.PI)*.95).toFixed(3)); } })
+    .then(()=>{ totT.removeAttribute('transform'); glint.setAttribute('opacity',0); setTotal(v1); D.counting=false; }); };
+  const lap=col=>{ const L=2*Math.PI*R, arc=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:col,'stroke-width':3,'stroke-linecap':'round',transform:`rotate(-90 ${C} ${C})`}); fx.append(arc);
+    tween(1300,p=>{ const head=L*ez.inOut(p), seg=L*0.08; arc.setAttribute('stroke-dasharray',`${seg.toFixed(1)} ${L}`); arc.setAttribute('stroke-dashoffset',(-(head-seg)).toFixed(1)); arc.setAttribute('opacity',(p<.9?1:(1-p)/.1).toFixed(3)); }).then(()=>arc.remove()); };
+  const trailGlide=(e,dur)=>{ const path=mk('path',{fill:'none',stroke:e.col,'stroke-width':4,'stroke-linecap':'round',opacity:.9}); trails.append(path);
+    const draw=()=>{ const ag=Math.max(0.01,((Date.now()-(e.t.t+30000))/60000)*e.glide), [x0,y0]=pt(0,R), [x1,y1]=pt(ag,R); path.setAttribute('d',`M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}`); };
+    tween(dur,draw).then(()=>tween(3200,p=>{ draw(); path.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); path.setAttribute('stroke-width',(4*(1-p)+.5).toFixed(2)); }).then(()=>path.remove())); };
+  const brackets=(x,y)=>{ const g=mk('g',{stroke:'#35d6e8','stroke-width':2,fill:'none','stroke-linecap':'round'}), parts=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx,sy])=>{ const p=mk('path',{}); g.append(p); return [p,sx,sy]; }); fx.append(g);
+    return (p,done)=>{ if(done){ tween(500,q=>g.setAttribute('opacity',(1-q).toFixed(3))).then(()=>g.remove()); return; }
+      const d=34-20*ez.out(p), L=7; g.setAttribute('opacity',Math.min(1,p*2.5).toFixed(3));
+      for(const [path,sx,sy] of parts){ const cx=x+sx*d, cy=y+sy*d; path.setAttribute('d',`M${cx} ${cy-sy*L} L${cx} ${cy} L${cx-sx*L} ${cy}`); } }; };
+  const flashTape=t=>{ const c=document.querySelector('.fp-link60 circle[data-t="'+t+'"]'); if(!c) return;
+    try{ c.style.transformBox='fill-box'; c.style.transformOrigin='center'; c.animate([{transform:'scale(1)',fill:'#ffffff'},{transform:'scale(2.4)',fill:'#ffffff',offset:.3},{transform:'scale(1)'}],{duration:1400,easing:'ease-out'}); }catch(err){} };
+  /* ---- birth: radar contact, extended ----
+     Three parts. Anticipation (about a second): the face dims, the beam slows on its way round,
+     brackets close on now and a contact line starts typing. Impact, slowed: the beam whips to
+     twelve and strikes, the dial kicks, a long flare, three slow sonar rings that shove the other
+     marks aside, the mark springs in white-hot and its amount rises. Payoff: particles gather round
+     it and stream into the hour's total, whose digits roll while the ring extends, a light runs a
+     lap of the dial in the pool's colour, the strip at the top flashes its dot, and the mark glides
+     clockwise to its time, leaving a fading trail. A trade bigger than a typical hour adds gold rain,
+     a triple shockwave and a gold edge on the panel. A trade under $0.50, and every one after the
+     first in a batch, gets a two-second version so the dial never falls behind. */
+  const birth=async(e,{compact}={})=>{
+    const [x,y]=pt(0,R), col=e.col, usd=e.t.usd, big=D.typical!=null && usd>=D.typical, small=usd<0.5;
+    const pool=e.t.pools.length?e.t.pools[0][0]:'pool not recorded', when=hl(e.t.t);
+    if(still){ e.glide=1; e.show=1; e.scale=0; await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
+    const anim=sweepAnim();
+    const hideSweep=()=>{ try{ return sw.animate([{opacity:1},{opacity:0}],{duration:350,fill:'forwards'}); }catch(err){ return null; } };
+    const showSweep=fade=>{ // back on the clock's own phase, faded in while it realigns
+      try{ sw.style.animationDelay=(-(Date.now()%7000))+'ms'; if(fade) fade.cancel(); sw.animate([{opacity:0},{opacity:1}],{duration:1200,easing:'ease-out'}); }catch(err){} };
+    const whip=(fromDeg,dur)=>{ try{ strikeEl.animate([{transform:`rotate(${fromDeg}deg)`,opacity:.9},{transform:'rotate(360deg)',opacity:1,offset:.32},{transform:'rotate(360deg)',opacity:1,offset:.45},{transform:'rotate(366deg)',opacity:0}],{duration:dur,easing:'cubic-bezier(.3,.7,.2,1)'}); }catch(err){} };
+    if(small||compact){
+      read.innerHTML='▸ CONTACT '+esc(when)+' · +'+fmtUsd(usd,2)+' · '+esc(pool);
+      const fade=hideSweep(); whip((Date.now()%7000)/7000*360, 900); await tween(260,()=>{});
+      flare(x,y,500); rings(x,y,col,{n:1,dur:900,gap:0,reach:90,push:false});
+      e.show=1; e.flash=1; tween(520,p=>{ e.scale=ez.spring(p,1.9); });
+      const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
+      tween(1400,p=>{ ft.setAttribute('y',(y+8-22*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); }).then(()=>ft.remove());
+      stream(x,y,col,{n:6,dur:550,orbit:0});
+      await tween(600,()=>{}); await countUp(usd,500,false);
+      tween(1800,p=>{ e.flash=1-p; }); trailGlide(e,900); flashTape(e.t.t);
+      showSweep(fade);
+      await tween(900,p=>{ e.glide=ez.inOut(p); });
+      return; }
+    // 1 — anticipation
+    const lead='CONTACT '+when;
+    typeTo(lead+' …','');
+    const fade=hideSweep(), a0=(Date.now()%7000)/7000*360, lock=brackets(x,y);
+    try{ strikeEl.animate([{transform:`rotate(${a0}deg)`,opacity:0},{transform:`rotate(${a0+8}deg)`,opacity:.55,offset:.3},{transform:`rotate(${a0+20}deg)`,opacity:.55}],{duration:1000,fill:'forwards'}); }catch(err){}
+    await tween(1000,p=>{ veil.setAttribute('opacity',(0.32*ez.out(p)).toFixed(3)); lock(p); D.pulse=p; });
+    // 2 — impact, slowed
+    try{ strikeEl.getAnimations().forEach(a=>a.cancel()); }catch(err){}
+    whip(a0+20,1100); await tween(330,()=>{});
+    try{ dw.animate([{transform:'scale(1)'},{transform:'scale(1.045)'},{transform:'scale(.993)'},{transform:'scale(1)'}],{duration:700,easing:'cubic-bezier(.2,.8,.2,1)'}); }catch(err){}
+    flare(x,y,1300); rings(x,y,col,{n:3,dur:2600,gap:320,reach:175,push:true});
+    if(big){ goldWaves(3); goldEdge(); }
+    e.show=1; e.flash=1; tween(1000,p=>{ e.scale=ez.spring(p,3.2); });
+    const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
+    tween(2600,p=>{ ft.setAttribute('y',(y+8-26*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); },150).then(()=>ft.remove());
+    typeTo(lead+' · +'+fmtUsd(usd,2)+' · '+pool, lead+' ');
+    lock(1,true); D.pulse=0;
+    tween(900,p=>{ veil.setAttribute('opacity',(0.32*(1-p)).toFixed(3)); },500);
+    await tween(1200,()=>{});
+    // 3 — payoff
+    const pair=pool.split(' ').slice(0,3).join(' ');
+    subH.textContent='+'+fmtUsd(usd,2)+' · '+pair; subH.classList.add('fpd-sub-hot');
+    if(big) goldRain();
+    await stream(x,y,col,{n:18,dur:750,orbit:650});
+    lap(col);
+    await countUp(usd,1300,true);
+    flashTape(e.t.t);
+    tween(3200,p=>{ e.flash=1-p; });
+    trailGlide(e,1700);
+    showSweep(fade);
+    await tween(1700,p=>{ e.glide=ez.inOut(p); });
+    setTimeout(()=>{ subH.textContent='THIS HOUR'; subH.classList.remove('fpd-sub-hot'); },400);
+    if(big) await tween(700,()=>{});
   };
   const dotR=usd=>Math.min(14, 4+3.2*Math.sqrt(Math.max(0,usd)));
   const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
@@ -7879,7 +7954,7 @@ function renderFeePulse60m(host){
         d.style.transition='none'; layer.append(h,d,a);
         // a trade that arrives while the dial is on screen is born at now and glides to its time;
         // one already there when the dial is drawn simply sits at its time
-        e={k,h,d,a,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0};
+        e={k,h,d,a,show:fresh?0:1,glide:fresh?0:1,scale:1,flash:0,push:null};
         if(fresh) births.push(e);
         const pick=()=>{ if(sel&&live.get(sel)) live.get(sel).d.classList.remove('sel'); sel=k; d.classList.add('sel'); say(e.t); };
         d.addEventListener('pointerenter',pick); d.addEventListener('click',pick); d.addEventListener('focus',pick);
@@ -7926,6 +8001,7 @@ function renderFeePulse60m(host){
       if(!wrap.isConnected) return;
       for(const t of tw.slice()){ const p=(ts-t.t0)/t.dur; if(p<0) continue; t.fn(Math.min(1,p)); if(p>=1){ tw.splice(tw.indexOf(t),1); t.res(); } }
       if(tw.length || birthing || ts-last>=250){ last=ts;
+        nowDot.setAttribute('r',(3.6+(D.pulse?2.2*D.pulse*Math.abs(Math.sin(ts/90)):0)).toFixed(2));
         const now=Date.now();
         for(const [k,e] of live){
           const m=(now-(e.t.t+30000))/60000;
@@ -7934,7 +8010,7 @@ function renderFeePulse60m(host){
           const op=age<=45 ? 1-0.3*age/45 : 0.7*Math.pow(Math.max(0,60-age)/15,1.4);   // dims slowly, then fades out
           const fresh=Math.max(0,1-age/6);                                                // 1 when new, gone by six minutes
           const flash=e.flash, r=e.show?e.r*Math.max(0,e.scale):0, pos=age*e.glide;   // held at now until it glides to its age
-          const [x,y]=pt(pos,R);
+          let [x,y]=pt(pos,R); if(e.push){ x+=e.push[0]; y+=e.push[1]; }
           e.d.setAttribute('cx',x); e.d.setAttribute('cy',y); e.d.setAttribute('r',r.toFixed(2));
           e.d.setAttribute('fill',lift(e.col,Math.min(.92,Math.max(0.55*fresh,0.92*flash))));
           e.d.style.opacity=(e.show?op:0).toFixed(3);
