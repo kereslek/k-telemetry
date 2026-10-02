@@ -780,6 +780,15 @@
   @media(prefers-reduced-motion:reduce){ .fpd-strike{display:none} }
   @keyframes fpdSweep{from{transform:rotate(0deg) translateZ(0)}to{transform:rotate(360deg) translateZ(0)}}
   @media(prefers-reduced-motion:reduce){ .fpd-sweep,.fpd-ping{animation:none} }
+  /* big-fee screen effects: one fixed layer over the whole page, never in the way of a tap */
+  #sfx{position:fixed;inset:0;pointer-events:none;z-index:9000;overflow:hidden}
+  #sfx>*{position:absolute;pointer-events:none}
+  .sfx-wash{inset:0}
+  .sfx-flash{inset:0;background:#fff6dc;opacity:0;mix-blend-mode:screen}
+  .sfx-ring{border-radius:50%;border:2px solid #f5c451;box-shadow:0 0 22px rgba(245,196,81,.7),inset 0 0 22px rgba(245,196,81,.35);transform:translate(-50%,-50%)}
+  .sfx-stamp{left:50%;top:38%;transform:translate(-50%,-50%);font:700 56px var(--mono,ui-monospace,monospace);color:#f5c451;
+    text-shadow:0 0 22px rgba(245,196,81,.8),0 0 2px #000;white-space:nowrap;opacity:0;font-variant-numeric:tabular-nums}
+  @media(max-width:430px){ .sfx-stamp{font-size:40px} }
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
   .fpd-read{margin:0}
   .fpd-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
@@ -1454,7 +1463,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v35.0';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v35.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7757,6 +7766,51 @@ function renderFeePulse60(host){
    trade a mark at its minute sized by what it paid and coloured by its pool. The inner ring fills
    toward a typical hour. Under it, the quiet since the last trade against every lull of the past
    day, and the latest fees whether or not they fall inside the hour. */
+/* A big fee reaches past the dial. Sized to the fee, so the everyday trickle stays calm:
+   under $5 the dial's own birth is all there is; $5-25 sends a cyan wash of light out from the
+   dial across the screen; $25-100 makes it gold and adds a ring that rolls across the page,
+   lighting each panel as it passes; $100 and up adds three camera-flash bursts with the amount
+   frozen in the middle. The bursts are 500 ms apart, never more than three in a second (the
+   limit for flashing content), warm white rather than red, and at most one strobe every eight
+   seconds however many big fees arrive together. Reduced motion gets a single soft glow. */
+const SFX={strobeAt:0};
+function screenFx(v, from){
+  if(document.hidden || !(v>=5)) return;
+  const tier=v>=100?3:v>=25?2:1;
+  let L=document.getElementById('sfx');
+  if(!L){ L=document.createElement('div'); L.id='sfx'; L.setAttribute('aria-hidden','true'); document.body.append(L); }
+  const W=innerWidth, H=innerHeight, r=from&&from.getBoundingClientRect?from.getBoundingClientRect():null;
+  // from the dial; when it is scrolled away, from the edge of the screen nearest to it
+  const cx=Math.max(0,Math.min(W,r?r.left+r.width/2:W/2)), cy=Math.max(0,Math.min(H,r?r.top+r.height/2:H/2));
+  const add=(cls,css)=>{ const d=document.createElement('div'); d.className=cls; if(css) Object.assign(d.style,css); L.append(d); return d; };
+  const run=(el,kf,o)=>{ try{ el.animate(kf,{fill:'both',...o}).onfinish=()=>el.remove(); }catch(err){ el.remove(); } };
+  const wash=(rgb,k,dur)=>run(add('sfx-wash',{background:`radial-gradient(circle at ${cx}px ${cy}px, rgba(${rgb},${.55*k}) 0, rgba(${rgb},${.22*k}) 30%, rgba(${rgb},${.08*k}) 60%, rgba(${rgb},0) 85%)`}),
+    [{opacity:0,easing:'ease-out'},{opacity:1,offset:.15,easing:'ease-in-out'},{opacity:0}],{duration:dur});
+  const stamp=dur=>run(Object.assign(add('sfx-stamp'),{textContent:'+'+fmtUsd(v,2)}),
+    [{opacity:0,transform:'translate(-50%,-50%) scale(1.5)',easing:'cubic-bezier(.2,.8,.2,1)'},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.1},
+     {opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.75,easing:'ease-in'},{opacity:0,transform:'translate(-50%,-50%) scale(.96)'}],{duration:dur});
+  const GOLD='245,196,81', CYAN='53,214,232';
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ wash(tier>1?GOLD:CYAN,tier>2?1.1:.8,2600); if(tier===3) stamp(3800); return; }
+  const wave=dur=>{
+    const far=Math.max(Math.hypot(cx,cy),Math.hypot(W-cx,cy),Math.hypot(cx,H-cy),Math.hypot(W-cx,H-cy));
+    const ring=add('sfx-ring',{left:cx+'px',top:cy+'px'});
+    run(ring,[{width:'0px',height:'0px',opacity:1},{width:2*far+'px',height:2*far+'px',opacity:.12}],{duration:dur,easing:'cubic-bezier(.25,.6,.4,1)'});
+    for(const el of document.querySelectorAll('.tile,.panel')){
+      const b=el.getBoundingClientRect(); if(b.bottom<0||b.top>H||b.right<0||b.left>W||!b.width) continue;
+      const d=Math.hypot(b.left+b.width/2-cx,b.top+b.height/2-cy), at=dur*Math.pow(Math.min(1,d/far),1.1)*0.85;
+      setTimeout(()=>{ try{ el.animate([{boxShadow:'0 0 0 1px rgba(245,196,81,0)'},{boxShadow:'0 0 0 1px #f5c451, 0 0 26px rgba(245,196,81,.5)',offset:.2},
+        {boxShadow:'0 0 0 1px rgba(245,196,81,0)'}],{duration:2000}); }catch(err){} },at); } };
+  const now=Date.now();
+  if(tier===1){ wash(CYAN,.8,2000); return; }
+  if(tier===2 || now-SFX.strobeAt<8000){ wash(GOLD,1,2200); wave(2400); return; }
+  SFX.strobeAt=now;
+  const f=add('sfx-flash');
+  run(f,[{opacity:0,offset:0},{opacity:.85,offset:.02},{opacity:0,offset:.08},
+         {opacity:0,offset:.31},{opacity:.7,offset:.33},{opacity:0,offset:.39},
+         {opacity:0,offset:.62},{opacity:.55,offset:.64},{opacity:0,offset:.70},{opacity:0,offset:1}],{duration:1600,easing:'linear'});
+  stamp(4200);
+  setTimeout(()=>{ wash(GOLD,.7,3600); wave(2600); },1100);
+}
 function renderFeePulse60m(host){
   const wrap=el('div','fp24 fpd'); wrap.id='fp60';
   wrap.append(el('div','fp24-h','LAST 60 MINUTES'));
@@ -7941,7 +7995,7 @@ function renderFeePulse60m(host){
   const birth=async(e,{compact}={})=>{
     const [x,y]=pt(0,R), col=e.col, usd=e.t.usd, big=D.typical!=null && usd>=D.typical, small=usd<0.5;
     const pool=e.t.pools.length?e.t.pools[0][0]:'pool not recorded', when=hl(e.t.t);
-    if(still){ e.glide=1; e.show=1; e.scale=0; await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
+    if(still){ e.glide=1; e.show=1; e.scale=0; screenFx(usd,dw); await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
     const anim=sweepAnim();
     const hideSweep=()=>{ try{ return sw.animate([{opacity:1},{opacity:0}],{duration:350,fill:'forwards'}); }catch(err){ return null; } };
     const showSweep=fade=>{ // back on the clock's own phase, faded in while it realigns
@@ -7950,7 +8004,7 @@ function renderFeePulse60m(host){
     if(small||compact){
       read.innerHTML='▸ CONTACT '+esc(when)+' · +'+fmtUsd(usd,2)+' · '+esc(pool);
       const fade=hideSweep(); whip((Date.now()%7000)/7000*360, 900); await tween(260,()=>{});
-      flare(x,y,500); rings(x,y,col,{n:1,dur:900,gap:0,reach:90,push:false});
+      flare(x,y,500); rings(x,y,col,{n:1,dur:900,gap:0,reach:90,push:false}); screenFx(usd,dw);
       e.show=1; e.flash=1; tween(520,p=>{ e.scale=ez.spring(p,1.9); });
       const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
       tween(1400,p=>{ ft.setAttribute('y',(y+8-22*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); }).then(()=>ft.remove());
@@ -7972,6 +8026,7 @@ function renderFeePulse60m(host){
     try{ dw.animate([{transform:'scale(1)'},{transform:'scale(1.045)'},{transform:'scale(.993)'},{transform:'scale(1)'}],{duration:700,easing:'cubic-bezier(.2,.8,.2,1)'}); }catch(err){}
     flare(x,y,1300); rings(x,y,col,{n:3,dur:2600,gap:320,reach:175,push:true});
     if(big){ goldWaves(3); goldEdge(); }
+    screenFx(usd,dw);
     e.show=1; e.flash=1; tween(1000,p=>{ e.scale=ez.spring(p,3.2); });
     const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
     tween(2600,p=>{ ft.setAttribute('y',(y+8-26*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); },150).then(()=>ft.remove());
