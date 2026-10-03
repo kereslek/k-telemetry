@@ -1,4 +1,4 @@
-// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.4 rerun)
+// One-off: open the live dashboard in a real browser and read the 60-minute pulse. (v35.5: jumps)
 import {chromium} from 'playwright';
 const b=await chromium.launch();
 // a browser that looked a moment ago, so nothing is held for a catch-up and test trades are born live
@@ -68,5 +68,12 @@ console.log('BUDAPEST', JSON.stringify(await pg.evaluate(()=>{ const fm=state.fe
   const dw=await p2.$('#fp60 .fpd-dw'); if(dw){ await dw.scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500); console.log('CATCHUP mid', JSON.stringify(await s2()));
     await p2.waitForTimeout(5000); console.log('CATCHUP after', JSON.stringify(await s2())); }
   await c2.close(); }
+{ // jumps: the three clocks and per-LP breakdown, tapped from the top of the page
+  const where=(j,a)=>pg.evaluate(([j,a])=>{ const p=document.querySelector('.panel[data-panel="'+j+'"]'); if(!p) return null; const t=(a&&p.querySelector('#'+a))||p,
+    navH=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34; return Math.round(t.getBoundingClientRect().top-(navH+12)); },[j,a]);
+  for(const [sel,j,a] of [['.fp-link:not(.fp-link24):not(.fp-link60)','feepulse',null],['.fp-link24','feepulse','fp24'],['.fp-link60','feepulse','fp60'],['.tile-why[data-jump="matrix"]','matrix',null],['.tile-why[data-anchor="feeByTok"]','telemetry','feeByTok']]){
+    await pg.evaluate(()=>scrollTo(0,0)); await pg.waitForTimeout(500);
+    try{ await pg.locator(sel).first().click({timeout:4000}); await pg.waitForTimeout(3000); console.log('JUMP', sel, 'offset', await where(j,a), 'build', await pg.evaluate(()=>BUILD)); }
+    catch(e){ console.log('JUMP', sel, 'FAILED', e.message.split('\n')[0]); } } }
 console.log('errors', errs);
 await b.close();
