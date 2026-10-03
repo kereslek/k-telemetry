@@ -691,6 +691,7 @@
   .fp-link:active{background:rgba(53,214,232,.1)}
   .fp-link+.fp-link{margin-top:6px}
   .fp-link svg{display:block;width:100%;height:30px;overflow:visible}
+  .fp-link>*{pointer-events:none}       /* the tap is always on the button, whatever is redrawn inside it */
   .fpl-lo{fill:var(--accent-dim);opacity:.55} .fpl-est{fill:var(--accent-dim);opacity:.25}
   .fpl-hi{fill:var(--accent);opacity:.9}
   .fpl-today{fill:var(--status-good);filter:drop-shadow(0 0 4px var(--status-good));animation:fplPulse 2.4s ease-in-out infinite}
@@ -1480,7 +1481,7 @@ const store = {
 };
 
 /* ---------- config ---------- */
-const BUILD = 'v35.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v35.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [1344396, 1342410, 1344728, 1340238, 1344398];
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const REPOSITIONED = {1338795: 1344396, 1339457: 1344398, 1340170: 1344728};
@@ -7459,18 +7460,47 @@ document.addEventListener('click', e=>{
     store.set('matrixSort', matrixSort);
     try{ renderMatrix(); }catch(err){}
     // the sorted column may be off-screen on a phone: bring it into view inside the table
-    setTimeout(()=>{ const th=document.querySelector('#matrixBody th.sorted'); if(th) th.scrollIntoView({block:'nearest',inline:'center'}); },450);
+    /* sideways only, inside the table: scrollIntoView would also move the page and cut the jump short */
+    setTimeout(()=>{ const th=document.querySelector('#matrixBody th.sorted'), sc=th&&th.closest('#mxScroll'); if(!sc) return;
+      const a=th.getBoundingClientRect(), c=sc.getBoundingClientRect();
+      sc.scrollTo({left:Math.max(0,sc.scrollLeft+(a.left-c.left)-sc.clientWidth/2+a.width/2),behavior:'smooth'}); },450);
   }
   const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
   /* A jump can name a block inside the panel, so a link to one table does not land the reader
      at the top of a long panel and leave them to find it. */
-  const an=b.getAttribute('data-anchor'), tgt=(an&&p.querySelector('#'+CSS.escape(an)))||p;
+  const an=b.getAttribute('data-anchor'), find=()=>{ const q=document.querySelector('.panel[data-panel="'+b.getAttribute('data-jump')+'"]'); return (q&&an&&q.querySelector('#'+CSS.escape(an)))||q; }, tgt=find()||p;
   try{ tgt.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
   catch(err){ tgt.scrollIntoView(); }
+  settleJump(find);
   // land with a brief glow, so the eye finds what the link promised
   tgt.classList.remove('jump-flash'); void tgt.offsetWidth; tgt.classList.add('jump-flash');
   setTimeout(()=>tgt.classList.remove('jump-flash'),1800);
 });
+/* A smooth scroll is aimed at where the target was when the tap happened. If anything above it
+   changes height on the way (data arriving, a chart redrawn, the iPhone address bar), it lands
+   off. So once the page stops moving, the target is checked against where it should sit under
+   the nav strip and nudged there; this repeats while the page keeps shifting, for a few seconds
+   at most, and stops the moment you scroll or touch the page yourself. */
+let jumpCtl=null;
+function settleJump(find){
+  if(jumpCtl) jumpCtl.abort();
+  const ctl=jumpCtl=new AbortController(), o={signal:ctl.signal,passive:true};
+  ['wheel','touchstart','keydown','mousedown'].forEach(ev=>addEventListener(ev,()=>ctl.abort(),o));
+  let lastY=-1, still=0, n=0, fixes=0;
+  const tick=()=>{
+    if(ctl.signal.aborted) return;
+    if(++n>36||fixes>4){ ctl.abort(); return; }
+    const y=scrollY; still=Math.abs(y-lastY)<1?still+1:0; lastY=y;
+    if(still>=2){
+      const t=find(); if(!t){ ctl.abort(); return; }
+      const want=(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34)+12;
+      const off=t.getBoundingClientRect().top-want, maxY=document.documentElement.scrollHeight-innerHeight;
+      if(Math.abs(off)>6 && !(off>0&&y>=maxY-2)){ scrollTo({top:Math.min(maxY,Math.max(0,y+off)),behavior:'auto'}); fixes++; still=0; }
+      else if(n>12){ ctl.abort(); return; }
+    }
+    setTimeout(tick,120); };
+  setTimeout(tick,250);
+}
 function openPanel(p){ p.classList.remove('collapsed'); const g=p.querySelector('.collapse-btn'); if(g) g.textContent='▾'; }
 /* The chip of the section on screen is lit, and the chip row keeps it in view. */
 let sectionIO=null;
@@ -7516,6 +7546,7 @@ function buildQuickNav(){
       const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
       try{ p.scrollIntoView({behavior:reduce?'auto':'smooth', block:'start'}); }
       catch(e){ p.scrollIntoView(); }                   // older WebKit: no options object
+      settleJump(()=>document.querySelector('.panel[data-panel="'+p.dataset.panel+'"]'));
       p.classList.remove('jump-flash'); void p.offsetWidth; p.classList.add('jump-flash');
       setTimeout(()=>p.classList.remove('jump-flash'),1800);
     });
@@ -7697,7 +7728,10 @@ async function loadPulse(){
     if(!document.hidden) markSeen();
     // swap in place: the tile link and the panel section, nothing else re-renders (and the link only when it changed)
     const a=document.querySelector('.fp-link60'), h=feePulseLink60();
-    if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; if(d.firstElementChild.outerHTML!==a.outerHTML) a.replaceWith(d.firstElementChild); }
+    /* updated in place: the button is never swapped out, so a finger already on it still gets its
+       tap (iPhone drops a tap whose element is replaced before the finger lifts) */
+    if(a&&h){ const d=document.createElement('div'); d.innerHTML=h; const nb=d.firstElementChild;
+      if(nb.innerHTML!==a.innerHTML) a.innerHTML=nb.innerHTML; if(a.getAttribute('aria-label')!==nb.getAttribute('aria-label')) a.setAttribute('aria-label',nb.getAttribute('aria-label')); }
     const w=document.getElementById('fp60');
     /* The minute dial updates itself in place, so its marks keep moving without a redraw; the
        ledger fallback (or a switch between the two) is rebuilt. */
@@ -8360,6 +8394,12 @@ function feePulseStats(){
 function renderFeePulse(){
   const host=$('#fpBody'); if(!host) return;
   const hint=$('#fpHint');
+  /* The live 60-minute dial is kept, not rebuilt: it carries its marks, a birth or catch-up sweep
+     in progress, and whatever a finger is on. The panel holds its height while the rest is redrawn,
+     so nothing below it moves (a jump on its way down the page lands where it was aimed). */
+  const keep=document.getElementById('fp60'), keepIt=!!(keep&&keep._sync&&pulseMins()&&host.contains(keep));
+  host.style.minHeight=host.offsetHeight+'px';
+  requestAnimationFrame(()=>{ host.style.minHeight=''; });
   host.innerHTML='';
   const S=feePulseStats();
   if(!S){
@@ -8475,7 +8515,7 @@ function renderFeePulse(){
     +'bright bars beat today\'s pace, grey lines are month averages'
     +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));
   renderFeePulse24(host);
-  renderFeePulse60(host);
+  if(keepIt){ host.append(keep); keep._sync(); } else renderFeePulse60(host);
 }
 /* The last 24 hours, one bar per clock hour, under the day history: the same reading of the
    ledger as the FEE PULSE · 24 HOURS link on the income tile, drawn large enough to read. */
@@ -8545,7 +8585,11 @@ function renderFeePulse24(host){
   wrap.append(el('div','arch-note','One bar per hour, your time · same ledger as the day bars above · the ledger is read about every 20 minutes and a gain between two readings is split across the hours it spans · '
     +'bright bars beat the 24-hour average, green is the hour in progress.'));
 }
-let fpRz=null; addEventListener('resize',()=>{ clearTimeout(fpRz); fpRz=setTimeout(()=>{ try{ renderFeePulse(); }catch(e){} },200); },{passive:true});
+/* Charts here are drawn at their real width, so a width change redraws them. Only a width change:
+   on iPhone the address bar grows and shrinks while you scroll and fires resize every time, and
+   rebuilding the panel mid-scroll moved the page under a jump that was on its way to the clocks. */
+let fpRz=null, fpW=innerWidth; addEventListener('resize',()=>{ if(innerWidth===fpW) return; fpW=innerWidth;
+  clearTimeout(fpRz); fpRz=setTimeout(()=>{ try{ renderFeePulse(); }catch(e){} },200); },{passive:true});
 
 function renderCash(){
   const host=$('#cashBody'); if(!host) return;
