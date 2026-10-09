@@ -1,0 +1,35 @@
+# One-off: rehearse the lock end to end on a throwaway copy with a dummy passphrase. Nothing is pushed.
+name: lock-rehearsal
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/lock.mjs', 'scripts/lock-rehearsal.mjs', 'scripts/lock-page-rehearsal.mjs', '.github/workflows/lock-rehearsal.yml']
+permissions:
+  contents: read
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REHEARSAL_PASS: 'rehearsal only, protects nothing real'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages, path: gp }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Copy this branch's relay into the copy, give it a fresh salt
+        run: |
+          cp scripts/*.mjs scripts/commit-data.sh gp/scripts/
+          node -e 'require("fs").writeFileSync("gp/deck-r7k4x9/lock.json", JSON.stringify({v:1,kdf:"PBKDF2-SHA256",iter:600000,salt:require("crypto").randomBytes(16).toString("base64")},null,1))'
+      - name: One full relay pass, locked (its own output is the log being checked)
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+        run: |
+          cd gp && DECK_PASSPHRASE="$REHEARSAL_PASS" node scripts/fetch-data.mjs > /tmp/relay.out 2>&1 || echo "relay exit $?"
+          wc -l < /tmp/relay.out
+      - name: Check the sealed output
+        run: DECK_PASSPHRASE="$REHEARSAL_PASS" node scripts/lock-rehearsal.mjs "$PWD/gp" /tmp/relay.out
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - name: The page against the sealed copy
+        run: node scripts/lock-page-rehearsal.mjs "$PWD/gp/deck-r7k4x9"

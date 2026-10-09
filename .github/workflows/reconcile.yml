@@ -1,0 +1,31 @@
+# Reconcile the whole portfolio history from the relay's own archive: every snapshot it ever
+# committed to gh-pages is replayed, the total rebuilt as each panel computed it, and again with
+# the misreads taken out. Writes deck-r7k4x9/recon-main.json (sealed) for the dashboard's TOTAL
+# view. The log is public: dates, counts, ratios and tickers only — never an amount or address.
+name: reconcile
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 3 * * *'     # 05:41 Budapest (CEST), before the daily audit
+permissions:
+  contents: write
+concurrency: { group: reconcile, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages, fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/reconcile-history.mjs
+        env: { DECK_PASSPHRASE: '${{ secrets.DECK_PASSPHRASE }}' }
+      - name: Commit
+        run: |
+          [ -f deck-r7k4x9/recon-main.json ] || exit 0
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          git add deck-r7k4x9/recon-main.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "reconcile $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1

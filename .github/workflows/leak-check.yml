@@ -1,0 +1,26 @@
+# Does any copy the repository keeps still hold one of the deck's wallet addresses? Every branch,
+# every version of every file in their history, every commit message, and (logs: yes) every kept
+# Actions run log is searched. The log is public: counts only.
+name: leak-check
+on:
+  workflow_dispatch:
+    inputs:
+      logs: { description: 'also read every kept Actions run log (yes/no)', required: false, default: 'no' }
+permissions:
+  contents: read
+  actions: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages, fetch-depth: 0 }
+      - run: git fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/leak-check.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          GH_TOKEN: ${{ github.token }}
+          LOGS: ${{ github.event.inputs.logs == 'yes' && '1' || '0' }}

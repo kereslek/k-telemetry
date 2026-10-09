@@ -1,0 +1,100 @@
+# Deploys the minute fee recorder (worker/) to Cloudflare. Needs one repository secret,
+# CLOUDFLARE_API_TOKEN (template "Edit Cloudflare Workers"); everything else is discovered.
+name: deploy-pulse
+on:
+  push:
+    branches: [claude/new-session-argqhq, main]
+    paths: ['worker/**', '.github/workflows/deploy-pulse.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: { group: deploy-pulse, cancel-in-progress: false }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+      # Optional: the deck's lock (scripts/lock.mjs). Only values derived from it reach Cloudflare.
+      DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Token present?
+        id: tok
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set yet - nothing to deploy."
+            echo "ok=0" >> $GITHUB_OUTPUT
+          else echo "ok=1" >> $GITHUB_OUTPUT; fi
+      - name: Account and workers.dev subdomain
+        if: steps.tok.outputs.ok == '1'
+        id: acct
+        run: |
+          api(){ curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'content-type: application/json' "$@"; }
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success,status:.result.status,errors}'
+          ACC=$(api https://api.cloudflare.com/client/v4/accounts | jq -r '.result[0].id // empty')
+          [ -n "$ACC" ] || { echo "::error::The token cannot see any account. Recreate it from the 'Edit Cloudflare Workers' template."; exit 1; }
+          echo "account ${ACC:0:6}…"
+          SUB=$(api https://api.cloudflare.com/client/v4/accounts/$ACC/workers/subdomain | jq -r '.result.subdomain // empty')
+          if [ -z "$SUB" ]; then
+            for c in kereslek kereslek-kt kt-r7k4x9 kt-r7k4x9-$RANDOM; do
+              R=$(api -X PUT https://api.cloudflare.com/client/v4/accounts/$ACC/workers/subdomain -d "{\"subdomain\":\"$c\"}")
+              echo "$R" | jq -c '{success,errors}'
+              if [ "$(echo "$R" | jq -r .success)" = "true" ]; then SUB=$c; break; fi
+            done
+          fi
+          [ -n "$SUB" ] || { echo "::error::Could not register a workers.dev subdomain."; exit 1; }
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACC" >> $GITHUB_ENV
+          echo "sub=$SUB" >> $GITHUB_OUTPUT
+      - name: Deploy
+        if: steps.tok.outputs.ok == '1'
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 deploy
+          if [ -n "$SOL_RPC_URL" ]; then printf '%s' "$SOL_RPC_URL" | npx --yes wrangler@4 secret put SOL_RPC_URL; fi
+      - name: Lock (when the deck is locked)
+        if: steps.tok.outputs.ok == '1' && env.DECK_PASSPHRASE != ''
+        working-directory: worker
+        run: |
+          # The derived AES key opens the relay's sealed files; the token is what the unlocked page
+          # sends. Both come from the passphrase and lock.json's salt, the same way the page derives them.
+          curl -sS -m 20 "https://kereslek.github.io/k-telemetry/deck-r7k4x9/lock.json?t=$(date +%s)" -o /tmp/lock.json
+          node -e '
+            const c=require("crypto"), L=JSON.parse(require("fs").readFileSync("/tmp/lock.json","utf8"));
+            const b=c.pbkdf2Sync(process.env.DECK_PASSPHRASE.trim(), Buffer.from(L.salt,"base64"), L.iter, 64, "sha256");
+            require("fs").writeFileSync("/tmp/k", b.subarray(0,32).toString("base64")); require("fs").writeFileSync("/tmp/t", b.subarray(32).toString("hex"));'
+          echo "::add-mask::$(cat /tmp/k)"; echo "::add-mask::$(cat /tmp/t)"
+          npx --yes wrangler@4 secret put DECK_KEY < /tmp/k
+          npx --yes wrangler@4 secret put PULSE_TOKEN < /tmp/t
+          echo "PULSE_K=$(cat /tmp/t)" >> $GITHUB_ENV
+          rm -f /tmp/k /tmp/t
+      - name: Verify it records
+        if: steps.tok.outputs.ok == '1'
+        run: |
+          URL="https://kt-pulse.${{ steps.acct.outputs.sub }}.workers.dev/m?n=10"
+          echo "PULSE_URL $URL" ; echo "Pulse endpoint: $URL" >> $GITHUB_STEP_SUMMARY
+          # Locked: ask with the token, and print nothing the recorder holds — this log is public.
+          if [ -n "$PULSE_K" ]; then
+            code=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$URL"); echo "without the token: HTTP $code (403 expected)"
+            for i in $(seq 1 30); do sleep 20
+              n=$(curl -sS -m 15 "$URL&k=$PULSE_K" | jq -r '.mins|length' 2>/dev/null || echo 0)
+              echo "$(date -u +%T) minutes recorded: $n"; [ "${n:-0}" -gt 0 ] && { echo "RECORDING OK (locked)"; exit 0; }
+            done
+            echo "::warning::Deployed and locked, but no minutes yet."; exit 0
+          fi
+          for i in $(seq 1 45); do
+            sleep 20
+            B=$(curl -sS -m 15 "$URL" || true)
+            echo "$(date -u +%T) $B" | cut -c1-400
+            echo "$B" | jq -e '.mins|length>0' >/dev/null 2>&1 && { echo "RECORDING OK"; ok=1; break; }
+          done
+          [ -n "$ok" ] || { echo "::warning::Deployed, but no minutes recorded yet (DNS for a new workers.dev subdomain can take a few minutes)."; exit 0; }
+          # watched mode: ask the way the open dashboard does, every 3 s for a minute
+          for i in $(seq 1 20); do
+            S=$(date +%s%3N); B=$(curl -sS -m 15 "${URL%n=10}n=5&live=1" || true); E=$(date +%s%3N)
+            echo "$B" | jq -c --arg ms "$((E-S))" '{answer_ms:($ms|tonumber), fast, last_read_s_ago:((.now-.last)/1000|floor), read, N, err, exact_trades:([.trades[]|select(.x)]|length), newest:(.trades[0]|{t:(.t/1000|todate), usd, x})}' 2>/dev/null || echo "$B" | cut -c1-300
+            sleep 3
+          done

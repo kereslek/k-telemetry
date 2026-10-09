@@ -1,0 +1,80 @@
+name: refresh-data
+on:
+  workflow_dispatch:
+  push:
+    branches: [gh-pages]
+    paths: ['scripts/**', '.github/workflows/**', 'deck-r7k4x9/config.json']
+  schedule:
+    - cron: '*/15 * * * *'
+    # Two entries either side of the UTC month boundary. Every fee has to land in one month or
+    # the other, and the closer a reading sits to midnight the less of the interval has to be
+    # estimated rather than measured. GitHub honours these no more reliably than the rest, so
+    # they are an improved chance and not a guarantee — the proration at the cut is what makes
+    # the figures right when they are ignored.
+    - cron: '52 23 * * *'
+    - cron: '4 0 * * *'
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # A job may run six hours. Using most of that is the only lever that helps here: GitHub is
+    # firing this schedule roughly twice a day, so what matters is how much of each gap one
+    # firing can cover, not how quickly it finishes.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # One firing, many refreshes, spread over hours.
+      #
+      # The schedule says every fifteen minutes. GitHub fires it about twice a day — gaps of 745,
+      # 666, 567 and 685 minutes are all in the record, and they predate anything done here, so
+      # this is not something the workflow can argue with. What it can do is cover more of each
+      # gap: twenty-two passes at fifteen-minute spacing hold the data fresh for five and a half
+      # hours after every firing, instead of fifty minutes.
+      #
+      # A failing pass must not end the loop — a rate-limited RPC on one pass says nothing about
+      # the next. The job fails only if every pass failed, which is the case that means the
+      # refresh is genuinely broken rather than merely unlucky.
+      - name: Refresh, repeatedly
+        # Optional. When the repository has a SOL_RPC_URL secret the relay puts it in front of the
+        # public Solana endpoints; when it does not, this is an empty string and nothing changes.
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          OPENSEA_API_KEY: ${{ secrets.OPENSEA_API_KEY }}
+          # Optional: when set, every published file is sealed (scripts/lock.mjs). Never printed.
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+        run: |
+          # Passes start every SPACING seconds until the job is 5h20m old (the job's limit is 5h50m);
+          # a slow pass shortens the rest after it, never below a minute.
+          SPACING=360
+          END=$(( $(date +%s) + 320*60 ))
+          ok=0; i=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            i=$((i+1)); start=$(date +%s)
+            echo "::group::pass $i"
+            git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
+            if node scripts/fetch-data.mjs && bash scripts/commit-data.sh; then
+              ok=$((ok+1)); echo "pass $i ok"
+            else
+              echo "pass $i failed (continuing)"
+            fi
+            echo "::endgroup::"
+            left=$(( SPACING - ($(date +%s) - start) )); [ "$left" -lt 60 ] && left=60
+            [ $(( $(date +%s) + left )) -lt "$END" ] && sleep $left || break
+          done
+          echo "$ok of $i passes succeeded"
+          if [ "$ok" -eq 0 ]; then echo "every pass failed"; exit 1; fi
+      # The next job is started by this one, not left to GitHub's timer, which can lag by an hour.
+      # (A dispatch from a workflow's own token is the one event that may start another run.)
+      - name: Start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run refresh.yml --ref gh-pages || echo "could not start the next run; the schedule will"

@@ -1,0 +1,25 @@
+# Today's activity: own-pool swaps booked as own-swap fees, and the month's fees never stepping down.
+# The deck is locked and this log is public: counts and yes/no only.
+name: activity-audit
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/activity-audit.mjs', '.github/workflows/activity-audit.yml']
+  workflow_dispatch:
+    inputs:
+      start: { description: 'from (ISO time, UTC)', required: false, default: '' }
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/activity-audit.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          START: ${{ github.event.inputs.start || '2026-10-05T22:00:00Z' }}

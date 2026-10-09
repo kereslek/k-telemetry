@@ -1,0 +1,25 @@
+# Click and link audit of the live deck: every control pressed the way a finger would (at desktop
+# and phone width), every jump checked to land where it says, every link checked to answer.
+# Read-only — nothing that changes settings or data is pressed. A red run means a check failed;
+# the log carries kinds, counts, domains and masked labels only.
+name: click-audit
+on:
+  schedule:
+    - cron: '17 5 * * *'   # 07:17 Budapest (CEST), after the daily audit
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: { group: click-audit, cancel-in-progress: false }
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: node scripts/click-audit.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}

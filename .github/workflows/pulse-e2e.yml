@@ -1,0 +1,62 @@
+# Runs the minute recorder in Cloudflare's local runtime (no account needed): fires the cron
+# a few times a minute apart and reads back what it recorded. Feature branch only.
+name: pulse-e2e
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['worker/**', '.github/workflows/pulse-e2e.yml']
+permissions:
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Which Solana RPCs answer from the Workers runtime
+        working-directory: worker/test
+        timeout-minutes: 4
+        run: |
+          npx --yes wrangler@4 dev --config wrangler-probe.toml --port 8788 --ip 127.0.0.1 < /dev/null > /tmp/probe.log 2>&1 &
+          for i in $(seq 1 40); do curl -s -m 3 -o /dev/null http://127.0.0.1:8788/nothing && break; sleep 2; done
+          curl -s -m 60 http://127.0.0.1:8788/ ; echo
+          tail -5 /tmp/probe.log
+      - name: Gap engine unit tests
+        run: node worker/test/gaps.test.mjs
+      - name: Gap engine, live venues, in the Workers runtime
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 dev --test-scheduled --port 8789 --ip 127.0.0.1 < /dev/null > /tmp/gaps.log 2>&1 &
+          for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8789/gaps && break; sleep 2; done
+          echo "---- settings: out-of-range values are clamped"
+          curl -s -X POST "http://127.0.0.1:8789/gaps/cfg" -d '{"size":5,"minNet":99,"holdMin":-3,"venues":{"bybit":false},"fees":{"kraken":9}}'; echo
+          curl -s -X POST "http://127.0.0.1:8789/gaps/cfg" -d '{"size":1000,"minNet":0.5,"holdMin":10,"venues":{"bybit":true},"fees":{"kraken":0.4}}'; echo
+          for i in 1 2 3; do
+            # the minute schedule starts a gap reading on even minutes; "read now" covers the odd ones
+            curl -s "http://127.0.0.1:8789/__scheduled?cron=*+*+*+*+*" ; echo " fired $(date -u +%T)"
+            sleep 20
+            curl -s -X POST "http://127.0.0.1:8789/gaps/run" | cut -c1-200; echo
+            echo "GET /gaps/run → $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8789/gaps/run) (405 expected)"
+            curl -s "http://127.0.0.1:8789/gaps" | node -e '
+              let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{ const g=JSON.parse(s);
+                for(const [k,v] of Object.entries(g.tok||{})){
+                  console.log(k, "venues:", (v.quotes||[]).map(q=>q.id+" buy "+(q.buyPx||0).toPrecision(4)+" sell "+(q.sellPx||0).toPrecision(4)+(q.own?" own":"")).join(" | "));
+                  console.log("   best:", v.best?(v.best.buy+"→"+v.best.sell+" net "+v.best.net.toFixed(2)+"%"):"none", "· errs:", JSON.stringify(v.errs), "· open:", !!(v.st&&v.st.open), "· hist:", (v.st&&v.st.hist||[]).length); } });'
+            sleep 40
+          done
+          echo "---- gaps log"; grep -iE "error|exception" /tmp/gaps.log | tail -10 || true
+      - name: Run worker locally and fire the cron
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 dev --test-scheduled --port 8787 --ip 127.0.0.1 < /dev/null > /tmp/dev.log 2>&1 &
+          for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8787/m && break; sleep 2; done
+          for i in 1 2 3 4 5 6; do
+            curl -s "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*" ; echo " fired $(date -u +%T)"
+            sleep 5; curl -s "http://127.0.0.1:8787/m?n=10" | cut -c1-600; echo
+            sleep 55
+          done
+          echo "---- /m?n=10"; curl -s -i "http://127.0.0.1:8787/m?n=10"; echo
+          echo "---- /"; curl -s -i http://127.0.0.1:8787/ | head -5
+          echo "---- dev log"; tail -40 /tmp/dev.log
