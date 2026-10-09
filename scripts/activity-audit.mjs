@@ -13,7 +13,7 @@ const KEY=crypto.pbkdf2Sync(PASS, Buffer.from(L.salt,'base64'), L.iter, 64, 'sha
 const open=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm',KEY,Buffer.from(e.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
   return JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')); };
 const t=Date.now();
-const [cfg,data,fees,costs]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json'].map(f=>j(SITE+f+'?t='+t)))).map(open);
+const [cfg,data,fees,costs,ledger]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json','ledger-main.json'].map(f=>j(SITE+f+'?t='+t)))).map(x=>x?open(x):null);
 const W=cfg.profiles.flatMap(p=>p.wallets||[]), WE=W.filter(x=>x.chain==='ethereum').map(x=>x.address.toLowerCase()), WS=W.filter(x=>x.chain==='solana').map(x=>x.address);
 // the relay writes an Ethereum log index in hex (…:0x12f), this audit in decimal (…:303)
 const normId=id=>String(id).replace(/:0x([0-9a-f]+)$/i,(_,h)=>':'+parseInt(h,16));
@@ -83,6 +83,7 @@ for(const w of WE){
 // history-serving endpoints first: publicnode answers with only the last few hours of signatures
 const SR=[process.env.SOL_RPC_URL,'https://api.mainnet-beta.solana.com','https://rpc.solanatracker.io/public','https://solana.leorpc.com/?api_key=FREE','https://solana-rpc.publicnode.com'].filter(Boolean);
 async function srpc(method,params){ for(let k=0;k<3;k++) for(const u of SR){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})}); if(r&&r.result!==undefined) return r.result; await sleep(600);} return null; }
+const solPos=new Map(), solMove={own:0,out:0,other:0};
 for(const w of WS){
   let before=null, done=false, seen=0, mine=0;
   while(!done){
@@ -91,7 +92,29 @@ for(const w of WS){
       const tx=await srpc('getTransaction',[s.signature,{encoding:'json',maxSupportedTransactionVersion:0}]); await sleep(120); if(!tx) continue;
       const keys=[...tx.transaction.message.accountKeys,...((tx.meta.loadedAddresses&&tx.meta.loadedAddresses.writable)||[]),...((tx.meta.loadedAddresses&&tx.meta.loadedAddresses.readonly)||[])];
       if(keys[0]!==w) continue; mine++;                               // spam is paid for by someone else
-      if(!(tx.meta.logMessages||[]).some(l=>/Instruction: Swap/i.test(l))) continue;
+      lastTx=Math.max(lastTx, s.blockTime*1000);
+      const logs=tx.meta.logMessages||[];
+      /* a harvest, a withdrawal or a top-up of one of the deck's own positions (its position account is in the transaction) */
+      const ownPos=(data.sol||[]).filter(p=>p.pda&&keys.includes(p.pda));
+      if(ownPos.length){
+        const kind=logs.some(l=>/Instruction: (CollectFees|CollectReward|CollectFeesV2|CollectRewardV2|ClaimFee|ClaimReward)/i.test(l))?'harvest'
+          :logs.some(l=>/Instruction: DecreaseLiquidity/i.test(l))?'decrease':logs.some(l=>/Instruction: IncreaseLiquidity/i.test(l))?'increase':'other';
+        for(const p of ownPos){ const e=solPos.get(p.id)||{harvest:0,decrease:0,increase:0,other:0}; e[kind]++; solPos.set(p.id,e); } }
+      /* a plain transfer: only the system, token and account programs run in it; where each
+         transfer went is read from the parsed instructions (a token account's owner from the balances) */
+      const progs=new Set(logs.map(l=>(l.match(/^Program (\w+) invoke/)||[])[1]).filter(Boolean));
+      const PLAIN=new Set(['11111111111111111111111111111111','TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PE6UZBRyrrtbaPu','ATokenGPvbdGVxr1b2hvZbsiqW5xLDNa8HcqABdyGwk3Eo','ComputeBudget111111111111111111111111111111']);
+      if(progs.size&&[...progs].every(x=>PLAIN.has(x))&&!ownPos.length){
+        const px=await srpc('getTransaction',[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]); await sleep(120);
+        const owners=new Map(); const ak=px?px.transaction.message.accountKeys.map(k=>k.pubkey||k):[];
+        for(const tb of [...((px&&px.meta.preTokenBalances)||[]),...((px&&px.meta.postTokenBalances)||[])]) if(tb.owner) owners.set(ak[tb.accountIndex],tb.owner);
+        let own=0, out=0;
+        for(const ins of (px?px.transaction.message.instructions:[])){ const pi=ins.parsed; if(!pi||!pi.info) continue;
+          if(!/^(transfer|transferChecked|transferWithSeed)$/.test(pi.type)) continue;
+          const dest=pi.info.destination, to=ins.program==='system'?dest:(owners.get(dest)||null);
+          if(to&&WS.includes(to)) own++; else out++; }
+        if(own&&!out) solMove.own++; else if(out) solMove.out++; else solMove.other++; }
+      if(!logs.some(l=>/Instruction: Swap/i.test(l))) continue;
       const pools=[...ownSol.keys()].filter(p=>keys.includes(p));
       if(!pools.length){ other.sol++; continue; }
       for(const p of pools){ const id='sol:'+s.signature+':'+p; found.push({chain:'sol',t:new Date(s.blockTime*1000).toISOString(),id,pool:ownSol.get(p),booked:booked.has(id),back:pendBack.get(id),who:w}); }
@@ -119,6 +142,18 @@ const ticks=(fees.ticks||[]).filter(x=>x[0]>=START);
 let drops=0, worst=0; for(let i=1;i<ticks.length;i++){ const d=ticks[i][1]-ticks[i-1][1]; if(d< -0.01){ drops++; worst=Math.min(worst,d/Math.max(1,ticks[i-1][1])); } }
 console.log((drops?'WARN ':'ok   ')+'month-to-date fee readings today: '+ticks.length+' · steps down: '+drops+(drops?' (largest '+(worst*100).toFixed(2)+'% of the total)':''));
 console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets');
+console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' to its own wallets, '+solMove.out+' to outside addresses'+(solMove.other?', '+solMove.other+' unclear':''));
+/* Solana positions the deck's wallets touched today: a harvest (or a withdrawal, which collects the
+   fees with it) moves fees from unclaimed to collected, so the position's booked fee total must
+   never fall, and the relay's harvest scan must have read past it without an error. */
+{ const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
+  for(const [id,e] of solPos){ const L=(ledger||{})[id]||{}, p=(data.sol||[]).find(q=>q.id===id)||{};
+    const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
+    const after=series.length>1&&hist.length&&hist[hist.length-1][0]>lastTx;
+    console.log((fell||L.txErr?'WARN ':'ok   ')+'a Solana position: harvests '+e.harvest+', collected through DecreaseLiquidity (Raydium\u2019s harvest, or a withdrawal) '+e.decrease+', added '+e.increase+(e.other?', other '+e.other:'')
+      +' · booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings) · harvest scan '+(L.txErr?'reported an error':'clean')+(L.harvestGap?' · a harvest only partly read, filled from the owed balance':'')
+      +' · fees owed now '+((p.feesUsd||0)>0?'above zero':'zero')+' · read after today\u2019s last transaction: '+(after?'yes':'not yet')); }
+  if(!solPos.size) console.log('Solana positions touched today: 0'); }
 { const it=data.idle&&data.idle.t; console.log((lastTx&&it&&it<lastTx?'WARN ':'ok   ')+'wallet balances read after the latest of these transactions: '+(lastTx?(it&&it>=lastTx?'yes':'no'):'n/a')); }
 /* Ethereum positions: harvests, tokens added and withdrawn since START (from the position manager's
    own events), and whether each position's booked fee total ever fell — a harvest moves fees from
