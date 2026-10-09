@@ -103,11 +103,10 @@ for(const w of WS){
         const kind=logs.some(l=>/Instruction: (CollectFees|CollectReward|CollectFeesV2|CollectRewardV2|ClaimFee|ClaimReward)/i.test(l))?'harvest'
           :logs.some(l=>/Instruction: DecreaseLiquidity/i.test(l))?'decrease':logs.some(l=>/Instruction: IncreaseLiquidity/i.test(l))?'increase':'other';
         for(const p of ownPos){ const e=solPos.get(p.id)||{harvest:0,decrease:0,increase:0,other:0}; e[kind]++; solPos.set(p.id,e); } }
-      /* a plain transfer: only the system, token and account programs run in it; where each
-         transfer went is read from the parsed instructions (a token account's owner from the balances) */
-      const progs=new Set(logs.map(l=>(l.match(/^Program (\w+) invoke/)||[])[1]).filter(Boolean));
-      const PLAIN=new Set(['11111111111111111111111111111111','TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PE6UZBRyrrtbaPu','ATokenGPvbdGVxr1b2hvZbsiqW5xLDNa8HcqABdyGwk3Eo','ComputeBudget111111111111111111111111111111']);
-      if(progs.size&&[...progs].every(x=>PLAIN.has(x))&&!ownPos.length){
+      /* a transfer (whatever else rides along: wallets add their own guard and memo programs):
+         where each top-level transfer went is read from the parsed instructions, a token
+         account's owner from the token balances */
+      if(!ownPos.length&&!logs.some(l=>/Instruction: Swap/i.test(l))){
         const px=await srpc('getTransaction',[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]); await sleep(120);
         const owners=new Map(); const ak=px?px.transaction.message.accountKeys.map(k=>k.pubkey||k):[];
         for(const tb of [...((px&&px.meta.preTokenBalances)||[]),...((px&&px.meta.postTokenBalances)||[])]) if(tb.owner) owners.set(ak[tb.accountIndex],tb.owner);
@@ -116,7 +115,7 @@ for(const w of WS){
           if(!/^(transfer|transferChecked|transferWithSeed)$/.test(pi.type)) continue;
           const dest=pi.info.destination, to=ins.program==='system'?dest:(owners.get(dest)||null);
           if(to&&WS.includes(to)) own++; else out++; }
-        if(own&&!out) solMove.own++; else if(out) solMove.out++; else solMove.other++; }
+        if(own&&!out) solMove.own++; else if(out) solMove.out++; else if(!px) solMove.other++; }
       if(!logs.some(l=>/Instruction: Swap/i.test(l))) continue;
       const pools=[...ownSol.keys()].filter(p=>keys.includes(p));
       if(!pools.length){ other.sol++; continue; }
