@@ -22,4 +22,4 @@ jobs:
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
-          START: ${{ github.event.inputs.start || '2026-10-05T22:00:00Z' }}
+          START: ${{ github.event.inputs.start || '' }}   # empty: since midnight Budapest today

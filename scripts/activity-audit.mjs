@@ -5,7 +5,10 @@
    public: only counts and yes/no are printed, never a wallet, a transaction, a pool or an amount. */
 import crypto from 'node:crypto';
 const SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/', PASS=String(process.env.DECK_PASSPHRASE||'').trim();
-const START=Date.parse(process.env.START||'2026-10-05T22:00:00Z');
+/* from START, or else from midnight Budapest today */
+const budMidnight=()=>{ const now=Date.now(), d=new Date(now).toLocaleString('sv-SE',{timeZone:'Europe/Budapest'}).slice(0,10);
+  for(const off of [1,2]){ const t=Date.parse(d+'T00:00:00+0'+off+':00'); if(new Date(t).toLocaleString('sv-SE',{timeZone:'Europe/Budapest'}).slice(11,16)==='00:00') return t; } return now-24*3600e3; };
+const START=Date.parse(process.env.START||'')||budMidnight();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function j(u,opt){ for(let k=0;k<4;k++){ try{ const r=await fetch(u,{...opt,signal:AbortSignal.timeout(30000)}); if(r.ok) return await r.json(); }catch(e){} await sleep(1200*(k+1)); } return null; }
 const L=await j(SITE+'lock.json?t='+Date.now());
