@@ -1904,8 +1904,10 @@
 "use strict";
 /* Always open at the top. Mobile browsers reload a backgrounded tab and then restore the old
    scroll offset, while the panels are still building, so the page landed somewhere in the middle.
-   Restoration is switched off, every load starts at the top, and so does a return to the tab after
-   it has sat unseen for ten minutes or more (a short app switch keeps your place).
+   Restoration is switched off, every load starts at the top, and so does every return to the page
+   after a minute or more out of sight — tapping the home-screen icon of a dashboard still open in
+   the background is opening it, and it used to keep the old place for ten minutes. Only a quick
+   switch (under a minute: copying an address into a wallet and back) keeps your place.
    Switching restoration off is not enough everywhere: a phone browser can still put a reloaded tab
    back where it was once the page has grown, and the passphrase keyboard can push the page up
    behind the lock screen. So every open is held at the top until it has finished (the lock and
@@ -1914,7 +1916,7 @@
 (function(){
   const top=()=>{ try{ window.scrollTo(0,0); }catch(e){} };
   try{ if('scrollRestoration' in history) history.scrollRestoration='manual'; }catch(e){}
-  let hiddenAt=0; const LONG=10*60*1000;
+  let hiddenAt=0; const LONG=60*1000;
   let held=false, user=false, clearAt=0, iv=0;
   const busy=()=>{ const bs=document.getElementById('bootScreen');
     return !!(bs&&!bs.classList.contains('hide'))||document.documentElement.classList.contains('vault-on'); };
@@ -2200,7 +2202,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v39.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v39.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
