@@ -1,0 +1,27 @@
+# Daily read-only audit of the live deck against the relay. A red run means a check failed;
+# GitHub emails the owner, and the run's summary page lists what failed and why.
+name: daily-audit
+on:
+  schedule:
+    - cron: '47 4 * * *'   # 06:47 Budapest (CEST)
+  workflow_dispatch:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/daily-audit.mjs', '.github/workflows/daily-audit.yml', 'deck-r7k4x9/index.html']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      # on the dev branch the checkout's page is audited before it is deployed
+      - run: node scripts/daily-audit.mjs
+        env:
+          AUDIT_LOCAL: ${{ github.ref_name != 'gh-pages' && '1' || '' }}
+          # opens a locked deck; the log then shows pass/fail with every figure withheld
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}

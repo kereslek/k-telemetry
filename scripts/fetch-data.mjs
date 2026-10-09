@@ -1,0 +1,4042 @@
+// v22.2 relay nudge
+/* Server-side data refresh for ARC // LP COMMAND.
+   Runs in GitHub Actions (Node 20, no deps). Fetches Uniswap V3 + Raydium CLMM
+   position data and writes data.json for the static dashboard to consume. */
+
+import { pathToFileURL } from 'node:url';
+import fs from 'fs';
+import { makeRpc, syncPositionLedger, valueDeposits, summarizeLedger } from './sol-history.mjs';
+import { initLock, lockOn, readJ, writeJ, isSealed, quietLogs, inboxOpen} from './lock.mjs';
+import { suiHoldings, tronHoldings, IKA_TYPE } from './alt-chains.mjs';
+import { scanNfts, nftSummary, openseaOn } from './nfts.mjs';
+const OUT='deck-r7k4x9';
+/* Sealed publishing when the DECK_PASSPHRASE secret is set (scripts/lock.mjs); plain otherwise. */
+initLock(OUT);
+/* Days and months are the owner's, in Budapest: a day starts at 00:00 there, which is 22:00 or
+   23:00 UTC the evening before depending on daylight saving. Every day and month key the ledgers
+   write goes through these, so the cut, the closing day and "today" all agree. */
+const TZ='Europe/Budapest';
+const tzFmt=new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',
+  hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+const tzParts=ms=>{ const o={}; for(const x of tzFmt.formatToParts(new Date(ms))) o[x.type]=x.value; return o; };
+export const localDay=ms=>{ const o=tzParts(ms); return o.year+'-'+o.month+'-'+o.day; };
+export const localMonth=ms=>localDay(ms).slice(0,7);
+const tzOffset=ms=>{ const o=tzParts(ms);
+  return Date.UTC(+o.year,+o.month-1,+o.day,+o.hour,+o.minute,+o.second)-Math.floor(ms/1000)*1000; };
+// the instant a Budapest calendar date begins (month and day may overflow, as with Date.UTC)
+export const localMidnight=(y,m,d)=>{ const g=Date.UTC(y,m-1,d); return g-tzOffset(g-tzOffset(g)); };
+export const monthStart=key=>localMidnight(+key.slice(0,4),+key.slice(5,7),1);
+export const dayStart=key=>localMidnight(+key.slice(0,4),+key.slice(5,7),+key.slice(8,10));
+const CONFIG = readJ(OUT+'/config.json');
+/* Solana endpoints, chosen by measurement (scripts/sol-probe.mjs, 2026-09-25), not by habit.
+
+   api.mainnet-beta.solana.com keeps the whole history — it served a position's opening from
+   2025-10-30 — but throttles a GitHub runner after about a dozen quick calls. publicnode is fast
+   and never throttled in testing, but keeps under three days: asked for older history it returns
+   a SHORT signature list and null transactions, both of which look like real answers. drpc
+   answered HTTP 400 to everything and is gone; five other public endpoints tried were dead.
+
+   So the two are used for what each is good at. Reads of current state go to the fast one
+   first. Anything that walks history goes only to an endpoint that keeps it — before this split,
+   a throttled mainnet-beta handed history calls to publicnode, which answered with a truncated
+   list that the code then took as complete.
+
+   SOL_RPC_URL, if set as a repository secret, goes in front of both. It is optional: the relay
+   runs without it, just more slowly while it backfills. */
+const SOL_KEYED=(process.env.SOL_RPC_URL||'').split(',').map(s=>s.trim()).filter(Boolean);
+const SOL_LIVE=[...SOL_KEYED,'https://solana-rpc.publicnode.com','https://api.mainnet-beta.solana.com'];
+const SOL_ARCHIVE=[...SOL_KEYED,'https://api.mainnet-beta.solana.com'];
+const NPM_STD='0xc36442b4a4522e871399cd717abdd847ab11fe88', FACT_STD='0x1f98431c8ad98523631ae4a59f267346ea31f984';
+const CHAINS = {
+  ethereum:{ tag:'ETH', rpcs:['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'],
+    npm:NPM_STD, factory:FACT_STD, bph:300, startBlock:12369651, llama:'ethereum',
+    weth:'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+    stables:['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','0xdac17f958d2ee523a2206206994597c13d831ec7','0x6b175474e89094c44da98b954eedeac495271d0f'] },
+  arbitrum:{ tag:'ARB', rpcs:['https://arbitrum-one-rpc.publicnode.com','https://arb1.arbitrum.io/rpc','https://arbitrum.drpc.org'],
+    npm:NPM_STD, factory:FACT_STD, bph:14400, startBlock:100000, llama:'arbitrum',
+    weth:'0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+    stables:['0xaf88d065e77c8cc2239327c5edb3a432268e5831','0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9','0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'] },
+  base:{ tag:'BASE', rpcs:['https://base-rpc.publicnode.com','https://mainnet.base.org','https://base.drpc.org'],
+    npm:'0x03a520b32c04bf3beef7beb72e919cf822ed34f1', factory:'0x33128a8fc17869897dce68ed026d694621f6fdfd', bph:1800, startBlock:1371680, llama:'base',
+    weth:'0x4200000000000000000000000000000000000006',
+    stables:['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'] },
+  optimism:{ tag:'OP', rpcs:['https://optimism-rpc.publicnode.com','https://mainnet.optimism.io','https://optimism.drpc.org'],
+    npm:NPM_STD, factory:FACT_STD, bph:1800, startBlock:1000000, llama:'optimism',
+    weth:'0x4200000000000000000000000000000000000006',
+    stables:['0x0b2c639c533813f4aa9d7837caf62653d097ff85','0x94b008aa00579c1307b0ef2c499ad98a8ce58e58','0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'] },
+  polygon:{ tag:'POLY', rpcs:['https://polygon-bor-rpc.publicnode.com','https://polygon-rpc.com','https://polygon.drpc.org'],
+    npm:NPM_STD, factory:FACT_STD, bph:1700, startBlock:22757547, llama:'polygon',
+    weth:'0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
+    stables:['0x3c499c542cef5e3811e1192ce70d8cc03d5c3359','0xc2132d05d31c914a87c6611c10748aeb04b58e8f','0x8f3cf7ad23cd3cadbd9735aff958023239c6a063'] },
+};
+
+
+const CHAINLINK_ETH='0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419';
+const CHAINLINK_BTC='0xf4030086522a5beea4988f8ca5b36dbc97bee88c';   // BTC / USD proxy
+const SEL={positions:'0x99fbab88',ownerOf:'0x6352211e',getPool:'0x1698ee82',slot0:'0x3850c7bd',symbol:'0x95d89b41',decimals:'0x313ce567',latestAnswer:'0x50d25bcd',collect:'0xfc6f7865',
+  /* pool.liquidity(): the liquidity active AT THE CURRENT TICK, which is the denominator
+     every in-range position's fee share is divided by. Not the same thing as TVL — a pool
+     can hold millions parked in ranges the price is nowhere near. */
+  poolLiquidity:'0x1a686502', getPair:'0xe6a43905', getReserves:'0x0902f1ac'};
+const TOPIC_INC='0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
+const TOPIC_DEC='0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4';
+const TOPIC_COL='0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01';
+const SEL2={balanceOf:'0x70a08231', tokenOfOwnerByIndex:'0x2f745c59'};
+
+const errors=[];
+const logErr=(tag,e)=>{ errors.push(tag+': '+String(e&&e.message||e).slice(0,140)); console.error(tag, e&&e.message||e); };
+const pad32=h=>h.replace(/^0x/,'').padStart(64,'0');
+const word=(d,i)=>'0x'+d.replace(/^0x/,'').slice(i*64,(i+1)*64);
+const toSigned=(bi,bits)=>{const mask=(1n<<BigInt(bits))-1n;const m=bi&mask;const max=1n<<BigInt(bits-1);return m>=max?m-(1n<<BigInt(bits)):m;};
+const bigToFloat=(bi,dec)=>Number(bi)/Math.pow(10,dec);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+async function post(url,payload,timeout=15000){
+  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),timeout);
+  try{ const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:ctrl.signal});
+    if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
+  finally{ clearTimeout(t); }
+}
+async function getJson(url,timeout=15000){
+  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),timeout);
+  try{ const r=await fetch(url,{signal:ctrl.signal}); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
+  finally{ clearTimeout(t); }
+}
+let rpcId=1;
+async function evm(chainKey,method,params){
+  let last;
+  for(const url of CHAINS[chainKey].rpcs){
+    try{
+      const js=await post(url,{jsonrpc:'2.0',id:rpcId++,method,params});
+      if(js.error) throw new Error(js.error.message||JSON.stringify(js.error));
+      return js.result;
+    }catch(e){ last=e; }
+  }
+  throw last;
+}
+const evmCall=(ck,to,data,block='latest',from)=>evm(ck,'eth_call',[{to,data,...(from?{from}:{})},block]);
+const eth=(method,params)=>evm('ethereum',method,params);
+const ethCall=(to,data,block='latest',from)=>evmCall('ethereum',to,data,block,from);
+const solLive=makeRpc(SOL_LIVE,{timeout:20000});
+const solArchive=makeRpc(SOL_ARCHIVE,{timeout:25000, nullIsMiss:true});
+const SOL_HIST_METHODS=new Set(['getSignaturesForAddress','getTransaction','getBlock','getBlockTime']);
+/* Every existing call site goes through here, so routing by method fixes all of them at once:
+   the open-date walk, the harvest scan, the wallet cost scan and the new position history. */
+async function sol(method,params){
+  return (SOL_HIST_METHODS.has(method)?solArchive:solLive)(method,params);
+}
+
+/* ---------- v3 math ---------- */
+const Q96=2**96, Q64=2**64;
+const tickToPrice=t=>Math.pow(1.0001,t);
+const tickToSqrt=t=>Math.pow(1.0001,t/2);
+function amounts(L,sp,sa,sb){ if(sa>sb)[sa,sb]=[sb,sa]; let a0=0,a1=0;
+  if(sp<=sa) a0=L*(sb-sa)/(sa*sb); else if(sp>=sb) a1=L*(sb-sa);
+  else { a0=L*(sb-sp)/(sp*sb); a1=L*(sp-sa); } return [a0,a1]; }
+function decodeString(res){ try{ const off=Number(BigInt(word(res,0)))/32; const len=Number(BigInt(word(res,off)));
+  const hex=res.replace(/^0x/,'').slice((off+1)*64,(off+1)*64+len*2);
+  return decodeURIComponent(hex.replace(/(..)/g,'%$1')); }catch(e){ return '???'; } }
+
+
+/* ---------- EVM pipeline (chain-generic) ---------- */
+const tokenMeta=new Map();
+async function meta(ck,addr){
+  addr=addr.toLowerCase(); const key=ck+':'+addr;
+  if(tokenMeta.has(key)) return tokenMeta.get(key);
+  let symbol='???',decimals=18;
+  try{ symbol=decodeString(await evmCall(ck,addr,SEL.symbol)); }catch(e){}
+  try{ decimals=Number(BigInt(await evmCall(ck,addr,SEL.decimals))); }catch(e){}
+  const m={symbol:symbol==='WETH'?'ETH':symbol,decimals};
+  tokenMeta.set(key,m); return m;
+}
+/* universal pricing: DefiLlama coins API, pool-derived fallback */
+const priceCache={};
+/* Real prices as of a past moment. A historical price never changes, so anything derived
+   from one can be cached permanently — which is the whole point: a cost basis must be a fact
+   about the past, not a figure recomputed from today's market on every run. */
+async function llamaHistorical(keys,ts){
+  const out={};
+  try{
+    const js=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(ts)+'/'+keys.join(','),20000);
+    for(const k of keys){ const c=js&&js.coins&&js.coins[k]; if(c&&c.price!=null) out[k]=c.price; }
+  }catch(e){ logErr('llamaHist',e); }
+  return out;
+}
+async function blockTs(ck,block){
+  const key=ck+':'+block, hit=blockCache.blkTs[key];
+  if(hit!=null) return hit;
+  try{
+    const blk=await evm(ck,'eth_getBlockByNumber',['0x'+block.toString(16),false]);
+    const t=Number(BigInt(blk.timestamp));
+    blockCache.blkTs[key]=t; return t;
+  }catch(e){ return null; }
+}
+async function llamaPrices(keys){
+  const need=keys.filter(k=>!(k in priceCache));
+  for(let i=0;i<need.length;i+=40){
+    const batch=need.slice(i,i+40);
+    try{
+      const js=await getJson('https://coins.llama.fi/prices/current/'+batch.join(','),20000);
+      for(const k of batch){ const c=js.coins&&js.coins[k]; priceCache[k]=c?c.price:null; }
+    }catch(e){ for(const k of batch) priceCache[k]=null; }
+  }
+}
+/* v25.2: public RPCs no longer allow unbounded eth_getLogs (10k-block cap) —
+   every log scan now walks the range in CHUNK-sized windows. */
+async function getLogsChunked(ck,filter,fromBlock,toBlock){
+  const CHUNK=ck==='ethereum'?9000:45000;
+  const out=[];
+  let from=fromBlock, guard=0;
+  while(from<=toBlock && guard<220){
+    guard++;
+    const to=Math.min(toBlock,from+CHUNK-1);
+    // One flaky chunk used to throw away the whole scan — losing a position's entire
+    // history (cost basis, fee totals) for the cycle. Retry before giving up.
+    let lg=null,err=null;
+    for(let attempt=0;attempt<3;attempt++){
+      try{ lg=await evm(ck,'eth_getLogs',[{...filter,fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16)}]); err=null; break; }
+      catch(e){ err=e; await sleep(500*(attempt+1)); }
+    }
+    if(err) throw err;
+    out.push(...lg);
+    from=to+1;
+    if(from<=toBlock) await sleep(120);
+  }
+  if(from<=toBlock) throw new Error('chunk guard hit at '+from+'/'+toBlock);
+  return out;
+}
+/* persistent scan cache (committed with the other JSON ledgers):
+   mint  — position id → mint block, found once by binary search, then never again
+   tscan — wallet NFT-transfer scan checkpoint + candidate ids */
+/* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
+   the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
+   back undefined on the first real run and took the whole competition block down with it. */
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist'];
+let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
+/* Only an explicit revert proves "this id did not exist yet". Everything else — including
+   phrasings we have never seen — is treated as "the node could not answer" and retried.
+   The asymmetry is deliberate: over-calling infra costs one logged error and a recompute
+   next run, while under-calling it silently caches a wrong mint block forever. Public RPCs
+   return things like "service temporarily unavailable", which no infra allowlist catches. */
+const RPC_REVERT=/revert|invalid token id|invalid opcode|out of gas|execution failed/i;
+/* One probe of positions(id) at a historical block.
+   true = live, false = reverted (not minted yet), throw = the node could not tell us.
+   Conflating the third case with the second walks the search past the real mint block,
+   and since the answer is cached permanently that bakes in an understated cost basis. */
+async function positionsLiveAt(ck,npm,idHex,block){
+  for(let attempt=0;attempt<3;attempt++){
+    try{ await evmCall(ck,npm,SEL.positions+idHex,'0x'+block.toString(16)); return true; }
+    catch(e){
+      if(RPC_REVERT.test(String((e&&e.message)||e))) return false;   // a real revert
+      await sleep(400*(attempt+1));
+    }
+  }
+  throw new Error('mint probe indeterminate at block '+block);
+}
+async function positionMintBlock(ck,id,tip){
+  const key=ck+':'+id;
+  if(blockCache.mint[key]!=null) return blockCache.mint[key];
+  const C=CHAINS[ck], idHex=pad32(id.toString(16));
+  // Precondition: the search is only monotone while the position is live. positions(id)
+  // also reverts after a burn, so probing a closed id would binary-search on noise.
+  if(!await positionsLiveAt(ck,C.npm,idHex,tip)) throw new Error('position '+id+' not live at tip');
+  let lo=C.startBlock, hi=tip;   // positions(id) reverts before mint → monotone for live positions
+  while(lo<hi){
+    const mid=Math.floor((lo+hi)/2);
+    if(await positionsLiveAt(ck,C.npm,idHex,mid)) hi=mid; else lo=mid+1;
+    await sleep(60);
+  }
+  blockCache.mint[key]=Math.max(C.startBlock,hi-1);
+  return blockCache.mint[key];
+}
+/* ETH/USD at a historical block, from the Chainlink feed. Cached per block — a position
+   with several top-ups reuses blocks, and neighbouring positions often share them. */
+const ethUsdBlockCache={};
+async function ethUsdAtBlock(block){
+  if(block in ethUsdBlockCache) return ethUsdBlockCache[block];
+  try{
+    const r=await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+block.toString(16));
+    const v=bigToFloat(BigInt(r),8);
+    return ethUsdBlockCache[block]=(v>0?v:null);
+  }catch(e){ return ethUsdBlockCache[block]=null; }
+}
+async function evmHistory(ck,id,fromBlock,tip){
+  const C=CHAINS[ck];
+  const topicId='0x'+pad32(id.toString(16));
+  const logs=await getLogsChunked(ck,{address:C.npm,topics:[[TOPIC_INC,TOPIC_DEC,TOPIC_COL],topicId]},fromBlock,tip);
+  const parse=lg=>({block:Number(BigInt(lg.blockNumber)),tx:lg.transactionHash,a0:BigInt(word(lg.data,1)),a1:BigInt(word(lg.data,2))});
+  return { inc:logs.filter(l=>l.topics[0]===TOPIC_INC).map(parse),
+           dec:logs.filter(l=>l.topics[0]===TOPIC_DEC).map(parse),
+           col:logs.filter(l=>l.topics[0]===TOPIC_COL).map(parse) };
+}
+async function walletPositionIds(ck,wallet,tip){
+  const C=CHAINS[ck];
+  const wp=pad32(wallet);
+  let bal=0;
+  try{ bal=Number(BigInt(await evmCall(ck,C.npm,SEL2.balanceOf+wp))); }
+  catch(e){ logErr('balanceOf '+ck+' '+wallet.slice(0,8),e); }
+  const ids=new Set();
+  /* A wallet whose count of position NFTs has not changed holds the same ones: the last listing
+     stands for up to six hours instead of eighty calls a pass. A mint, a burn or a transfer
+     changes the count and the list is read again. */
+  const ec=blockCache.enumCache=blockCache.enumCache||{}, ekey=ck+':'+wallet;
+  if(ec[ekey] && ec[ekey].bal===bal && Date.now()-ec[ekey].t<6*3600e3) return ec[ekey].ids.slice();
+  /* Walk the owner's token list from the END, not the start. The enumerator is capped at 80
+     indices to bound run time, and this wallet holds 228 position NFTs — so from the start the
+     cap spends every call on the oldest eighty, which are closed positions that fetchEvmPosition
+     then throws away, and never reaches a freshly minted one sitting at index 227. A mint is
+     appended at the end, so the live positions are the tail. The transfer-log fallback below
+     still covers whatever the window misses; this just stops discovery depending on it. */
+  const ENUM_CAP=80;
+  const first=Math.max(0, bal-ENUM_CAP);
+  for(let i=bal-1;i>=first;i--){
+    try{ ids.add(Number(BigInt(await evmCall(ck,C.npm,SEL2.tokenOfOwnerByIndex+wp+pad32(i.toString(16)))))); }
+    catch(e){ logErr('enum '+ck+' '+wallet.slice(0,8)+'['+i+']',e); }
+    await sleep(100);
+  }
+  if(ids.size<bal){   // the wallet holds more than the window read — go to the logs for the rest
+    // fallback: NFT Transfer logs into this wallet, then verify current ownership.
+    // v25.2: chunked + checkpointed — first run backfills 60 days, later runs scan only the delta.
+    try{
+      const TT='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const skey=ck+':'+wallet;
+      const tc=blockCache.tscan[skey]||{last:Math.max(C.startBlock,tip-60*C.bph*24)-1,ids:[]};
+      const news=await getLogsChunked(ck,{address:C.npm,topics:[TT,null,'0x'+wp]},tc.last+1,tip);
+      for(const lg of news){
+        const id=Number(BigInt(lg.topics[3]));
+        if(!tc.ids.includes(id)) tc.ids.push(id);
+      }
+      tc.last=tip; blockCache.tscan[skey]=tc;
+      const deadNow=blockCache.deadPos||{};
+      for(const id of tc.ids){
+        if(ids.has(id)) continue;
+        if(deadNow[ck+':'+id] && deadNow[ck+':'+id]>Date.now()) continue;   // closed and empty: not worth an ownership call
+        try{
+          const o=('0x'+(await evmCall(ck,C.npm,SEL.ownerOf+pad32(id.toString(16)))).slice(-40)).toLowerCase();
+          if(o==='0x'+wallet.toLowerCase()) ids.add(id);
+        }catch(e){}
+        await sleep(80);
+      }
+    }catch(e){ logErr('transferScan '+ck+' '+wallet.slice(0,8),e); }
+  }
+  if(ids.size) ec[ekey]={t:Date.now(), bal, ids:[...ids]};
+  return [...ids];
+}
+async function fetchEvmPosition(ck,id,blockNum,ethUsd,btcUsd){
+  const C=CHAINS[ck];
+  const idHex=pad32(id.toString(16));
+  /* Every read here is pinned to the same block the event scan ends at, because a position's
+     state and its history have to describe the same moment or the arithmetic between them is
+     nonsense. Reading state at the head while scanning logs to a block captured minutes earlier
+     is what made a harvest look like a loss: positions() already showed owed fees at zero while
+     the collect that zeroed them was past the end of the log window, so lifetime fees — which
+     are collected plus owed — dropped by the whole harvest until the next pass caught up.
+     blockNum is at most a few minutes old, well inside any node's recent-state window. */
+  const atBlk='0x'+blockNum.toString(16);
+  let pos;
+  try{ pos=await evmCall(ck,C.npm,SEL.positions+idHex,atBlk); }
+  catch(e){
+    /* Minted after the block this run pinned itself to — younger than the snapshot, not closed
+       and not an error. Skipping it leaves one absence, and booking a close needs two in a row,
+       so nothing downstream mistakes it for a position that went away. The next pass is pinned
+       past its mint and picks it up. */
+    if(RPC_REVERT.test(String((e&&e.message)||e))) return null;
+    throw e;
+  }
+  const token0='0x'+word(pos,2).slice(-40), token1='0x'+word(pos,3).slice(-40);
+  const fee=Number(BigInt(word(pos,4)));
+  const tickLower=Number(toSigned(BigInt(word(pos,5)),24)), tickUpper=Number(toSigned(BigInt(word(pos,6)),24));
+  const liquidity=BigInt(word(pos,7));
+  let owner=null; try{ owner='0x'+(await evmCall(ck,C.npm,SEL.ownerOf+idHex)).slice(-40); }catch(e){}
+  const [m0,m1]=[await meta(ck,token0),await meta(ck,token1)];
+  const pool='0x'+(await evmCall(ck,C.factory,SEL.getPool+pad32(token0)+pad32(token1)+pad32(fee.toString(16)))).slice(-40);
+  // Everyone's liquidity standing at the current tick, this position's included — the figure
+  // that says what fraction of every swap fee lands here rather than with someone else.
+  let poolLiq=null;
+  try{ poolLiq=BigInt(await evmCall(ck,pool,SEL.poolLiquidity,atBlk)); }catch(e){}
+  const slot0=await evmCall(ck,pool,SEL.slot0,atBlk);
+  const sqrtPriceX96=BigInt(word(slot0,0));
+  const tick=Number(toSigned(BigInt(word(slot0,1)),24));
+  const MAX='f'.repeat(32).padStart(64,'0');
+  const collectData=SEL.collect+idHex+pad32(owner||C.npm)+MAX+MAX;
+  let f0=bigToFloat(BigInt(word(pos,10)),m0.decimals), f1=bigToFloat(BigInt(word(pos,11)),m1.decimals);
+  const feesOwedAt=async blk=>{
+    const r=await evmCall(ck,C.npm,collectData,blk,owner||undefined);
+    return { f0:bigToFloat(BigInt(word(r,0)),m0.decimals), f1:bigToFloat(BigInt(word(r,1)),m1.decimals) };
+  };
+  try{ const now=await feesOwedAt(atBlk); f0=now.f0; f1=now.f1; }catch(e){}
+  if(liquidity===0n && f0===0 && f1===0) return null;    // closed & empty — skip
+  const d0=m0.decimals,d1=m1.decimals, scale=10**(d0-d1);
+  const sp=Number(sqrtPriceX96)/Q96, sa=tickToSqrt(tickLower), sb=tickToSqrt(tickUpper);
+  const [ra0,ra1]=amounts(Number(liquidity),sp,sa,sb);
+  const amt0=ra0/10**d0, amt1=ra1/10**d1;
+  const price=sp*sp*scale, priceLower=tickToPrice(tickLower)*scale, priceUpper=tickToPrice(tickUpper)*scale;
+  await llamaPrices([C.llama+':'+token0, C.llama+':'+token1]);
+  let usd0=priceCache[C.llama+':'+token0]??null, usd1=priceCache[C.llama+':'+token1]??null;
+  /* One ETH price on the page: the header's (Chainlink). A feed quote for WETH a few dollars off
+     it made the token panel and the header disagree about the same asset. */
+  const WETH_ETH='0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+  if(ck==='ethereum' && ethUsd){ if(String(token0).toLowerCase()===WETH_ETH) usd0=ethUsd; if(String(token1).toLowerCase()===WETH_ETH) usd1=ethUsd; }
+  [usd0,usd1]=poolOwnUsd(token0,token1,usd0,usd1,price);
+  const valueUsd=(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null;
+  const feesUsd=(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null;
+  let hist={inc:[],dec:[],col:[]}, mintTs=null, entryEthUsd=null;
+  let histFrom=null;
+  try{ const mb=await positionMintBlock(ck,id,blockNum); histFrom=mb; hist=await evmHistory(ck,id,mb,blockNum); }catch(e){ logErr(ck+' hist#'+id,e); }
+  if(hist.inc.length){
+    const mintBlock=Math.min(...hist.inc.map(x=>x.block));
+    try{ const blk=await evm(ck,'eth_getBlockByNumber',['0x'+mintBlock.toString(16),false]); mintTs=Number(BigInt(blk.timestamp))*1000; }catch(e){}
+    if(ck==='ethereum'){
+      try{ const r=await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+mintBlock.toString(16)); entryEthUsd=bigToFloat(BigInt(r),8); }catch(e){}
+    }
+  }
+  const sum=(arr,k,dec)=>arr.reduce((s,x)=>s+bigToFloat(x[k],dec),0);
+  const rDep0=sum(hist.inc,'a0',d0), rDep1=sum(hist.inc,'a1',d1);
+  const rWdr0=sum(hist.dec,'a0',d0), rWdr1=sum(hist.dec,'a1',d1);
+  const rCol0=sum(hist.col,'a0',d0), rCol1=sum(hist.col,'a1',d1);
+  /* A public RPC can return a partial log set without erroring — that is exactly what zeroed
+     this position's collected fees earlier today. Every sum here is cumulative over the
+     position's life and can only grow, so a reading below the previous one is proof the scan
+     came back short, not that history changed. Hold the high-water values so cost basis, fees,
+     ROI and IL stay right, and refuse to publish the window-scoped figures, which cannot be
+     reconstructed from a short read and would otherwise report a falsely low APR. */
+  const evKey=ck+':'+id, prevEv=blockCache.evh[evKey]||null;
+  const obsEv={nInc:hist.inc.length,nDec:hist.dec.length,nCol:hist.col.length,
+               dep0:rDep0,dep1:rDep1,wdr0:rWdr0,wdr1:rWdr1,col0:rCol0,col1:rCol1,mintTs:mintTs||null};
+  let histPartial=false;
+  if(prevEv) for(const k of ['nInc','nDec','nCol','dep0','dep1','wdr0','wdr1','col0','col1'])
+    if((obsEv[k]||0) < (prevEv[k]||0)-1e-9){ histPartial=true; break; }
+  const mx=(a,b)=>Math.max(a||0,b||0);
+  const dep0=histPartial?mx(rDep0,prevEv.dep0):rDep0, dep1=histPartial?mx(rDep1,prevEv.dep1):rDep1;
+  const wdr0=histPartial?mx(rWdr0,prevEv.wdr0):rWdr0, wdr1=histPartial?mx(rWdr1,prevEv.wdr1):rWdr1;
+  const col0=histPartial?mx(rCol0,prevEv.col0):rCol0, col1=histPartial?mx(rCol1,prevEv.col1):rCol1;
+  if(histPartial){
+    logErr(ck+' partial log read #'+id, new Error('inc/dec/col '+obsEv.nInc+'/'+obsEv.nDec+'/'+obsEv.nCol
+      +' < seen '+prevEv.nInc+'/'+prevEv.nDec+'/'+prevEv.nCol+' — held high-water totals, windows suppressed'));
+    if(prevEv.mintTs && (!mintTs || prevEv.mintTs<mintTs)) mintTs=prevEv.mintTs;
+  } else blockCache.evh[evKey]=obsEv;
+  /* Everything ever collected = principal released by DecreaseLiquidity + fees, so netting
+     the cumulative totals is the right identity. Per-transaction matching is NOT — a decrease
+     credits tokensOwed and the collect frequently lands in a later transaction, which would
+     then count released principal as fee income.
+     feesEverUsd currently comes back equal to feesUsd for every position, i.e. this nets to
+     zero even after a real collect, so the components are published for diagnosis. */
+  const feeCol0=Math.max(0,col0-wdr0), feeCol1=Math.max(0,col1-wdr1);
+  const feeDbg={nInc:hist.inc.length, nDec:hist.dec.length, nCol:hist.col.length,
+    col0:+col0.toFixed(6), col1:+col1.toFixed(8), wdr0:+wdr0.toFixed(6), wdr1:+wdr1.toFixed(8),
+    from:histFrom};
+  const ageDays=mintTs?(Date.now()-mintTs)/86400000:null;
+  let costUsd=null,roiPct=null,roiMode='hodl',feeAprPct=null,feesEverUsd=null,ilUsd=null,lpVsHodlUsd=null,hodlNowUsd=null;
+  if(usd0!=null&&usd1!=null&&(dep0>0||dep1>0)){
+    let e0=usd0,e1=usd1;
+    const st=new Set(C.stables);
+    const pricerAt=eAt=>(addr,cur)=>{const a=addr.toLowerCase(); if(st.has(a))return 1; if(a===C.weth)return eAt; return cur!=null?cur*(eAt/ethUsd):null;};
+    // Value every deposit at the ETH price of ITS OWN block. dep0/dep1 sum all
+    // IncreaseLiquidity events, so pricing the whole stack at the first mint's ETH price
+    // misstated the basis of later top-ups by however much ETH had moved in between.
+    /* Not on a partial read. dep/wdr/col above are all held at their high-water marks when the
+       log set comes back short, but this loop walks the RAW event list — so a dropped
+       IncreaseLiquidity would shrink the basis while IL kept the full deposits, inflating both
+       roiPct and feeAprPct. A position with a top-up (two inc events) that reads back one would
+       show roughly double its true return. Fall back to the guarded dep totals instead. */
+    let perEvent=null;
+    if(ck==='ethereum'&&ethUsd&&hist.inc.length&&!histPartial){
+      /* Price every deposit at the real prices of ITS OWN moment, then cache that dollar
+         figure permanently. The previous estimate — today's token price scaled by the ETH
+         ratio — silently assumed the token held its value in ETH terms. When LCX moved ~90%
+         against ETH in a day, four positions' bases inflated 63-70% with no capital added,
+         which flowed straight into ROI and fee APR. */
+      let acc=0;
+      for(const ev of hist.inc){
+        const dk=ck+':'+id+':'+ev.block;
+        let v=blockCache.depUsd[dk];
+        if(v==null){
+          const ts=await blockTs(ck,ev.block);
+          if(ts!=null){
+            const k0=C.llama+':'+token0, k1=C.llama+':'+token1;
+            const hp=await llamaHistorical([k0,k1],ts);
+            if(hp[k0]!=null&&hp[k1]!=null){
+              v=bigToFloat(ev.a0,d0)*hp[k0]+bigToFloat(ev.a1,d1)*hp[k1];
+              blockCache.depUsd[dk]=v;          // a fact about the past — never recomputed
+            }
+          }
+          if(v==null){
+            // No historical quote. Fall back to the old estimate for this run only, and do
+            // NOT cache it, so a later run can still record the real figure.
+            const eAt=await ethUsdAtBlock(ev.block);
+            if(eAt==null){ acc=null; break; }
+            const sc=pricerAt(eAt);
+            const p0=sc(token0,usd0), p1=sc(token1,usd1);
+            if(p0==null||p1==null){ acc=null; break; }
+            v=bigToFloat(ev.a0,d0)*p0+bigToFloat(ev.a1,d1)*p1;
+          }
+        }
+        acc+=v;
+      }
+      perEvent=acc;
+    }
+    if(perEvent!=null){ costUsd=perEvent; roiMode='entry'; }
+    else{
+      // fallback: single entry price for the whole stack (pre-existing behaviour)
+      if(ck==='ethereum'&&entryEthUsd&&ethUsd){
+        const sc=pricerAt(entryEthUsd);
+        const s0=sc(token0,usd0),s1=sc(token1,usd1);
+        if(s0!=null&&s1!=null){e0=s0;e1=s1;roiMode='entry';}
+      }
+      costUsd=dep0*e0+dep1*e1;
+    }
+    feesEverUsd=(feeCol0*usd0+feeCol1*usd1)+(feesUsd??0);
+    const totalNow=(valueUsd??0)+(wdr0*usd0+wdr1*usd1)+feesEverUsd;
+    if(costUsd>0){ roiPct=(totalNow-costUsd)/costUsd*100; if(ageDays>0.05) feeAprPct=(feesEverUsd/costUsd)*(365/ageDays)*100; }
+    // impermanent loss: what the position (incl. withdrawals) is worth NOW vs just holding the deposits
+    hodlNowUsd=dep0*usd0+dep1*usd1;
+    ilUsd=((valueUsd??0)+wdr0*usd0+wdr1*usd1)-hodlNowUsd;
+    lpVsHodlUsd=ilUsd+(feesEverUsd??0);   // positive → pooling beat holding
+  }
+  // fees accrued BEFORE the current month started (for the monthly fee ledger)
+  let feesMonthStartUsd=null;
+  try{
+    if(usd0!=null&&usd1!=null&&mintTs!=null&&!histPartial){
+      const msTs=monthStart(localMonth(Date.now()));
+      if(mintTs>=msTs) feesMonthStartUsd=0;
+      else{
+        const hoursAgo=(Date.now()-msTs)/3600000;
+        const msBlock=Math.max(1,blockNum-Math.round(hoursAgo*C.bph));
+        const old=await feesOwedAt('0x'+msBlock.toString(16));
+        const cb0=sum(hist.col.filter(x=>x.block<msBlock),'a0',d0), cb1=sum(hist.col.filter(x=>x.block<msBlock),'a1',d1);
+        const wb0=sum(hist.dec.filter(x=>x.block<msBlock),'a0',d0), wb1=sum(hist.dec.filter(x=>x.block<msBlock),'a1',d1);
+        feesMonthStartUsd=(Math.max(0,cb0-wb0)+old.f0)*usd0+(Math.max(0,cb1-wb1)+old.f1)*usd1;
+      }
+    }
+  }catch(e){}
+  const opTxs=[...new Map([...hist.inc,...hist.dec,...hist.col].filter(x=>x.tx).map(x=>[x.tx,{tx:x.tx,block:x.block}])).values()];
+  const bpd=C.bph*24;
+  const aprW={t:Date.now()};
+  for(const [key,days] of [['d1',1],['d7',7],['d30',30],['d365',365]]){
+    aprW[key]=null;
+    if(histPartial) continue;              // a short read understates the window → publish nothing
+    if(ageDays!=null&&ageDays<days) continue;
+    try{
+      const blk=blockNum-Math.round(days*bpd);
+      if(blk<=C.startBlock) continue;
+      const old=await feesOwedAt('0x'+blk.toString(16));
+      const cw0=hist.col.filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+      const cw1=hist.col.filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+      const dw0=hist.dec.filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a0,d0),0);
+      const dw1=hist.dec.filter(x=>x.block>=blk).reduce((s,x)=>s+bigToFloat(x.a1,d1),0);
+      const e0=Math.max(0,f0-old.f0+cw0-dw0), e1=Math.max(0,f1-old.f1+cw1-dw1);
+      const base=valueUsd||costUsd;
+      if(base>0) aprW[key]=(e0*(usd0??0)+e1*(usd1??0))/base*(365/days)*100;
+    }catch(e){}
+  }
+  const inRange=tick>=tickLower&&tick<tickUpper;
+  const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
+  const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
+  return { id, chain:ck, chainTag:C.tag, owner, relay:true, pool, token0, token1, feeTier:fee,
+    liq:liquidity.toString(), poolLiq:poolLiq!=null?poolLiq.toString():null,
+    m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
+    amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, feesEverUsd, feesMonthStartUsd, opTxs, ilUsd, lpVsHodlUsd, hodlNowUsd, costUsd, roiPct, roiMode, feeAprPct, aprW, feeDbg, histPartial,
+    mintTs, ageDays, inRange, rangePos, dLow, dUp,
+    nearestEdge: dLow<dUp?'lower':'upper',
+    edgeDist: inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
+    pairLabel:m0.symbol+' / '+m1.symbol, feeLabel:(fee/10000)+'%' };
+}
+
+/* ---------- volatility (chain-generic) ---------- */
+async function poolVolatility(ck,pool,scale,blockNum){
+  const bpd=CHAINS[ck].bph*24;
+  const samples=[];
+  for(let i=14;i>=0;i--){
+    const blk=blockNum-Math.round(i*2*bpd);
+    try{
+      const r=await evmCall(ck,pool,SEL.slot0,'0x'+blk.toString(16));
+      const sp=Number(BigInt(word(r,0)))/Q96;
+      samples.push(sp*sp*scale);
+    }catch(e){ samples.push(null); }
+  }
+  const rets=[], moves=[];
+  for(let i=1;i<samples.length;i++){
+    if(samples[i]!=null&&samples[i-1]!=null&&samples[i]>0&&samples[i-1]>0){
+      const r=Math.log(samples[i]/samples[i-1]);
+      rets.push(r); moves.push(Math.abs(r)*100);
+    } else moves.push(null);
+  }
+  if(rets.length<5) return null;
+  const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
+  return { sigma: Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))/Math.sqrt(2), moves };
+}
+async function poolVol24(ck,pool,scale,blockNum){
+  const bph=CHAINS[ck].bph;
+  const pts=[];
+  for(let i=12;i>=0;i--){
+    const blk=blockNum-Math.round(i*2*bph);
+    try{
+      const r=await evmCall(ck,pool,SEL.slot0,'0x'+blk.toString(16));
+      const sp=Number(BigInt(word(r,0)))/Q96;
+      pts.push(sp*sp*scale);
+    }catch(e){ pts.push(null); }
+  }
+  const rets=[], moves=[];
+  for(let i=1;i<pts.length;i++){
+    if(pts[i]!=null&&pts[i-1]!=null&&pts[i]>0&&pts[i-1]>0){
+      const r=Math.log(pts[i]/pts[i-1]);
+      rets.push(r); moves.push(Math.abs(r)*100);
+    } else moves.push(null);
+  }
+  if(rets.length<6) return null;
+  const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
+  return { sigma: Math.sqrt(rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1))*Math.sqrt(12), moves };
+}
+const erf=x=>{const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;};
+const Phi=z=>0.5*(1+erf(z/Math.SQRT2));
+function rangeAnalytics(price, lo, up, sigma){
+  if(!sigma||!(price>0&&lo>0&&up>0)) return null;
+  const s7=sigma*Math.sqrt(7);
+  const zLo=Math.log(price/lo)/s7, zUp=Math.log(up/price)/s7;
+  const stay7=Math.max(0,Math.min(1,Phi(zUp)-Phi(-zLo)));
+  const widthLog=Math.log(up/lo);
+  const sug=k=>({lo:price*Math.exp(-k*s7), up:price*Math.exp(k*s7)});
+  return { sigmaDaily:sigma, stay7dPct:stay7*100, widthPct:(Math.exp(widthLog)-1)*100,
+    suggested:{ tight:sug(0.68), balanced:sug(1.282), wide:sug(2.0) },
+    concVsBalanced: (2*1.282*s7)/widthLog };
+}
+
+/* ---------- Solana (validated against official SDKs) ---------- */
+const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+const ORCA='whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
+/* Orca Whirlpool layouts — offsets derived from the official IDL (@orca-so/whirlpools-sdk) */
+const parseOrcaPosition=b=>({ whirlpool:pk(b,8), positionMint:pk(b,40), liquidity:leU128(b,72),
+  tickLower:leI32(b,88), tickUpper:leI32(b,92),
+  fgCheckA:leU128(b,96), feeOwedA:leU64(b,112), fgCheckB:leU128(b,120), feeOwedB:leU64(b,136) });
+const parseWhirlpool=b=>({ tickSpacing:leU16(b,41), feeRate:leU16(b,45), liquidity:leU128(b,49), sqrtPriceX64:leU128(b,65),
+  tickCurrent:leI32(b,81), mintA:pk(b,101), fgGlobalA:leU128(b,165), mintB:pk(b,181), fgGlobalB:leU128(b,245) });
+const TOKEN_PROG='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const TOKEN22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+const SOL_MINT='So11111111111111111111111111111111111111112';
+const SOL_KNOWN={[SOL_MINT]:'SOL','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v':'USDC','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB':'USDT'};
+/* Each pool prices its own tokens. A pool pairs a reference token (SOL, ETH, BTC, a dollar
+   stablecoin), whose price comes from the feed, with a token that is valued at the pool's own
+   rate against it. CPOOL had been valued at one feed price in every pool, so a card could gain
+   value while its pool's own CPOOL price fell. Valuing at the pool's rate is what the position
+   could actually be swapped out at; the page does the same. */
+const ANCHORS=new Set([SOL_MINT,'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','0xdac17f958d2ee523a2206206994597c13d831ec7',
+  '0x6b175474e89094c44da98b954eedeac495271d0f','0x2260fac5e5542a773aa44fbcfedf7c193bc2c599']);
+const isAnchorTok=t=>ANCHORS.has(String(t))||ANCHORS.has(String(t).toLowerCase());
+function poolOwnUsd(t0,t1,usd0,usd1,price){
+  const a0=isAnchorTok(t0), a1=isAnchorTok(t1);
+  if(a0&&!a1&&usd0!=null&&price>0) usd1=usd0/price;
+  else if(a1&&!a0&&usd1!=null) usd0=price*usd1;
+  if(usd0==null&&usd1!=null) usd0=price*usd1;
+  if(usd1==null&&usd0!=null&&price>0) usd1=usd0/price;
+  return [usd0,usd1];
+}
+const B58A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const B58M=Object.fromEntries([...B58A].map((c,i)=>[c,i]));
+function b58d(s){let n=0n;for(const c of s){n=n*58n+BigInt(B58M[c]);}const b=[];while(n>0n){b.unshift(Number(n&255n));n>>=8n;}for(const c of s){if(c==='1')b.unshift(0);else break;}return new Uint8Array(b);}
+function b58e(bytes){let n=0n;for(const b of bytes)n=(n<<8n)|BigInt(b);let o='';while(n>0n){o=B58A[Number(n%58n)]+o;n/=58n;}for(const b of bytes){if(b===0)o='1'+o;else break;}return o;}
+const P=(1n<<255n)-19n, D=37095705934669439343138083508754565189542113879843219016388785533085940283555n;
+function mpow(b,e,m){let r=1n;b%=m;while(e>0n){if(e&1n)r=r*b%m;b=b*b%m;e>>=1n;}return r;}
+function onCurve(by){let y=0n;for(let i=31;i>=0;i--)y=(y<<8n)|BigInt(i===31?(by[i]&0x7f):by[i]);if(y>=P)return false;
+  const sg=(by[31]&0x80)>>7,y2=y*y%P,u=(y2-1n+P)%P,v=(D*y2+1n)%P,v3=v*v%P*v%P,uv7=u*(v3*v3%P*v%P)%P;
+  let x=u*v3%P*mpow(uv7,(P-5n)/8n,P)%P; const vxx=v*x%P*x%P;
+  if(vxx!==u){ if((vxx+u)%P!==0n)return false; x=x*mpow(2n,(P-1n)/4n,P)%P; }
+  if(x===0n&&sg===1)return false; return true;}
+async function pda(seeds,prog){
+  const pg=b58d(prog), mk=new TextEncoder().encode('ProgramDerivedAddress');
+  for(let bump=255;bump>=0;bump--){
+    const parts=[...seeds,new Uint8Array([bump]),pg,mk];
+    const buf=new Uint8Array(parts.reduce((s,p)=>s+p.length,0));
+    let o=0;for(const p of parts){buf.set(p,o);o+=p.length;}
+    const h=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));
+    if(!onCurve(h)) return b58e(h);
+  }
+  throw new Error('no pda');
+}
+const leU16=(b,o)=>b[o]|(b[o+1]<<8);
+const leU64=(b,o)=>{let n=0n;for(let i=7;i>=0;i--)n=(n<<8n)|BigInt(b[o+i]);return n;};
+const leU128=(b,o)=>{let n=0n;for(let i=15;i>=0;i--)n=(n<<8n)|BigInt(b[o+i]);return n;};
+const leI32=(b,o)=>{const u=(b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;return u>0x7fffffff?u-0x100000000:u;};
+const pk=(b,o)=>b58e(b.slice(o,o+32));
+const b64=s=>Uint8Array.from(Buffer.from(s,'base64'));
+
+async function fetchSolana(SOL_WALLETS){
+  const out=[];
+  /* Positions are discovered by listing the wallet's token accounts, so a wallet that would not
+     answer contributes nothing — indistinguishable, downstream, from a wallet that holds nothing.
+     On 2026-09-21 both wallets returned HTTP 400, every Solana position disappeared from a scan
+     that then reported itself healthy, and all five were one repeat away from being booked as
+     closed with September's accrual banked. Marked here so the caller can refuse to draw any
+     conclusion from an absence it could not have observed. */
+  out.incomplete=false;
+  const cat=[];
+  for(const w of SOL_WALLETS){
+    let okForWallet=0;
+    for(const prog of [TOKEN_PROG,TOKEN22]){
+      try{
+        const res=await sol('getTokenAccountsByOwner',[w,{programId:prog},{encoding:'jsonParsed'}]);
+        okForWallet++;
+        for(const a of res.value){
+          const info=a.account?.data?.parsed?.info;
+          if(info?.tokenAmount?.amount==='1'&&info?.tokenAmount?.decimals===0) cat.push({wallet:w,mint:info.mint});
+        }
+      }catch(e){ logErr('solWallet '+w.slice(0,6),e); }
+    }
+    if(!okForWallet) out.incomplete=true;
+  }
+  const pdas=[], orcaPdas=[];
+  for(const c of cat){
+    pdas.push(await pda([new TextEncoder().encode('position'),b58d(c.mint)],CLMM));
+    orcaPdas.push(await pda([new TextEncoder().encode('position'),b58d(c.mint)],ORCA));
+  }
+  const found=[], orcaFound=[];
+  for(let i=0;i<pdas.length;i+=100){
+    const res=await sol('getMultipleAccounts',[pdas.slice(i,i+100),{encoding:'base64'}]);
+    res.value.forEach((a,j)=>{
+      if(!a||a.owner!==CLMM) return;
+      const b=b64(a.data[0]);
+      const pp={nftMint:pk(b,9),poolId:pk(b,41),tickLower:leI32(b,73),tickUpper:leI32(b,77),liquidity:leU128(b,81),fgInsideLast0:leU128(b,97),fgInsideLast1:leU128(b,113),feesOwed0:leU64(b,129),feesOwed1:leU64(b,137)};
+      if(pp.liquidity>0n) found.push({cat:cat[i+j],pda:pdas[i+j],pp});
+    });
+  }
+  for(let i=0;i<orcaPdas.length;i+=100){
+    const res=await sol('getMultipleAccounts',[orcaPdas.slice(i,i+100),{encoding:'base64'}]);
+    res.value.forEach((a,j)=>{
+      if(!a||a.owner!==ORCA) return;
+      const op=parseOrcaPosition(b64(a.data[0]));
+      if(op.liquidity>0n) orcaFound.push({cat:cat[i+j],pda:orcaPdas[i+j],op});
+    });
+  }
+  console.log('sol found:', found.length,'raydium +',orcaFound.length,'orca');
+  if(!found.length && !orcaFound.length) return out;
+  // ---------- ORCA branch ----------
+  if(orcaFound.length){
+    const wpIds=[...new Set(orcaFound.map(x=>x.op.whirlpool))];
+    const wres=await sol('getMultipleAccounts',[wpIds,{encoding:'base64'}]);
+    const wps=new Map();
+    wres.value.forEach((a,i)=>{ if(a) wps.set(wpIds[i], parseWhirlpool(b64(a.data[0]))); });
+    const oMints=[...new Set([...wps.values()].flatMap(w=>[w.mintA,w.mintB]))];
+    // decimals straight from SPL mint accounts (offset 44)
+    const decMap={};
+    const mres=await sol('getMultipleAccounts',[oMints,{encoding:'base64'}]);
+    mres.value.forEach((a,i)=>{ if(a) decMap[oMints[i]]=b64(a.data[0])[44]; });
+    const oPrices={}; const oSyms={};
+    try{
+      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+oMints.join(','));
+      for(const m of oMints){ if(js[m]?.usdPrice!=null) oPrices[m]=Number(js[m].usdPrice); }
+    }catch(e){ logErr('jup orca',e); }
+    for(const m of oMints){
+      if(SOL_KNOWN[m]){ oSyms[m]=SOL_KNOWN[m]; continue; }
+      try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
+        oSyms[m]=(Array.isArray(js)?js.find(t=>t.id===m):null)?.symbol||m.slice(0,4)+'…'; }
+      catch(e){ oSyms[m]=m.slice(0,4)+'…'; }
+    }
+    // precise pending fees via Orca tick arrays (88 ticks/array, ASCII start-index seed)
+    const MASKO=(1n<<128n)-1n;
+    const taCacheO=new Map();
+    async function orcaTick(whirlpool, spacing, tick){
+      const per=spacing*88, start=Math.floor(tick/per)*per;
+      const key=whirlpool+':'+start;
+      if(!taCacheO.has(key)){
+        const addr=await pda([new TextEncoder().encode('tick_array'), b58d(whirlpool), new TextEncoder().encode(String(start))], ORCA);
+        const r=await sol('getMultipleAccounts',[[addr],{encoding:'base64'}]);
+        taCacheO.set(key, r.value[0]?b64(r.value[0].data[0]):null);
+      }
+      const b=taCacheO.get(key);
+      if(!b) return null;
+      const idx=Math.round((tick-Math.floor(tick/per)*per)/spacing);
+      if(idx<0||idx>=88) return null;
+      if(b.length>=9988){
+        // legacy fixed TickArray: 88 × 113-byte ticks at offset 12
+        const base=12+idx*113;
+        return { fgA:leU128(b,base+33), fgB:leU128(b,base+49) };
+      }
+      // DynamicTickArray: start@8, whirlpool@12, bitmap@44, then 88 borsh-enum ticks @60
+      // tag 0 = Uninitialized (1 byte, fee growth outside = 0); tag 1 = Initialized (1 + 112 bytes)
+      let off=60;
+      for(let i=0;i<88;i++){
+        if(off>=b.length) return null;
+        const tag=b[off];
+        if(i===idx){
+          if(tag===0) return { fgA:0n, fgB:0n };
+          return { fgA:leU128(b,off+1+32), fgB:leU128(b,off+1+48) };
+        }
+        off += 1 + (tag===1?112:0);
+      }
+      return null;
+    }
+    const fgIn=(g,lo,up,cur,tl,tu)=>{
+      const below=cur>=tl?lo:(g-lo)&MASKO;
+      const above=cur<tu?up:(g-up)&MASKO;
+      return (g-below-above)&MASKO;
+    };
+    for(const {cat:c, pda:pd, op} of orcaFound){
+      const w=wps.get(op.whirlpool); if(!w) continue;
+      const dA=decMap[w.mintA]??9, dB=decMap[w.mintB]??9, scale=10**(dA-dB);
+      const sp=Number(w.sqrtPriceX64)/Q64;
+      const [ra,rb]=amounts(Number(op.liquidity),sp,tickToSqrt(op.tickLower),tickToSqrt(op.tickUpper));
+      const amtA=ra/10**dA, amtB=rb/10**dB;
+      const price=sp*sp*scale, priceLower=tickToPrice(op.tickLower)*scale, priceUpper=tickToPrice(op.tickUpper)*scale;
+      let usdA=oPrices[w.mintA]??null, usdB=oPrices[w.mintB]??null;
+      [usdA,usdB]=poolOwnUsd(w.mintA,w.mintB,usdA,usdB,price);
+      let fRawA=op.feeOwedA, fRawB=op.feeOwedB;
+      try{
+        const loT=await orcaTick(op.whirlpool,w.tickSpacing,op.tickLower);
+        const upT=await orcaTick(op.whirlpool,w.tickSpacing,op.tickUpper);
+        if(loT&&upT){
+          const inA=fgIn(w.fgGlobalA,loT.fgA,upT.fgA,w.tickCurrent,op.tickLower,op.tickUpper);
+          const inB=fgIn(w.fgGlobalB,loT.fgB,upT.fgB,w.tickCurrent,op.tickLower,op.tickUpper);
+          let dAg=(inA-op.fgCheckA)&MASKO, dBg=(inB-op.fgCheckB)&MASKO;
+          if(dAg>(1n<<127n)) dAg=0n;
+          if(dBg>(1n<<127n)) dBg=0n;
+          fRawA=op.feeOwedA+((dAg*op.liquidity)>>64n);
+          fRawB=op.feeOwedB+((dBg*op.liquidity)>>64n);
+        }
+      }catch(e){ logErr('orcaFees '+op.positionMint.slice(0,6),e); }
+      const fA=Number(fRawA)/10**dA, fB=Number(fRawB)/10**dB;
+      const tick=w.tickCurrent;
+      const inRange=tick>=op.tickLower&&tick<op.tickUpper;
+      const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
+      const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
+      let mintTs=null;
+      try{
+        let before,oldest=null,pages=0;
+        while(pages<3){
+          const sigs=await sol('getSignaturesForAddress',[pd,{limit:1000,...(before?{before}:{})}]);
+          if(!sigs||!sigs.length) break;
+          oldest=sigs[sigs.length-1];
+          if(sigs.length<1000) break;
+          before=oldest.signature; pages++;
+        }
+        if(oldest?.blockTime) mintTs=oldest.blockTime*1000;
+      }catch(e){}
+      out.push({ id:'sol:'+op.positionMint, chain:'sol', venue:'orca', relay:true, wallet:c.wallet,
+        nftMint:op.positionMint, poolId:op.whirlpool, pda:pd,
+        mint0:w.mintA, mint1:w.mintB,
+        liq:op.liquidity.toString(), poolLiq:w.liquidity!=null?w.liquidity.toString():null,
+        m0:{symbol:oSyms[w.mintA]}, m1:{symbol:oSyms[w.mintB]}, d0:dA, d1:dB, tick, price, priceLower, priceUpper,
+        amt0:amtA, amt1:amtB, f0:fA, f1:fB, usd0:usdA, usd1:usdB,
+        valueUsd:(usdA!=null&&usdB!=null)?amtA*usdA+amtB*usdB:null,
+        feesUsd:(usdA!=null&&usdB!=null)?fA*usdA+fB*usdB:null,
+        feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
+        poolAprPct:null, poolAprDay:null, poolAprWeek:null, poolAprMonth:null,
+        mintTs, ageDays:mintTs?(Date.now()-mintTs)/86400000:null,
+        inRange, rangePos, dLow, dUp, nearestEdge:dLow<dUp?'lower':'upper',
+        edgeDist:inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
+        pairLabel:oSyms[w.mintA]+' / '+oSyms[w.mintB],
+        feeLabel:(w.feeRate/1e4).toFixed(w.feeRate%100?2:1).replace(/\.0$/,'')+'%' });
+    }
+  }
+  if(!found.length) return out;
+  // ---------- RAYDIUM branch ----------
+  const poolIds=[...new Set(found.map(x=>x.pp.poolId))];
+  const pools=new Map();
+  const pr=await sol('getMultipleAccounts',[poolIds,{encoding:'base64'}]);
+  pr.value.forEach((a,i)=>{ if(!a) return; const b=b64(a.data[0]);
+    /* liquidity is the u128 between tickSpacing and sqrtPriceX64 — 237 + 16 = 253 lands exactly
+       on the sqrtPrice offset already validated against the SDK, which is the check that the
+       field is where it is claimed to be. Same reasoning for the Orca whirlpool: 49 + 16 = 65. */
+    pools.set(poolIds[i],{mint0:pk(b,73),mint1:pk(b,105),dec0:b[233],dec1:b[234],tickSpacing:leU16(b,235),liquidity:leU128(b,237),sqrtPriceX64:leU128(b,253),tickCurrent:leI32(b,269),fgGlobal0:leU128(b,277),fgGlobal1:leU128(b,293)}); });
+  // ---- precise pending fees: tick-array fee growth (offsets validated vs Raydium SDK) ----
+  const MASK128=(1n<<128n)-1n;
+  const i32be=v=>{const bb=new Uint8Array(4);new DataView(bb.buffer).setInt32(0,v,false);return bb;};
+  const taStart=(tick,spacing)=>{const per=spacing*60;return Math.floor(tick/per)*per;};
+  const taCache=new Map();
+  async function tickFeeGrowth(poolId, spacing, tick){
+    const start=taStart(tick,spacing);
+    const key=poolId+':'+start;
+    if(!taCache.has(key)){
+      const addr=await pda([new TextEncoder().encode('tick_array'), b58d(poolId), i32be(start)], CLMM);
+      const res=await sol('getMultipleAccounts',[[addr],{encoding:'base64'}]);
+      taCache.set(key, res.value[0]?b64(res.value[0].data[0]):null);
+    }
+    const b=taCache.get(key);
+    if(!b) return null;
+    const idx=Math.round((tick-start)/spacing);
+    if(idx<0||idx>=60) return null;
+    const base=44+idx*168;
+    return { fg0:leU128(b,base+36), fg1:leU128(b,base+52), gross:leU128(b,base+20) };
+  }
+  function fgInside(global, lowerOut, upperOut, cur, lo, up){
+    const below = cur>=lo ? lowerOut : (global-lowerOut)&MASK128;
+    const above = cur<up ? upperOut : (global-upperOut)&MASK128;
+    return (global-below-above)&MASK128;
+  }
+  for(const x of found){
+    const pool=pools.get(x.pp.poolId); if(!pool) continue;
+    try{
+      const loT=await tickFeeGrowth(x.pp.poolId,pool.tickSpacing,x.pp.tickLower);
+      const upT=await tickFeeGrowth(x.pp.poolId,pool.tickSpacing,x.pp.tickUpper);
+      if(loT&&upT){
+        const in0=fgInside(pool.fgGlobal0,loT.fg0,upT.fg0,pool.tickCurrent,x.pp.tickLower,x.pp.tickUpper);
+        const in1=fgInside(pool.fgGlobal1,loT.fg1,upT.fg1,pool.tickCurrent,x.pp.tickLower,x.pp.tickUpper);
+        let d0=(in0-x.pp.fgInsideLast0)&MASK128, d1=(in1-x.pp.fgInsideLast1)&MASK128;
+        if(d0>(1n<<127n)) d0=0n;               // wrap guard
+        if(d1>(1n<<127n)) d1=0n;
+        x.pending0=x.pp.feesOwed0+((d0*x.pp.liquidity)>>64n);
+        x.pending1=x.pp.feesOwed1+((d1*x.pp.liquidity)>>64n);
+      }
+    }catch(e){ logErr('solFees '+x.pp.nftMint.slice(0,6),e); }
+  }
+  const mints=[...new Set([...pools.values()].flatMap(p=>[p.mint0,p.mint1]))];
+  let prices={}; try{
+    const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+mints.join(','));
+    for(const m of mints){ if(js[m]?.usdPrice!=null) prices[m]=Number(js[m].usdPrice); }
+  }catch(e){ logErr('jup',e); }
+  const symbols={};
+  for(const m of mints){
+    if(SOL_KNOWN[m]){ symbols[m]=SOL_KNOWN[m]; continue; }
+    try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
+      symbols[m]=(Array.isArray(js)?js.find(t=>t.id===m):null)?.symbol||m.slice(0,4)+'…'; }
+    catch(e){ symbols[m]=m.slice(0,4)+'…'; }
+  }
+  const poolFirstSig=new Map();   // poolId -> its first signature, or null when the pool predates us
+  let ray={}; try{
+    const js=await getJson('https://api-v3.raydium.io/pools/info/ids?ids='+poolIds.join(','));
+    for(const d of (js.data||[])) if(d&&d.id) ray[d.id]={aprDay:d.day?.apr??null,aprWeek:d.week?.apr??null,aprMonth:d.month?.apr??null,feeRate:d.feeRate??null,
+      tvl:d.tvl??null, vol24:d.day?.volume??null};
+  }catch(e){ logErr('raydium',e); }
+  for(const {cat:c,pda:pd,pp} of found){
+    const pool=pools.get(pp.poolId); if(!pool) continue;
+    const d0=pool.dec0,d1=pool.dec1,scale=10**(d0-d1);
+    const sp=Number(pool.sqrtPriceX64)/Q64;
+    const [ra0,ra1]=amounts(Number(pp.liquidity),sp,tickToSqrt(pp.tickLower),tickToSqrt(pp.tickUpper));
+    const amt0=ra0/10**d0, amt1=ra1/10**d1;
+    const price=sp*sp*scale, priceLower=tickToPrice(pp.tickLower)*scale, priceUpper=tickToPrice(pp.tickUpper)*scale;
+    let usd0=prices[pool.mint0]??null, usd1=prices[pool.mint1]??null;
+    [usd0,usd1]=poolOwnUsd(pool.mint0,pool.mint1,usd0,usd1,price);
+    const fRaw0=(found.find(z=>z.pp===pp)?.pending0) ?? pp.feesOwed0;
+    const fRaw1=(found.find(z=>z.pp===pp)?.pending1) ?? pp.feesOwed1;
+    const f0=Number(fRaw0)/10**d0, f1=Number(fRaw1)/10**d1;
+    const tick=pool.tickCurrent;
+    const inRange=tick>=pp.tickLower&&tick<pp.tickUpper;
+    const rangePos=(price-priceLower)/(priceUpper-priceLower); // linear price space (v19)
+    const dLow=(price-priceLower)/price*100, dUp=(priceUpper-price)/price*100;
+    let mintTs=null, openSig=null, openExact=false, poolOpenSig=null;
+    /* Once the position's history has been walked to its opening, the opening is known and
+       never changes. Up to three signature pages per position per pass were being spent to
+       rediscover it, all of them on the one endpoint that throttles. */
+    const hst=blockCache.solHist&&blockCache.solHist['sol:'+pp.nftMint];
+    if(hst && hst.done && hst.openT && hst.bot){ mintTs=hst.openT*1000; openSig=hst.bot; openExact=true; }
+    else try{
+      let before,oldest=null,pages=0;
+      while(pages<3){
+        const sigs=await sol('getSignaturesForAddress',[pd,{limit:1000,...(before?{before}:{})}]);
+        if(!sigs||!sigs.length) break;
+        oldest=sigs[sigs.length-1];
+        /* Reaching the end of the history is what makes the oldest signature the OPENING one.
+           A position with more than three pages is cut off short of its own beginning, and the
+           date read off that cut is not the date it was opened — so it is marked inexact and
+           nothing downstream may treat it as an open. */
+        if(sigs.length<1000){ openExact=true; break; }
+        before=oldest.signature; pages++;
+      }
+      if(oldest?.blockTime) mintTs=oldest.blockTime*1000;
+      if(oldest?.signature) openSig=oldest.signature;
+    }catch(e){}
+    /* Creating a pool and opening the first position in it can be one transaction or two, and
+       when it is two the pool creation fee sits on the one the position account never sees.
+       Looked up only for a position young enough to still be worth charging, and only one page
+       deep: a pool with a full page of history is not one we just made, and settling that costs
+       a single call. */
+    if(openExact && mintTs && Date.now()-mintTs < 45*86400000){
+      try{
+        if(!poolFirstSig.has(pp.poolId)){
+          const psigs=await sol('getSignaturesForAddress',[pp.poolId,{limit:1000}]);
+          poolFirstSig.set(pp.poolId, (Array.isArray(psigs)&&psigs.length&&psigs.length<1000)
+            ? psigs[psigs.length-1].signature : null);
+        }
+        poolOpenSig=poolFirstSig.get(pp.poolId);
+      }catch(e){}
+    }
+    const rinfo=ray[pp.poolId]||{};
+    out.push({ id:'sol:'+pp.nftMint, chain:'sol', relay:true, wallet:c.wallet, nftMint:pp.nftMint, poolId:pp.poolId, pda:pd,
+      tl:pp.tickLower, tu:pp.tickUpper,
+      liq:pp.liquidity.toString(), poolLiq:pool.liquidity!=null?pool.liquidity.toString():null,
+      poolTvlUsd:rinfo.tvl??null, poolVol24Usd:rinfo.vol24??null,
+      m0:{symbol:symbols[pool.mint0]}, m1:{symbol:symbols[pool.mint1]}, mint0:pool.mint0, mint1:pool.mint1, d0, d1, tick, price, priceLower, priceUpper,
+      amt0, amt1, f0, f1, usd0, usd1,
+      valueUsd:(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null,
+      feesUsd:(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null,
+      feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
+      poolAprPct:rinfo.aprDay??null, poolAprDay:rinfo.aprDay??null, poolAprWeek:rinfo.aprWeek??null, poolAprMonth:rinfo.aprMonth??null,
+      mintTs, ageDays:mintTs?(Date.now()-mintTs)/86400000:null, openSig, openExact, poolOpenSig,
+      inRange, rangePos, dLow, dUp, nearestEdge:dLow<dUp?'lower':'upper',
+      edgeDist:inRange?Math.min(dLow,dUp):-(price<priceLower?(priceLower-price)/price*100:(price-priceUpper)/price*100),
+      pairLabel:symbols[pool.mint0]+' / '+symbols[pool.mint1],
+      feeLabel:rinfo.feeRate!=null?(rinfo.feeRate*100).toFixed(rinfo.feeRate*100<1?2:0).replace(/\.00$/,'')+'%':'CLMM' });
+  }
+  return out;
+}
+
+/* ---------- IDLE BALANCES: what is sitting in the wallets, not in an LP ----------
+   The dashboard has always measured deployed capital and been blind to everything else,
+   which makes "should I pool more?" unanswerable from the data. This scans each wallet for
+   native + token balances and prices them with the same feeds the LP side already uses.
+
+   EVM token discovery: ERC-20 has no "list my tokens" call, so candidates come from a known
+   list plus every contract that has sent this wallet a Transfer, checkpointed in blockcache
+   so later runs only walk the delta. Solana needs none of that — getTokenAccountsByOwner
+   returns every SPL balance in one call. */
+const TOPIC_XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const KNOWN_ERC20={
+  ethereum:[
+    '0x8cd41041505885ef0ad3858181d66f17be8aae7e',   // LCX (new)
+    '0x037a54aab062628c9bbae1fdb1583c195585fe41',   // LCX (old)
+    '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',   // WETH
+    '0x66761fa41377003622aee3c7675fc7b5c1c2fac5',   // CPOOL (Clearpool)
+    '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',   // USDC
+    '0xdac17f958d2ee523a2206206994597c13d831ec7',   // USDT
+    '0x6b175474e89094c44da98b954eedeac495271d0f',   // DAI
+  ],
+};
+async function erc20Candidates(ck,wallet,tip){
+  const C=CHAINS[ck], out=new Set((KNOWN_ERC20[ck]||[]).map(a=>a.toLowerCase()));
+  const key='bal:'+ck+':'+wallet;
+  /* A wallet seen for the first time: its tokens come from Blockscout's list of what it holds now,
+     and the log scan starts from here. Walking 180 days of logs for each of two dozen new wallets
+     in one pass is thousands of calls, and one failed chunk restarted the whole walk. Without an
+     answer from Blockscout the walk is the fallback, as before. */
+  let tc=blockCache.tscan[key];
+  if(!tc && ck==='ethereum'){
+    try{ const js=await getJson('https://eth.blockscout.com/api/v2/addresses/0x'+wallet+'/token-balances',20000);
+      if(Array.isArray(js)) tc={last:tip, ids:js.filter(x=>x&&x.token&&/ERC-20/.test(x.token.type||''))
+        .map(x=>String(x.token.address_hash||x.token.address||'').toLowerCase()).filter(a=>/^0x[0-9a-f]{40}$/.test(a))}; }
+    catch(e){ logErr('balSeed', e); }
+  }
+  tc=tc||{last:Math.max(C.startBlock,tip-180*C.bph*24)-1,ids:[]};
+  try{
+    const logs=await getLogsChunked(ck,{topics:[TOPIC_XFER,null,'0x'+pad32(wallet)]},tc.last+1,tip);
+    for(const lg of logs){ const a=String(lg.address||'').toLowerCase(); if(a&&!tc.ids.includes(a)) tc.ids.push(a); }
+    tc.last=tip; blockCache.tscan[key]=tc;
+  }catch(e){ logErr('balScan '+ck+' '+wallet.slice(0,8),e); }
+  for(const a of tc.ids) out.add(a);
+  return [...out];
+}
+async function evmWalletBalances(ck,wallet,tip){
+  const C=CHAINS[ck], rows=[];
+  // Same block as the positions, so wallet and pool holdings describe one moment rather than two
+  const atBlk='0x'+tip.toString(16);
+  try{
+    const wei=BigInt(await evm(ck,'eth_getBalance',['0x'+wallet,atBlk]));
+    /* Polygon's coin is POL, not ETH: it carries its own price key, or the native branch below
+       values it at the ETH price — several thousand times what it is worth. */
+    if(wei>0n) rows.push(ck==='polygon'
+      ? {addr:'native',symbol:'POL',decimals:18,amount:bigToFloat(wei,18),native:true,llama:'coingecko:polygon-ecosystem-token'}
+      : {addr:'native',symbol:C.tag==='ETH'?'ETH':'native',decimals:18,amount:bigToFloat(wei,18),native:true});
+  }catch(e){ logErr('nativeBal '+ck+' '+wallet.slice(0,8),e); }
+  const cands=await erc20Candidates(ck,wallet,tip);
+  for(const addr of cands){
+    try{
+      const raw=await evmCall(ck,addr,SEL2.balanceOf+pad32(wallet),atBlk);
+      const bal=BigInt(raw);
+      if(bal<=0n) continue;
+      const m=await meta(ck,addr);
+      rows.push({addr,symbol:m.symbol,decimals:m.decimals,amount:bigToFloat(bal,m.decimals)});
+    }catch(e){}
+    await sleep(70);
+  }
+  return rows;
+}
+/* An RPC that will not answer and a wallet that is genuinely empty produce the same empty
+   array, and publishing the second when it was the first is how $16,859 of holdings vanished
+   from the idle total at 19:00 on 2026-09-21 — recorded in the history series and in that day's
+   record as a real loss. The caller cannot tell them apart from the rows alone, so the failure
+   is carried out on the array itself. */
+async function solWalletBalances(wallet){
+  const rows=[];
+  rows.failed=false;
+  try{
+    const r=await sol('getBalance',[wallet]);
+    const lam=Number(r?.value ?? r ?? 0);
+    if(lam>0) rows.push({addr:'native',symbol:'SOL',decimals:9,amount:lam/1e9,native:true});
+  }catch(e){ logErr('solBal',e); rows.failed=true; }
+  /* Both token programs: the original one, and Token-2022, which newer tokens (and some receipt
+     tokens) live on. Reading only the first left those holdings out of the list entirely. */
+  for(const [prog,lab] of [['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','solTokens'],['TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb','solTokens2022']]){
+    try{
+      const r=await sol('getTokenAccountsByOwner',[wallet,{programId:prog},{encoding:'jsonParsed'}]);
+      for(const acc of (r?.value||[])){
+        const info=acc?.account?.data?.parsed?.info;
+        const amt=Number(info?.tokenAmount?.uiAmount||0);
+        if(!(amt>0)) continue;
+        // a Token-2022 single item is an NFT (Raydium's position NFTs among them): those are the LP
+        // cards and the NFT list, not a token balance
+        if(lab==='solTokens2022' && info.tokenAmount.decimals===0 && amt===1) continue;
+        rows.push({addr:info.mint,symbol:SOL_KNOWN[info.mint]||null,decimals:info.tokenAmount.decimals,amount:amt});
+      }
+    }catch(e){ logErr(lab,e); rows.failed=true; }
+  }
+  return rows;
+}
+
+/* What a Solana wallet holds inside protocols rather than in itself, so its balance scan never
+   sees it: JUP staked in Jupiter DAO (an escrow per owner in the DAO's locker; its owner field is at
+   byte 40 and the staked amount, 6 decimals, at byte 105 — checked against what Jupiter's own
+   portfolio showed), and what is supplied to or borrowed from Jupiter Lend's vaults (its public API,
+   amounts in each token's decimals). A borrow is a negative row, so the total nets it. Throws when
+   a source does not answer: an unread stake is not an empty one. */
+const JUP_MINT='JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN', JUP_VOTER='voTpe3tHQ7AjQHMapgSue2HJFAh2cGsdokqN3XqmVSj', JUP_LOCKER='CVMdMd79no569tjc5Sq7kzz8isbfCcFyBS5TLGsrZ5dN';
+async function solProtocolHoldings(wallet){
+  const rows=[];
+  /* the escrow sits at its derived address (seeds "Escrow", locker, owner): one plain account read.
+     A node that will not do that is asked the slower way, every voter account with this owner. */
+  let raw=0n, found=false;
+  try{ const esc=await pda([new TextEncoder().encode('Escrow'), b58d(JUP_LOCKER), b58d(wallet)], JUP_VOTER);
+    const a=await sol('getAccountInfo',[esc,{encoding:'base64'}]);
+    if(a&&a.value){ const b=Buffer.from(a.value.data[0],'base64');
+      if(a.value.owner===JUP_VOTER && b.length>=113 && b58e(b.subarray(8,40))===JUP_LOCKER && b58e(b.subarray(40,72))===wallet){ raw=b.readBigUInt64LE(105); found=true; } }
+    else found=true;   // no escrow at the derived address: nothing staked
+  }catch(e){}
+  if(!found){
+    const acc=await sol('getProgramAccounts',[JUP_VOTER,{encoding:'base64',filters:[{memcmp:{offset:40,bytes:wallet}}]}]);
+    for(const a of acc||[]){ const b=Buffer.from(a.account.data[0],'base64');
+      if(b.length<113 || b58e(b.subarray(8,40))!==JUP_LOCKER) continue;
+      raw+=b.readBigUInt64LE(105); } }
+  if(raw>0n) rows.push({addr:JUP_MINT, symbol:'JUP', name:'JUP staked in Jupiter DAO', decimals:6, amount:Number(raw)/1e6, staked:true});
+  const j=await getJson('https://lite-api.jup.ag/lend/v1/borrow/positions?users='+wallet,15000);
+  if(!Array.isArray(j)) throw new Error('lend: unexpected answer');
+  for(const p of j){ const v=p.vault||{}, st=v.supplyToken, bt=v.borrowToken;
+    const sup=st&&st.decimals!=null?Number(p.supply||0)/10**st.decimals:0, bor=bt&&bt.decimals!=null?Number(p.borrow||0)/10**bt.decimals:0;
+    if(sup>0) rows.push({addr:st.address, symbol:st.symbol||null, name:(st.symbol||'')+' supplied to Jupiter Lend', decimals:st.decimals, amount:sup, lent:true});
+    if(bor>0) rows.push({addr:bt.address, symbol:bt.symbol||null, name:(bt.symbol||'')+' borrowed from Jupiter Lend', decimals:bt.decimals, amount:-bor, debt:true}); }
+  return rows;
+}
+
+/* ---------- Solana fee collections, read from transaction history ----------
+   The snapshot method compares pending fees between runs and books the drop. A harvest that
+   lands between two runs — with fees re-accruing before the next one — leaves no drop to see,
+   so it books nothing: on 08-16 roughly $173 was collected and $14 recorded. Fees here accrue
+   fast enough ($66 in two hours on one pool) that this is the normal case, not an edge case.
+
+   So read the position's own transaction history instead. For every signature since the last
+   checkpoint, take the owner's positive balance change in the pool's two mints — tokens moving
+   out of the pool to the owner is what a collect is. This sees the harvest itself rather than
+   its after-image, whatever the scan timing.
+
+   Limits, stated rather than hidden: a single transaction that harvests AND redeposits nets
+   out and is undercounted; amounts are valued at current prices, as on the EVM side; and the
+   first run only records a checkpoint, booking nothing, so it cannot double-count against what
+   the snapshot method already wrote. */
+/* Attribute a harvest to the position it actually came from.
+   Wallet balance deltas cannot do this: when one transaction collects from several positions
+   the wallet just sees one lump, and every position claims all of it. The transaction itself
+   knows better. Each Raydium instruction names the personal position PDA in its account list,
+   and the token transfers it triggers sit in the innerInstructions group indexed to it — so
+   the transfers under the instruction naming THIS pda are this position's fees, and no other
+   position's. Returns null when the shape is not recognisable, and the caller falls back. */
+function solAttribute(tx, pda, mints, owner){
+  try{
+    const msg=tx.transaction&&tx.transaction.message; if(!msg) return null;
+    const keys=(msg.accountKeys||msg.staticAccountKeys||[]).map(k=>typeof k==='string'?k:(k&&k.pubkey));
+    const top=msg.instructions||[];
+    const idxs=[];
+    top.forEach((ix,i)=>{ const a=ix.accounts||[]; if(Array.isArray(a)&&a.some(x=>x===pda)) idxs.push(i); });
+    if(!idxs.length) return null;                     // this pda is not named by any instruction
+    const inner=tx.meta&&tx.meta.innerInstructions;
+    if(!Array.isArray(inner)||!inner.length) return null;
+    const bal=[...(tx.meta.preTokenBalances||[]),...(tx.meta.postTokenBalances||[])];
+    const mintOf={}, decOf={}, ownerOf={};
+    for(const b of bal){
+      const addr=keys[b.accountIndex];
+      if(addr&&b.mint) mintOf[addr]=b.mint;
+      if(addr&&b.owner) ownerOf[addr]=b.owner;
+      if(b.mint&&b.uiTokenAmount&&b.uiTokenAmount.decimals!=null) decOf[b.mint]=b.uiTokenAmount.decimals;
+    }
+    /* SOL paid out of a pool lands in a wrapped-SOL account the transaction opens and closes
+       itself, so it is in neither balance table and its owner was unknown — every harvest's SOL
+       leg was dropped here. On 2026-09-25 4j7pU was paid 0.2593 SOL and 1,369 CPOOL; this read
+       $49.58 of it, the CPOOL, and the ceiling logic credited the missing $30.23 and logged it as
+       an error. The instruction that opened the account names its owner. */
+    for(const ins of [...top, ...(tx.meta.innerInstructions||[]).flatMap(g=>g.instructions||[])]){
+      const q=ins&&ins.parsed; if(!q||typeof q!=='object') continue;
+      const i=q.info||{};
+      if(/^initializeAccount/.test(q.type||'') && i.account && i.owner){ ownerOf[i.account]=i.owner; if(i.mint) mintOf[i.account]=i.mint; }
+      if((q.type==='create'||q.type==='createIdempotent') && i.account && i.wallet){ ownerOf[i.account]=i.wallet; if(i.mint) mintOf[i.account]=i.mint; }
+    }
+    const amt={}; let saw=false;
+    for(const g of inner){
+      if(!idxs.includes(g.index)) continue;
+      for(const ins of (g.instructions||[])){
+        const pi=ins.parsed; if(!pi) continue;
+        if(pi.type!=='transfer'&&pi.type!=='transferChecked') continue;
+        const info=pi.info||{};
+        const mint=info.mint||mintOf[info.destination];
+        if(!mint) continue;
+        if(mints.length&&!mints.includes(mint)) continue;
+        /* Direction matters, and dropping this check is what broke it. Fees flow vault -> your
+           token account; a redeposit flows the other way, your account -> vault. Counting both
+           booked a $105 redeposit into 6sGWez as $105 of fee income on top of its real $29.
+           The wallet-delta method this replaced had the check implicitly, in "owner === owner
+           and delta > 0". Only an inflow to THIS owner is income. */
+        if(owner && ownerOf[info.destination]!==owner) continue;
+        let v=null;
+        if(info.tokenAmount&&info.tokenAmount.uiAmount!=null) v=Number(info.tokenAmount.uiAmount);
+        else if(info.amount!=null&&decOf[mint]!=null) v=Number(info.amount)/Math.pow(10,decOf[mint]);
+        if(v==null||!(v>0)) continue;
+        amt[mint]=(amt[mint]||0)+v; saw=true;
+      }
+    }
+    return saw?amt:null;
+  }catch(e){ return null; }
+}
+/* `ceil` is the fee that had actually accrued to this position at the previous read, per mint,
+   in token units. Nothing here may book more than that.
+
+   Both of the ways this function finds money are blind to WHY tokens moved. A withdrawal returns
+   principal to the same owner, through the same vault, inside a transaction that names the same
+   position — identical in shape to a harvest. On 2026-08-27 a withdraw-and-harvest booked $840.70
+   of "fees" against a position that was owed $84.02: its own fees, the other position's fees, and
+   ~$700 of returned principal. The discriminator that does not require guessing at instruction
+   layouts is the one fact we already hold: fees owed cannot exceed fees accrued. */
+/* ---------- what a Solana position cost to open ----------
+
+   Raydium charges a flat protocol fee to create a CLMM pool — the order of 0.15 SOL, tens of
+   dollars — and every account the transaction opens on top of that (pool state, observation,
+   the two vaults, tick arrays, the position NFT) is funded with rent from the same wallet.
+   None of it is a transaction fee, so the ledger's meta.fee reading sees about five thousand
+   lamports of a spend three thousand times larger. The rest simply left the portfolio with
+   nothing to account for it: idle SOL fell, no cost was recorded, and the month's net read
+   better than it was.
+
+   Measured rather than assumed. What the wallet gave up in the transaction, less the part of
+   that which became an asset it still holds. SOL going into the pool's vaults is liquidity;
+   SOL going anywhere else is spent. Where the pair contains no SOL at all the second term is
+   zero and the whole outlay is cost, which is the case this was written for.
+
+   Returns lamports, or null when the transaction cannot be read or the wallet is not in it —
+   booking nothing is always preferable to booking a number of unknown provenance. */
+async function solOpenSpend(sig, owner){
+  if(!sig||!owner) return null;
+  let tx=null;
+  try{ tx=await sol('getTransaction',[sig,{maxSupportedTransactionVersion:1,encoding:'jsonParsed'}]); }
+  catch(e){ return null; }
+  if(!tx||!tx.meta||tx.meta.err) return null;
+  const keys=((tx.transaction||{}).message||{}).accountKeys||[];
+  const idx=keys.findIndex(k=>(typeof k==='string'?k:(k&&k.pubkey))===owner);
+  const pre=tx.meta.preBalances||[], post=tx.meta.postBalances||[];
+  if(idx<0||pre[idx]==null||post[idx]==null) return null;
+  const ptb=tx.meta.preTokenBalances||[], stb=tx.meta.postTokenBalances||[];
+  const raw=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i);
+    return e&&e.uiTokenAmount?Number(e.uiTokenAmount.amount||0):0; };
+  const seen=new Set();
+  let ownerWsolDown=0, elsewhereWsolUp=0;
+  for(const r of [...ptb,...stb]){
+    if(r.mint!==SOL_MINT||seen.has(r.accountIndex)) continue;
+    seen.add(r.accountIndex);
+    const d=raw(stb,r.accountIndex)-raw(ptb,r.accountIndex);
+    if(r.owner===owner){ if(d<0) ownerWsolDown+=-d; }      // wrapped and handed over
+    else if(d>0) elsewhereWsolUp+=d;                        // landed in a vault: a deposit, not a cost
+  }
+  const spent=(pre[idx]-post[idx])+ownerWsolDown-elsewhereWsolUp;
+  if(!(spent>0)) return 0;
+  /* A reading this size is far likelier to be a transaction shape this did not anticipate than
+     a real outlay, and a wrong cost on the books is worse than a missing one. */
+  if(spent>2e9){ logErr('solOpen', new Error(sig.slice(0,10)+' read as '+(spent/1e9).toFixed(3)
+    +' SOL of opening cost — too large to trust, booked nothing')); return 0; }
+  return Math.round(spent);
+}
+
+/* ---------- Solana swap fees, read from the pools the swap actually went through ----------
+
+   "Solana costs cover transaction fees; a swap fee there, if one is ever paid, is not detected"
+   has been on the page since the cost ledger was written, and it was never true that none were
+   paid. Every rebalance on Solana pays the pool it routes through, the same as on Ethereum,
+   where the fee has been counted from the start. September's costs were understated by whatever
+   those swaps came to, and nothing on the page could say by how much.
+
+   Nothing here parses an instruction. Two facts already in the transaction are enough:
+
+   Which accounts are pools — read them and keep the ones the CLMM or Whirlpool program owns.
+   An address that a swap program owns is a pool whoever built the route and whatever they
+   called the instruction, so Jupiter, a direct swap and an aggregator nobody has heard of all
+   come out the same.
+
+   Which of those pools were swapped through — a swap moves one vault up and the other down.
+   A deposit raises both (or one, single-sided), a withdrawal and a harvest lower them. Only
+   the one-up-one-down shape is a trade, which is what keeps a deposit from being billed as a
+   swap, and a zap that does both in one transaction fails the test and is reported as
+   unattributed rather than guessed at.
+
+   The fee is then the rate on what went in, and the rate comes from the pool: Orca stores it in
+   the account, Raydium publishes it per pool id. A hop through a venue neither covers is
+   counted and named, so the total says how much of itself it is sure of. */
+const CPMM='CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
+function txAccountKeys(tx){
+  const msg=(tx.transaction||{}).message||{};
+  const keys=(msg.accountKeys||msg.staticAccountKeys||[]).map(k=>typeof k==='string'?k:(k&&k.pubkey));
+  /* Versioned transactions keep most of their accounts in lookup tables. Some nodes fold them
+     into accountKeys and some hand them back separately; the token-balance indexes run past the
+     end of the list when they were not folded in, which is the test. */
+  const la=(tx.meta||{}).loadedAddresses||{};
+  const need=Math.max(0,...[...(tx.meta.preTokenBalances||[]),...(tx.meta.postTokenBalances||[])]
+    .map(x=>x.accountIndex+1));
+  if(keys.length<need) keys.push(...(la.writable||[]),...(la.readonly||[]));
+  return keys;
+}
+/* token-account balance change per account index, in raw units */
+function tokenDeltas(tx){
+  const pre=tx.meta.preTokenBalances||[], post=tx.meta.postTokenBalances||[];
+  const raw=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i);
+    return e&&e.uiTokenAmount?BigInt(e.uiTokenAmount.amount||'0'):0n; };
+  const out=new Map();
+  for(const r of [...pre,...post]){
+    if(out.has(r.accountIndex)) continue;
+    out.set(r.accountIndex,{mint:r.mint, owner:r.owner, dec:r.uiTokenAmount?r.uiTokenAmount.decimals:0,
+                            delta:raw(post,r.accountIndex)-raw(pre,r.accountIndex)});
+  }
+  return out;
+}
+/* Pools this run has already identified, so a route taken twice is read once. Persisted
+   through blockCache: what program owns an address does not change. */
+/* Bumped when the classification changes, so entries written by an older rule are re-read
+   rather than trusted. v1 accepted any account the CLMM program owned, which is both pools and
+   positions — three of this portfolio's own positions were filed as pools. */
+const SOL_POOL_CACHE_V=2;
+async function solPoolsIn(keys, cache){
+  const unknown=keys.filter(k=>k&&(cache[k]===undefined||(cache[k]&&cache[k].v!==SOL_POOL_CACHE_V)));
+  for(let i=0;i<unknown.length;i+=100){
+    const slice=unknown.slice(i,i+100);
+    let res=null;
+    try{ res=await sol('getMultipleAccounts',[slice,{encoding:'base64'}]); }
+    catch(e){ return null; }               // could not look: attribute nothing rather than guess
+    (res.value||[]).forEach((a,j)=>{
+      const k=slice[j];
+      if(!a){ cache[k]=null; return; }
+      /* Both programs own two kinds of account: the pool and the individual positions in it.
+         They are told apart by size — a Raydium pool is 1544 bytes against a position's 281, an
+         Orca whirlpool 653 against 216 — and reading vault offsets out of a position yields
+         fields that are mostly zero, which encode to the all-zeros address. That address is the
+         System Program, which is in nearly every transaction, so the mistake was one lookup away
+         from finding a real account. */
+      const len=Array.isArray(a.data)&&typeof a.data[0]==='string'
+        ? Math.floor(a.data[0].replace(/=+$/,'').length*3/4) : 0;
+      if(a.owner===CLMM && len>=1000){ const b=b64(a.data[0]);
+        cache[k]={v:SOL_POOL_CACHE_V, venue:'raydium', vaultA:pk(b,137), vaultB:pk(b,169), rate:null}; }
+      else if(a.owner===ORCA && len>=600){ const b=b64(a.data[0]);
+        // feeRate sits beside the liquidity offset this file already validates, in millionths
+        cache[k]={v:SOL_POOL_CACHE_V, venue:'orca', vaultA:pk(b,133), vaultB:pk(b,213), rate:leU16(b,45)/1e6}; }
+      else if(a.owner===CPMM){ cache[k]={v:SOL_POOL_CACHE_V, venue:'cpmm', vaultA:null, vaultB:null, rate:null}; }
+      else cache[k]=null;
+    });
+    await sleep(60);
+  }
+  const seen=new Set(), pools=[];
+  for(const k of keys){
+    const v=cache[k];
+    if(!v||seen.has(k)) continue;
+    seen.add(k); pools.push({...v, addr:k});
+  }
+  return pools;
+}
+/* What a wallet's transactions cost, for transactions no position account ever sees.
+
+   Returns per signature: the lamports it paid, the swap fee it paid the pools it routed
+   through, and whether any leg of it could not be attributed. */
+async function solWalletCosts(wallet, sinceSig, poolCache, priceOf, monthStartSec, myPools, ownWallets){
+  const out={newest:null, txs:{}, scanned:0, unattributed:0, err:null};
+  let sigs=null;
+  try{ sigs=await sol('getSignaturesForAddress',[wallet,{limit:100,...(sinceSig?{until:sinceSig}:{})}]); }
+  catch(e){ out.err=String((e&&e.message)||e).slice(0,60); return out; }
+  if(!Array.isArray(sigs)||!sigs.length) return out;
+  out.newest=sigs[0].signature;
+  /* With no checkpoint this is the first sight of the wallet. Walking its whole history would
+     bill months that are closed, so the reach is this month and a bounded number of
+     transactions; after that the checkpoint makes every run incremental. */
+  let work=sigs.filter(x=>!x.err);
+  /* More new transactions than one run walks: the OLDEST are walked and the checkpoint is put on
+     the newest of those, so the rest are next run's work. Walking the newest and checkpointing
+     at the very newest skipped everything older for good — and a burst of dust spam is exactly
+     what would push a real swap out of the window. */
+  if(sinceSig){ if(work.length>14){ work=work.slice(-14); out.newest=work[0].signature; } }
+  else work=work.filter(x=>x.blockTime && x.blockTime>=monthStartSec).slice(0,40);
+  for(const s of work){
+    let tx=null;
+    try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:1,encoding:'jsonParsed'}]); }
+    catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
+    if(!tx||!tx.meta||tx.meta.err) continue;
+    out.scanned++;
+    /* A fee paid to a pool this portfolio is the only LP in comes straight back as fee income.
+       It is a real cost and it is really recycled, and the two facts belong together — a swap
+       routed through your own 4% pool reads very differently from one routed through someone
+       else's. */
+    /* The network fee is the payer's. Dust and address-poisoning spam lands in the wallet's history
+       too, paid for by whoever sent it, and was being billed here as the wallet's gas. */
+    const payer=(txAccountKeys(tx)||[])[0];
+    const paidByUs=!ownWallets || ownWallets.has(payer);
+    const rec={lamports:paidByUs?Number(tx.meta.fee||0):0, swapUsd:0, ownUsd:0, ownBy:{}, t:(tx.blockTime||s.blockTime||0)*1000};
+    try{
+      const keys=txAccountKeys(tx);
+      const deltas=tokenDeltas(tx);
+      /* Did the wallet end up holding less of one thing and more of another?
+
+         A position NFT is not one of those things. Opening a position mints one and pays out
+         two tokens; closing burns one and takes two back. Counted as a leg, both shapes look
+         exactly like a swap — and on 2026-09-23 a single restate, one close and one open,
+         reported two swaps through venues that could not be read. Neither was a swap and
+         neither was billed, because a deposit raises both vaults and a withdrawal lowers both,
+         so no money moved wrongly; what moved wrongly was the page's account of what it had
+         missed. Recognised by the same rule that finds positions in the first place: no
+         decimals, quantity one. */
+      const isNft=d=>d.dec===0 && (d.delta===1n||d.delta===-1n);
+      const net={};
+      for(const [,d] of deltas) if(d.owner===wallet && !isNft(d)) net[d.mint]=(net[d.mint]||0n)+d.delta;
+      const lost=Object.keys(net).filter(m=>net[m]<0n), gained=Object.keys(net).filter(m=>net[m]>0n);
+      const swapLike=lost.length>0 && gained.length>0 && lost.some(m=>!gained.includes(m));
+      const pools=await solPoolsIn(keys, poolCache);
+      if(pools===null){ if(swapLike) out.unattributed++; out.txs[s.signature]=rec; await sleep(60); continue; }
+      const byAddr=new Map(keys.map((k,i)=>[k,i]));
+      let attributed=0;
+      const NULL_ADDR='11111111111111111111111111111111';
+      for(const p of pools){
+        if(!p.vaultA||!p.vaultB) continue;                       // venue we cannot read
+        if(p.vaultA===NULL_ADDR||p.vaultB===NULL_ADDR) continue;  // belt to the size check's braces
+        const ia=byAddr.get(p.vaultA), ib=byAddr.get(p.vaultB);
+        if(ia==null||ib==null) continue;
+        const da=deltas.get(ia), db=deltas.get(ib);
+        if(!da||!db) continue;
+        // one vault up and the other down is a trade; anything else is a deposit, a
+        // withdrawal or a harvest, and billing those as swaps is exactly the mistake
+        const inSide = (da.delta>0n && db.delta<0n) ? da : ((db.delta>0n && da.delta<0n) ? db : null);
+        if(!inSide) continue;
+        let rate=p.rate;
+        if(rate==null){
+          rate=await rayFeeRate(p.addr);
+          // a published fee rate does not move; keeping it stops the endpoint being asked
+          // about the same pool on every run for the life of the cache
+          if(rate!=null && poolCache[p.addr]) poolCache[p.addr].rate=rate;
+        }
+        if(rate==null) continue;
+        const px=await priceOf(inSide.mint);
+        if(px==null) continue;
+        const amt=Number(inSide.delta)/Math.pow(10,inSide.dec);
+        const paid=amt*px*rate;
+        rec.swapUsd+=paid;
+        if(myPools && myPools.has(p.addr)){ rec.ownUsd+=paid; rec.ownBy[p.addr]=(rec.ownBy[p.addr]||0)+paid; }
+        attributed++;
+      }
+      if(swapLike && !attributed) out.unattributed++;
+    }catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); }
+    rec.swapUsd=Math.round(rec.swapUsd*1e6)/1e6;
+    rec.ownUsd=Math.round(rec.ownUsd*1e6)/1e6;
+    out.txs[s.signature]=rec;
+    await sleep(70);
+  }
+  return out;
+}
+/* Raydium publishes the trade fee per pool id. The rate does not move, so a miss is cached as
+   a miss and the endpoint is asked once per pool per run at most. */
+const RAY_RATE={};
+async function rayFeeRate(poolId){
+  if(RAY_RATE[poolId]!==undefined) return RAY_RATE[poolId];
+  RAY_RATE[poolId]=null;
+  try{
+    const js=await getJson('https://api-v3.raydium.io/pools/info/ids?ids='+poolId, 15000);
+    const arr=Array.isArray(js&&js.data)?js.data:[];
+    const hit=arr.find(d=>d&&d.id===poolId);
+    if(hit&&hit.feeRate!=null) RAY_RATE[poolId]=Number(hit.feeRate);
+  }catch(e){}
+  return RAY_RATE[poolId];
+}
+async function solCollectedSince(pos, sinceSig, costSink, ceil){
+  const out={amt:{}, newest:null, scanned:0, ok:false, err:null, shared:0, attributed:0, lump:0, clamped:0};
+  const addr=pos.pda||pos.nftMint, owner=pos.wallet;
+  if(!addr||!owner) { out.err='no position address'; return out; }
+  try{
+    const q={limit:40}; if(sinceSig) q.until=sinceSig;
+    const sigs=await sol('getSignaturesForAddress',[addr,q]);
+    if(!Array.isArray(sigs)){ out.err='bad signature response'; return out; }
+    out.ok=true;
+    if(!sigs.length) return out;                 // nothing new since the checkpoint
+    out.newest=sigs[0].signature;
+    if(!sinceSig) return out;                    // first sight: checkpoint only, book nothing
+    const mints=[pos.mint0,pos.mint1].filter(Boolean);
+    for(const s of sigs.slice(0,8)){             // cap the work per position per run
+      if(s.err) continue;
+      /* This used to skip any transaction another position had already claimed — the guard
+         against a shared harvest being counted twice. It cost more than it saved: one tx
+         harvested two positions, the first reached it, booked the WALLET's whole delta, and
+         claimed it; the second skipped it, booked nothing, and advanced its checkpoint past the
+         harvest so it could never be recovered. Its $54.28 vanished and lifetime fees went DOWN.
+         The ceiling below is the better guard: each position books at most what it was owed, so
+         two positions can both take their share of one transaction without overlapping. */
+      let tx=null;
+      try{ tx=await sol('getTransaction',[s.signature,{maxSupportedTransactionVersion:1,encoding:'jsonParsed'}]); }
+      catch(e){ out.err=out.err||String((e&&e.message)||e).slice(0,60); continue; }
+      if(!tx||!tx.meta) continue;
+      out.scanned++;
+      /* The transaction fee is right here and was being thrown away, so every Solana operation
+         has been costing real money that the monthly ledger recorded as zero. Keyed by
+         signature, so a transaction touching several positions is charged once. */
+      if(costSink && tx.meta.fee!=null) costSink[s.signature]=Number(tx.meta.fee);
+      /* Preferred: read this position's own transfers out of the transaction. Exact even when
+         several positions were harvested together, so no cross-position guard is needed. */
+      /* Neither path may book without a ceiling. Attribution is the accurate one, but accurate
+         about WHICH position moved tokens — not about whether those tokens were fees. On a
+         withdrawal it returns principal just as readily. A position with no recorded owed is
+         either brand new, in which case `sinceSig` has already declined to book, or it has never
+         accrued anything, in which case there is nothing legitimate to find. */
+      if(!ceil){ out.err=out.err||'no fee ceiling — nothing booked this pass'; await sleep(60); continue; }
+      const att=solAttribute(tx, addr, mints, owner);
+      if(att){
+        for(const m in att) out.amt[m]=(out.amt[m]||0)+att[m];
+        out.attributed++;
+        await sleep(60);
+        continue;
+      }
+      const pre=tx.meta.preTokenBalances||[], post=tx.meta.postTokenBalances||[];
+      const amtOf=(arr,i)=>{ const e=arr.find(x=>x.accountIndex===i); return e?Number(e.uiTokenAmount.uiAmount||0):0; };
+      const rows=[...pre,...post].filter(x=>x.owner===owner && (!mints.length||mints.includes(x.mint)));
+      const seen=new Set();
+      let got=0;
+      for(const r of rows){
+        if(seen.has(r.accountIndex)) continue; seen.add(r.accountIndex);
+        const d=amtOf(post,r.accountIndex)-amtOf(pre,r.accountIndex);
+        if(d>0){ out.amt[r.mint]=(out.amt[r.mint]||0)+d; got+=d; }   // received from the pool
+      }
+      // Claim the signature only if value was actually taken from it. A zero-delta read must
+      // not lock another position out of booking a transaction that did pay it.
+      if(got>0){ out.lump++; }
+      await sleep(60);
+    }
+    /* Applied to the window total, not per transaction: several harvests between two reads are
+       all drawing on the same accrued balance. The caller has already widened these for whatever
+       accrued between the last read and the harvest itself. */
+    if(ceil){
+      for(const m in out.amt){
+        const cap=ceil[m]!=null?Number(ceil[m]):0;
+        if(out.amt[m]>cap){ out.clamped+=out.amt[m]-cap; out.amt[m]=cap; }
+      }
+    }
+  }catch(e){ out.err=String((e&&e.message)||e).slice(0,80); }
+  return out;
+}
+
+/* ---------- competition: how much of the pool is mine, and who else is standing in it ----------
+
+   Two different questions, and conflating them is the usual mistake.
+
+   Inside a pool, fees are split strictly in proportion to liquidity standing at the price the
+   swap crosses. Not TVL — a pool can hold millions parked in ranges the price is nowhere near,
+   and that money earns nothing and takes nothing from you. pool.liquidity() on Uniswap v3, and
+   the equivalent field on a Raydium or Orca pool, is exactly the active total, so
+   myLiquidity / poolLiquidity is the real answer to "what fraction of every fee is mine",
+   readable on chain with no estimate anywhere in it.
+
+   Across pools, liquidity units are not comparable — they carry the pair's decimals and price
+   scale — so the wider market has to be sized in dollars instead. That is a weaker measure and
+   it is labelled as one: it says how much capital is chasing the same token, not how much of it
+   is standing where the price actually is.
+*/
+const EVM_QUOTES={ ethereum:[
+  ['0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2','WETH'],
+  ['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','USDC'],
+  ['0xdac17f958d2ee523a2206206994597c13d831ec7','USDT'],
+  ['0x6b175474e89094c44da98b954eedeac495271d0f','DAI'],
+  ['0x2260fac5e5542a773aa44fbcfedf7c193bc2c599','WBTC']] };
+const V3_FEES=[100,500,3000,10000];
+const V2_FACTORIES=[['0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f','Uniswap v2'],
+                    ['0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac','SushiSwap']];
+const RIVAL_TTL=6*3600000;   // which pools exist changes on the order of never
+
+/* A share is a reading, not a property, and the difference is not academic: on the old LCX
+   contract this portfolio's share went 7.4% -> 36.5% -> 4.2% inside thirty-three hours without
+   the position changing at all. Active liquidity is a step function of the tick, so every time
+   the price crosses somebody else's range boundary the denominator jumps. Reporting the instant
+   alone invites exactly the wrong conclusion, so the range it has actually occupied is kept
+   alongside it. A pool where the figure never moves while the price travels is saying something
+   quite different from one where it swings ninefold, and the reader should be able to tell. */
+const SHARE_KEEP=700;        // ~7 days at a quarter-hour cadence
+function recordShare(key, pct){
+  if(pct==null) return null;
+  blockCache.shareHist=blockCache.shareHist||{};
+  const h=blockCache.shareHist[key]=[...(blockCache.shareHist[key]||[]), {t:Date.now(), s:Math.round(pct*1e4)/1e4}]
+    .slice(-SHARE_KEEP);
+  const v=h.map(x=>x.s);
+  return { n:h.length, min:Math.min(...v), max:Math.max(...v),
+           days:Math.round((Date.now()-h[0].t)/86400000*100)/100 };
+}
+
+async function evmSiblingPools(ck, focus){
+  blockCache.rivals=blockCache.rivals||{};
+  const key=ck+':'+focus.toLowerCase();
+  const hit=blockCache.rivals[key];
+  if(hit && Date.now()-hit.at<RIVAL_TTL) return hit.pools;
+  const C=CHAINS[ck], pools=[];
+  const ZERO='0x0000000000000000000000000000000000000000';
+  for(const [q,qs] of (EVM_QUOTES[ck]||[])){
+    if(q.toLowerCase()===focus.toLowerCase()) continue;
+    for(const fee of V3_FEES){
+      try{
+        const a='0x'+(await evmCall(ck,C.factory,SEL.getPool+pad32(focus)+pad32(q)+pad32(fee.toString(16)))).slice(-40);
+        if(a!==ZERO) pools.push({addr:a, quote:q, quoteSym:qs, fee, venue:'Uniswap v3'});
+      }catch(e){}
+      await sleep(60);
+    }
+    for(const [fac,vname] of V2_FACTORIES){
+      try{
+        const a='0x'+(await evmCall(ck,fac,SEL.getPair+pad32(focus)+pad32(q))).slice(-40);
+        if(a!==ZERO) pools.push({addr:a, quote:q, quoteSym:qs, fee:3000, venue:vname, v2:true});
+      }catch(e){}
+      await sleep(60);
+    }
+  }
+  blockCache.rivals[key]={at:Date.now(), pools};
+  return pools;
+}
+
+async function buildCompetition(evmPositions, solPositions){
+  const arenas=[], notes=[];
+  const r2=x=>x==null?null:Math.round(x*100)/100;
+  /* ---------------- Ethereum and friends ---------------- */
+  const byFocus=new Map();
+  for(const p of (evmPositions||[])){
+    const ck=p.chain||'ethereum';
+    const qs=new Set((EVM_QUOTES[ck]||[]).map(x=>x[0]));
+    const focus=qs.has(String(p.token0).toLowerCase())?p.token1:p.token0;
+    const k=ck+':'+String(focus).toLowerCase();
+    const g=byFocus.get(k)||{ck, focus, sym:null, mine:[]};
+    g.sym=g.sym||(qs.has(String(p.token0).toLowerCase())?p.m1?.symbol:p.m0?.symbol);
+    g.mine.push(p); byFocus.set(k,g);
+  }
+  for(const [k,g] of byFocus){
+    try{
+      const C=CHAINS[g.ck];
+      // my positions, folded onto the pools they actually sit in
+      const pools=new Map();
+      for(const p of g.mine){
+        const e=pools.get(p.pool)||{addr:p.pool, pairLabel:p.pairLabel, feeLabel:p.feeLabel,
+          venue:'Uniswap v3', mine:0n, poolLiq:p.poolLiq!=null?BigInt(p.poolLiq):null,
+          myUsd:0, ids:[], outIds:[]};
+        // Only an in-range position stands in pool.liquidity(). One that has drifted out is
+        // not being diluted and is not diluting anyone — it simply is not in the fight.
+        if(p.inRange && p.liq) e.mine+=BigInt(p.liq);
+        else e.outIds.push(p.id);
+        e.myUsd+=(p.valueUsd||0);     // capital sits in the pool either way; only the share is in-range only
+        e.ids.push(p.id);
+        pools.set(p.pool,e);
+      }
+      const mineRows=[...pools.values()].map(e=>{
+        const sp=(e.poolLiq&&e.poolLiq>0n)?Number(e.mine*1000000n/e.poolLiq)/10000:null;
+        return { addr:e.addr, pairLabel:e.pairLabel, feeLabel:e.feeLabel, venue:e.venue,
+          ids:e.ids, outIds:e.outIds, myUsd:r2(e.myUsd),
+          myLiq:e.mine.toString(), poolLiq:e.poolLiq!=null?e.poolLiq.toString():null,
+          sharePct:sp, shareSeen:recordShare(g.ck+':'+e.addr, sp) }; });
+      // everyone else trading the same token on this chain
+      const sibs=await evmSiblingPools(g.ck, g.focus);
+      const want=[g.focus.toLowerCase(), ...new Set(sibs.map(x=>x.quote.toLowerCase()))];
+      await llamaPrices(want.map(a=>C.llama+':'+a));
+      const minePools=new Set(mineRows.map(x=>String(x.addr).toLowerCase()));
+      const rows=[];
+      for(const sp of sibs){
+        try{
+          const bal=async t=>bigToFloat(BigInt(await evmCall(g.ck,t,SEL2.balanceOf+pad32(sp.addr))),(await meta(g.ck,t)).decimals);
+          const b0=await bal(g.focus), b1=await bal(sp.quote);
+          const p0=priceCache[C.llama+':'+g.focus.toLowerCase()], p1=priceCache[C.llama+':'+sp.quote.toLowerCase()];
+          const tvl=(p0!=null&&p1!=null)?b0*p0+b1*p1:null;
+          let liq=null;
+          if(!sp.v2){ try{ liq=BigInt(await evmCall(g.ck,sp.addr,SEL.poolLiquidity)).toString(); }catch(e){} }
+          /* An empty shell of a pool is not competition — but a pool I am standing in is part of
+             the market whatever its size, and dropping it here while my side of it still counts
+             towards my own total is how a share climbs above 100%. */
+          if(tvl!=null && tvl<200 && !minePools.has(String(sp.addr).toLowerCase())) continue;
+          rows.push({addr:sp.addr, venue:sp.venue, pairLabel:(g.sym||'?')+' / '+sp.quoteSym,
+                     feeLabel:sp.v2?'0.3%':(sp.fee/10000)+'%', tvlUsd:r2(tvl), poolLiq:liq, v2:!!sp.v2});
+        }catch(e){}
+        await sleep(60);
+      }
+      /* The scan finds the pools I am already in as well. They belong in the market total —
+         they are part of the market — but calling them competition would be nonsense. */
+      for(const r of rows) if(minePools.has(String(r.addr).toLowerCase())) r.mine=true;
+      rows.sort((a,b)=>(b.tvlUsd??-1)-(a.tvlUsd??-1));
+      const myTvl=mineRows.reduce((s,x)=>s+(x.myUsd||0),0);
+      /* Two independent readings of the same pool — our own position maths against the venue's
+         published TVL — differ by a fraction of a percent, and where I am the only liquidity in
+         a pool that fraction is enough to put my share of it above 100%. A position cannot be
+         worth more than the pool holding it, so the pool's total is floored at mine. */
+      const myByPool=new Map(mineRows.map(x=>[String(x.addr).toLowerCase(), x.myUsd||0]));
+      const mktTvl=rows.reduce((s,x)=>s+Math.max(x.tvlUsd||0, myByPool.get(String(x.addr).toLowerCase())||0),0);
+      arenas.push({key:k, chain:g.ck, chainTag:CHAINS[g.ck].tag, sym:g.sym||'?', token:g.focus,
+        scope:'Uniswap v3, Uniswap v2 and SushiSwap on '+CHAINS[g.ck].tag,
+        mine:mineRows, rivals:rows.slice(0,8), rivalCount:rows.length,
+        myTvlUsd:r2(myTvl), marketTvlUsd:r2(mktTvl),
+        tvlSharePct:mktTvl>0?r2(myTvl/mktTvl*100):null});
+    }catch(e){ logErr('competition '+k, e); }
+  }
+  /* ---------------- Solana ---------------- */
+  const solQ=new Set([SOL_MINT,'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
+  const solFocus=new Map();
+  for(const p of (solPositions||[])){
+    if(!p.mint0||!p.mint1) continue;
+    const focus=solQ.has(p.mint0)?p.mint1:p.mint0;
+    const sym=solQ.has(p.mint0)?p.m1?.symbol:p.m0?.symbol;
+    const g=solFocus.get(focus)||{focus, sym, mine:[]};
+    g.mine.push(p); solFocus.set(focus,g);
+  }
+  for(const [focus,g] of solFocus){
+    try{
+      const pools=new Map();
+      for(const p of g.mine){
+        const e=pools.get(p.poolId)||{addr:p.poolId, pairLabel:p.pairLabel, feeLabel:p.feeLabel,
+          venue:p.venue==='orca'?'Orca':'Raydium', mine:0n,
+          poolLiq:p.poolLiq!=null?BigInt(p.poolLiq):null, myUsd:0, ids:[], outIds:[],
+          tvlUsd:p.poolTvlUsd??null, vol24Usd:p.poolVol24Usd??null};
+        if(p.inRange && p.liq) e.mine+=BigInt(p.liq);
+        else e.outIds.push(p.id);
+        e.myUsd+=(p.valueUsd||0);
+        e.ids.push(p.id);
+        pools.set(p.poolId,e);
+      }
+      const mineRows=[...pools.values()].map(e=>{
+        const sp=(e.poolLiq&&e.poolLiq>0n)?Number(e.mine*1000000n/e.poolLiq)/10000:null;
+        return { addr:e.addr, pairLabel:e.pairLabel, feeLabel:e.feeLabel, venue:e.venue, ids:e.ids,
+          outIds:e.outIds, myUsd:r2(e.myUsd), tvlUsd:r2(e.tvlUsd), vol24Usd:r2(e.vol24Usd),
+          myLiq:e.mine.toString(), poolLiq:e.poolLiq!=null?e.poolLiq.toString():null,
+          sharePct:sp, shareSeen:recordShare('sol:'+e.addr, sp) }; });
+      let rows=[], scope='Raydium pools on Solana';
+      blockCache.rivals=blockCache.rivals||{};
+      const ck2='sol:'+focus, hit=blockCache.rivals[ck2];
+      /* Copied, not aliased: this list is marked up below with which pools are mine and has my
+         own unlisted pools appended, and the cache is written back to disk at the end of the
+         run. Handing out the stored array would let those edits accumulate in it. */
+      if(hit && Date.now()-hit.at<RIVAL_TTL) rows=(hit.pools||[]).map(x=>({...x}));
+      else{
+        try{
+          const js=await getJson('https://api-v3.raydium.io/pools/info/mint?mint1='+focus
+            +'&poolType=all&poolSortField=liquidity&sortType=desc&pageSize=50&page=1', 20000);
+          // the ids endpoint answers {data:[...]}, the mint endpoint {data:{data:[...]}} — take
+          // whichever is actually an array rather than assuming one of them
+          const arr=Array.isArray(js?.data) ? js.data : (Array.isArray(js?.data?.data) ? js.data.data : []);
+          rows=arr.filter(d=>d&&d.id).map(d=>({addr:d.id, venue:'Raydium',
+            pairLabel:(d.mintA?.symbol||'?')+' / '+(d.mintB?.symbol||'?'),
+            feeLabel:d.feeRate!=null?r2(d.feeRate*100)+'%':'—',
+            tvlUsd:r2(d.tvl??null), vol24Usd:r2(d.day?.volume??null)}))
+            .filter(x=>x.tvlUsd==null||x.tvlUsd>=200)
+            .sort((a,b)=>(b.tvlUsd??-1)-(a.tvlUsd??-1));
+          blockCache.rivals[ck2]={at:Date.now(), pools:rows};
+        }catch(e){ logErr('rivalsSol',e); }
+      }
+      /* The market list is cached for RIVAL_TTL, which is right for other people's pools and
+         wrong for my own: the position side reads every pool of mine fresh on every run, so
+         after moving liquidity between two of them the page showed the 1% pool at $4,546 on the
+         card and $11,706 in the market total, and put my share of a pool I am the only LP in at
+         74%. Where both numbers exist the fresh one wins. */
+      const mineBy=new Map(mineRows.map(x=>[String(x.addr),x]));
+      for(const r of rows){
+        const m=mineBy.get(String(r.addr));
+        if(!m) continue;
+        r.mine=true;
+        if(m.tvlUsd!=null) r.tvlUsd=m.tvlUsd;
+        if(m.vol24Usd!=null) r.vol24Usd=m.vol24Usd;
+      }
+      /* A pool created an hour ago is not in the index yet, and one that is cached is not in the
+         copy we are holding. Either way my own position in it still counted towards my total,
+         and the share came out at 106% — a number that cannot be true and so tells the reader
+         nothing except that something is wrong. A pool I am in belongs in the market by
+         definition, so it is added here with the TVL its own pool record reports. */
+      const listed=new Set(rows.map(r=>String(r.addr)));
+      let addedMine=0;
+      for(const m of mineRows){
+        if(listed.has(String(m.addr))) continue;
+        rows.push({addr:m.addr, venue:m.venue, pairLabel:m.pairLabel, feeLabel:m.feeLabel,
+                   tvlUsd:m.tvlUsd??r2(m.myUsd), vol24Usd:m.vol24Usd??null, mine:true,
+                   unlisted:true});
+        addedMine++;
+      }
+      if(addedMine){
+        rows.sort((a,b)=>(b.tvlUsd??-1)-(a.tvlUsd??-1));
+        notes.push('A pool of yours is too new for the Raydium index to list yet, so it is counted '
+          +'in the market total from its own pool record. Other people\u2019s pools that new are not '
+          +'counted at all, which makes the market figure a floor rather than a reading.');
+      }
+      const myTvl=mineRows.reduce((s,x)=>s+(x.myUsd||0),0);
+      /* Two independent readings of the same pool — our own position maths against the venue's
+         published TVL — differ by a fraction of a percent, and where I am the only liquidity in
+         a pool that fraction is enough to put my share of it above 100%. A position cannot be
+         worth more than the pool holding it, so the pool's total is floored at mine. */
+      const myByPoolS=new Map(mineRows.map(x=>[String(x.addr), x.myUsd||0]));
+      const mktTvl=rows.reduce((s,x)=>s+Math.max(x.tvlUsd||0, myByPoolS.get(String(x.addr))||0),0);
+      arenas.push({key:'sol:'+focus, chain:'sol', chainTag:'SOL', sym:g.sym||'?', token:focus, scope,
+        mine:mineRows, rivals:rows.slice(0,8), rivalCount:rows.length,
+        myTvlUsd:r2(myTvl), marketTvlUsd:r2(mktTvl),
+        tvlSharePct:mktTvl>0?r2(myTvl/mktTvl*100):null});
+      if(rows.length) notes.push('The Solana market figure counts Raydium pools. An Orca or Meteora pool for the same token is not in it.');
+    }catch(e){ logErr('competition sol', e); }
+  }
+  return arenas.length ? {t:Date.now(), arenas, notes:[...new Set(notes)]} : null;
+}
+
+/* ---------- main ---------- */
+/* ---- daily record: the raw material for "why did the total move" ----
+   Extracted to module scope because two callers build it — the live refresh below, and the
+   backfill that reconstructs past days from committed payloads. Two copies of this arithmetic
+   would drift, and a drifted backfill produces attribution that silently disagrees with itself
+   across the boundary between reconstructed and live days. */
+const sq=x=>Math.sqrt(x);
+/* L from published amounts and range. In range either side gives the same answer, so take
+   the token with the larger balance — the smaller one can be dust whose rounding dominates. */
+const liqOf=p=>{
+  const P=p.price, A=p.priceLower, B=p.priceUpper;
+  if(!(P>0&&A>0&&B>0&&B>A)) return null;
+  const sP=sq(P), sA=sq(A), sB=sq(B);
+  if(P<=A) return (p.amt0>0) ? p.amt0/(1/sA-1/sB) : null;
+  if(P>=B) return (p.amt1>0) ? p.amt1/(sB-sA) : null;
+  const fromX = (p.amt0>0) ? p.amt0/(1/sP-1/sB) : null;
+  const fromY = (p.amt1>0) ? p.amt1/(sP-sA) : null;
+  if(fromX==null) return fromY;
+  if(fromY==null) return fromX;
+  return (p.amt0*(p.usd0||0) >= p.amt1*(p.usd1||0)) ? fromX : fromY;
+};
+const r6=x=>x==null?null:Number(x.toPrecision(8));
+const r2=x=>x==null?null:Math.round(x*100)/100;
+/* A ticker is not an identity. CPOOL is quoted at $0.0194 on Ethereum and $0.0432 on
+   Solana — a 2.2x gap between two tokens sharing a name — and LCX runs two Ethereum
+   contracts at once. Aggregating a price move by symbol merges assets that demonstrably do
+   not trade together, and then reports the move of one as the move of all of them. Key on
+   chain and contract; carry the symbol only for display. */
+const tkey=(p,which)=>{
+  const ch = p.chain==='sol' ? 'sol' : 'evm';
+  const addr = p.chain==='sol' ? (which?p.mint1:p.mint0) : (which?p.token1:p.token0);
+  return ch+':'+String(addr||(which?p.m1?.symbol:p.m0?.symbol)||'?').toLowerCase();
+};
+const snapOf=p=>({ i:String(p.id), n:p.pairLabel||'', c:p.chain==='sol'?'sol':'evm',
+  s0:p.m0?.symbol||'?', s1:p.m1?.symbol||'?', k0:tkey(p,0), k1:tkey(p,1),
+  v:r2(p.valueUsd), a0:r6(p.amt0), a1:r6(p.amt1), u0:r6(p.usd0), u1:r6(p.usd1),
+  pr:r6(p.price), pl:r6(p.priceLower), pu:r6(p.priceUpper), L:r6(liqOf(p)), r:!!p.inRange });
+/* Wallet holdings, aggregated on the same token key as the LP side. A price move hits both,
+   and answering "what did CPOOL falling cost me" with only the LP half understates it and
+   leaves the reader to do the other half by hand. */
+const walletOf=(idle)=>{
+  const m=new Map();
+  for(const r of (idle?.rows||[])){
+    if(r.usd==null || !(r.amount>0)) continue;
+    const ch=r.chain==='sol'?'sol':'evm';
+    /* Every EVM chain's coin is 'native' here; on the rollups that is ETH and one line is right,
+       but Polygon's is POL and summing it into ETH's line priced it as ETH. The price is the
+       row's own (px): the cent-rounded value over a dust amount is not a price. */
+    const k=ch+':'+(r.native&&r.chain==='polygon'?'pol':String(r.addr||r.symbol||'?').toLowerCase());
+    const e=m.get(k)||{k, s:r.symbol||'?', a:0, u:null};
+    e.a+=r.amount; if(e.u==null) e.u=r.px!=null?r.px:r.usd/r.amount;
+    m.set(k,e);
+  }
+  return [...m.values()].filter(e=>e.a*e.u>=1)
+    .map(e=>({k:e.k, s:e.s, a:r6(e.a), u:r6(e.u)}));
+};
+
+/* One record per day (Budapest), rewritten in place while that day is current, frozen once it is not.
+   A day is the right grain: shorter and the record is noise, longer and a move has too many
+   causes to name. */
+export function dailyRecord(evmPositions, solPositions, idle, tsMs){
+  const all=[...(evmPositions||[]),...(solPositions||[])];
+  return { d:localDay(tsMs), t:tsMs, w:walletOf(idle),
+    v:r2(all.reduce((s,p)=>s+(p.valueUsd||0),0)),
+    f:r2(all.reduce((s,p)=>s+(p.feesUsd||0),0)),
+    fe:r2(all.reduce((s,p)=>s+(p.feesEverUsd||0),0)),
+    ps:all.map(snapOf) };
+}
+
+/* The build stamp of the page as it exists in the repository. Published so a browser holding a
+   cached copy can notice it is behind: the payload is fetched with cache:'no-store' and always
+   arrives fresh, while index.html can sit in a phone's cache long after a deploy — which looks
+   exactly like a feature that was never shipped. */
+function readUiBuild(){
+  try{
+    const m=fs.readFileSync(OUT+'/index.html','utf8').match(/const BUILD\s*=\s*'([^']+)'/);
+    return m ? m[1] : null;
+  }catch(e){ return null; }
+}
+const main=async()=>{
+  /* The first locked pass seals the wallet list too: config.json is then read back sealed, and
+     changed from the dashboard (⚙ CONFIG → SAVE TO GITHUB seals it the same way). */
+  try{ if(lockOn() && !isSealed(JSON.parse(fs.readFileSync(OUT+'/config.json','utf8')))) writeJ(OUT+'/config.json', CONFIG, JSON.stringify(CONFIG,null,2)+'\n'); }
+  catch(e){ console.error('config seal', e.message); }
+  /* Wallets handed in through the inbox (lock.mjs) by someone without the passphrase: checked,
+     merged into the sealed wallet list, and the inbox emptied. Only well-formed addresses of a
+     chain the deck reads get in; one already listed is not added twice. */
+  try{ const f=OUT+'/inbox.json';
+    if(lockOn() && fs.existsSync(f)){
+      const msg=JSON.parse(inboxOpen(JSON.parse(fs.readFileSync(f,'utf8'))));
+      const pr=CONFIG.profiles.find(p=>p.slug===msg.profile)||CONFIG.profiles[0]; pr.wallets=pr.wallets||[];
+      const ok={solana:/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, sui:/^0x[0-9a-f]{64}$/, tron:/^T[1-9A-HJ-NP-Za-km-z]{33}$/, ethereum:/^0x[0-9a-f]{40}$/};
+      let n=0, bad=0;
+      for(const w of msg.wallets||[]){
+        const addr=w&&(w.chain==='solana'||w.chain==='tron'?String(w.address):String(w.address).toLowerCase());
+        if(!w||!ok[w.chain]||!ok[w.chain].test(addr)){ bad++; continue; }
+        if(pr.wallets.some(x=>x.chain===w.chain&&String(x.address).toLowerCase()===addr.toLowerCase())) continue;
+        pr.wallets.push({chain:w.chain, address:addr, ...(w.role==='hold'?{role:'hold'}:{})}); n++;
+      }
+      writeJ(OUT+'/config.json', CONFIG, JSON.stringify(CONFIG,null,2)+'\n'); fs.unlinkSync(f);
+      console.log('inbox: '+n+' wallet(s) added, '+bad+' refused');
+    } }catch(e){ console.error('inbox', e.message); }
+  /* the fee seeds and restatements beside this script name positions and their fees: sealed too */
+  if(lockOn()) for(const f of fs.readdirSync(new URL('.', import.meta.url)).filter(f=>/^fee-.*\.json$/.test(f))){
+    try{ const u=new URL('./'+f, import.meta.url), raw=fs.readFileSync(u,'utf8'), j=JSON.parse(raw); if(!isSealed(j)) writeJ(u, j, raw); }
+    catch(e){ console.error('seed seal '+f, e.message); } }
+  try{ const bc=readJ(OUT+'/blockcache.json');
+       blockCache=Object.fromEntries(BC_KEYS.map(k=>[k, (bc&&bc[k])||{}])); }catch(e){}
+  const blockNums={};
+  for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
+  const blockNum=blockNums.ethereum;
+  let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
+  let ethUsd=null,btcUsd=null,ethUsdChg24=null,ethUsdAgo=null,btcUsdChg24=null;
+  try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
+  try{
+    const ago=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer,'0x'+(blockNum-7200).toString(16))),8);
+    if(ethUsd&&ago){ ethUsdChg24=(ethUsd/ago-1)*100; ethUsdAgo=ago; }
+  }catch(e){}
+  try{ btcUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_BTC,SEL.latestAnswer)),8); }catch(e){}
+  // header ticker strip: SOL / LCX(new contract) / CPOOL — price + 24h change via DefiLlama
+  let tickers=null;
+  try{
+    const KEYS={SOL:'solana:So11111111111111111111111111111111111111112',
+                LCX:'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e',
+                CPOOL:'ethereum:0x66761fa41377003622aee3c7675fc7b5c1c2fac5'};
+    const ks=Object.values(KEYS).join(',');
+    const nowJ=await getJson('https://coins.llama.fi/prices/current/'+ks,20000);
+    const agoJ=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(Date.now()/1000-86400)+'/'+ks,20000);
+    /* Carry the chain. The same symbol on two chains is two assets when the bridge between
+       them is shut, and a reader comparing a Solana mark against this price has to be able to
+       tell that it is an Ethereum price rather than infer it from the symbol. */
+    tickers=Object.entries(KEYS).map(([sym,k])=>{
+      const c=nowJ.coins?.[k]?.price??null, a=agoJ.coins?.[k]?.price??null;
+      return {sym, ch:k.split(':')[0], usd:c, chg:(c!=null&&a)?(c/a-1)*100:null};
+    }).filter(t=>t.usd!=null);
+    if(!tickers.length) tickers=null;
+  }catch(e){ logErr('tickers',e); }
+  /* BTC for the header. The Chainlink read above has been returning nothing, so the feed that
+     already prices everything else in the strip supplies it, with its 24h change. It is kept
+     out of `tickers` on purpose: other panels match holdings against that list by symbol. */
+  try{
+    const k='coingecko:bitcoin';
+    const nowJ=await getJson('https://coins.llama.fi/prices/current/'+k,20000);
+    const agoJ=await getJson('https://coins.llama.fi/prices/historical/'+Math.floor(Date.now()/1000-86400)+'/'+k,20000);
+    const c=nowJ.coins?.[k]?.price??null, a=agoJ.coins?.[k]?.price??null;
+    if(btcUsd==null && c!=null) btcUsd=c;
+    if(c!=null && a) btcUsdChg24=(c/a-1)*100;
+  }catch(e){ logErr('btc',e); }
+  /* The header's price strip, in reading order. `tickers` stays one reference price per symbol,
+     because the concentration card and the mark-divergence check compare a holding against it
+     by symbol; the strip needs more than one price per symbol, and more accurate ones.
+
+     Two of these are not feed prices, and cannot be. The price feed maps both LCX contracts to a
+     single listing — it priced them identically at $0.034117 while their pools stood at
+     $0.03498 and $0.03455, and on 23 Sep 9% apart — and it maps the Solana CPOOL mint to the
+     Ethereum token's price, to fifteen digits. So the old LCX is read from its own Uniswap pool,
+     now and 7,200 blocks ago, times ETH/USD at the same two blocks: the same way the ETH change
+     beside it is measured. Solana CPOOL is the Jupiter price every Solana position on the page
+     is already valued at, so the strip and the positions agree. */
+  const LCX_OLD_POOL='0x5aaa28ca43c6646fd1403e508f0fca1d92357dde';   // old LCX / WETH, 1%; both 18 decimals
+  const CPOOL_SOL='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
+  blockCache.tickHist=blockCache.tickHist||{};
+  /* A 24h change from the relay's own samples, for a price with no history to ask for. The
+     nearest sample to exactly a day ago, and only if it is within two hours of it; otherwise no
+     change is stated. */
+  const tickChange=(key,usd)=>{
+    const now=Date.now(), h=(blockCache.tickHist[key]||[]).filter(x=>now-x.t<36*3600000);
+    let best=null;
+    for(const x of h){ const d=Math.abs(now-24*3600000-x.t); if(d<=2*3600000 && (!best||d<best.d)) best={p:x.p,d}; }
+    h.push({t:now,p:usd}); blockCache.tickHist[key]=h.filter((x,i)=>i===h.length-1 || now-x.t<36*3600000);
+    return best&&best.p>0 ? (usd/best.p-1)*100 : null;
+  };
+  let quotes=null;
+  try{
+    const q=[], T=sym=>(tickers||[]).find(t=>t.sym===sym);
+    const push=(label,usd,chg,src)=>{ if(usd>0) q.push({label, usd, chg:(chg!=null&&isFinite(chg))?chg:null, src}); };
+    push('SOL / USD', T('SOL')?.usd, T('SOL')?.chg, 'feed');
+    push('LCX / USD (new)', T('LCX')?.usd, T('LCX')?.chg, 'feed');
+    try{
+      const px=async blk=>{ const r=await ethCall(LCX_OLD_POOL,SEL.slot0,blk); const x=Number(BigInt(word(r,0)))/2**96; return x*x; };
+      const pNow=await px('0x'+blockNum.toString(16));
+      let pAgo=null; try{ pAgo=await px('0x'+(blockNum-7200).toString(16)); }catch(e){}
+      if(pNow>0 && ethUsd){
+        const usd=pNow*ethUsd;
+        const chg=(pAgo>0 && ethUsdAgo) ? (usd/(pAgo*ethUsdAgo)-1)*100 : tickChange('lcx:old',usd);
+        push('LCX / USD (old)', usd, chg, 'pool');
+      }
+    }catch(e){ logErr('quote lcx old',e); }
+    push('CPOOL / USD (ETH)', T('CPOOL')?.usd, T('CPOOL')?.chg, 'feed');
+    try{
+      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL,15000);
+      const e=js&&js[CPOOL_SOL];
+      /* Jupiter's own 24h change is a percentage. Checked before trusting it: across three
+         rehearsal passes its SOL figure read 6.45, 6.79 and 7.17 against the feed's 6.40, 6.71
+         and 7.26. The relay's own samples stand in only when Jupiter leaves the field out. */
+      if(e && e.usdPrice!=null){
+        const usd=Number(e.usdPrice);
+        const own=tickChange('cpool:sol',usd);
+        const jc=e.priceChange24h!=null ? Number(e.priceChange24h) : null;
+        push('CPOOL / USD (SOL)', usd, (jc!=null&&isFinite(jc)) ? jc : own, 'jupiter');
+      }
+    }catch(e){ logErr('quote cpool sol',e); }
+    if(q.length) quotes=q;
+  }catch(e){ logErr('quotes',e); }
+  let topPools=[];
+  try{
+    const js=await getJson('https://yields.llama.fi/pools',45000);
+    // v20: broad multi-venue sweep, volatile/volatile pairs ONLY (no stables in either leg)
+    const VENUES=['uniswap-v3','uniswap-v4','raydium-clmm','raydium-amm','raydium-amm-v3','orca-dex','orca','pancakeswap-amm-v3','pancakeswap-v3','pancakeswap-amm','aerodrome-slipstream','aerodrome-v1','velodrome-v3','velodrome-v2','velodrome-slipstream','camelot-v3','camelot-v2','thena-v3','thena-fusion','quickswap-v3','quickswap-dex','sushiswap-v3','meteora-dlmm','meteora-damm-v2','meteora'];
+    const CHAINS_OK=['Ethereum','Solana','Arbitrum','Base','Optimism','Polygon','BSC','Avalanche'];
+    const STABLE=/(USD|DAI|FRAX|MIM|GHO|BUSD|EUR|LUSD|CRVUSD|DOLA|BOLD|MKUSD|PYUSD|FDUSD|TUSD|USDE|SUSDE|GUSD|PAI|UXD)/i;
+    const cand=(js.data||[]).filter(x=>{
+      if(!CHAINS_OK.includes(x.chain)||!VENUES.includes(x.project)) return false;
+      if(!(x.tvlUsd>=2e6 && x.apy>3 && x.apy<=500)) return false;
+      const legs=String(x.symbol||'').split('-');
+      if(legs.length<2) return false;
+      if(legs.some(l=>STABLE.test(l))) return false;          // no stablecoin legs
+      if((x.apyBase??0)<=0 && (x.apyReward??0)>(x.apy*0.98)) return false; // pure-emission farms with zero fee income
+      return true;
+    });
+    // rank on the sturdier of spot APY vs 30-day mean (kills one-day mirages), dedupe fee tiers, cap 8/venue
+    cand.sort((a,b)=>Math.min(b.apy,b.apyMean30d??b.apy)-Math.min(a.apy,a.apyMean30d??a.apy));
+    const seen=new Set(), perVenue={};
+    for(const x of cand){
+      const k=x.project+'|'+x.chain+'|'+x.symbol;
+      if(seen.has(k)) continue;
+      if((perVenue[x.project]||0)>=8) continue;
+      seen.add(k); perVenue[x.project]=(perVenue[x.project]||0)+1;
+      topPools.push({chain:x.chain,project:x.project,symbol:x.symbol,tvl:x.tvlUsd,apy:x.apy,
+        base:x.apyBase??null,reward:x.apyReward??null,il:x.ilRisk??null,id:x.pool,
+        mean30:x.apyMean30d??null,sig:x.sigma??null,vol1d:x.volumeUsd1d??null});
+      if(topPools.length>=25) break;
+    }
+    console.log('topPools:',topPools.length,'venues:',JSON.stringify(perVenue));
+  }catch(e){ logErr('llama pools',e); }
+
+  for(const cfgProfile of CONFIG.profiles){
+    /* Sui and Tron wallets have readers of their own (altHoldings). Every other wallet loop below
+       takes a non-Solana wallet for an EVM one, so they are kept out of `wallets` here. */
+    const ALT=new Set(['sui','tron']);
+    const profile={...cfgProfile, wallets:(cfgProfile.wallets||[]).filter(w=>!ALT.has(w.chain)),
+                   altWallets:(cfgProfile.wallets||[]).filter(w=>ALT.has(w.chain))};
+    errors.length=0;
+    const chainErrs=new Set();
+    // Chains where we failed to LOOK this run. "Absent from the scan" is only evidence of a
+    // close when the scan actually succeeded — otherwise an RPC blip silently books a live
+    // position as closed, banks its MTD fees into fl.closed, and drops its baseline.
+    const scanIncomplete=new Set();
+    const excluded=new Set((profile.excluded||[]).map(String));
+    const evmPositions=[];
+    for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana')){
+      const ck=w.chain in CHAINS ? w.chain : 'ethereum';
+      /* No block number means the chain would not answer at all, so this wallet was never
+         looked at. Skipping quietly left its positions looking absent, and absence is one
+         repeat away from being booked as a close. */
+      if(blockNums[ck]==null){ chainErrs.add(ck); scanIncomplete.add(ck); continue; }
+      try{
+        const ids=await walletPositionIds(ck, w.address.toLowerCase().replace(/^0x/,''), blockNums[ck]);
+        console.log(profile.slug, ck, w.address.slice(0,8), '→', ids.length, 'NFTs');
+        /* A position NFT that is closed and empty (no liquidity, nothing owed) is remembered and not
+           read again for three to four hours — staggered, so they do not all come due in one pass.
+           The main wallet holds over two hundred of them, and reading each one every pass to throw
+           it away was most of a pass's time. Re-reading them now and then still finds one that is
+           topped up again. */
+        const dead=blockCache.deadPos=blockCache.deadPos||{};
+        for(const id of ids){
+          if(excluded.has(ck+':'+id) || excluded.has(String(id))) continue;
+          const dk=ck+':'+id;
+          if(dead[dk] && dead[dk]>Date.now()) continue;
+          try{
+            const p=await fetchEvmPosition(ck,id,blockNums[ck],ethUsd,btcUsd);
+            if(p){ delete dead[dk]; p.wallet='0x'+w.address.toLowerCase().replace(/^0x/,''); evmPositions.push(p); }
+            else dead[dk]=Date.now()+3*3600e3+Math.floor(Math.random()*3600e3);
+          }catch(e){ logErr(ck+'#'+id,e); scanIncomplete.add(ck); }
+          await sleep(200);
+        }
+      }catch(e){ logErr('wallet '+w.address.slice(0,8)+' '+ck,e); chainErrs.add(ck); scanIncomplete.add(ck); }
+    }
+    for(const pin of (profile.pinned||[])){
+      const ck=pin.chain in CHAINS ? pin.chain : 'ethereum';
+      if(excluded.has(ck+':'+pin.id)) continue;
+      if(evmPositions.some(p=>p.chain===ck&&p.id===pin.id)) continue;
+      try{ const p=await fetchEvmPosition(ck,pin.id,blockNums[ck],ethUsd,btcUsd); if(p) evmPositions.push(p); }
+      catch(e){ logErr('pin '+ck+'#'+pin.id,e); }
+    }
+    // deploy dating for duplicate-pair token0s
+    async function tokenDeployTs(ck,addr){
+      try{
+        const codeNow=await evm(ck,'eth_getCode',[addr,'latest']);
+        if(codeNow==='0x') return null;
+        let lo=1, hi=blockNums[ck];
+        for(let i=0;i<20;i++){
+          const mid=Math.floor((lo+hi)/2);
+          try{ const code=await evm(ck,'eth_getCode',[addr,'0x'+mid.toString(16)]); if(code&&code!=='0x') hi=mid; else lo=mid+1; }
+          catch(e){ lo=mid+1; }
+        }
+        const blk=await evm(ck,'eth_getBlockByNumber',['0x'+hi.toString(16),false]);
+        return Number(BigInt(blk.timestamp))*1000;
+      }catch(e){ return null; }
+    }
+    {
+      const byPair={};
+      for(const p of evmPositions){ (byPair[p.chain+p.pairLabel]=byPair[p.chain+p.pairLabel]||new Set()).add(p.token0); }
+      const dup=new Set();
+      for(const k in byPair) if(byPair[k].size>1) byPair[k].forEach(t=>dup.add(t));
+      const deployTs={};
+      for(const p of evmPositions){
+        if(dup.has(p.token0)){
+          const key=p.chain+':'+p.token0;
+          if(!(key in deployTs)) deployTs[key]=await tokenDeployTs(p.chain,p.token0);
+          p.token0DeployTs=deployTs[key];
+        }
+      }
+    }
+    // volatility per unique pool
+    const volCache={}, vol24Cache={};
+    for(const p of evmPositions){
+      try{
+        const key=p.chain+':'+p.pool;
+        if(!(key in volCache)) volCache[key]=await poolVolatility(p.chain,p.pool,10**(p.d0-p.d1),blockNums[p.chain]);
+        if(!(key in vol24Cache)) vol24Cache[key]=await poolVol24(p.chain,p.pool,10**(p.d0-p.d1),blockNums[p.chain]);
+        p.range=rangeAnalytics(p.price,p.priceLower,p.priceUpper,volCache[key]?.sigma);
+        p.sigma30=volCache[key]?.sigma??null; p.vol24=vol24Cache[key]?.sigma??null;
+        p.volHist30=volCache[key]?.moves??null; p.volHist24=vol24Cache[key]?.moves??null;
+      }catch(e){ p.range=null; }
+    }
+    // solana
+    let solPositions=[];
+    const solWallets=(profile.wallets||[]).filter(w=>w.chain==='solana').map(w=>w.address);
+    if(solWallets.length){
+      try{
+        solPositions=await fetchSolana(solWallets);
+        /* One SOL price on the page: the one the Solana positions are valued at. The header quote
+           and wallet SOL came from the feed and sat a few cents away from it, so the same coin
+           had three prices on one screen. */
+        { const SOLM='So11111111111111111111111111111111111111112';
+          const sp=solPositions.find(x=>(x.mint0===SOLM&&x.usd0>0)||(x.mint1===SOLM&&x.usd1>0));
+          const solPx=sp?(sp.mint0===SOLM?sp.usd0:sp.usd1):null;
+          if(solPx){ const tq=(tickers||[]).find(t=>t.sym==='SOL'); if(tq) tq.usd=solPx;
+                     const qq=(quotes||[]).find(q=>q.label==='SOL / USD'); if(qq) qq.usd=solPx; } }
+        /* A throw was the only thing that used to reach this branch, and the wallet listing does
+           not throw — it logs and returns short. Same verdict either way: the scan did not see
+           Solana, so nothing may be closed on its say-so and the chain reports itself down. */
+        if(solPositions.incomplete){
+          logErr('sol', new Error('a wallet listing failed — Solana positions not verified this pass'));
+          chainErrs.add('solana'); scanIncomplete.add('sol');
+        }
+      }
+      catch(e){ logErr('sol',e); chainErrs.add('solana'); scanIncomplete.add('sol'); }
+    }
+    /* ---- Solana position history: deposits, withdrawals and fees, from the transactions ----
+       Bounded per pass, so a first backfill spreads itself over a few refreshes instead of
+       stalling one of them on the endpoint that throttles. After that a pass costs one listing
+       call per position. Skipped when the scan itself was incomplete: a wallet that did not
+       answer says nothing about its positions' histories either. */
+    let solLedgerItems=[];
+    if(solPositions.length && !solPositions.incomplete){
+      try{
+        blockCache.solHist=blockCache.solHist||{};
+        const ourPdas=new Set(solPositions.map(p=>p.pda).filter(Boolean));
+        const t0=Date.now(); let reads=0, calls=0;
+        for(const p of solPositions){
+          if(!p.pda||!p.nftMint||p.tl==null||p.tu==null) continue;
+          const st=blockCache.solHist[p.id]=blockCache.solHist[p.id]||{};
+          st.seen=Date.now();
+          const pos={pda:p.pda, nftMint:p.nftMint, poolId:p.poolId, owner:p.wallet, mint0:p.mint0, mint1:p.mint1,
+                     d0:p.d0, d1:p.d1, tl:p.tl, tu:p.tu, liq:p.liq};
+          solLedgerItems.push({p,pos,st});
+          if(Date.now()-t0>150000 || reads>=80) continue;          // budget spent — next pass
+          try{
+            const r=await syncPositionLedger(sol, pos, st, {ourPdas, maxTx:Math.min(40,80-reads)});
+            reads+=r.read; calls+=r.calls;
+          }catch(e){ logErr('solHist '+String(p.id).slice(4,14), e); }
+        }
+        for(const k of Object.keys(blockCache.solHist)){
+          const x=blockCache.solHist[k];
+          if(!x || !x.seen || Date.now()-x.seen>30*86400000) delete blockCache.solHist[k];   // closed a month ago
+        }
+        console.log('solHist:', reads,'tx read,', calls,'calls,',
+          solLedgerItems.filter(x=>x.st.complete).length+'/'+solLedgerItems.length,'positions complete,',
+          solLedgerItems.reduce((n,x)=>n+(x.st.todo||[]).length,0),'transactions still queued');
+      }catch(e){ logErr('solHist',e); }
+    }
+    let solTxFees={}, solOpenLam={};
+    // ---- harvest ledger: detect fee collections between snapshots (Solana has no easy event log) ----
+    try{
+      let ledger={}; try{ ledger=readJ(OUT+'/ledger-'+profile.slug+'.json'); }catch(e){}
+      let prev=null; try{ prev=readJ(OUT+'/data-'+profile.slug+'.json'); }catch(e){}
+      const prevSol=new Map((prev&&prev.sol||[]).map(p=>[p.id,p]));
+      // Shared across every position this run, and persisted, so a harvest transaction is
+      // booked exactly once no matter how many positions it touched or which run reaches it.
+
+      solTxFees={};        // signature -> lamports, handed to the cost ledger below
+      solOpenLam={};       // signature -> lamports spent opening a position, same destination
+      for(const p of solPositions){
+        const L=ledger[p.id]=ledger[p.id]||{collectedUsd:0};
+        // Solana has no fee event log, so collectedUsd only ever covers what this bot has
+        // WATCHED. Stamp when that started: annualising a partial fee history over the
+        // position's full age understates it by the ratio of the two (a 289-day position
+        // seen for 12 days reads ~23x too low).
+        if(!L.since) L.since=Date.now();
+        /* What this position cost to open, read once and never again. Only positions opened in
+           the month being counted are measured: an older one's outlay belongs to a month that
+           has already been archived, and re-reading it every run would buy nothing. A position
+           whose opening date could not be established exactly is left alone entirely rather
+           than charged against a date that is only the edge of what was scanned. */
+        if(L.openCost===undefined && p.chain==='sol'){
+          const opened=(p.openExact&&p.mintTs)?localMonth(p.mintTs):null;
+          if(opened && opened===localMonth(Date.now())){
+            try{
+              const sigs=[...new Set([p.openSig,p.poolOpenSig].filter(Boolean))];
+              let lam=0, got=0;
+              for(const sg of sigs){
+                const v=await solOpenSpend(sg, p.wallet);
+                if(v==null) continue;
+                got++;
+                if(solOpenLam[sg]==null){ solOpenLam[sg]=v; lam+=v; }
+              }
+              if(got===sigs.length && sigs.length){
+                L.openCost={lamports:lam, sigs};
+                console.log('open cost', String(p.id).slice(4,14), (lam/1e9).toFixed(5), 'SOL over', sigs.length, 'tx');
+              }
+            }catch(e){ logErr('solOpen',e); }
+          } else if(opened){
+            L.openCost={skip:'opened '+opened+', before the month being counted'};
+          }
+        }
+        /* Transaction history is authoritative when it can be read; the snapshot diff below is
+           only the fallback. Never run both for the same position — that double-counts. */
+        let txOk=false;
+        let bookedThisRun=0;
+        try{
+          /* The ceiling is what this position was owed at the PREVIOUS read. After a harvest
+             p.f0/p.f1 are back near zero, so the current read cannot supply it — it has to have
+             been carried forward. A position with no recorded owed (first sight, or one that has
+             never accrued) gets no ceiling, and the wallet-delta path then declines to book. */
+          /* Widen the ceiling by what could plausibly have accrued between the last read and
+             the harvest. A flat multiplier was the first attempt and it was too blunt: doubling
+             still admitted $168 against $84 owed. Both terms needed are already here — the fee
+             rate this position has actually run at, and how long ago it was last read — so the
+             headroom can be the real number instead of a guess. The 10% floor absorbs error in
+             the rate estimate; the 3x cap stops a stale readAt from opening it wide. */
+          let ceil=null;
+          if(L.owed0!=null||L.owed1!=null){
+            const obsDays=(Date.now()-(L.since||Date.now()))/86400000;
+            const owedUsd=(L.owed0||0)*(p.usd0||0)+(L.owed1||0)*(p.usd1||0);
+            const rateUsd=obsDays>0.5 ? (L.collectedUsd+(p.feesUsd||0))/obsDays : 0;
+            const gapDays=L.readAt ? Math.max(0,(Date.now()-L.readAt)/86400000) : 0;
+            let factor=1.1;
+            if(rateUsd>0 && owedUsd>0) factor=Math.max(1.1, Math.min(3, 1+(rateUsd*gapDays)/owedUsd));
+            ceil={[p.mint0]:(L.owed0||0)*factor, [p.mint1]:(L.owed1||0)*factor};
+            L.ceilFactor=Math.round(factor*1000)/1000;
+          }
+          const r=await solCollectedSince(p, L.sig||null, solTxFees, ceil);
+          if(r.ok){
+            txOk=true;
+            const first=!L.sig;
+            if(r.newest) L.sig=r.newest;
+            let add=0;
+            for(const m in r.amt){
+              const px = m===p.mint0 ? p.usd0 : (m===p.mint1 ? p.usd1 : null);
+              if(px!=null) add += r.amt[m]*px;
+            }
+            if(!first && add>0){ L.collectedUsd+=add; L.lastBooked=Math.round(add*100)/100; bookedThisRun=add; }
+            L.txScanned=r.scanned;
+            if(r.shared) L.sharedTx=r.shared; else delete L.sharedTx;
+            L.attrib=r.attributed||0; L.lump=r.lump||0;
+            /* Surfaced rather than swallowed: a clamp that binds means something moved tokens
+               out of this position that was not a fee, and that is worth seeing. */
+            if(r.clamped>0){
+              L.clampedTokens=Math.round(r.clamped*1e6)/1e6;
+              logErr('solFees', new Error('#'+String(p.id).slice(4,14)+' booking exceeded accrued fees by '
+                +L.clampedTokens+' token(s) — capped. Likely a withdrawal returning principal.'));
+            } else delete L.clampedTokens;
+          }
+          if(r.err) L.txErr=r.err; else delete L.txErr;
+        }catch(e){ /* fall through to the snapshot method */ }
+        if(!txOk){
+          const pv=prevSol.get(p.id);
+          if(pv && pv.feesUsd!=null && p.feesUsd!=null){
+            const drop=pv.feesUsd-p.feesUsd;
+            const valStable=Math.abs((pv.valueUsd||0)-(p.valueUsd||0)) < Math.max(50,(p.valueUsd||1)*0.5);
+            if(drop>0.5 && valStable){ L.collectedUsd+=drop; bookedThisRun=drop; }   // pending fees fell without the position changing → harvested
+          }
+        }
+        /* A harvest empties the owed balance in a single transaction. When the booking above
+           accounts for less than that balance was worth, the difference is not fees un-earned —
+           it is a harvest the scanner could only partly read, and dropping it makes lifetime
+           fees fall. That is worse than a wrong display: the month's accrual is measured against
+           a high-water mark on lifetime, so a permanent step down freezes the month until the
+           position earns the gap back.
+
+           The owed balance at the previous read is the ceiling on what the harvest could have
+           paid, and revaluing it at today's prices rather than trusting the old dollar figure
+           keeps a price move out of the comparison. The 80% collapse test is what separates a
+           harvest from a repricing: a price move takes the owed balance down proportionally,
+           it does not empty it. */
+        const prevOwedUsd=(L.owed0||0)*(p.usd0||0)+(L.owed1||0)*(p.usd1||0);
+        if(prevOwedUsd>1 && (p.feesUsd||0) < prevOwedUsd*0.2){
+          const gap=Math.round((prevOwedUsd-bookedThisRun)*100)/100;
+          if(gap>0.01){
+            L.collectedUsd+=gap;
+            L.harvestGap=gap;
+            logErr('solFees', new Error('#'+String(p.id).slice(4,14)+' harvest booked $'+bookedThisRun.toFixed(2)
+              +' of $'+prevOwedUsd.toFixed(2)+' owed — credited the $'+gap.toFixed(2)+' difference'));
+          } else delete L.harvestGap;
+        } else delete L.harvestGap;
+        /* Carried for the next run's ceiling. Written every cycle, after any booking, so it is
+           always the owed balance as of this read. */
+        L.owed0 = p.f0!=null ? p.f0 : 0;
+        L.owed1 = p.f1!=null ? p.f1 : 0;
+        L.readAt = Date.now();
+        p.feeSource = txOk ? 'tx' : 'snapshot';
+        p.feesCollectedUsd=L.collectedUsd;
+        p.feesEverUsd=L.collectedUsd+(p.feesUsd||0);
+        // Annualise over the OBSERVED window, not the position's age, and flag that the
+        // figure is partial so the UI can say "since tracked" rather than "since open".
+        const obsDays=(Date.now()-L.since)/86400000;
+        p.feesObservedDays=Math.round(obsDays*100)/100;
+        p.feesPartial=p.ageDays!=null && p.ageDays>obsDays+1;
+        if(obsDays>0.5 && p.valueUsd>0) p.feeAprPct=(p.feesEverUsd/p.valueUsd)*(365/obsDays)*100;
+        else p.feeAprPct=null;
+      }
+      /* __sigs recorded which transactions had been "claimed" by a position so no other could
+         book them. That guard is gone — the fee ceiling replaces it and does not lock anyone out
+         — so the list is left as it stands rather than grown: it is history, not state. */
+      writeJ(OUT+'/ledger-'+profile.slug+'.json', ledger, JSON.stringify(ledger,null,1));
+    }catch(e){ logErr('ledger',e); }
+    let catMtd=null, catMonths=[];
+    let selfPos={};   // lifetime own-swap fees per position, from the fee ledger — taken off each position's own fee figures at the end
+    // ---- monthly fee ledger: MTD earned across ACTIVE + CLOSED LPs, claimed + unclaimed ----
+    let feeMonth=null;
+    const justClosed=[];   // evm positions that vanished this run — their final close tx still owes gas accounting
+    try{
+      const monthKey=localMonth(Date.now());
+      /* A position's identity is dropped the moment it closes — only the pooled total survived,
+         which is why August's wide/narrow split had to be reconstructed by hand. The category is
+         now stamped on the entry while the position is still alive, and closes are banked per
+         category as well as into the total. Band width splits a pair only where both kinds exist;
+         everything else is just the pair. */
+      const catKeyOf=q=>{
+        const pair=q.pairLabel||'—';
+        const span=(q.priceLower>0&&q.priceUpper>0)?q.priceUpper/q.priceLower:null;
+        // chain rides in the key so costs, which are only knowable per chain, can be applied
+        // to the right rows without the reader having to know where each pair trades
+        return (q.chain==='sol'?'sol':'evm')+'|'+pair+(span==null?'':(span>5?' · wide':' · narrow'));
+      };
+      /* Which token a position's fees are credited to: the one the pool exists for. A pool
+         against a base asset (SOL, ETH or a dollar) belongs to the other side — SOL / CPOOL and
+         CPOOL / USDT are both CPOOL income — and the LCX contracts stay apart by address. Keys
+         match the page's tokKey(), so the token panel's order and names apply unchanged. */
+      const BASE_TOK=new Set(['So11111111111111111111111111111111111111112','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+        '0xdac17f958d2ee523a2206206994597c13d831ec7','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']);
+      const STABLE_TOK=new Set(['Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+        '0xdac17f958d2ee523a2206206994597c13d831ec7','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']);
+      const tokOf=q=>{
+        const sol=q.chain==='sol', ch=sol?'sol':(q.chain||'ethereum');
+        const norm=a=>sol?String(a||''):String(a||'').toLowerCase();
+        const a0=norm(sol?q.mint0:q.token0), a1=norm(sol?q.mint1:q.token1);
+        if(!a0&&!a1) return null;
+        const b0=BASE_TOK.has(a0), b1=BASE_TOK.has(a1);
+        const pick = b0&&!b1 ? a1 : b1&&!b0 ? a0 : (b0&&b1 ? (STABLE_TOK.has(a0)?a1:a0) : a0);
+        const nat=sol?'So11111111111111111111111111111111111111112':'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+        return ch+':'+(pick===nat?'native':pick);
+      };
+      let fl={month:monthKey, closed:0, pos:{}, months:[], catClosed:{}};
+      try{ fl=readJ(OUT+'/fees-'+profile.slug+'.json'); }catch(e){}
+      /* Budapest days, applied once (scripts/fee-tz-2026-10.json says how the slices were read).
+         Until October the ledger cut its days and months at UTC midnight, two hours after the
+         owner's. Every UTC day hands its last two hours to the next day, so the month-to-date
+         closes are rebuilt; at a month end that slice moves to the next month, split by position
+         so each archived month keeps its pair and token splits whole, and this month's positions
+         take theirs from September's last evening. Money only moves between days — the running
+         total, and with it the 50-hour readings, is unchanged. Worked on a copy and adopted only
+         if every slice it needs is known. */
+      if(!fl.tzLocal && fl.dayEnd && fl.month===monthKey){
+        try{
+          if(profile.slug!=='main') fl.tzLocal={at:Date.now(), restated:false};
+          else{
+            const R=readJ(new URL('./fee-tz-2026-10.json', import.meta.url));
+            const W=structuredClone(fl);
+            const tk=(W.ticks||[]).filter(x=>x&&x[1]!=null).sort((a,b)=>a[0]-b[0]);
+            const T=tk.length?tk[tk.length-1][0]:Date.now();   // the reading the latest day close was taken at
+            const cumAt=t=>{ for(let i=1;i<tk.length;i++) if(tk[i-1][0]<=t&&tk[i][0]>=t){
+              const [a,va]=tk[i-1],[b,vb]=tk[i]; return va+(vb-va)*(t-a)/((b-a)||1); } return null; };
+            const utcEnd=d=>Date.parse(d+'T00:00:00Z')+86400000;
+            const nextDay=d=>new Date(utcEnd(d)).toISOString().slice(0,10);
+            const lastOf=m=>new Date(Date.UTC(+m.slice(0,4),+m.slice(5,7),0)).toISOString().slice(0,10);
+            const lastBefore=m=>new Date(Date.parse(m+'-01T00:00:00Z')-86400000).toISOString().slice(0,10);
+            // what fell between Budapest midnight and UTC midnight at the end of UTC day d
+            const slice=d=>{ if(R.slices[d]!=null) return R.slices[d];
+              const a=cumAt(dayStart(nextDay(d))), b=cumAt(Math.min(utcEnd(d),T));
+              return (a!=null&&b!=null)?Math.max(0,b-a):null; };
+            const days=Object.keys(W.dayEnd).sort(), first=days[0].slice(0,7);
+            const sum=l=>l.reduce((a,x)=>a+x.usd,0);
+            let miss=null;
+            const de={};
+            for(const d of days){
+              const m=d.slice(0,7);
+              const open=m===first?0:slice(lastBefore(m));        // the month now begins this much earlier
+              const shut=dayStart(nextDay(d))<=T?slice(d):0;      // and the day this much earlier
+              if(open==null||shut==null){ miss=d; break; }
+              de[d]=r2(W.dayEnd[d]-shut+open);
+            }
+            const moveInto=(a,l,sg)=>{ for(const x of l){
+              a.cat=a.cat||{}; a.cat[x.cat]=r2((a.cat[x.cat]||0)+sg*x.usd);
+              if(a.tok) a.tok[x.tk]=r2((a.tok[x.tk]||0)+sg*x.usd); } };
+            for(const a of (W.months||[])){
+              if(miss) break;
+              const out=R.bySlice[lastOf(a.m)], inn=a.m===first?[]:R.bySlice[lastBefore(a.m)];
+              if(!out||!inn){ miss=a.m; break; }
+              a.total=r2(a.total-sum(out)+sum(inn)); moveInto(a,out,-1); moveInto(a,inn,1);
+            }
+            const inn=R.bySlice[lastBefore(W.month)];
+            if(!miss && !inn) miss=W.month;
+            if(miss) console.log('Budapest days: no slice for '+miss+' — ledger left on UTC days for now');
+            else{
+              for(const x of inn){
+                const e=W.pos[x.id], c=(W.closedPos||{})[x.id];
+                if(e) e.acc=r2((e.acc||0)+x.usd);
+                else{
+                  if(c) c.acc=r2((c.acc||0)+x.usd);
+                  W.closed=r2((W.closed||0)+x.usd);
+                  W.catClosed=W.catClosed||{}; W.catClosed[x.cat]=r2((W.catClosed[x.cat]||0)+x.usd);
+                }
+              }
+              W.dayEnd=de;
+              W.tzLocal={at:Date.now(), tz:TZ, moved:Object.fromEntries((W.months||[]).map(a=>[a.m,
+                r2(a.total-(fl.months.find(b=>b.m===a.m)||{}).total)])), intoMonth:r2(sum(inn))};
+              fl=W;
+              console.log('Budapest days: ledger restated —',JSON.stringify(fl.tzLocal));
+            }
+          }
+        }catch(e){ logErr('feeTz',e); }
+      }
+      if(fl.month!==monthKey){
+        /* The cut lands at midnight, not at whenever the old month was last read. Runs can be
+           hours apart when the schedule is throttled, and everything earned in that gap would
+           otherwise be credited to the wrong month. feesMonthStartUsd is an archive read at the
+           first block of the NEW month and is already computed every run, so the fees between the
+           last reading and the boundary can be given back to the month that earned them. Solana
+           has no such read and falls back to the last reading.
+
+           Measured first, before anything is archived or reset — the totals and the split both
+           have to carry it, and they are computed from figures this loop is about to overwrite. */
+        const msAt={}, cumAt={};
+        for(const q of [...evmPositions,...solPositions]){
+          if(!q) continue;
+          if(q.feesMonthStartUsd!=null) msAt[String(q.id)]=q.feesMonthStartUsd;
+          const c=q.feesEverUsd ?? q.feesUsd;
+          if(c!=null) cumAt[String(q.id)]=c;
+        }
+        /* Solana has no archive read, so its share of the boundary cannot be measured — only
+           estimated. What IS known is when the ledger was last read and what has accrued since,
+           and the boundary falls somewhere inside that interval. Splitting the accrual across it
+           in proportion to time is not exact, but it is far better than the alternative, which is
+           to hand the whole interval to whichever month happened to be read second. Solana is
+           $680 of August's $1,551 and runs at $0.94 an hour; an eleven-hour gap between the last
+           August read and the first September one would otherwise misplace about $10. */
+        const nowMs=Date.now();
+        const boundary=monthStart(monthKey);
+        const lastRead=fl.readAt||null;
+        let beforeFrac=0;
+        if(lastRead && nowMs>lastRead)
+          beforeFrac=Math.max(0,Math.min(1,(boundary-lastRead)/(nowMs-lastRead)));
+        const tailOf={}; let prorated=0;
+        for(const id in (fl.pos||{})){
+          const e=fl.pos[id], ms=msAt[id];
+          if(ms!=null && ms>(e.hwm||0)){
+            tailOf[id]=Math.round((ms-(e.hwm||0))*100)/100;      // exact, from the archive read
+          } else if(ms==null && beforeFrac>0 && cumAt[id]!=null){
+            const grew=cumAt[id]-(e.hwm||0);
+            if(grew>0){ tailOf[id]=Math.round(grew*beforeFrac*100)/100; prorated+=tailOf[id]; }
+          }
+        }
+        if(prorated>0) console.log('month cut: $'+prorated.toFixed(2)
+          +' prorated into '+fl.month+' across a '+((nowMs-lastRead)/3600000).toFixed(1)
+          +'h reading gap ('+(beforeFrac*100).toFixed(0)+'% of it fell before the boundary)');
+
+        let tail=0;
+        for(const id in tailOf) tail+=tailOf[id];
+        const prevTotal=(fl.closed||0)
+          +Object.values(fl.pos||{}).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0)
+          +tail;
+        // archive the finished month's split before the counters reset
+        const prevCat={};
+        for(const k in (fl.catClosed||{})) prevCat[k]=(prevCat[k]||0)+fl.catClosed[k];
+        for(const id in (fl.pos||{})){
+          const e=fl.pos[id], a=(e.acc!=null?e.acc:Math.max(0,e.last-e.m0))+(tailOf[id]||0);
+          const k=e.cat||'—'; prevCat[k]=(prevCat[k]||0)+a;
+        }
+        for(const k in prevCat) prevCat[k]=Math.round(prevCat[k]*100)/100;
+        // the same month split by token, where each amount's token is on record
+        const prevTok={};
+        for(const c of Object.values(fl.closedPos||{})) if(c.tk) prevTok[c.tk]=(prevTok[c.tk]||0)+(c.acc||0);
+        for(const id in (fl.pos||{})){
+          const e=fl.pos[id]; if(!e.tk) continue;
+          prevTok[e.tk]=(prevTok[e.tk]||0)+(e.acc!=null?e.acc:Math.max(0,e.last-e.m0))+(tailOf[id]||0);
+        }
+        /* Closes banked before entries carried a token survive only in their category's total
+           (catClosed minus what closedPos accounts for, the page's closedByCatOnly). Left out,
+           the archived month's token split falls short of its total by exactly that — $261.94
+           of CPOOL for September. A category whose positions all earn one token is that token's
+           income; one that maps to several is left out and named in the log. */
+        { const catTk={};
+          for(const e of [...Object.values(fl.pos||{}),...Object.values(fl.closedPos||{})])
+            if(e&&e.cat&&e.tk) (catTk[e.cat]=catTk[e.cat]||new Set()).add(e.tk);
+          const only={...(fl.catClosed||{})};
+          for(const c of Object.values(fl.closedPos||{})) if(c.cat&&only[c.cat]!=null) only[c.cat]-=c.acc||0;
+          for(const [k,a] of Object.entries(only)){
+            if(!(a>0.004)) continue;
+            const tks=[...(catTk[k]||[])];
+            if(tks.length===1) prevTok[tks[0]]=(prevTok[tks[0]]||0)+a;
+            else console.log('month cut: $'+a.toFixed(2)+' of '+k+' closes has no single token ('+tks.length+' candidates) — left out of the token split');
+          } }
+        for(const k in prevTok) prevTok[k]=Math.round(prevTok[k]*100)/100;
+        fl.months=[...(fl.months||[]),{m:fl.month,total:Math.round(prevTotal*100)/100,
+                                       ilEnd:fl.lastIl??null,cat:prevCat,
+                                       ...(Object.keys(prevTok).length?{tok:prevTok}:{})}].slice(-12);
+        fl.month=monthKey; fl.closed=0; fl.catClosed={}; fl.closedPos={}; fl.selfMtd=0;
+        /* The old month's last day closes on the month's archived total, boundary tail included,
+           so its days add up to the figure the month is remembered by. */
+        { const lastDay=new Date(Date.UTC(Number(fl.months[fl.months.length-1].m.slice(0,4)),Number(fl.months[fl.months.length-1].m.slice(5,7)),0)).toISOString().slice(0,10);
+          fl.dayEnd=fl.dayEnd||{}; fl.dayEnd[lastDay]=Math.round(prevTotal*100)/100; }
+
+        /* Both counters reset, not just the baseline. The month's figure is read from `acc`
+           whenever it is present — and it always is after a month of accruing — so moving m0
+           alone would have opened the new month at the old one's total and gone up from there.
+           `hwm` deliberately survives: it is a high-water mark against LIFETIME fees, which do
+           not reset at a month boundary, and zeroing it would re-book every fee the position has
+           ever earned into the new month. Where the boundary read exists it becomes both the new
+           baseline and the new mark, so the first accrual measures from midnight. */
+        for(const id in fl.pos){
+          const e=fl.pos[id], ms=msAt[id];
+          if(ms!=null && ms>=(e.hwm||0)){ e.hwm=Math.round(ms*100)/100; e.m0=e.hwm; }
+          else {
+            /* Whatever was prorated into the old month must not also be available to the new one,
+               so the mark moves up by exactly the amount handed back. */
+            e.hwm=Math.round(((e.hwm||0)+(tailOf[id]||0))*100)/100;
+            e.m0=e.hwm;
+          }
+          e.acc=0;
+        }
+      }
+      /* August's closes pre-date category stamping: their fees sit in the pooled scalar with no
+         record of where they came from. Seeded here rather than by editing the file, because a
+         run already in flight writes its own copy back and erased exactly that edit twice.
+         In code it is idempotent and cannot be raced. Every August close was an LCX/ETH band of
+         1.86x-2.41x, narrow under the same rule applied above. Fires once: after this the map
+         is non-empty and later closes attribute themselves. */
+      if(fl.month==='2026-08' && (fl.closed||0)>0 && !Object.keys(fl.catClosed||{}).length){
+        fl.catClosed={'evm|LCX / ETH · narrow': Math.round((fl.closed||0)*100)/100};
+      }
+      /* Two errors in that seeded bucket, both found by replaying this file's own git history,
+         where every change to `closed` names the position that vanished with it.
+
+         $38.72 counted twice. At 08-21 07:28 #… and #… both disappeared from a scan
+         that reported itself clean; their month accrual was banked ($32.74 + $5.98) and their
+         entries dropped. Both were back forty minutes later on a fresh entry baselined at the
+         month start, so the same fees accrued again — and when each closed for real (#…
+         at 13:10 with $36.04, #… the next morning with $41.18) the amount booked already
+         contained what the false close had banked. The two-strike rule below is what stops it
+         happening again; this undoes the instance that already happened.
+
+         $0.55 on the wrong pair. A Solana cbBTC / JLP position closed on 08-07, before entries
+         carried a category, so its fees sat in the pooled scalar and were seeded above as
+         LCX / ETH. Its band was 1.22x, so narrow is right — the pair and the chain were not.
+
+         The rest of the bucket checks out: all twelve EVM closes in August were LCX / ETH at
+         1.62x-2.41x, narrow under the >5x rule applied above.
+
+         In code rather than as an edit to the file, for the same reason as the seed above. */
+      {
+        const aug=(fl.months||[]).find(m=>m&&m.m==='2026-08'), NK='evm|LCX / ETH · narrow';
+        const near=(a,b)=>Math.abs(a-b)<0.005;
+        if(aug && aug.cat && near(aug.cat[NK]||0, 731.10) && near(aug.total||0, 1569.21)){
+          aug.cat[NK]=r2(aug.cat[NK]-38.72-0.55);
+          aug.cat['sol|cbBTC / JLP · narrow']=r2((aug.cat['sol|cbBTC / JLP · narrow']||0)+0.55);
+          aug.total=r2(Object.values(aug.cat).reduce((s,v)=>s+v,0));
+          console.log('repaired August split — narrow $'+aug.cat[NK].toFixed(2)+', total $'+aug.total.toFixed(2));
+        }
+      }
+      /* August by token. August was archived by pool type only, and its narrow LCX / ETH bucket
+         mixes both LCX contracts (five old-contract positions, seven new). Replaying every
+         August payload in this repo's history position by position — each one's lifetime fees
+         accrued against a high-water mark, exactly as this ledger does — gives old $290.14 and
+         new $414.44 for that bucket; those shares are applied to the archived $691.83 so the
+         month still totals what it always has. The wide bucket needs no estimate: it is three
+         positions minted that month, and their September opening balances are August's
+         earnings (old #… $16.59, new #… + #… $132.82). CPOOL and cbBTC are
+         single-token pools. Written once; a month that already has a token split is left alone. */
+      {
+        const aug=(fl.months||[]).find(m=>m&&m.m==='2026-08');
+        if(aug && !aug.tok && Math.abs((aug.total||0)-1530.49)<0.005){
+          aug.tok={'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e':539.76,
+                   'ethereum:0x037a54aab062628c9bbae1fdb1583c195585fe41':301.48,
+                   'sol:AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg':688.70,
+                   'sol:cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij':0.55};
+          aug.tokNote='LCX contract split of closed narrow positions reconstructed from payload history';
+          console.log('August token split recorded');
+        }
+      }
+      /* September 2026 restatement, applied once. Ethereum fees had been accrued as the rise in the
+         USD value of each position's lifetime fees: every LCX/ETH move re-priced fees earned weeks
+         earlier, and the high-water mark kept every intraday peak. scripts/fee-restate-2026-09.json
+         rebuilds the month from the payload history in tokens earned, priced when earned, and says
+         how. The EVM entries take its totals and token baselines; the token accrual below then
+         counts whatever was earned between its snapshot and this run. Closed #…, the day
+         bars, the 50-hour readings and the per-position history are replaced to match. */
+      if(!fl.restated202609 && profile.slug==='main' && monthKey==='2026-09'){
+        try{
+          const R=readJ(new URL('./fee-restate-2026-09.json', import.meta.url));
+          for(const [id,x] of Object.entries(R.evm||{})){
+            const e=fl.pos[id]; if(!e) continue;
+            e.acc=x.acc; e.tk0=x.tk0; e.tk1=x.tk1;
+          }
+          for(const [id,a] of Object.entries(R.closedEvm||{})){
+            const c=(fl.closedPos||{})[id]; if(!c) continue;
+            const dlt=a-(c.acc||0); c.acc=a;
+            fl.closed=Math.round(((fl.closed||0)+dlt)*100)/100;
+            if(c.cat&&fl.catClosed&&fl.catClosed[c.cat]!=null) fl.catClosed[c.cat]=Math.round((fl.catClosed[c.cat]+dlt)*100)/100;
+          }
+          fl.dayEnd=fl.dayEnd||{}; for(const [d,v] of Object.entries(R.dayEnd||{})) fl.dayEnd[d]=v;
+          fl.ticks=R.ticks||fl.ticks; fl.posHist=R.posHist||[];
+          for(const e of Object.values(fl.pos)) e.run=e.acc||0;   // running totals start from the restated month
+          for(const [id,c] of Object.entries(fl.closedPos||{})) c.run=c.acc||0;
+          fl.restated202609={asOf:R.asOf, before:R.mtdBefore, after:R.mtdAfter};
+          console.log('September fee ledger restated: $'+R.mtdBefore+' → $'+R.mtdAfter+' at '+new Date(R.asOf).toISOString());
+        }catch(e){ logErr('feeRestate',e); }
+      }
+      /* Second September restatement, applied once (scripts/fee-restate-2026-09b.json says how it
+         was rebuilt): Solana fees recounted in tokens from each position's on-chain history, and
+         the fees this deck's own swaps paid into its own pools taken out of income. Positions move
+         by the seed's per-position difference, so what the relay booked after the seed's snapshot
+         is kept; the day bars, 50-hour readings and per-position history are replaced to match.
+         Solana entries then switch to token counting on this run (baseline now, counted after). */
+      if(fl.restated202609 && !fl.restated202609b && profile.slug==='main' && monthKey==='2026-09'){
+        try{
+          const R=readJ(new URL('./fee-restate-2026-09b.json', import.meta.url));
+          for(const [id,d] of Object.entries(R.delta||{})){
+            const e=fl.pos[id]; if(!e) continue;
+            e.acc=Math.round(((e.acc||0)+d)*100)/100; e.run=Math.round(((e.run??0)+d)*100)/100;
+          }
+          for(const [id,d] of Object.entries(R.closedDelta||{})){
+            const c=(fl.closedPos||{})[id]; if(!c) continue;
+            c.acc=Math.round(((c.acc||0)+d)*100)/100; if(c.run!=null) c.run=Math.round((c.run+d)*100)/100;
+            fl.closed=Math.round(((fl.closed||0)+d)*100)/100;
+            if(c.cat&&fl.catClosed&&fl.catClosed[c.cat]!=null) fl.catClosed[c.cat]=Math.round((fl.catClosed[c.cat]+d)*100)/100;
+          }
+          fl.dayEnd=fl.dayEnd||{}; for(const [d,v] of Object.entries(R.dayEnd||{})) fl.dayEnd[d]=v;
+          if(Array.isArray(R.ticks)&&R.ticks.length) fl.ticks=R.ticks;
+          if(Array.isArray(R.posHist)&&R.posHist.length) fl.posHist=R.posHist;
+          fl.selfMtd=R.selfMtd||0;
+          fl.restated202609b={asOf:R.asOf, before:R.mtdBefore, after:R.mtdAfter};
+          console.log('September fee ledger restated (Solana in tokens, own-swap fees out): $'+R.mtdBefore+' → $'+R.mtdAfter);
+        }catch(e){ logErr('feeRestateB',e); }
+      }
+      /* Lifetime fee tokens of an Ethereum position: collected (net of withdrawn principal) plus
+         owed. These only ever grow, so the month accrues the growth since the last reading, each
+         token priced now — the price of a fee at the moment it is counted, never again after. */
+      const feeTokens=q=>{
+        /* Solana: every fee the position has ever paid out, from its complete and balanced
+           transaction history, plus what it owes now. The old method booked a harvest by
+           watching owed fees drop between two reads, and missed it whenever the position changed
+           in the same window — $202 of September's Solana fees were never counted. */
+        if(q.chain==='sol'){
+          if(q.f0==null||q.f1==null||q.usd0==null||q.usd1==null) return null;
+          const it=solLedgerItems.find(x=>x.p.id===q.id); if(!it||!it.st.complete) return null;
+          const h=summarizeLedger(it.st,it.pos); if(!h.balanced) return null;
+          return [h.fee[0]+q.f0, h.fee[1]+q.f1];
+        }
+        if(!q.feeDbg||q.histPartial||q.f0==null||q.f1==null||q.usd0==null||q.usd1==null) return null;
+        const fd=q.feeDbg;
+        return [Math.max(0,(fd.col0||0)-(fd.wdr0||0))+q.f0, Math.max(0,(fd.col1||0)-(fd.wdr1||0))+q.f1];
+      };
+      const seen=new Set();
+      /* Fees this deck's own swaps paid into its own pools. They land in the positions as fee
+         income, but they are the wallet's money moving into the LP, not income from anyone else,
+         so they are taken back out here — out of the positions that received them, in proportion
+         to the liquidity each had in range. The cost scan (later in the run) finds them and
+         queues them in the cost ledger; this applies the queue once, on the next run. */
+      let selfApplied=0;
+      try{
+        const pend=(readJ(OUT+'/costs-'+profile.slug+'.json').selfPend)||[];
+        fl.selfDone=Array.isArray(fl.selfDone)?fl.selfDone:[];
+        const curStart=monthStart(monthKey);
+        /* Per position, for life: what own swaps paid into it. Taken off the position's own fee
+           figures (card, APR, ROI, LP vs HODL) the way the month's are taken off income. Started on
+           4 Oct 2026 from the swaps already applied that are still in the queue — split by the same
+           rule; September's $72.39 was restated as a total and has no per-position split. */
+        if(!fl.selfPos){ fl.selfPos={};
+          for(const x of pend){ if(!x||!fl.selfDone.includes(x.id)||!(x.back>0)) continue;
+            const inP=[...evmPositions,...solPositions].filter(q=>String(q.chain==='sol'?q.poolId:q.pool).toLowerCase()===String(x.pool).toLowerCase());
+            const tg=inP.filter(q=>q.inRange).length?inP.filter(q=>q.inRange):inP;
+            const ww=tg.map(q=>Number(q.liq)||0), WW=ww.reduce((a,b)=>a+b,0);
+            tg.forEach((q,i)=>{ fl.selfPos[q.id]=Math.round(((fl.selfPos[q.id]||0)+(WW>0?x.back*ww[i]/WW:x.back/tg.length))*1e4)/1e4; }); }
+          console.log('own-swap fees per position, started from the queue:',JSON.stringify(fl.selfPos)); }
+        /* Taken out from the moment of the swap, not from now: every running-total reading since the
+           swap and every day close since it lose the fee too, so the 24-hour view and the day bars
+           never show the wallet's own money going round as income that is then taken back. */
+        const unbook=x=>{
+          const b=x.back, d0=localDay(x.t), m=d0.slice(0,7);
+          if(Array.isArray(fl.ticks)) for(const tk of fl.ticks) if(tk[0]>=x.t) tk[1]=Math.round((tk[1]-b)*100)/100;
+          for(const d of Object.keys(fl.dayEnd||{})) if(d>=d0 && d.slice(0,7)===m) fl.dayEnd[d]=Math.round((fl.dayEnd[d]-b)*100)/100; };
+        for(const x of pend){
+          if(!x||!x.id||fl.selfDone.includes(x.id)||!(x.back>0)) continue;
+          const inPool=[...evmPositions,...solPositions].filter(q=>String(q.chain==='sol'?q.poolId:q.pool).toLowerCase()===String(x.pool).toLowerCase());
+          const tgt=inPool.filter(q=>q.inRange).length?inPool.filter(q=>q.inRange):inPool;
+          const w=tgt.map(q=>Number(q.liq)||0), W=w.reduce((a,b)=>a+b,0);
+          /* A swap made before the month turned paid its fee into the month that has just been
+             archived: the queue is applied a run later, and the last run of a month queues what
+             the first run of the next one applies. That fee is inside the archived total, so it
+             comes out of the archive — total, its split, and the closing day — not out of a month
+             that never earned it. */
+          const arc=(x.t && x.t<curStart) ? (fl.months||[]).find(a=>a && a.m===localMonth(x.t)) : null;
+          if(arc){
+            tgt.forEach((q,i)=>{ const e=fl.pos[q.id]; const amt=W>0?x.back*w[i]/W:x.back/tgt.length;
+              fl.selfPos[q.id]=Math.round(((fl.selfPos[q.id]||0)+amt)*1e4)/1e4;
+              const k=(e&&e.cat)||'—'; if(arc.cat&&arc.cat[k]!=null) arc.cat[k]=Math.round((arc.cat[k]-amt)*100)/100;
+              if(e&&e.tk&&arc.tok&&arc.tok[e.tk]!=null) arc.tok[e.tk]=Math.round((arc.tok[e.tk]-amt)*100)/100; });
+            arc.total=Math.round((arc.total-x.back)*100)/100; arc.self=Math.round(((arc.self||0)+x.back)*100)/100;
+            unbook(x);
+            console.log('own-swap fee $'+x.back.toFixed(2)+' taken out of '+arc.m+' (swap made before the month turned)');
+            fl.selfDone.push(x.id); continue;
+          }
+          let left=x.back;
+          tgt.forEach((q,i)=>{ const amt0=W>0?x.back*w[i]/W:x.back/tgt.length;
+            fl.selfPos[q.id]=Math.round(((fl.selfPos[q.id]||0)+amt0)*1e4)/1e4;
+            const e=fl.pos[q.id]; if(!e) return;
+            const amt=amt0;
+            e.acc=Math.round(((e.acc||0)-amt)*100)/100; e.run=Math.round(((e.run??e.acc)-amt)*100)/100; left-=amt; });
+          if(left>0.005){ fl.closed=Math.round(((fl.closed||0)-left)*100)/100; }   // no live position to take it from
+          fl.selfMtd=Math.round(((fl.selfMtd||0)+x.back)*100)/100; selfApplied+=x.back;
+          unbook(x);
+          fl.selfDone.push(x.id);
+        }
+        fl.selfDone=fl.selfDone.slice(-600);
+        if(selfApplied) console.log('own-swap fees taken out of fee income: $'+selfApplied.toFixed(2));
+      }catch(e){ if(e.code!=='ENOENT') logErr('feeSelf',e); }
+      for(const p of [...evmPositions,...solPositions]){
+        const cum=p.feesEverUsd ?? (p.feesUsd!=null?p.feesUsd:null);
+        if(cum==null) continue;
+        seen.add(String(p.id));
+        const e=fl.pos[p.id];
+        if(!e){
+          const mintedThisMonth=p.mintTs && localMonth(p.mintTs)===monthKey;
+          // baseline priority: 0 if minted this month → archive-read month-start fees → first-seen value
+          const m0=mintedThisMonth?0:(p.feesMonthStartUsd!=null?Math.min(p.feesMonthStartUsd,cum):cum);
+          fl.pos[p.id]={m0:Math.round(m0*100)/100, last:Math.round(cum*100)/100,
+                        hwm:Math.round(cum*100)/100, acc:Math.round(Math.max(0,cum-m0)*100)/100,
+                        ck:p.chain||'ethereum'};
+          fl.pos[p.id].run=fl.pos[p.id].acc;
+          const T=feeTokens(p); if(T){ fl.pos[p.id].tk0=T[0]; fl.pos[p.id].tk1=T[1]; }
+        } else if(feeTokens(p)){
+          const T=feeTokens(p);
+          if(e.tk0==null){ e.tk0=T[0]; e.tk1=T[1]; }        // switch-over: baseline now, count from the next reading
+          else{
+            const add=Math.max(0,T[0]-e.tk0)*p.usd0+Math.max(0,T[1]-e.tk1)*p.usd1;
+            if(add>0){ e.acc=Math.round(((e.acc||0)+add)*100)/100; e.run=Math.round(((e.run??e.acc-add)+add)*100)/100; }
+            e.tk0=Math.max(e.tk0,T[0]); e.tk1=Math.max(e.tk1,T[1]);
+          }
+          e.last=Math.round(cum*100)/100; e.hwm=Math.max(e.hwm||0,e.last);
+        } else {
+          // cum is re-derived from chain each run and priced at spot, so it can fall for
+          // reasons that are not "you un-earned fees": a collect, or the fee tokens simply
+          // being worth less today. Accrue against a high-water mark so real growth is
+          // counted once and a dip never rewrites what the month already earned.
+          if(e.acc==null){ e.acc=Math.max(0,(e.last||0)-(e.m0||0)); e.hwm=e.last||0; }
+          if(cum>e.hwm){ const add=cum-e.hwm; e.acc=Math.round((e.acc+add)*100)/100; e.run=Math.round(((e.run??e.acc-add)+add)*100)/100; e.hwm=Math.round(cum*100)/100; }
+          e.last=Math.round(cum*100)/100;
+        }
+        // refreshed every run: a position that is re-ranged keeps its id but can change class
+        fl.pos[p.id].cat=catKeyOf(p);
+        { const tk=tokOf(p); if(tk) fl.pos[p.id].tk=tk; }
+        fl.pos[p.id].lbl=(p.pairLabel||'')+(p.feeLabel?' '+p.feeLabel:'');
+        delete fl.pos[p.id].miss;   // present again — any earlier absence was a blip, not a close
+      }
+      for(const id of Object.keys(fl.pos)){
+        if(!seen.has(String(id))){
+          const ckRaw=fl.pos[id].ck||'ethereum';
+          const chainKey=(String(id).startsWith('sol:')||ckRaw==='sol')?'sol':ckRaw;
+          // Absent because we could not look ≠ absent because it closed. Booking a close is
+          // irreversible here (fees banked, baseline dropped), so defer to a clean run.
+          if(scanIncomplete.has(chainKey)){
+            console.log('deferring close verdict for',id,'— scan incomplete on',chainKey);
+            continue;
+          }
+          /* A scan can report itself clean and still come back short. On 2026-08-21 two live
+             EVM positions vanished from one such read, were banked as closed, and were back
+             forty minutes later on a fresh entry that re-counted the month from its start —
+             $38.72 booked twice. A close is irreversible here, so require the absence to
+             survive a second clean read before acting on it. The cost is one cycle of delay
+             on a real close; the alternative is silently inflating the month. */
+          const e=fl.pos[id];
+          if((e.miss=(e.miss||0)+1)<2){
+            console.log('position',id,'absent on a clean read — waiting for a second before booking the close');
+            continue;
+          }
+          const gone=fl.pos[id];
+          const goneAmt=(gone.acc!=null?gone.acc:Math.max(0,gone.last-gone.m0));
+          fl.closed=(fl.closed||0)+goneAmt;
+          fl.catClosed=fl.catClosed||{};
+          const gk=gone.cat||'—'; fl.catClosed[gk]=(fl.catClosed[gk]||0)+goneAmt;
+          // kept by id too, so a closed position's fees still name their token and their pool
+          fl.closedPos=fl.closedPos||{};
+          fl.closedPos[id]={acc:Math.round(goneAmt*100)/100, cat:gk, tk:gone.tk||null, lbl:gone.lbl||null, run:gone.run??null, closedAt:Date.now()};
+          const ck=ckRaw;
+          // v25.2: legacy ledger entries have no .ck — a Solana id must never fall through to the EVM scanner
+          if(!String(id).startsWith('sol:')&&ck!=='sol'&&ck in CHAINS) justClosed.push({id,ck});
+          delete fl.pos[id];
+        }
+      }
+      /* Stamped every run: the next month boundary needs to know how long the interval it lands
+         inside actually was. */
+      fl.readAt=Date.now();
+      fl.closed=Math.round((fl.closed||0)*100)/100;
+      const mtd=fl.closed+Object.values(fl.pos).reduce((s,x)=>s+(x.acc!=null?x.acc:Math.max(0,x.last-x.m0)),0);
+      // live month-to-date split: closed positions keep the category they had when they closed
+      catMtd={};
+      for(const k in (fl.catClosed||{})) catMtd[k]=(catMtd[k]||0)+fl.catClosed[k];
+      for(const id in fl.pos){
+        const e=fl.pos[id], a=(e.acc!=null?e.acc:Math.max(0,e.last-e.m0));
+        const k=e.cat||'—'; catMtd[k]=(catMtd[k]||0)+a;
+      }
+      for(const k in catMtd) catMtd[k]=Math.round(catMtd[k]*100)/100;
+      catMonths=(fl.months||[]).filter(x=>x&&x.cat);
+      fl.catClosed=fl.catClosed||{};
+      const daysInMonth=new Date(Date.UTC(+monthKey.slice(0,4),+monthKey.slice(5,7),0)).getUTCDate();
+      const elapsed=(Date.now()-monthStart(monthKey))/86400000;
+      // every position with an IL figure — Solana has one now that its deposits are known
+      fl.lastIl=Math.round([...evmPositions,...solPositions].reduce((s,p)=>s+(p.ilUsd||0),0)*100)/100;
+      /* Straight extrapolation of the month-to-date average: what has been earned so far,
+         scaled to the full month. Simple and stable by design. dayRate (the current run rate
+         of open positions) is published alongside for reference — it will read lower than the
+         projection implies whenever earlier weeks earned faster or closed LPs contributed. */
+      let dayRate=0;
+      for(const p of [...evmPositions,...solPositions]){
+        const a=(p.chain==='sol')?(p.poolAprDay??null):(p.aprW?(p.aprW.d1??null):null);
+        if(a!=null && p.valueUsd>0) dayRate+=p.valueUsd*a/100/365;
+      }
+      /* Daily fee income. The month-to-date total at the last reading of each UTC day; a day's
+         income is its close minus the previous day's, or its close outright on the first of a
+         month. The days before this was recorded come from a seed rebuilt out of the payload
+         history (scripts/fee-days-seed.json, with its corrections written down there), merged
+         once and never over a day already recorded. */
+      let daily=null;
+      try{
+        fl.dayEnd=fl.dayEnd||{};
+        // the seed is this deck's main profile's own history — no other profile may inherit it
+        if(!fl.daySeeded && profile.slug==='main'){
+          try{
+            const seed=readJ(new URL('./fee-days-seed.json', import.meta.url));
+            for(const [d,v] of Object.entries(seed.dayEnd||{})) if(fl.dayEnd[d]==null) fl.dayEnd[d]=v;
+            fl.dayEst=seed.est||[]; fl.daySeeded=1;
+          }catch(e){ logErr('feeSeed',e); }
+        }
+        const today=localDay(Date.now());
+        if(today.slice(0,7)===monthKey) fl.dayEnd[today]=Math.round(mtd*100)/100;
+        const ds=Object.keys(fl.dayEnd).sort().slice(-400);
+        for(const d of Object.keys(fl.dayEnd)) if(!ds.includes(d)) delete fl.dayEnd[d];
+        const est=new Set(fl.dayEst||[]);
+        daily=ds.map((d,i)=>{ const p=i?ds[i-1]:null;
+          const base=(p&&p.slice(0,7)===d.slice(0,7))?fl.dayEnd[p]:0;
+          return {d, usd:Math.round((fl.dayEnd[d]-base)*100)/100, ...(est.has(d)?{est:1}:{})}; });
+      }catch(e){ logErr('feeDaily',e); }
+      /* Intraday: every reading of the ledger as a running total (archived months + month to date),
+         kept for 50 hours. The page spreads the gain between two readings over the clock hours
+         they span, which is what the 24-hour view draws. The first run merges readings rebuilt
+         from the payload history (scripts/fee-ticks-seed.json) so the view opens with a full day. */
+      let ticks=null;
+      try{
+        const cum=Math.round(((fl.months||[]).reduce((a,m)=>a+(m.total||0),0)+mtd)*100)/100;
+        fl.ticks=Array.isArray(fl.ticks)?fl.ticks:[];
+        if(!fl.ticksSeeded && profile.slug==='main'){
+          try{
+            const seed=readJ(new URL('./fee-ticks-seed.json', import.meta.url));
+            const first=fl.ticks.length?fl.ticks[0][0]:Infinity;
+            fl.ticks=[...(seed.ticks||[]).filter(x=>x[0]<first), ...fl.ticks];
+            fl.ticksSeeded=1;
+          }catch(e){ logErr('feeTicksSeed',e); }
+        }
+        const nowMs=Date.now();
+        fl.ticks.push([nowMs,cum]);
+        fl.ticks=fl.ticks.filter(x=>x[0]>nowMs-50*3600000).sort((a,b)=>a[0]-b[0]);
+        ticks=fl.ticks.filter(x=>x[0]>nowMs-26*3600000);
+      }catch(e){ logErr('feeTicks',e); }
+      /* The last 24 hours per position, from each position's running total of what the ledger
+         booked for it (it does not reset at a month end). A position closed inside the window
+         contributes what it earned before it closed. Summed, it is the same figure as the running
+         total over the same window — the tile's headline and its split come from one record. */
+      let pos24=null;
+      try{
+        const nowMs=Date.now();
+        fl.posHist=Array.isArray(fl.posHist)?fl.posHist:[];
+        const snap={}; for(const [id,e] of Object.entries(fl.pos)) snap[id]=e.run??e.acc??0;
+        fl.posHist.push([nowMs,snap]);
+        fl.posHist=fl.posHist.filter(x=>x[0]>nowMs-50*3600000);
+        const start=[...fl.posHist].reverse().find(x=>x[0]<=nowMs-24*3600000) || fl.posHist[0];
+        if(start && start[0]<nowMs-12*3600000){
+          const win=fl.posHist.filter(x=>x[0]>=start[0]);
+          const ids=new Set(win.flatMap(x=>Object.keys(x[1])));
+          const rows=[];
+          for(const id of ids){
+            const a=start[1][id]; let b=null;
+            for(const x of win) if(x[1][id]!=null) b=x[1][id];
+            const c=(fl.closedPos||{})[id]; if(!(id in snap) && c && c.run!=null) b=Math.max(b??0,c.run);
+            const usd=Math.max(0,(b??0)-(a??0));
+            const meta=fl.pos[id]||c||{};
+            rows.push({id, usd:Math.round(usd*100)/100, lbl:meta.lbl||null, cat:meta.cat||null, tk:meta.tk||null, ...(id in snap?{}:{closed:1})});
+          }
+          pos24={from:start[0], to:nowMs, total:Math.round(rows.reduce((x,r)=>x+r.usd,0)*100)/100, byPos:rows.sort((x,y)=>y.usd-x.usd)};
+        }
+      }catch(e){ logErr('feePos24',e); }
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, pos24, basis:'tokens', selfBack:fl.selfMtd||0, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+        proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
+        projBasis:'average', dayRate:(pos24&&pos24.total!=null&&(pos24.to-pos24.from)>=20*3600000)?pos24.total:Math.round(dayRate*100)/100, prev:fl.months||[],
+        /* Month to date per position — open ones and the ones closed this month — so the page
+           can say which token the income came from. Closes banked before positions were
+           recorded by id survive only as a pool-type total; those are published as they are. */
+        byPos:[...Object.entries(fl.pos).map(([id,e])=>({id, acc:Math.round((e.acc!=null?e.acc:Math.max(0,e.last-e.m0))*100)/100,
+                                                         cat:e.cat||null, tk:e.tk||null, lbl:e.lbl||null})),
+               ...Object.entries(fl.closedPos||{}).map(([id,c])=>({id, acc:c.acc, cat:c.cat||null, tk:c.tk||null, lbl:c.lbl||null, closed:true}))],
+        closedByCatOnly:(()=>{ const o={...(fl.catClosed||{})};
+          for(const c of Object.values(fl.closedPos||{})) if(c.cat&&o[c.cat]!=null) o[c.cat]-=c.acc||0;
+          for(const k in o){ o[k]=Math.round(o[k]*100)/100; if(!(o[k]>0.004)) delete o[k]; }
+          return o; })()};
+      selfPos=fl.selfPos||{};
+      writeJ(OUT+'/fees-'+profile.slug+'.json', fl, JSON.stringify(fl,null,1));
+    }catch(e){ logErr('feeMonth',e); }
+    // ---- monthly COST ledger: gas for every LP op + ALL rebalance swap fees (any pool, any route) ----
+    let costMonth=null;
+    try{
+      const monthKey=localMonth(Date.now());
+      let cl={month:monthKey, gasUsd:0, swapFeeUsd:0, txs:{}, scan:{}, months:[]};
+      try{ cl=readJ(OUT+'/costs-'+profile.slug+'.json'); }catch(e){}
+      cl.scan=cl.scan||{};
+      const r2=v=>Math.round(v*100)/100;
+      if(cl.month!==monthKey){
+        cl.months=[...(cl.months||[]),{m:cl.month,gas:Math.round(cl.gasUsd*100)/100,swapFee:Math.round(cl.swapFeeUsd*100)/100,
+                     solGas:Math.round((cl.solGasUsd||0)*100)/100,
+                     solOpen:Math.round((cl.solOpenUsd||0)*100)/100,
+                     solSwap:Math.round((cl.solSwapUsd||0)*100)/100,
+                     selfEvm:Math.round((cl.selfEvmUsd||0)*100)/100, selfSol:Math.round((cl.selfSolUsd||0)*100)/100}].slice(-12);
+        /* What the closed month already counted stays known for one more month. The new month's
+           first runs look back past the boundary — its first block is an estimate, and the
+           wallet sweep resumes wherever the last run stopped — and without this a transaction
+           the old month already paid for would be paid for again. */
+        cl.prevTxs={...(cl.txs||{})}; cl.prevSolTxs={...(cl.solTxs||{})};
+        cl.month=monthKey; cl.gasUsd=0; cl.swapFeeUsd=0; cl.solGasUsd=0; cl.solOpenUsd=0;
+        cl.solSwapUsd=0; cl.solSwapOwnUsd=0; cl.solUnattributed=0; cl.selfEvmUsd=0; cl.selfSolUsd=0;
+        cl.txs={}; cl.solTxs={}; cl.solOpenPend={}; cl.solWalletTx={};
+        /* cl.solScan is deliberately NOT cleared. It is how far the wallet history has been
+           walked, not a figure for the month; resetting it at a month boundary would send the
+           next run back through everything it has already accounted for. */
+        cl.solPartial=false;
+      }
+      /* A cost is booked to the month its transaction was made in. Between the last run of a month
+         and midnight there are up to twenty minutes the old month never scanned; the new month's
+         first run finds them and, by time stamp, hands them back to the archive. */
+      const monthStartMs=monthStart(monthKey);
+      const prevKey=localMonth(monthStartMs-1);
+      const prevArc=(cl.months||[]).find(a=>a && a.m===prevKey) || null;
+      cl.prevTxs=cl.prevTxs||{}; cl.prevSolTxs=cl.prevSolTxs||{};
+      /* Solana operations, from the fee actually paid on chain rather than an estimate. Deposits
+         into a CLMM position pay no pool fee — only a swap does — so for this portfolio the
+         transaction fee IS the Solana cost. Any swap fee remains uncounted and solPartial says so
+         rather than letting the total read as complete. */
+      let solUsd=null;   // SOL_MINT is already defined at module scope
+      for(const sp of solPositions){
+        if(sp.mint0===SOL_MINT && sp.usd0!=null){ solUsd=sp.usd0; break; }
+        if(sp.mint1===SOL_MINT && sp.usd1!=null){ solUsd=sp.usd1; break; }
+      }
+      cl.solTxs=cl.solTxs||{};
+      cl.solGasUsd=cl.solGasUsd||0;   // present at 0, not absent, when nothing was scanned
+      cl.solOpenUsd=cl.solOpenUsd||0;
+      /* Held in lamports until a SOL price is available. A position is measured once and only
+         once, so a run that priced nothing would otherwise lose the reading for good — the
+         ledger entry saying "already measured" outlives the run that measured it. */
+      cl.solOpenPend=cl.solOpenPend||{};
+      for(const sig in solOpenLam) if(!cl.solTxs[sig]) cl.solOpenPend[sig]=solOpenLam[sig];
+      if(solUsd!=null){
+        for(const sig in cl.solOpenPend){
+          const lam=cl.solOpenPend[sig];
+          delete cl.solOpenPend[sig];
+          if(cl.solTxs[sig]) continue;
+          cl.solTxs[sig]=1;
+          /* Opening costs are claimed before transaction fees, and share the same seen-set: the
+             fee is already inside the figure above, so a signature that is both must not pay
+             twice. */
+          cl.solOpenUsd+=(lam/1e9)*solUsd;
+        }
+        for(const sig in solTxFees){
+          if(cl.solTxs[sig]) continue;
+          cl.solTxs[sig]=1;
+          // kept apart from EVM gas: a per-pool-type net needs to know which chain paid
+          cl.solGasUsd=(cl.solGasUsd||0)+(solTxFees[sig]/1e9)*solUsd;
+        }
+      }
+      /* ---- wallet transactions: swap fees, and the transaction fees of everything that never
+             touches a position account ---- */
+      let solUnattributed=0, solWalletScanned=0;
+      try{
+        cl.solScan=cl.solScan||{};                 // wallet -> newest signature already accounted
+        cl.solWalletTx=cl.solWalletTx||{};         // signature -> {lamports, swapUsd}, this month
+        const poolCache=Object.assign({}, blockCache.solPools||{});
+        const pxMemo={};
+        const priceOf=async m=>{
+          if(pxMemo[m]!==undefined) return pxMemo[m];
+          pxMemo[m]=null;
+          /* The position side already priced every mint it holds; anything else is a token this
+             portfolio swapped through and has to be asked about once. */
+          for(const sp of solPositions){
+            if(sp.mint0===m && sp.usd0!=null){ pxMemo[m]=sp.usd0; return pxMemo[m]; }
+            if(sp.mint1===m && sp.usd1!=null){ pxMemo[m]=sp.usd1; return pxMemo[m]; }
+          }
+          try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+m, 12000);
+               if(js && js[m] && js[m].usdPrice!=null) pxMemo[m]=Number(js[m].usdPrice); }catch(e){}
+          return pxMemo[m];
+        };
+        const monthStartSec=Math.floor(monthStart(monthKey)/1000);
+        const myPools=new Set(solPositions.map(sp=>sp.poolId).filter(Boolean));
+        const ownSol=new Set((profile.wallets||[]).filter(x=>x.chain==='solana').map(x=>x.address));
+        for(const w of (profile.wallets||[]).filter(x=>x.chain==='solana')){
+          const r=await solWalletCosts(w.address, cl.solScan[w.address]||null, poolCache, priceOf, monthStartSec, myPools, ownSol);
+          if(r.err) logErr('solWalletCost '+w.address.slice(0,6), new Error(r.err));
+          solWalletScanned+=r.scanned; solUnattributed+=r.unattributed;
+          for(const sig in r.txs) if(!cl.solWalletTx[sig]) cl.solWalletTx[sig]=r.txs[sig];
+          if(r.newest) cl.solScan[w.address]=r.newest;
+        }
+        /* Only the pools are worth keeping. Every other account a swap touches — token accounts,
+           programs, sysvars — is cached as "not a pool" for the run and then dropped, because
+           storing them would grow this file without end to save a call that is made anyway. */
+        /* Only current-version pools are kept. An entry written by an older rule is re-read the
+           next time its account turns up, but one that never turns up again would otherwise sit
+           in the file being wrong for ever. */
+        blockCache.solPools=Object.fromEntries(
+          Object.entries(poolCache).filter(([,v])=>v && v.v===SOL_POOL_CACHE_V));
+      }catch(e){ logErr('solWalletCosts',e); }
+      /* A swap fee that could not be traced to a pool is the only thing still missing, so the
+         claim is made per run instead of standing as a permanent disclaimer. */
+      /* Swap fees are already in dollars — they were priced against the pool the swap went
+         through, at the time it was read. Only the lamports need a SOL price, so both wait on
+         one and the entry is kept until it can be banked. */
+      cl.solSwapUsd=cl.solSwapUsd||0;
+      cl.solSwapOwnUsd=cl.solSwapOwnUsd||0;
+      cl.selfSolUsd=cl.selfSolUsd||0; cl.selfEvmUsd=cl.selfEvmUsd||0;
+      cl.selfPend=(cl.selfPend||[]).filter(x=>x&&Date.now()-(x.at||0)<7*86400000);
+      /* September's own-pool fees found before this was traced per swap (see the fee ledger's
+         second restatement): out of the cost total from here, as they are out of income. */
+      if(!cl.selfRestated202609 && monthKey==='2026-09' && profile.slug==='main'){
+        cl.selfEvmUsd=(cl.selfEvmUsd||0)+5.49; cl.selfSolUsd=(cl.selfSolUsd||0)+66.90; cl.selfRestated202609=1;
+      }
+      /* How much of a fee paid into one of this deck's own Solana pools came back to it: the LPs'
+         part of the fee (Raydium keeps a protocol and a fund cut, read from the pool's own config)
+         times this deck's share of the liquidity active at the pool's current price. */
+      const solBackShare={};
+      const solShareOf=async pool=>{
+        if(solBackShare[pool]!=null) return solBackShare[pool];
+        let lp=0.84, share=1;
+        try{
+          const a=await sol('getAccountInfo',[pool,{encoding:'base64'}]); const bf=Buffer.from(a.value.data[0],'base64');
+          const cfgKey=b58e(bf.subarray(9,41));
+          const c=await sol('getAccountInfo',[cfgKey,{encoding:'base64'}]); const cb=Buffer.from(c.value.data[0],'base64');
+          lp=1-(cb.readUInt32LE(43)+cb.readUInt32LE(53))/1e6;
+          const L=bf.readBigUInt64LE(237)+(bf.readBigUInt64LE(245)<<64n), tick=bf.readInt32LE(269);
+          const ours=solPositions.filter(q=>q.poolId===pool&&q.tl<=tick&&tick<q.tu).reduce((x,q)=>x+BigInt(q.liq||0),0n);
+          if(L>0n) share=Math.min(1,Number(ours*1000000n/L)/1e6);
+        }catch(e){ logErr('solSelfShare '+String(pool).slice(0,6),e); }
+        return solBackShare[pool]=lp*share;
+      };
+      if(solUsd!=null){
+        for(const sig in cl.solWalletTx){
+          const t=cl.solWalletTx[sig];
+          delete cl.solWalletTx[sig];
+          if(cl.solTxs[sig]||cl.prevSolTxs[sig]) continue;
+          if(prevArc && t.t && t.t<monthStartMs){
+            cl.prevSolTxs[sig]=1;
+            prevArc.solGas=r2((prevArc.solGas||0)+((t.lamports||0)/1e9)*solUsd);
+            prevArc.solSwap=r2((prevArc.solSwap||0)+(t.swapUsd||0));
+            for(const [pool,paid] of Object.entries(t.ownBy||{})){
+              const back=paid*(await solShareOf(pool));
+              if(back>0.0005){ prevArc.selfSol=r2((prevArc.selfSol||0)+back); cl.selfPend.push({id:'sol:'+sig+':'+pool, at:Date.now(), t:t.t, chain:'sol', pool, back:Math.round(back*1e4)/1e4}); }
+            }
+            prevArc.late=(prevArc.late||0)+1;
+            console.log('cost: Solana tx '+sig.slice(0,8)+' made before the month turned — booked to '+prevArc.m);
+            continue;
+          }
+          cl.solTxs[sig]=1;
+          cl.solGasUsd+=((t.lamports||0)/1e9)*solUsd;
+          cl.solSwapUsd+=t.swapUsd||0;
+          cl.solSwapOwnUsd+=t.ownUsd||0;
+          for(const [pool,paid] of Object.entries(t.ownBy||{})){
+            const back=paid*(await solShareOf(pool));
+            if(back>0.0005){ cl.selfSolUsd+=back; cl.selfPend.push({id:'sol:'+sig+':'+pool, at:Date.now(), t:t.t||Date.now(), chain:'sol', pool, back:Math.round(back*1e4)/1e4}); }
+          }
+        }
+      }
+      /* A swap fee that could not be traced to a pool is the only thing still missing, so the
+         claim is made from what the month has actually seen rather than standing as a permanent
+         disclaimer.
+
+         It has to ACCUMULATE. Written per run, it read 1 on the pass that walked the swap and 0
+         on the next one — which walked no transactions at all, having nothing new to walk — and
+         the page went from naming a gap to claiming there was none. A run that looked at nothing
+         has found nothing, which is not the same as there being nothing to find. */
+      cl.solUnattributed=(cl.solUnattributed||0)+solUnattributed;
+      cl.solPartial=(cl.solUnattributed||0)>0;
+      if(solWalletScanned) console.log('sol wallet txs scanned:',solWalletScanned,
+        '· swap fees $'+(Math.round((cl.solSwapUsd||0)*100)/100),
+        solUnattributed?('· '+solUnattributed+' swap(s) not attributable to a readable pool'):'· all attributed');
+      const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
+      const SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822';
+      const TRANSFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const NEW_LCX='0x8cd41041505885ef0ad3858181d66f17be8aae7e';
+      /* Uniswap v4 keeps every pool inside one PoolManager contract and reports a swap with its own
+         event: Swap(bytes32 id, address sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96,
+         uint128 liquidity, int24 tick, uint24 fee). Amounts are the swapper's: negative is what was
+         paid in. The fee is in millionths and is on the event itself. */
+      const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f';
+      const msTs=monthStart(monthKey);
+      const msBlockOf=ck=>Math.max(1, blockNums[ck]-Math.round((Date.now()-msTs)/3600000*CHAINS[ck].bph));
+      // pool metadata cache (fee tier, tokens, prices) for ANY pool a swap routes through
+      const poolCache={};
+      const swapFeeOf=async(ck,lg)=>{
+        const addr=String(lg.address).toLowerCase(), key=ck+addr, isV2=lg.topics[0]===SWAP_V2;
+        let pc=poolCache[key];
+        if(!pc){
+          try{
+            const t0='0x'+(await evmCall(ck,addr,'0x0dfe1681')).slice(-40);
+            const t1='0x'+(await evmCall(ck,addr,'0xd21220a7')).slice(-40);
+            let fee=3000; // V2 fixed 0.3%
+            if(!isV2){ try{ fee=Number(BigInt(await evmCall(ck,addr,'0xddca3f43'))); }catch(e){} }
+            const mm0=await meta(ck,t0), mm1=await meta(ck,t1);
+            await llamaPrices([CHAINS[ck].llama+':'+t0,CHAINS[ck].llama+':'+t1]);
+            pc={fee,d0:mm0.decimals,d1:mm1.decimals,u0:priceCache[CHAINS[ck].llama+':'+t0],u1:priceCache[CHAINS[ck].llama+':'+t1]};
+          }catch(e){ pc=null; }
+          poolCache[key]=pc||{fee:0,d0:18,d1:18,u0:null,u1:null};
+          pc=poolCache[key];
+        }
+        let inUsd=0;
+        if(isV2){
+          const in0=bigToFloat(BigInt(word(lg.data,0)),pc.d0), in1=bigToFloat(BigInt(word(lg.data,1)),pc.d1);
+          inUsd=in0*(pc.u0||0)+in1*(pc.u1||0);
+        }else{
+          const a0=toSigned(BigInt(word(lg.data,0)),256), a1=toSigned(BigInt(word(lg.data,1)),256);
+          inUsd=(a0>0n?bigToFloat(a0,pc.d0)*(pc.u0||0):0)+(a1>0n?bigToFloat(a1,pc.d1)*(pc.u1||0):0);
+        }
+        return inUsd*pc.fee/1e6;
+      };
+      /* The event names a pool id, not its tokens. What was paid in is found the way it arrived: an
+         ERC-20 is transferred to the PoolManager in the same transaction for exactly the amount;
+         ether is not a token and sends no such transfer, and when it is one side of a v4 pool it is
+         always currency0 (address zero sorts first). */
+      const v4FeeOf=async(ck,rc,lg)=>{
+        const a0=toSigned(BigInt(word(lg.data,0)),256), a1=toSigned(BigInt(word(lg.data,1)),256), fee=Number(BigInt(word(lg.data,5)));
+        const paid=a0<0n?-a0:a1<0n?-a1:0n; if(!paid || !(fee>0)) return 0;
+        const pm=String(lg.address).toLowerCase();
+        const tl=(rc.logs||[]).find(l=>l.topics && l.topics[0]===TRANSFER && l.topics.length===3
+          && ('0x'+l.topics[2].slice(26)).toLowerCase()===pm && (()=>{ try{ return BigInt(l.data)===paid; }catch(e){ return false; } })());
+        let usd=null;
+        if(tl){ const t=String(tl.address).toLowerCase(), k=CHAINS[ck].llama+':'+t;
+          try{ const m=await meta(ck,t); await llamaPrices([k]); if(priceCache[k]!=null) usd=bigToFloat(paid,m.decimals)*priceCache[k]; }catch(e){} }
+        else if(a0<0n) usd=bigToFloat(paid,18)*(ethUsd||0);
+        if(usd==null){ logErr('v4fee '+String(rc.transactionHash).slice(0,10), new Error('input not priced')); return 0; }
+        return usd*fee/1e6;
+      };
+      const btMemo={};
+      const blockTimeOf=async(ck,bnHex)=>{
+        const k=ck+':'+bnHex; if(btMemo[k]!==undefined) return btMemo[k];
+        btMemo[k]=null;
+        try{ const b=await evm(ck,'eth_getBlockByNumber',[bnHex,false]); if(b&&b.timestamp) btMemo[k]=Number(BigInt(b.timestamp))*1000; }
+        catch(e){ logErr('blockTime '+ck,e); }
+        return btMemo[k];
+      };
+      const countReceipt=async(ck,tx,requireRelevant)=>{
+        if(cl.txs[tx]||cl.prevTxs[tx]) return;
+        try{
+          const rc=await evm(ck,'eth_getTransactionReceipt',[tx]);
+          if(!rc){ return; }
+          const swaps=(rc.logs||[]).filter(l=>l.topics&&(l.topics[0]===SWAP_V3||l.topics[0]===SWAP_V2||l.topics[0]===SWAP_V4));
+          const touchesNpm=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===CHAINS[ck].npm.toLowerCase());
+          /* Moving LCX from the old contract to the new one is a step of every rebalance that buys
+             LCX (the only deep market is the old contract's pool), so its gas is a cost of the
+             operation like the swap before it. It has no swap and never touches a position, and
+             was being filed as a plain transfer; it is recognised by its effect instead — the
+             new contract minting tokens to the wallet. */
+          const ZERO32='0x'+'0'.repeat(64);
+          const migrates=(rc.logs||[]).some(l=>String(l.address).toLowerCase()===NEW_LCX && l.topics && l.topics[0]===TRANSFER && l.topics[1]===ZERO32);
+          if(requireRelevant && !swaps.length && !touchesNpm && !migrates){ cl.txs[tx]=2; return; }  // plain transfer — seen, not a cost
+          /* Only a transaction within a few hours of the estimated first block is dated exactly;
+             past that it cannot belong to the month before. */
+          let tMs=null;
+          if(prevArc && Number(rc.blockNumber)<=msBlockOf(ck)+1800) tMs=await blockTimeOf(ck,rc.blockNumber);
+          const late=tMs!=null && tMs<monthStartMs;
+          const gas=bigToFloat(BigInt(rc.gasUsed)*BigInt(rc.effectiveGasPrice),18)*(ethUsd||0);
+          if(late){
+            cl.prevTxs[tx]=1; prevArc.gas=r2((prevArc.gas||0)+gas); prevArc.late=(prevArc.late||0)+1;
+            console.log('cost: '+ck+' tx '+tx.slice(0,10)+' made before the month turned — booked to '+prevArc.m);
+          } else {
+            cl.txs[tx]=1;
+            cl.gasUsd+=gas;
+          }
+          for(const sw of swaps){
+            const fee=sw.topics[0]===SWAP_V4 ? await v4FeeOf(ck,rc,sw) : await swapFeeOf(ck,sw);
+            if(late) prevArc.swapFee=r2((prevArc.swapFee||0)+fee); else cl.swapFeeUsd+=fee;
+            /* One of this deck's own pools: the part of the fee that came back to its positions —
+               the pool's protocol cut taken off, times this deck's share of the liquidity active
+               at the tick the swap left behind (both from the swap's own event). */
+            const addr=String(sw.address).toLowerCase();
+            const ours=sw.topics[0]===SWAP_V4?[]:evmPositions.filter(q=>q.chain===ck&&String(q.pool).toLowerCase()===addr);   // v4 pools are not this deck's
+            if(ours.length && fee>0){
+              try{
+                const L=BigInt(word(sw.data,3)), tick=Number(toSigned(BigInt(word(sw.data,4)),256));
+                const inR=ours.filter(q=>{ const sc=10**(q.d0-q.d1); const tl=Math.round(Math.log(q.priceLower/sc)/Math.log(1.0001)), tu=Math.round(Math.log(q.priceUpper/sc)/Math.log(1.0001)); return tl<=tick&&tick<tu; });
+                const our=inR.reduce((x,q)=>x+BigInt(q.liq||0),0n);
+                const share=L>0n?Math.min(1,Number(our*1000000n/L)/1e6):0;
+                const a0=toSigned(BigInt(word(sw.data,0)),256);
+                const s0=await evmCall(ck,addr,'0x3850c7bd'); const fp=Number(BigInt('0x'+s0.slice(2+64*5,2+64*6)));
+                const fpIn=a0>0n?(fp%16):(fp>>4), proto=fpIn?1/fpIn:0;
+                const back=fee*(1-proto)*share;
+                if(back>0.0005){ if(late) prevArc.selfEvm=r2((prevArc.selfEvm||0)+back); else cl.selfEvmUsd=(cl.selfEvmUsd||0)+back;
+                  /* The swap's own time, from its block: the recorder takes this fee back out of the
+                     minutes around it, and the time it was noticed here (up to a pass later) pointed
+                     it at minutes that held other trades' fees. */
+                  let tSw=tMs; if(tSw==null){ try{ tSw=await blockTimeOf(ck,rc.blockNumber); }catch(e){} }
+                  cl.selfPend=cl.selfPend||[]; cl.selfPend.push({id:'eth:'+tx+':'+sw.logIndex, at:Date.now(), t:tSw||Date.now(), chain:ck, pool:addr, back:Math.round(back*1e4)/1e4}); }
+              }catch(e){ logErr('evmSelf '+String(tx).slice(0,10),e); }
+            }
+          }
+        }catch(e){ logErr('cost '+String(tx).slice(0,10),e); }
+        await sleep(120);
+      };
+      // 1) LP operations of live positions (mint/add/remove/collect)
+      for(const p of evmPositions) for(const o of (p.opTxs||[]))
+        if(blockNums[p.chain]!=null && o.block>=msBlockOf(p.chain)) await countReceipt(p.chain,o.tx,false);
+      // 2) final close txs of positions that vanished this run
+      for(const jc of justClosed){
+        // closed positions only owe cost accounting for THIS month → scan from month start, not from mint
+        try{ const h=await evmHistory(jc.ck,Number(jc.id)||jc.id,msBlockOf(jc.ck),blockNums[jc.ck]);
+          for(const x of [...h.inc,...h.dec,...h.col]) if(x.tx&&blockNums[jc.ck]!=null&&x.block>=msBlockOf(jc.ck)) await countReceipt(jc.ck,x.tx,false);
+        }catch(e){ logErr('cost closed#'+jc.id,e); }
+      }
+      /* Each time the rule for what counts widens — migrations (1), Uniswap v4 swaps (2) — this
+         month's transactions set aside as plain transfers are looked at once more under it. */
+      const COST_RULES=2;
+      if((cl.rulesV||(cl.migRule?1:0))<COST_RULES){
+        for(const [tx,v] of Object.entries(cl.txs)) if(v===2){ delete cl.txs[tx]; await countReceipt('ethereum',tx,true); }
+        cl.rulesV=COST_RULES;
+      }
+      // 3) wallet swap sweep: every tx this month where a wallet sent or received tokens,
+      //    kept only if it contains swap events or touches the position manager
+      /* a holdings-only wallet (role 'hold') is watched for what it holds, not traded from for the
+         pools: its swaps are not the strategy's costs */
+      for(const w of (profile.wallets||[]).filter(w=>w.chain!=='solana'&&w.role!=='hold')){
+        const ck=w.chain in CHAINS?w.chain:'ethereum';
+        if(blockNums[ck]==null) continue;
+        const wt='0x'+pad32(w.address.toLowerCase().replace(/^0x/,''));
+        const skey=ck+':'+w.address.toLowerCase();
+        let from=cl.scan[skey]!=null?cl.scan[skey]+1:msBlockOf(ck);
+        const tip=blockNums[ck], CHUNK=ck==='ethereum'?9000:45000;
+        let guard=0;
+        while(from<=tip && guard<40){
+          guard++;
+          const to=Math.min(tip,from+CHUNK-1);
+          let hs=[];
+          try{
+            const out=await evm(ck,'eth_getLogs',[{fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16),topics:[TRANSFER,wt]}]);
+            const inn=await evm(ck,'eth_getLogs',[{fromBlock:'0x'+from.toString(16),toBlock:'0x'+to.toString(16),topics:[TRANSFER,null,wt]}]);
+            hs=[...new Set([...out,...inn].map(l=>l.transactionHash))];
+          }catch(e){ logErr('swapscan '+ck+' '+from,e); break; }
+          for(const tx of hs) await countReceipt(ck,tx,true);
+          cl.scan[skey]=to; from=to+1;
+          await sleep(150);
+        }
+      }
+      cl.gasUsd=Math.round(cl.gasUsd*100)/100; cl.swapFeeUsd=Math.round(cl.swapFeeUsd*100)/100;
+      const counted=Object.values(cl.txs).filter(v=>v===1).length;
+      /* total carries every chain, because it is what the headline net and the month-over-month
+         costs column subtract. txCount stays EVM-only, and the per-operation average is computed
+         from the EVM figures rather than from total, so the two do not get mixed. */
+      cl.solOpenUsd=Math.round((cl.solOpenUsd||0)*100)/100;
+      cl.solSwapUsd=Math.round((cl.solSwapUsd||0)*100)/100;
+      cl.solSwapOwnUsd=Math.round((cl.solSwapOwnUsd||0)*100)/100;
+      cl.selfEvmUsd=Math.round((cl.selfEvmUsd||0)*100)/100; cl.selfSolUsd=Math.round((cl.selfSolUsd||0)*100)/100;
+      /* A fee that came back to this deck's own LPs was never a cost — the wallet paid it to
+         itself. It is out of the total here, and out of fee income in the fee ledger, so net fee
+         income is unchanged and neither side is inflated by it. */
+      costMonth={month:monthKey, gasUsd:cl.gasUsd, swapFeeUsd:cl.swapFeeUsd,
+        solGasUsd:cl.solGasUsd||0, solOpenUsd:cl.solOpenUsd||0, solSwapUsd:cl.solSwapUsd||0,
+        solSwapOwnUsd:cl.solSwapOwnUsd||0, selfEvmUsd:cl.selfEvmUsd, selfSolUsd:cl.selfSolUsd,
+        solPartial:!!cl.solPartial, solUnattributed:cl.solUnattributed||0,
+        total:Math.round((cl.gasUsd+cl.swapFeeUsd-cl.selfEvmUsd+(cl.solGasUsd||0)+(cl.solOpenUsd||0)+(cl.solSwapUsd||0)-cl.selfSolUsd)*100)/100,
+        txCount:counted, prev:cl.months||[]};
+      writeJ(OUT+'/costs-'+profile.slug+'.json', cl, JSON.stringify(cl,null,1));
+    }catch(e){ logErr('costMonth',e); }
+    const usedChains=new Set((profile.wallets||[]).map(w=>w.chain==='solana'?'solana':(w.chain in CHAINS?w.chain:'ethereum')));
+    const chainStatus={};
+    for(const ck of usedChains){
+      chainStatus[ck] = ck==='solana' ? (chainErrs.has('solana')?'down':'ok')
+        : (blockNums[ck]==null||chainErrs.has(ck) ? 'down' : 'ok');
+    }
+    // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
+    const uiBuild=readUiBuild();
+    let profileDaily=[], profilePxChg=null, tokenFlow=null, tokenSeries=null, stableSeries=null, stableOff=null;
+    let history=[], histPushed=false, totalDays=null;
+    try{ history=readJ(OUT+'/hist-'+profile.slug+'.json'); }catch(e){}
+    {
+      /* The daily record already refuses a degraded cycle; the fifteen-minute series did not, and
+         the pass that lost Solana wrote $9,376 into it against $36,267 either side. That point is
+         not a reading of anything — it is the shape of an outage — and every chart, day-change
+         and drawdown figure drawn from the series inherits it. */
+      const chainsOkForHist=Object.values(chainStatus).every(v=>v==='ok');
+      if(chainsOkForHist){
+        const totV=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.valueUsd||0),0);
+        const totF=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.feesUsd||0),0);
+        // g: gas price at this sample. Without a stored series there is nothing to call a gas
+        // price high or low AGAINST, and a gauge with no distribution behind it is decoration.
+        history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100,
+                      g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null});
+        histPushed=true;
+        if(history.length>3000) history=history.slice(-3000);
+        writeJ(OUT+'/hist-'+profile.slug+'.json', history);
+      }else{
+        console.log('history: sample skipped, chainStatus', JSON.stringify(chainStatus));
+      }
+    }
+    // ---- idle balances: everything held that is NOT in an LP ----
+    let idle=null;
+    try{
+      const rows=[];
+      const balFailed=[];                 // wallets whose balance read did not come back
+      /* Wallets are read five at a time. The holdings-only wallets and the Sui and Tron ones change
+         rarely: each is read again once its last read is over 25 minutes old — at most eight a pass,
+         oldest first — and its last read stands in between, repriced every pass. A pass used to read
+         all thirty-odd wallets one after another, which with the holdings wallets added took most of
+         its time. The wallets the pools trade from are read every pass, as before. */
+      const BAL_TTL=25*60e3, BAL_MAX=8, now0=Date.now();
+      const bc=blockCache.balCache=blockCache.balCache||{};
+      const keyOf=w=>w.chain+':'+(w.chain==='solana'||w.chain==='tron'?w.address:String(w.address).toLowerCase());
+      const slow=w=>w.role==='hold'||w.chain==='sui'||w.chain==='tron';
+      const allW=[...(profile.wallets||[]), ...(profile.altWallets||[])];
+      const due=new Set(allW.filter(slow).filter(w=>!bc[keyOf(w)]||now0-bc[keyOf(w)].t>BAL_TTL)
+        .sort((x,y)=>((bc[keyOf(x)]||{}).t||0)-((bc[keyOf(y)]||{}).t||0)).slice(0,BAL_MAX).map(keyOf));
+      const readWallet=async w=>{
+        const addr=w.address, got=[]; let failed=false;
+        if(w.chain==='solana'){
+          const sw=await solWalletBalances(addr);
+          if(sw.failed) failed=true;
+          for(const r of sw) got.push({...r, chain:'sol', wallet:addr});
+          /* staked and lent holdings: when their sources do not answer, the last read of them is kept
+             (marked stale) rather than holding back every wallet's balances for it */
+          try{ for(const r of await solProtocolHoldings(addr)) got.push({...r, chain:'sol', wallet:addr}); }
+          catch(e){ logErr('solProtocol',e);
+            let prevB=null; try{ prevB=readJ(OUT+'/balances-'+profile.slug+'.json'); }catch(_){}
+            for(const r of (prevB&&prevB.rows)||[]) if(r.chain==='sol'&&r.wallet===addr&&(r.staked||r.lent||r.debt)) got.push({...r, usd:undefined, px:undefined, stale:true}); }
+        }else if(w.chain==='sui'||w.chain==='tron'){
+          /* Sui and Tron wallets (alt-chains.mjs): rows carry their own DefiLlama key in `llama` */
+          for(const r of (w.chain==='sui'?await suiHoldings(addr):await tronHoldings(addr))) got.push({...r, chain:w.chain, wallet:addr});
+        }else{
+          const ck=w.chain in CHAINS ? w.chain : 'ethereum';
+          if(blockNums[ck]==null) return {rows:[], skip:true};
+          const clean=addr.toLowerCase().replace(/^0x/,'');
+          for(const r of await evmWalletBalances(ck,clean,blockNums[ck])) got.push({...r, chain:ck, wallet:addr});
+        }
+        return {rows:got, failed};
+      };
+      const pool=async(items,n,fn)=>{ const res=new Array(items.length); let i=0;
+        await Promise.all(Array.from({length:Math.min(n,items.length)},async()=>{ while(i<items.length){ const k=i++; res[k]=await fn(items[k]); } })); return res; };
+      let cachedN=0, readN=0;
+      const outW=await pool(allW, 5, async w=>{
+        const k=keyOf(w), c=bc[k];
+        if(slow(w) && !due.has(k) && c){ cachedN++; return {w, rows:c.rows}; }
+        try{ const r=await readWallet(w); readN++;
+          if(r.failed && slow(w) && c){ cachedN++; return {w, rows:c.rows}; }
+          if(slow(w) && !r.failed && !r.skip) bc[k]={t:Date.now(), rows:r.rows};
+          return {w, ...r}; }
+        catch(e){ logErr('bal '+w.chain, e);
+          if(slow(w) && c){ cachedN++; return {w, rows:c.rows}; }
+          return {w, rows:[], failed:true}; }
+      });
+      for(const o of outW){ if(o.failed) balFailed.push(o.w.address); for(const r of o.rows) rows.push({...r}); }
+      console.log('balances: '+readN+' wallet(s) read, '+cachedN+' from their last read');
+      // forget the read of a wallet no longer listed
+      for(const k of Object.keys(bc)) if(!allW.some(w=>keyOf(w)===k)) delete bc[k];
+      // price: EVM via the same DefiLlama feed the LP side uses, Solana via Jupiter
+      const llamaKeys=[...new Set([...rows.filter(r=>r.chain!=='sol'&&!r.native&&!r.llama).map(r=>CHAINS[r.chain].llama+':'+r.addr),
+                                   ...rows.filter(r=>r.llama).map(r=>r.llama)])];
+      if(llamaKeys.length) await llamaPrices(llamaKeys);
+      const solNativeUsd=(tickers||[]).find(t=>t.sym==='SOL')?.usd ?? null;
+      const solMints=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native).map(r=>r.addr))];
+      let jp={};
+      if(solMints.length){
+        for(let i=0;i<solMints.length;i+=80){
+          try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+solMints.slice(i,i+80).join(','));
+               for(const m of solMints.slice(i,i+80)) if(js[m]?.usdPrice!=null) jp[m]=Number(js[m].usdPrice); }
+          catch(e){ logErr('jupBal',e); }
+        }
+      }
+      // Resolve names/symbols for Solana mints. A wallet full of "AeXrLf…" is unreadable,
+      // and for a token whose identity is in question the registered name is the fastest
+      // way to tell a bridged asset from an unrelated one sharing a ticker.
+      /* Names do not change, and a mint no registry lists will not be listed in fifteen
+         minutes either. Cache both outcomes — hits indefinitely, misses for a week — so the
+         same ~30 lookups stop running every quarter hour. */
+      const tokMeta=Object.assign({}, blockCache.tokMeta||{});
+      const META_MISS_TTL=7*86400000;
+      const metaFresh=m=>{ const c=tokMeta[m]; return !!c && (!c.miss || Date.now()-c.at<META_MISS_TTL); };
+      const needMeta=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&!r.symbol).map(r=>r.addr))]
+        .filter(m=>!metaFresh(m)).slice(0,15);
+      let metaHard=0, metaErr=null;
+      // Registries disagree on response shape (bare array / {tokens:[]} / single object), so
+      // accept all three and fall back to a second endpoint before giving up.
+      const pickHit=(js,m)=>{
+        const arr=Array.isArray(js)?js
+          :(Array.isArray(js&&js.tokens)?js.tokens
+          :((js&&(js.id||js.address))?[js]:[]));
+        return arr.find(t=>t&&(t.id===m||t.address===m)) || (arr.length===1?arr[0]:null);
+      };
+      for(const m of needMeta){
+        let hit=null, answered=false;
+        for(const url of ['https://lite-api.jup.ag/tokens/v2/search?query='+m,'https://tokens.jup.ag/token/'+m]){
+          try{ hit=pickHit(await getJson(url,12000),m); answered=true; if(hit) break; }
+          catch(e){ if(!metaErr) metaErr=String((e&&e.message)||e).slice(0,80); }
+        }
+        if(hit) tokMeta[m]={symbol:hit.symbol||null, name:hit.name||null, at:Date.now()};
+        else if(answered) tokMeta[m]={symbol:null, name:null, miss:true, at:Date.now()};
+        else metaHard++;
+        await sleep(150);
+      }
+      blockCache.tokMeta=tokMeta;
+      /* A registry that answers "no such token" has told us something true: the mint is
+         unlisted. That is a fact about the token, not a fault in the read, and raising it as an
+         error every run put a permanent banner on the dashboard — which is how an error strip
+         gets ignored. Only an endpoint that would not answer at all is worth reporting. */
+      if(metaHard) logErr('solTokenMeta', new Error(metaHard+'/'+needMeta.length+' lookups failed'+(metaErr?' · '+metaErr:'')));
+      for(const r of rows){
+        if(r.chain!=='sol') continue;
+        const c=tokMeta[r.addr];
+        if(!c||c.miss) continue;
+        if(!r.symbol&&c.symbol) r.symbol=c.symbol;
+        if(c.name) r.name=c.name;
+      }
+      for(const r of rows){
+        r.usd = r.llama
+          ? (priceCache[r.llama]!=null&&r.amount!=null?r.amount*priceCache[r.llama]:null)
+          : r.native
+          ? (r.chain==='sol' ? (solNativeUsd!=null?r.amount*solNativeUsd:null) : (ethUsd!=null?r.amount*ethUsd:null))
+          : (r.chain==='sol' ? (jp[r.addr]!=null?r.amount*jp[r.addr]:null)
+                             : (priceCache[CHAINS[r.chain].llama+':'+r.addr]!=null?r.amount*priceCache[CHAINS[r.chain].llama+':'+r.addr]:null));
+        /* The price itself travels with the row. Deriving it from a value rounded to the cent
+           turned 0.0144 USDC worth $0.02 into a "$1.39 USDC" on the page. */
+        if(r.usd!=null && r.amount>0) r.px=Number((r.usd/r.amount).toPrecision(8));
+        r.usd = r.usd!=null ? Math.round(r.usd*100)/100 : null;   // null = unpriced, never 0
+      }
+      rows.sort((x,y)=>(y.usd??-1)-(x.usd??-1));
+      /* Provenance for any Solana holding worth caring about. A ticker proves nothing — this
+         wallet holds a fake "Zcash" and a fake "JitoSOL" — so publish the facts that actually
+         distinguish a bridged asset from a lookalike: total supply (compare to the real
+         token's), whether anyone can still mint more, whether it can be frozen, and how the
+         registry tags it. */
+      /* Supply, authorities and registry tags change on the order of never, so refreshing
+         them every quarter hour was pure run time. Reuse yesterday's answer. */
+      const mintInfo=Object.assign({}, blockCache.mintInfo||{});
+      const DAY=86400000;
+      const wantInfo=[...new Set(rows.filter(r=>r.chain==='sol'&&!r.native&&(r.usd==null||r.usd>=50)).map(r=>r.addr))]
+        .filter(m=>!(mintInfo[m]&&mintInfo[m].at&&Date.now()-mintInfo[m].at<DAY)).slice(0,12);
+      for(const m of wantInfo){
+        const o={};
+        try{ const r=await sol('getTokenSupply',[m]);
+             o.supply=r?.value?.uiAmountString??null; o.decimals=r?.value?.decimals??null; }catch(e){}
+        try{ const r=await sol('getAccountInfo',[m,{encoding:'jsonParsed'}]);
+             const i=r?.value?.data?.parsed?.info;
+             o.mintAuthority=i?.mintAuthority??null; o.freezeAuthority=i?.freezeAuthority??null; }catch(e){}
+        try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m,12000);
+             const hit=Array.isArray(js)?js.find(t=>t.id===m):(Array.isArray(js&&js.tokens)?js.tokens.find(t=>t.id===m):null);
+             if(hit){ o.name=hit.name??null; o.symbol=hit.symbol??null;
+                      o.verified=hit.isVerified??null; o.tags=hit.tags??null; o.holders=hit.holderCount??null; } }catch(e){}
+        o.at=Date.now();
+        mintInfo[m]=o;
+        await sleep(120);
+      }
+      blockCache.mintInfo=mintInfo;
+      /* A wallet that would not answer is not a wallet that holds nothing. Publishing the short
+         read as the reading is what took the idle total from $43,004 to $26,146 in one pass and
+         wrote the difference into the day's record as a loss. The last complete read is kept
+         instead, with its own timestamp, so the figure is old rather than wrong and the page can
+         say how old. */
+      if(balFailed.length){
+        let prevIdle=null;
+        try{ prevIdle=readJ(OUT+'/balances-'+profile.slug+'.json'); }catch(e){}
+        logErr('balances', new Error(balFailed.length+' wallet(s) would not answer — holding the '
+          +(prevIdle?'last complete read from '+new Date(prevIdle.t).toISOString().slice(11,16)+' UTC':'reading back')));
+        if(prevIdle && Array.isArray(prevIdle.rows) && prevIdle.rows.length){
+          idle={...prevIdle, stale:true, staleWallets:balFailed.length};
+        }
+        console.log('idle balances: held back —',balFailed.length,'wallet(s) unreadable');
+      }else{
+        idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
+               unpriced:rows.filter(r=>r.usd==null).length, mintInfo };
+        writeJ(OUT+'/balances-'+profile.slug+'.json', idle, JSON.stringify(idle,null,1));
+        console.log('idle balances:',rows.length,'rows, $'+idle.totalUsd,'('+idle.unpriced+' unpriced)');
+      }
+    }catch(e){ logErr('balances',e); }
+
+    /* ---- daily snapshot: the raw material for "why did the total move" ----
+       The 15-minute series carries a total and nothing else, so a $3,797 drop over two days can
+       be seen but not explained. Attribution needs, per position, what it held and what those
+       holdings were worth — and the range and liquidity, so the price move can be separated from
+       capital going in or out. Liquidity is not published on the positions, so derive it here
+       from the amounts and the range: for a concentrated position L is exactly recoverable, and
+       storing it once beats every reader re-deriving it.
+
+       One record per day (Budapest), rewritten in place while that day is current, frozen once it is
+       not. A day is the right grain: shorter and the record is noise, longer and a move has too
+       many causes to name. */
+    try{
+      const rec=dailyRecord(evmPositions, solPositions, idle, Date.now());
+      let daily=[];
+      try{ daily=readJ(OUT+'/daily-'+profile.slug+'.json'); }catch(e){}
+      /* Backfill from the 15-minute series for days that predate per-position recording. Those
+         days can carry a total and a change but no attribution, and that is worth saying out
+         loud — a table that starts empty for two days is worse than one that starts honest. */
+      if(!daily.some(x=>x.ps)){
+        const byDay=new Map();
+        for(const h of history){
+          const d=localDay(h.t);
+          if(d===rec.d) continue;                       // today is the live record's job
+          byDay.set(d, {d, t:h.t, v:h.v, f:h.f, ps:null});   // last sample of each day wins
+        }
+        const have=new Set(daily.map(x=>x.d));
+        const seeded=[...byDay.values()].filter(x=>!have.has(x.d));
+        if(seeded.length){
+          daily=[...seeded,...daily].sort((x,y)=>x.d<y.d?-1:1);
+          console.log('daily: backfilled',seeded.length,'value-only day(s) from the history series');
+        }
+      }
+      /* Never overwrite a finished day with a degraded read: a cycle that lost a chain would
+         otherwise rewrite today as if those positions had closed, and the next day's attribution
+         would report a phantom withdrawal followed by a phantom deposit. */
+      /* Wallet balances are half of what a day record explains, so a carried-forward idle read
+         disqualifies the day just as a lost chain does — otherwise today is frozen against
+         yesterday's wallets and tomorrow reports the catch-up as a deposit. */
+      const chainsOk=Object.values(chainStatus).every(v=>v==='ok') && !(idle&&idle.stale);
+      const last=daily[daily.length-1];
+      if(chainsOk){
+        if(last && last.d===rec.d) daily[daily.length-1]=rec; else daily.push(rec);
+        if(daily.length>120) daily=daily.slice(-120);
+        /* One record per line. This file is committed every 15 minutes and only its last entry
+           changes; as a single line that is a whole-file rewrite in every diff, and at ~2 KB a
+           day the repository pays for that ninety-six times daily. */
+        writeJ(OUT+'/daily-'+profile.slug+'.json', null,
+          '[\n'+daily.map(r=>JSON.stringify(r)).join(',\n')+'\n]\n');
+      }else{
+        console.log('daily: skipped, chainStatus', JSON.stringify(chainStatus));
+      }
+      /* The whole portfolio day by day, for the history chart's TOTAL view before the fifteen-
+         minute series carried wallets and NFTs: each day's LP value and unclaimed fees, and its
+         wallet holdings at that day's prices. NFTs were not recorded then and are not invented. */
+      totalDays=daily.filter(x=>Array.isArray(x.w)).map(x=>({t:x.t, lp:r2((x.v||0)+(x.f||0)), w:r2(x.w.reduce((a,e)=>a+(e.a||0)*(e.u||0),0))}));
+      /* Net tokens traded: sold or bought BY the pools, as opposed to deposited or withdrawn.
+
+         This is the figure that says whether an exit is actually happening. Value and fees are
+         snapshots; this is direction of travel, and for a token whose only liquidity is your own
+         it is the difference between a position you are working out of and one that is quietly
+         growing.
+
+         A position whose liquidity is identical in two day records moved tokens for exactly one
+         reason: somebody traded against it. Positions whose liquidity changed in the window are
+         dropped rather than guessed at — counting a withdrawal as a sale would make an exit look
+         like it was working — and how many were dropped rides along so the reader knows the
+         coverage. Computed here for the same reason the attribution below is: the per-position
+         day records live on the server and never reach the payload. */
+      try{
+        const hist=[...daily.filter(x=>x.d!==rec.d && Array.isArray(x.ps)), rec];
+        if(hist.length>=2){
+          const last=hist[hist.length-1];
+          const amtOf=(p,k)=> p.k0===k ? p.a0 : (p.k1===k ? p.a1 : null);
+          const keys=new Set();
+          for(const p of (last.ps||[])){ if(p.k0) keys.add(p.k0); if(p.k1) keys.add(p.k1); }
+          const out={};
+          for(const w of [1,7,30]){
+            const want=new Date(Date.parse(last.d+'T00:00:00Z')-w*86400000).toISOString().slice(0,10);
+            let base=null;
+            for(let i=hist.length-2;i>=0;i--){ base=hist[i]; if(hist[i].d<=want) break; }
+            if(!base||base.d===last.d) continue;
+            const A=new Map((base.ps||[]).map(p=>[String(p.i),p]));
+            for(const k of keys){
+              let net=0, used=0, moved=0;
+              for(const b of (last.ps||[])){
+                if(amtOf(b,k)==null) continue;
+                const a=A.get(String(b.i));
+                if(!a){ moved++; continue; }
+                if(!(a.L>0&&b.L>0) || Math.abs(b.L/a.L-1)>1e-9){ moved++; continue; }
+                const qa=amtOf(a,k), qb=amtOf(b,k);
+                if(qa==null||qb==null) continue;
+                net+=qb-qa; used++;
+              }
+              for(const a of (base.ps||[])) if(amtOf(a,k)!=null && !(last.ps||[]).some(b=>String(b.i)===String(a.i))) moved++;
+              if(!used) continue;
+              out[k]=out[k]||{};
+              out[k][w]={net:r6(net), used, moved, from:base.d, to:last.d};
+            }
+          }
+          if(Object.keys(out).length) tokenFlow=out;
+        }
+      }catch(e){ logErr('tokenFlow',e); }
+      /* The count itself, day by day, for tokens the portfolio is actually exposed to. The flow
+         figure above says how many moved through trading; this says how many there are, which is
+         the number somebody working out of a position is trying to push down. Split into pooled
+         and loose because they are not the same thing to sell: one needs unwinding first.
+
+         Same reason as everything else in this block — the per-position day records are the
+         input and they never reach the payload. Ninety days, two decimals, and only tokens that
+         appear in a live position, which keeps it to a few kilobytes. */
+      const NATIVE_OF={['sol:'+SOL_MINT.toLowerCase()]:'sol:native',
+                       ['evm:'+CHAINS.ethereum.weth]:'evm:native'};
+      try{
+        const keep=new Set();
+        for(const p of (rec.ps||[])){ if(p.k0) keep.add(p.k0); if(p.k1) keep.add(p.k1); }
+        const days=[...daily.filter(x=>x.d!==rec.d && Array.isArray(x.ps)), rec].slice(-90);
+        const out={};
+        for(const k of keep){
+          const pts=[];
+          for(const day of days){
+            let pooled=0, seen=false;
+            for(const p of (day.ps||[])){
+              if(p.k0===k){ pooled+=p.a0||0; seen=true; }
+              else if(p.k1===k){ pooled+=p.a1||0; seen=true; }
+            }
+            /* Native SOL and wrapped SOL are one asset to anybody counting what they hold,
+               and the wallet strip keys them apart. Leaving them apart made the SOL line read
+               49 pooled and nothing loose on a day 16.65 SOL was sitting in the wallet — which
+               is the wrong answer for the one series a trader converting INTO SOL watches. */
+            let idle=0;
+            for(const wk of [k, NATIVE_OF[k]]){
+              if(!wk) continue;
+              const wi=(day.w||[]).find(x=>x.k===wk);
+              if(wi) idle+=wi.a||0;
+            }
+            if(!seen && !idle) continue;               // not held that day — no point to plot
+            pts.push({d:day.d, p:r2(pooled), i:r2(idle)});
+          }
+          if(pts.length>=2) out[k]=pts;
+        }
+        if(Object.keys(out).length) tokenSeries=out;
+      }catch(e){ logErr('tokenSeries',e); }
+      /* CASH BANKED — wallet-held stablecoins against everything owned, day by day.
+         Wallet-held only, and deliberately so: a stablecoin sitting in a CPOOL/USDT pool is
+         not cash, it is a standing order to buy CPOOL back, and counting it would report an
+         exit that has not happened. Proceeds only register here once they are left alone.
+
+         Staked stablecoins do count. A receipt for a deposited dollar is still a dollar, and
+         it is worth MORE than one by design — sDAI, sUSDe and jlUSDT accrue their yield into
+         the price — so a strict peg test would throw out precisely the holdings of somebody
+         who parked their cash sensibly. A bare dollar has to hold its peg; a receipt is
+         allowed to sit above it. Anything that reads like a dollar and fails both is listed
+         rather than dropped, because a depegged stablecoin is news, not an absence.
+
+         Each day is valued at that day's own prices, which the records already carry. */
+      try{
+        const BARE=/^(usdt|usdc|dai|usde|pyusd|fdusd|tusd|usds|usdp|gusd|lusd|usdd|frax)$/i;
+        const LOOKS=/usd|dai/i;
+        const isStable=(sym,px)=>{
+          if(!sym || !(px>0) || !LOOKS.test(sym)) return false;
+          return BARE.test(sym) ? Math.abs(px-1)<0.05 : (px>=0.9 && px<=2.5);
+        };
+        const days=[...daily.filter(x=>x.d!==rec.d && (Array.isArray(x.ps)||Array.isArray(x.w))), rec].slice(-90);
+        const pts=[];
+        for(const day of days){
+          const w=day.w||[], ps=day.ps||[];
+          if(!w.length && !ps.length) continue;
+          let st=0, tot=0;
+          for(const x of w){
+            const v=(x.a||0)*(x.u||0);
+            tot+=v;
+            if(isStable(x.s, x.u)) st+=v;
+          }
+          for(const q of ps) tot+=(q.a0||0)*(q.u0||0)+(q.a1||0)*(q.u1||0);
+          if(!(tot>0)) continue;
+          pts.push({d:day.d, st:r2(st), tot:r2(tot)});
+        }
+        if(pts.length>=2){
+          stableSeries=pts;
+          /* Today's near-misses, so a dollar that broke its peg is visible as a broken dollar
+             rather than as money that quietly stopped existing. */
+          const off=[];
+          for(const x of (rec.w||[])){
+            if(x.s && LOOKS.test(x.s) && !isStable(x.s, x.u) && (x.a||0)*(x.u||0)>1)
+              off.push({s:x.s, u:x.u, usd:r2((x.a||0)*(x.u||0))});
+          }
+          if(off.length) stableOff=off;
+        }
+      }catch(e){ logErr('stableSeries',e); }
+      /* DEPOSITED, reconstructed from the daily snapshots where the chain cannot say.
+
+         The EVM side reads a cost basis from mint and increase events. Raydium has no
+         equivalent here yet, so every Solana position carried costUsd:null — and the
+         head-to-head matrix's FEES / $1K / DAY divides lifetime fees by what was put in, which
+         left the column blank for all six Solana rows and made the panel useless for the one
+         comparison it exists to serve.
+
+         The snapshots can answer it for any position whose whole life is on file: liquidity
+         going up is a deposit, valued at that day's prices. Gross deposits, not reduced by
+         withdrawals, because that is what costUsd means on the EVM side and one column cannot
+         hold two definitions — #… gave away the difference, a 40% withdrawal that a
+         net-of-withdrawals basis scaled down and the real figure did not.
+
+         Checked against the four positions that have a true basis: within 1.0%, 1.0%, 2.0% and
+         2.4% of it. The gap is intra-day price drift, which daily granularity cannot see, so
+         the page marks these as approximate.
+
+         A position already open on the first day on file cannot be reconstructed at all and
+         stays blank rather than being handed a number that is really a guess. */
+      try{
+        const ds=[...daily.filter(x=>Array.isArray(x.ps) && x.ps.length), rec].slice(-120);
+        if(ds.length>=2){
+          const firstD=ds[0].d, st=new Map();
+          for(const day of ds){
+            for(const q of (day.ps||[])){
+              const L=Number(q.L)||0;
+              if(!q.i || !(L>0)) continue;
+              let e=st.get(q.i);
+              if(!e) st.set(q.i, e={first:day.d, gross:0, L:0});
+              if(L>e.L){
+                const val=(q.a0||0)*(q.u0||0)+(q.a1||0)*(q.u1||0);
+                e.gross += e.L>0 ? val*(1-e.L/L) : val;
+              }
+              e.L=L;
+            }
+          }
+          const today=Date.parse(rec.d+'T00:00:00Z');
+          for(const pos of [...evmPositions, ...solPositions]){
+            if(pos.costUsd!=null) continue;
+            const e=st.get(String(pos.id));
+            if(!e || e.first===firstD || !(e.gross>0)) continue;
+            const covered=(today-Date.parse(e.first+'T00:00:00Z'))/86400000 + 2;
+            if(pos.ageDays!=null && pos.ageDays>covered) continue;   // older than the record can see
+            pos.basisUsd=r2(e.gross); pos.basisFrom=e.first;
+          }
+        }
+      }catch(e){ logErr('basisFromDaily',e); }
+      /* ---- Solana: the exact cost basis, and the P&L that follows from it ----
+         Same definitions as the EVM side, so the two sit in one column without a footnote:
+         deposits valued when they were made; principal taken back and fees paid, valued now;
+         P&L is what the position and everything it returned are worth today against what went
+         in. Only a history that reached the opening and priced every deposit is used — a
+         partial one would state a cost basis that is simply too small. Where it is not yet
+         complete, the snapshot reconstruction above stays in place and says it is approximate. */
+      try{
+        if(solLedgerItems.length){
+          const STABLE=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
+          const isAnchor=m=>m===SOL_MINT||STABLE.has(m);
+          const hourPx={};
+          const anchorUsd=async(m,t)=>{
+            if(STABLE.has(m)) return 1;
+            if(m!==SOL_MINT || !t) return null;
+            const h=Math.floor(t/3600)*3600;
+            if(!(h in hourPx)){ const r=await llamaHistorical(['coingecko:solana'],h); hourPx[h]=r['coingecko:solana']??null; }
+            return hourPx[h];
+          };
+          const dayPx={};
+          const note=(k,d,u)=>{ if(k&&u>0) (dayPx[k]=dayPx[k]||{})[d]=u; };
+          for(const day of daily){
+            for(const x of (day.w||[])) note(x.k,day.d,x.u);
+            for(const q of (day.ps||[])){ note(q.k0,day.d,q.u0); note(q.k1,day.d,q.u1); }
+          }
+          const dailyUsd=(m,t)=>{ const k='sol:'+String(m).toLowerCase(), d=new Date(t*1000).toISOString().slice(0,10);
+                                  return (dayPx[k]&&dayPx[k][d])||null; };
+          await valueDeposits(solLedgerItems.map(x=>({pos:x.pos,st:x.st})), {anchorUsd, dailyUsd, isAnchor});
+          for(const {p,pos,st} of solLedgerItems){
+            const h=summarizeLedger(st,pos);
+            p.hist={n:h.n, complete:h.complete, balanced:h.balanced, unpriced:h.unpriced, queued:(st.todo||[]).length,
+                    lost:st.lost||0, priced:h.src};
+            /* A history that is complete but does not balance against the chain is wrong somewhere,
+               and a cost basis built on it would be stated with a confidence it has not earned.
+               The discrepancy is published so it can be looked at, and nothing else is. */
+            if(h.complete && h.liqKnown && !h.balanced && h.liqNow!=null)
+              p.hist.liqGap=(h.liqNow-h.liq).toString();
+            if(!h.balanced || h.costUsd==null || !(h.costUsd>0) || p.usd0==null || p.usd1==null) continue;
+            p.costUsd=r2(h.costUsd); p.roiMode='entry';
+            delete p.basisUsd; delete p.basisFrom;
+            p.depAmt=h.dep.map(x=>+x.toPrecision(10)); p.wdAmt=h.wd.map(x=>+x.toPrecision(10)); p.feeAmt=h.fee.map(x=>+x.toPrecision(10));
+            const wdNow=h.wd[0]*p.usd0+h.wd[1]*p.usd1;
+            p.feesLifeUsd=r2(h.fee[0]*p.usd0+h.fee[1]*p.usd1+(p.feesUsd||0));
+            p.roiPct=((p.valueUsd||0)+wdNow+p.feesLifeUsd-p.costUsd)/p.costUsd*100;
+            p.hodlNowUsd=h.dep[0]*p.usd0+h.dep[1]*p.usd1;
+            p.ilUsd=(p.valueUsd||0)+wdNow-p.hodlNowUsd;
+            p.lpVsHodlUsd=p.ilUsd+p.feesLifeUsd;
+            if(h.first && !p.openExact){ p.mintTs=h.first*1000; p.ageDays=(Date.now()-p.mintTs)/86400000; }
+            /* Lifetime, not "since this bot started watching": the history reaches the opening,
+               so the fee rate no longer has to be annualised over a partial window. */
+            if(p.ageDays>0.05){ p.feeAprPct=(p.feesLifeUsd/p.costUsd)*(365/p.ageDays)*100; p.feesPartial=false; }
+          }
+        }
+      }catch(e){ logErr('solLedger',e); }
+      /* IL at month end covers every position. The fee ledger records it before the Solana
+         positions have theirs (worked out just above), so it is restated here and written back,
+         and the month's archive — taken from this figure at the boundary — gets the whole of it. */
+      try{
+        const il=Math.round([...evmPositions,...solPositions].reduce((a,q)=>a+(q.ilUsd||0),0)*100)/100;
+        if(feeMonth){ feeMonth.ilNow=il; }
+        const fp=OUT+'/fees-'+profile.slug+'.json';
+        const F=readJ(fp); if(F.lastIl!==il){ F.lastIl=il; writeJ(fp, F, JSON.stringify(F,null,1)); }
+      }catch(e){ if(e.code!=='ENOENT') logErr('ilNow',e); }
+      /* Attribute here, not in the browser. The full per-position records are 2 KB a day — 35 of
+         them would more than double a payload that has to reach a phone every 15 minutes. The
+         answers are 300 bytes a day, they are identical for every reader, and computing them
+         once against the full-resolution record beats recomputing them everywhere against a
+         truncated one. The detailed file stays on the server, so this can be recomputed later. */
+      /* Every place this portfolio touches a ticker: LP positions and wallet balances alike.
+         A symbol reached by more than one contract needs disambiguating wherever it is printed,
+         and the price each one carries is what makes the case that they are not the same asset. */
+      const symKeys=new Map();
+      {
+        const add=(sym,ch,addr,px)=>{
+          if(!sym) return;
+          const k=(ch==='sol'?'sol':'evm')+':'+String(addr||sym).toLowerCase();
+          const list=symKeys.get(sym)||[];
+          const hit=list.find(x=>x.k===k);
+          if(hit){ if(hit.px==null) hit.px=px; } else list.push({k, ch:ch==='sol'?'sol':'evm', addr:String(addr||''), px});
+          symKeys.set(sym,list);
+        };
+        for(const p2 of [...evmPositions,...solPositions]){
+          const sol=p2.chain==='sol';
+          add(p2.m0?.symbol, sol?'sol':'evm', sol?p2.mint0:p2.token0, p2.usd0);
+          add(p2.m1?.symbol, sol?'sol':'evm', sol?p2.mint1:p2.token1, p2.usd1);
+        }
+        for(const r of (idle?.rows||[]))
+          add(r.symbol, r.chain==='sol'?'sol':'evm', r.addr, (r.usd!=null&&r.amount)?r.usd/r.amount:null);
+      }
+      const CHAIN_NAME={sol:'Solana', evm:'Ethereum'};
+      /* Distinguish the tokens the market distinguishes, and no others. Address equality is the
+         wrong test: WETH and native ETH sit at different addresses and are one asset, while
+         Ethereum CPOOL and Solana CPOOL share a ticker and trade 2.2x apart. Price is the test
+         that separates those two cases. */
+      const tokLabel=(k, sym)=>{
+        const list=symKeys.get(sym)||[];
+        if(list.length<2) return sym;
+        const me=list.find(x=>x.k===k);
+        if(!(me&&me.px>0)) return sym;
+        const distinct=list.filter(x=>x.k===k || (x.px>0 && Math.abs(x.px/me.px-1)>0.05));
+        if(distinct.length<2) return sym;
+        const ch=k.split(':')[0], addr=k.slice(ch.length+1);
+        let out=sym;
+        if(new Set(distinct.map(x=>x.ch)).size>1) out+=' ('+(CHAIN_NAME[ch]||ch)+')';
+        /* two genuinely different contracts on one chain still need the address to tell apart */
+        if(distinct.filter(x=>x.ch===ch).length>1 && addr && addr.length>6) out+=' ·'+addr.slice(-4);
+        return out;
+      };
+      const amtsAt=(L,P,A,B)=>{
+        if(!(L>0&&P>0&&A>0&&B>0&&B>A)) return null;
+        const sP=sq(P), sA=sq(A), sB=sq(B);
+        if(P<=A) return [L*(1/sA-1/sB), 0];
+        if(P>=B) return [0, L*(sB-sA)];
+        return [L*(1/sP-1/sB), L*(sP-sA)];
+      };
+      const attrib=(y,t)=>{
+        /* vPrev/dPrev belong to every move, not only the ones that can be itemised. The value
+           tile measures the day's change against them, and a day whose breakdown is missing still
+           has a perfectly good previous close — leaving them off the no-detail branch silently
+           cost the tile its day-over-day line. */
+        const base={ d:t.d, t:t.t, v:t.v, dV:r2((t.v||0)-(y.v||0)), vPrev:y.v, dPrev:y.d,
+                     days:Math.max(1,Math.round((t.t-y.t)/86400000)) };
+        if(!y.ps || !t.ps) return {...base, noDetail:true};
+        const my=new Map(y.ps.map(x=>[x.i,x])), mt=new Map(t.ps.map(x=>[x.i,x]));
+        const tok=new Map(); let price=0, flow=0, exact=true;
+        const opened=[], closed=[];
+        for(const [id,a] of my){
+          const b=mt.get(id);
+          if(!b){ closed.push({n:a.n||id, usd:r2(-(a.v||0))}); continue; }
+          let hyp=amtsAt(a.L, b.pr, a.pl, a.pu);
+          if(!hyp){ hyp=[a.a0,a.a1]; exact=false; }
+          const vHyp=hyp[0]*(b.u0||0)+hyp[1]*(b.u1||0);
+          price += vHyp-(a.v||0);
+          flow  += (b.v||0)-vHyp;
+          const put=(key,sym,vy,vt,px)=>{ const e=tok.get(key)||{sym,vy:0,vt:0,px:null};
+            e.vy+=vy; e.vt+=vt; if(e.px==null) e.px=px; tok.set(key,e); };
+          put(a.k0||('?:'+a.s0), a.s0, (a.a0||0)*(a.u0||0), (a.a0||0)*(b.u0||0), b.u0);
+          put(a.k1||('?:'+a.s1), a.s1, (a.a1||0)*(a.u1||0), (a.a1||0)*(b.u1||0), b.u1);
+        }
+        for(const [id,b] of mt) if(!my.has(id)) opened.push({n:b.n||id, usd:r2(b.v||0)});
+        /* Two contracts the feed prices identically collapse to the same label, and two lines
+           reading "LCX" with different numbers is worse than one line reading LCX. Group on the
+           label so what is printed is what was measured. */
+        const byLabel=new Map();
+        for(const [k,e] of tok){
+          const lbl=tokLabel(k, e.sym);
+          const g=byLabel.get(lbl)||{lbl, s:e.sym, k, vy:0, vt:0, px:e.px};
+          g.vy+=e.vy; g.vt+=e.vt; byLabel.set(lbl,g);
+        }
+        const tokens=[...byLabel.values()].map(g=>({s:g.s, lbl:g.lbl, usd:r2(g.vt-g.vy),
+            pct:g.vy>0?Math.round((g.vt/g.vy-1)*1000)/10:null, _k:g.k, _px:g.px}))
+          .filter(x=>Math.abs(x.usd)>=0.5).sort((x,z)=>Math.abs(z.usd)-Math.abs(x.usd));
+        /* State the blast radius. A price that moved on one chain says nothing about the same
+           ticker elsewhere, and the reader needs to know which of their holdings it touched —
+           and which it did not. */
+        const elsewhere=[];
+        for(const t2 of tokens){
+          for(const o of (symKeys.get(t2.s)||[])){
+            if(o.k===t2._k || o.px==null || !(t2._px>0)) continue;
+            /* Only a quote that genuinely differs is worth a warning. Wrapped natives resolve to
+               a different address than the native token and would otherwise be flagged as a
+               separate market — WETH is not a separate market from ETH. Nor are LCX's two
+               contracts while the feed prints one price for both: that ambiguity is real, but it
+               is the playbook's to raise, and repeating it on every daily move is noise. */
+            if(Math.abs(o.px/t2._px-1) <= 0.05) continue;
+            elsewhere.push({s:t2.s, from:t2.lbl, to:tokLabel(o.k,t2.s), px:Number(o.px.toPrecision(5))});
+          }
+        }
+        /* Same arithmetic, applied to what is held rather than pooled: yesterday's balance
+           revalued at today's price. A balance that changed in between is a transfer, not a
+           price move, so report it as unattributed rather than folding it into the token line. */
+        let wallet=null;
+        if(Array.isArray(y.w) && y.w.length){
+          const pxNow=new Map((t.w||[]).map(x=>[x.k,x.u]));
+          for(const [k,e] of tok) if(e.px>0 && !pxNow.has(k)) pxNow.set(k, e.px);
+          const amtNow=new Map((t.w||[]).map(x=>[x.k,x.a]));
+          const rowsW=new Map(); let moved=0, transfer=0;
+          for(const h of y.w){
+            const u2=pxNow.get(h.k);
+            if(u2==null || !(h.u>0)) continue;
+            const usd=h.a*(u2-h.u);
+            moved+=usd;
+            const an=amtNow.get(h.k);
+            if(an!=null) transfer+=(an-h.a)*u2;
+            const lbl=tokLabel(h.k, h.s);
+            const g=rowsW.get(lbl)||{lbl, vy:0, vt:0};
+            g.vy+=h.a*h.u; g.vt+=h.a*u2; rowsW.set(lbl,g);
+          }
+          const tw=[...rowsW.values()].map(g=>({lbl:g.lbl, usd:r2(g.vt-g.vy),
+              pct:g.vy>0?Math.round((g.vt/g.vy-1)*1000)/10:null}))
+            .filter(x=>Math.abs(x.usd)>=0.5).sort((x,z)=>Math.abs(z.usd)-Math.abs(x.usd));
+          if(tw.length) wallet={tokens:tw, total:r2(moved), transfer:r2(transfer)};
+        }
+        for(const t2 of tokens){ delete t2._k; delete t2._px; }
+        return {...base, tokens, elsewhere, wallet, rebal:r2(price-tokens.reduce((s2,x)=>s2+x.usd,0)), flow:r2(flow),
+                opened, closed, exact,
+                /* Fees earned between the two records, from the fee ledger's running total — the
+                   same record as FEES EARNED and FEE PULSE. The difference of lifetime-fee sums
+                   it replaces re-priced old fees and dropped closed positions' fees. Where the
+                   ledger's readings do not reach back to the older record, nothing is said. */
+                dFees:(()=>{ const tk=feeMonth&&feeMonth.ticks;
+                  if(!tk||tk.length<2||!t.t||!y.t||y.t<tk[0][0]) return null;
+                  const at=ms=>{ if(ms>=tk[tk.length-1][0]) return tk[tk.length-1][1];
+                    for(let i=1;i<tk.length;i++) if(tk[i][0]>=ms) return tk[i-1][1]+(tk[i][1]-tk[i-1][1])*(ms-tk[i-1][0])/(tk[i][0]-tk[i-1][0]);
+                    return null; };
+                  const a=at(y.t), b=at(t.t); return (a!=null&&b!=null)?r2(b-a):null; })()};
+      };
+      const moves=[];
+      for(let i=1;i<daily.length;i++) moves.push(attrib(daily[i-1], daily[i]));
+      /* Only the itemised block reads the wallet breakdown and the divergent-quote note, and it
+         only ever shows the newest day. Carrying both on all 35 would nearly double the payload
+         to render a table row that never looks at them. Three covers the case where the newest
+         day has no detail to itemise. */
+      profileDaily = moves.slice(-35).map((m,i,arr)=>
+        i>=arr.length-3 ? m : (({wallet, elsewhere, ...rest})=>rest)(m));
+
+      /* Per-token day-over-day price change, keyed the same way everything else here is keyed.
+         The idle panel needs it per row, and a row is a contract, not a ticker — CPOOL fell 31%
+         on Solana and 1% on Ethereum on the same day, so one number per symbol would be wrong on
+         one of those lines. Measured from the same reference the value tile uses: the close of
+         the most recent day that is not today. */
+      const baseDay=[...daily].reverse().find(r=>r.d!==rec.d && r.ps);
+      if(baseDay){
+        const then=new Map();
+        for(const h of (baseDay.w||[])) if(h.u>0) then.set(h.k, h.u);
+        for(const q of (baseDay.ps||[])){
+          if(q.u0>0 && !then.has(q.k0)) then.set(q.k0, q.u0);
+          if(q.u1>0 && !then.has(q.k1)) then.set(q.k1, q.u1);
+        }
+        const now=new Map();
+        for(const h of (rec.w||[])) if(h.u>0) now.set(h.k, h.u);
+        for(const q of (rec.ps||[])){
+          if(q.u0>0 && !now.has(q.k0)) now.set(q.k0, q.u0);
+          if(q.u1>0 && !now.has(q.k1)) now.set(q.k1, q.u1);
+        }
+        const chg={};
+        for(const [k,u0] of then){
+          const u1=now.get(k);
+          if(u1>0 && u0>0) chg[k]=Math.round((u1/u0-1)*1000)/10;
+        }
+        if(Object.keys(chg).length) profilePxChg={from:baseDay.d, chg};
+      }
+    }catch(e){ logErr('daily',e); }
+    /* Last, and never allowed to take the payload down with it: this is context, not a figure
+       anything else is computed from. A chain that would not answer leaves the section absent,
+       which the panel renders as absent rather than as a zero share. */
+    let competition=null;
+    try{ competition=await buildCompetition(evmPositions, solPositions); }
+    catch(e){ logErr('competition', e); }
+
+    /* A position's own fee figures without what the owner's own swaps paid into it. Done last: the
+       fee ledger reads the gross figures run to run and takes its own-swap share out separately. */
+    for(const p of [...evmPositions,...solPositions]){
+      const sb=selfPos[p.id]; if(!(sb>0.005)) continue;
+      const F=p.feesLifeUsd??p.feesEverUsd;
+      p.feesSelfUsd=r2(sb);
+      if(p.feesLifeUsd!=null) p.feesLifeUsd=r2(p.feesLifeUsd-sb);
+      if(p.feesEverUsd!=null) p.feesEverUsd=r2(p.feesEverUsd-sb);
+      if(p.roiPct!=null && p.costUsd>0) p.roiPct-=sb/p.costUsd*100;
+      if(p.lpVsHodlUsd!=null) p.lpVsHodlUsd-=sb;
+      if(p.feeAprPct!=null && F>0) p.feeAprPct*=Math.max(0,F-sb)/F;
+    }
+    /* ---- NFTs held across the wallets, by collection, with the market floor where one is known.
+       Every six hours (collections move slowly, the sources are rate-limited), sooner when the
+       wallet list changed. Only collections and counts travel, never a wallet or an item. ---- */
+    let nfts=null;
+    try{
+      const nftW=[...(profile.wallets||[]),...(profile.altWallets||[])].filter(w=>['solana','ethereum','sui'].includes(w.chain));
+      let prevN=null; try{ prevN=(readJ(OUT+'/data-'+profile.slug+'.json')||{}).nfts||null; }catch(e){}
+      // a read where some wallet did not answer is tried again after half an hour, not six
+      const partial=prevN&&Object.values(prevN.read||{}).some(v=>v[0]<v[1]);
+      // read again at once when an OpenSea key appears (or goes), not six hours later
+      // (and at once after a change to how they are read: v2 lists LP receipts without a value, v3 counts kiosks)
+      if(prevN && prevN.t && prevN.v===3 && Date.now()-prevN.t<(partial?1800e3:6*3600e3) && prevN.nW===nftW.length && !!prevN.os===openseaOn()) nfts=prevN;
+      else { const solUsd=(tickers||[]).find(t=>t.sym==='SOL')?.usd ?? null;
+             nfts={...nftSummary(await scanNfts(nftW,{sol:solUsd, eth:ethUsd})), nW:nftW.length, os:openseaOn()};
+             nfts.suiScan=nfts.cols.filter(c=>c.chain==='sui'); }
+    }catch(e){ logErr('nfts',e); }
+    /* Sui NFTs as TradePort prices them, and the Ink Sack record: read once a day (sui-daily.json).
+       While that read is under two days old it stands in for the chain's own Sui list, which has
+       no prices; past that the chain's list (counts only) comes back rather than a stale price. */
+    let ink=null;
+    try{
+      let sd=null; try{ sd=readJ(OUT+'/sui-daily.json'); }catch(e){}
+      const fresh=sd && sd.tp && sd.tp.ok && Date.now()-sd.t<48*3600e3;
+      await llamaPrices(['coingecko:sui','sui:'+IKA_TYPE]);
+      const suiUsd=priceCache['coingecko:sui'] ?? (sd&&sd.tp&&sd.tp.rate) ?? null, ikaUsd=priceCache['sui:'+IKA_TYPE] ?? null;
+      if(nfts){
+        const rest=(nfts.cols||[]).filter(c=>c.chain!=='sui');
+        let suiCols=nfts.suiScan||(nfts.suiFrom?[]:(nfts.cols||[]).filter(c=>c.chain==='sui'));
+        if(fresh){ const by={};
+          for(const w of sd.tp.wallets) if(w.ok) for(const c of w.cols){
+            const e=by[c.id]||(by[c.id]={chain:'sui', key:'tp:'+c.id, name:c.title||c.slug||null, slug:c.slug||null, type:c.type||null, n:0, floor:c.floor, unit:'SUI', src:'tradeport', spam:false, lp:false, wallets:0});
+            e.n+=c.n; e.wallets++; }
+          suiCols=Object.values(by).map(c=>{ const fu=c.floor!=null&&suiUsd!=null?c.floor*suiUsd:null; return {...c, floorUsd:fu, valueUsd:fu!=null?Math.round(fu*c.n*100)/100:null}; }); }
+        const cols=[...rest,...suiCols].sort((a,b)=>(b.valueUsd??-1)-(a.valueUsd??-1)||b.n-a.n);
+        nfts={...nfts, cols, suiFrom:fresh?'tradeport':'chain', suiT:fresh?sd.t:null,
+          totalUsd:Math.round(cols.filter(c=>!c.lp).reduce((a,c)=>a+(c.valueUsd||0),0)*100)/100};
+        /* Each collection's floor once per day (Budapest), 120 days kept: the page draws the trend
+           and raises an alert on a sharp move. */
+        const H=blockCache.nftHist=blockCache.nftHist||{}, day=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Budapest'});
+        for(const c of cols){ if(c.lp||!(c.floor>0)) continue; const k=c.chain+':'+c.key, h=H[k]=H[k]||[];
+          const pt=[day, c.floor, c.floorUsd!=null?Math.round(c.floorUsd*100)/100:null];
+          if(h.length&&h[h.length-1][0]===day) h[h.length-1]=pt; else h.push(pt);
+          if(h.length>120) h.splice(0,h.length-120); }
+        nfts.hist=Object.fromEntries(cols.filter(c=>!c.lp&&H[c.chain+':'+c.key]).map(c=>[c.chain+':'+c.key, H[c.chain+':'+c.key].slice(-31)]));
+      }
+      if(sd && Array.isArray(sd.ink) && sd.ink.length) ink={t:sd.t, wallets:sd.ink, px:{sui:suiUsd, ika:ikaUsd}};
+    }catch(e){ logErr('suiDaily',e); }
+    /* This pass's history point also carries what the wallets hold (idle, staked, lent, less what
+       is owed) and the NFTs at floor, so the history chart can show the whole portfolio. */
+    if(histPushed && history.length){
+      const h=history[history.length-1];
+      if(idle && idle.totalUsd!=null){ h.i=Math.round(idle.totalUsd*100)/100; if(idle.stale) h.is=1; }
+      if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
+      try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
+    }
+    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+      eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors] };
+    for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
+    writeJ(OUT+'/data-'+profile.slug+'.json', data);
+    if(cfgProfile===CONFIG.profiles[0]) writeJ(OUT+'/data.json', data);
+    console.log('profile',profile.slug,':',evmPositions.length,'evm +',solPositions.length,'sol · errors:',errors.length);
+  }
+  try{ writeJ(OUT+'/blockcache.json', blockCache); }catch(e){}
+  /* What this pass cost, measured. */
+  try{ console.log('rpc sol live', JSON.stringify(solLive.stats)); console.log('rpc sol archive', JSON.stringify(solArchive.stats)); }catch(e){}
+};
+/* Run only when this file IS the entry point. The backfill imports dailyRecord from here, and
+   an unguarded call would have it fetch the whole portfolio as a side effect of an import. */
+if(process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+{ quietLogs(); main().catch(e=>{ console.error('FATAL',e); process.exit(1); }); }

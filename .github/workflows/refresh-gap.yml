@@ -1,0 +1,71 @@
+# Independent backup route for the data refresh.
+#
+# refresh.yml carries the load, but its schedule is at GitHub's discretion and GitHub has been
+# firing it about twice a day against a fifteen-minute cron. A single schedule is therefore a
+# single point of failure with no recourse. This workflow is scheduled separately, so it is
+# subject to its own throttling rather than the same decision, and it fills gaps the primary
+# leaves.
+#
+# It is deliberately cheap. The first step reads the published payload's own timestamp and stops
+# the job when the data is already fresh, which is the normal case and costs a few seconds of
+# runner time. Only genuinely stale data causes it to do any work.
+#
+# Its concurrency group is its own: sharing the primary's would mean queueing behind a job that
+# runs for five hours, which is exactly the situation it exists to rescue.
+name: refresh-gap
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+    # and one just after the month boundary, on this route too — the two schedules are throttled
+    # independently, so a second ask is a second chance at a tight cut
+    - cron: '8 0 * * *'
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: refresh-gap
+  cancel-in-progress: false
+jobs:
+  gapfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # The watchdog: if no main refresh job is running or waiting, start one. The main job starts
+      # its own successor, but a job that dies outright starts nothing.
+      - name: Make sure the main refresh is running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh run list --workflow refresh.yml --limit 10 --json status --jq '[.[]|select(.status=="in_progress" or .status=="queued" or .status=="pending" or .status=="waiting")]|length' || echo 1)
+          echo "main refresh jobs running or waiting: $n"
+          if [ "$n" = "0" ]; then gh workflow run refresh.yml --ref gh-pages && echo "started one"; fi
+      - name: Refresh only if the data has gone stale
+        # Optional key for the Solana endpoints; empty when the secret is not set.
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          OPENSEA_API_KEY: ${{ secrets.OPENSEA_API_KEY }}
+          # Optional: when set, every published file is sealed (scripts/lock.mjs). Never printed.
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+        run: |
+          STALE_MIN=20
+          AGE=$(node -e "
+            const fs=require('fs');
+            try{
+              const d=JSON.parse(fs.readFileSync('deck-r7k4x9/data-main.json','utf8'));
+              console.log(Math.round((Date.now()-d.t)/60000));
+            }catch(e){ console.log(99999); }   // unreadable payload counts as stale
+          ")
+          echo "published payload is ${AGE} min old (threshold ${STALE_MIN})"
+          if [ "$AGE" -lt "$STALE_MIN" ]; then
+            echo "primary refresh is keeping up — nothing to do"
+            exit 0
+          fi
+          echo "filling the gap"
+          git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
+          node scripts/fetch-data.mjs
+          bash scripts/commit-data.sh

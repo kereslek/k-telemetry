@@ -1,0 +1,31 @@
+# The price-gap alert, audited against the market: the recorder's readings re-read independently
+# from here, every edge recomputed, the bookkeeping checked, and the deck's gap UI clicked through.
+# The log is public: market prices, percentages and pass/fail only.
+name: gap-audit
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      rounds: { description: 'rounds', required: false, default: '6' }
+      spacing: { description: 'seconds between rounds (at least 120)', required: false, default: '240' }
+      page: { description: 'click through the deck (1/0)', required: false, default: '1' }
+permissions:
+  contents: read
+concurrency: { group: gap-audit, cancel-in-progress: false }
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - if: ${{ (github.event.inputs.page || '1') == '1' }}
+        run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: node scripts/gap-audit.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          ROUNDS: ${{ github.event.inputs.rounds || '3' }}
+          SPACING: ${{ github.event.inputs.spacing || '240' }}
+          PAGE: ${{ github.event.inputs.page || '1' }}
