@@ -60,13 +60,15 @@ if(process.env.LOGS==='1'){
   for(let page=1; page<200; page++){ const r=await api('/actions/runs?per_page=100&page='+page); const a=(r.ok&&r.v.workflow_runs)||[]; runs+=a.length;
     for(const x of a){ if(x.status!=='completed'||x.id==+process.env.GITHUB_RUN_ID) continue; if(x.name==='pages build and deployment'){ pages++; continue; } ids.push(x.id); }
     if(a.length<100) break; }
-  let read=0, gone=0, unread=0, logHits=0;
+  let read=0, gone=0, unread=0, empty=0, logHits=0;
   fs.mkdirSync('/tmp/lc',{recursive:true});
   for(const id of ids){
     const r=await api('/actions/runs/'+id+'/logs',true);
     if(!r.ok){ if(r.gone) gone++; else unread++; continue; }
+    if(r.v.length<=22){ empty++; continue; }                     // an empty archive: the run kept no log at all
     fs.writeFileSync('/tmp/lc/l.zip', r.v); let txt='';
-    try{ txt=execFileSync('unzip',['-p','/tmp/lc/l.zip'],{maxBuffer:1<<30}).toString('utf8'); }catch(e){ unread++; continue; }
+    try{ txt=execFileSync('unzip',['-p','/tmp/lc/l.zip'],{maxBuffer:1<<30,stdio:['ignore','pipe','pipe']}).toString('utf8'); }
+    catch(e){ if(/zipfile is empty/.test(String(e.stderr||''))) empty++; else unread++; continue; }
     read++; if(hits(txt)) logHits++; }
   console.log((logHits||unread?'FAIL':'ok  ')+' Actions runs kept: '+runs+' ('+pages+' are Pages builds) · run logs read: '+read+', expired: '+gone+', unreadable: '+unread+' · '+logHits+' with a wallet address');
   bad+=logHits+unread;
