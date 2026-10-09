@@ -1905,17 +1905,38 @@
 /* Always open at the top. Mobile browsers reload a backgrounded tab and then restore the old
    scroll offset, while the panels are still building, so the page landed somewhere in the middle.
    Restoration is switched off, every load starts at the top, and so does a return to the tab after
-   it has sat unseen for ten minutes or more (a short app switch keeps your place). */
+   it has sat unseen for ten minutes or more (a short app switch keeps your place).
+   Switching restoration off is not enough everywhere: a phone browser can still put a reloaded tab
+   back where it was once the page has grown, and the passphrase keyboard can push the page up
+   behind the lock screen. So every open is held at the top until it has finished (the lock and
+   boot screens gone, and three seconds more): any move made by something other than the reader's
+   finger, wheel or keys is undone. The reader's first touch ends the hold at once. */
 (function(){
   const top=()=>{ try{ window.scrollTo(0,0); }catch(e){} };
   try{ if('scrollRestoration' in history) history.scrollRestoration='manual'; }catch(e){}
   let hiddenAt=0; const LONG=10*60*1000;
+  let held=false, user=false, clearAt=0, iv=0;
+  const busy=()=>{ const bs=document.getElementById('bootScreen');
+    return !!(bs&&!bs.classList.contains('hide'))||document.documentElement.classList.contains('vault-on'); };
+  const holding=()=>{ if(!held||user) return false;
+    if(busy()){ clearAt=0; return true; }
+    if(!clearAt) clearAt=Date.now();
+    if(Date.now()-clearAt<3000) return true;
+    held=false; clearInterval(iv); return false; };
+  const check=()=>{ if(holding() && scrollY>0) top(); };
+  const arm=()=>{ if(location.hash) return; held=true; user=false; clearAt=0; top(); clearInterval(iv); iv=setInterval(check,200); };
+  // typing the passphrase is not the reader moving the page
+  const mine=e=>{ const t=e.target; if(t&&t.closest&&t.closest('.lock-screen')) return; user=true; };
+  for(const ev of ['touchstart','pointerdown','wheel','keydown']) addEventListener(ev, mine, {capture:true, passive:true});
+  addEventListener('scroll',check,{passive:true});
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden) hiddenAt=Date.now();
-    else if(hiddenAt && Date.now()-hiddenAt>=LONG){ hiddenAt=0; top(); }
+    else if(hiddenAt && Date.now()-hiddenAt>=LONG){ hiddenAt=0; arm(); }
   });
-  addEventListener('pageshow',ev=>{ if(!ev.persisted) top(); });
+  addEventListener('pageshow',ev=>{ if(ev.persisted) arm(); else top(); });
   addEventListener('load',top);
+  window.ktHoldTop=arm;
+  arm();
 })();
 /* ================================================================
    ARC // LP COMMAND — single-file Uniswap V3 position HUD
@@ -2165,7 +2186,8 @@ function lockScreen(){
         light(12); V.classList.add('good'); go.textContent='ACCESS GRANTED'; st.className='v-st good'; st.textContent='KEY ACCEPTED · OPENING';
         accSend('login');
         if(!reduce){ const wv=document.createElement('div'); wv.className='v-wave'; w.querySelector('.v-dial').append(wv); }
-        setTimeout(()=>{ w.classList.add('open'); document.documentElement.classList.remove('vault-on'); setTimeout(()=>w.remove(), reduce?0:700); done(); }, reduce?0:650);
+        try{ inp.blur(); }catch(err){}                    // the keyboard goes, and the page is put back at the top
+        setTimeout(()=>{ w.classList.add('open'); document.documentElement.classList.remove('vault-on'); try{ window.ktHoldTop&&window.ktHoldTop(); }catch(err){} setTimeout(()=>w.remove(), reduce?0:700); done(); }, reduce?0:650);
       } else {
         tries++; light(0); go.disabled=false; void V.offsetWidth; V.classList.add('bad','shake');
         st.className='v-st bad'; st.textContent='ACCESS DENIED'+(tries>1?' · ATTEMPT '+tries:'');
@@ -2178,7 +2200,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v39.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v39.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [

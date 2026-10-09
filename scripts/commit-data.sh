@@ -58,15 +58,18 @@ if git push -q origin gh-pages; then echo "pushed"; exit 0; fi
 for attempt in 1 2 3; do
   git fetch -q origin gh-pages
   base=$(git merge-base HEAD origin/gh-pages)
-  # Only the dashboard page (or notes) may be stepped over. Anything else — data, the generator,
-  # the seed and restatement files it reads, workflows — means this pass's output may no longer be
-  # what the remote would produce, so it must be regenerated from the new state.
-  if git diff --name-only "$base" origin/gh-pages | grep -qvE '^(deck-r7k4x9/index\.html|.*\.md)$'; then
+  # Only what this pass never reads may be stepped over: the dashboard page, notes, the history
+  # job's own output, workflow files, and the audit and housekeeping scripts. Anything else — data,
+  # the generator and the modules it imports, the seed and restatement files it reads — means this
+  # pass's output may no longer be what the remote would produce, so it must be regenerated. (A
+  # code push used to cost a whole pass: twice in one evening the data went over an hour stale.)
+  SAFE='^(deck-r7k4x9/index\.html|.*\.md|deck-r7k4x9/recon-[a-z0-9-]+\.json|\.github/workflows/[^/]+\.ya?ml|scripts/(daily-audit|click-audit|gap-audit|activity-audit|leak-check|prune-runs|reconcile-history|backfill-daily|sui-daily)\.mjs)$'
+  if git diff --name-only "$base" origin/gh-pages | grep -qvE "$SAFE"; then
     echo "push lost a race to a change this pass depends on — the next pass will regenerate from the updated remote"
     exit 1
   fi
   if git rebase -q origin/gh-pages && git push -q origin gh-pages; then
-    echo "pushed after stepping over a non-data commit"; exit 0
+    echo "pushed after stepping over a commit this pass does not read"; exit 0
   fi
   git rebase --abort 2>/dev/null || true
   sleep 3
