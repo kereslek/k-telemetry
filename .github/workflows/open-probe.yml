@@ -1,0 +1,23 @@
+# Where does the live deck land when a phone opens it? Safari's engine (as an iPhone) and Chrome's
+# (as an Android phone): a fresh open, a reload further down, a revisit, the passphrase typed in.
+# The log is public: scroll positions, times, panel and function names only.
+name: open-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/open-probe.mjs', '.github/workflows/open-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps webkit chromium
+      - run: node scripts/open-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
