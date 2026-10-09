@@ -6,6 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       logs: { description: 'also read every kept Actions run log (yes/no)', required: false, default: 'no' }
+  # after old runs are deleted, check that what is left (run logs included) is clean
+  workflow_run:
+    workflows: [prune-runs]
+    types: [completed]
 permissions:
   contents: read
   actions: read
@@ -23,4 +27,4 @@ jobs:
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           GH_TOKEN: ${{ github.token }}
-          LOGS: ${{ github.event.inputs.logs == 'yes' && '1' || '0' }}
+          LOGS: ${{ (github.event_name == 'workflow_run' || github.event.inputs.logs == 'yes') && '1' || '0' }}

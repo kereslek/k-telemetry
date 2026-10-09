@@ -1,0 +1,26 @@
+# Delete every finished Actions run created before a given time (run logs are public on a public
+# repository). The log is public: counts only.
+name: prune-runs
+on:
+  workflow_dispatch:
+    inputs:
+      before: { description: 'delete finished runs created before this time (ISO, UTC)', required: true }
+  push:
+    branches: [gh-pages]
+    paths: ['.github/workflows/prune-runs.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages, sparse-checkout: scripts }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/prune-runs.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.inputs.before || '2026-10-04T20:44:00Z' }}   # the lock
