@@ -70,7 +70,7 @@ if(process.env.LOGS==='1'){
     try{ txt=execFileSync('unzip',['-p','/tmp/lc/l.zip'],{maxBuffer:1<<30,stdio:['ignore','pipe','pipe']}).toString('utf8'); }
     catch(e){ if(/zipfile is empty/.test(String(e.stderr||''))) empty++; else unread++; continue; }
     read++; if(hits(txt)) logHits++; }
-  console.log((logHits||unread?'FAIL':'ok  ')+' Actions runs kept: '+runs+' ('+pages+' are Pages builds) · run logs read: '+read+', expired: '+gone+', unreadable: '+unread+' · '+logHits+' with a wallet address');
+  console.log((logHits||unread?'FAIL':'ok  ')+' Actions runs kept: '+runs+' ('+pages+' are Pages builds) · run logs read: '+read+', with no log kept: '+empty+', expired: '+gone+', unreadable: '+unread+' · '+logHits+' with a wallet address');
   bad+=logHits+unread;
 }
 console.log(bad?'FAIL '+bad+' places still hold a wallet address':'ok   no copy the repository keeps holds a wallet address');
