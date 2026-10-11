@@ -1,0 +1,26 @@
+# The deck's LCX (new contract) and CPOOL / SOL pools, examined from public chain and DEX data:
+# traffic day by day, depth, the LP book and newcomers, and the pool's slice of the token's trading.
+# The log is public: pool-level market data only, nothing about the deck's own positions.
+name: pool-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/pool-probe.mjs', '.github/workflows/pool-probe.yml']
+  workflow_dispatch:
+    inputs:
+      days: { description: 'days of history', required: false, default: '30' }
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/pool-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          DAYS: ${{ github.event.inputs.days || '30' }}
