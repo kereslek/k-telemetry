@@ -11,7 +11,9 @@ import crypto from 'node:crypto';
 const SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/', PASS=String(process.env.DECK_PASSPHRASE||'').trim();
 const DAYS=+(process.env.DAYS||30);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function j(u,opt,tries=4){ for(let k=0;k<tries;k++){ try{ const r=await fetch(u,{...opt,signal:AbortSignal.timeout(30000)}); if(r.ok) return await r.json(); if(r.status===429) await sleep(6000); }catch(e){} await sleep(1500*(k+1)); } return null; }
+async function j(u,opt,tries=4,ms=30000){ for(let k=0;k<tries;k++){ try{ const r=await fetch(u,{...opt,signal:AbortSignal.timeout(ms)}); if(r.ok) return await r.json(); if(r.status===429&&tries>1) await sleep(6000); }catch(e){} if(tries>1) await sleep(1500*(k+1)); } return null; }
+/* every pool gets a time budget: what was read by then is reported, marked partial */
+const budget=ms=>{ const end=Date.now()+ms; return ()=>Date.now()>end; };
 const L=await j(SITE+'lock.json?t='+Date.now());
 const KEY=crypto.pbkdf2Sync(PASS, Buffer.from(L.salt,'base64'), L.iter, 64, 'sha256').subarray(0,32);
 const open=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm',KEY,Buffer.from(e.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
@@ -37,17 +39,19 @@ let gtLast=0; const gt=async path=>{ const w=2300-(Date.now()-gtLast); if(w>0) a
 
 /* ---- Ethereum ---- */
 const ERPC=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://eth.llamarpc.com'];
-async function erpc(method,params){ for(let k=0;k<3;k++) for(const u of ERPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1); if(r&&r.result!==undefined) return r.result; } return null; }
+/* one quick try per node, then the next node; a node that refuses is not waited on */
+async function erpc(method,params){ for(let k=0;k<2;k++) for(const u of ERPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,12000); if(r&&r.result!==undefined&&!r.error) return r.result; } return null; }
 const T={mint:'0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde', burn:'0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c',
   swap:'0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67', inc:'0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f', dec:'0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4'};
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const i24=h=>{ let v=BigInt('0x'+h.slice(-6)); if(v>=0x800000n) v-=0x1000000n; return Number(v); };
 const s256=h=>{ let v=BigInt('0x'+h); if(v>=2n**255n) v-=2n**256n; return v; };
-async function ethLogs(addr, topics, from, to){
+let gaps=0;
+async function ethLogs(addr, topics, from, to, over){
   const out=[]; let step=9000;
-  for(let a=from; a<=to; ){ const b=Math.min(to,a+step-1);
+  for(let a=from; a<=to; ){ if(over&&over()){ gaps++; break; } const b=Math.min(to,a+step-1);
     const r=await erpc('eth_getLogs',[{address:addr,fromBlock:'0x'+a.toString(16),toBlock:'0x'+b.toString(16),topics}]);
-    if(Array.isArray(r)){ out.push(...r); a=b+1; if(step<9000) step=Math.min(9000,step*2); } else if(step>500) step=Math.floor(step/3); else { a=b+1; } }
+    if(Array.isArray(r)){ out.push(...r); a=b+1; if(step<9000) step=Math.min(9000,step*2); } else if(step>2000) step=Math.floor(step/2); else { gaps++; a=b+1; } }
   return out; }
 
 async function ethPool(P, rec){
@@ -56,12 +60,16 @@ async function ethPool(P, rec){
   const from=Math.max(0, tip-Math.ceil((now-created)/12000*1.06)-3000);
   const blkTime=async n=>{ const b=await erpc('eth_getBlockByNumber',['0x'+n.toString(16),false]); return b?parseInt(b.timestamp,16)*1000:null; };
   const t0=await blkTime(tip); const spb=12.05; const tOf=n=>t0-(tip-n)*spb*1000;   // block → time, close enough for day buckets
-  const [mints,burns]=[await ethLogs(P.addr,[T.mint],from,tip), await ethLogs(P.addr,[T.burn],from,tip)];
+  const over=budget(14*60e3); gaps=0;
+  // Mint and Burn in one pass (either topic), the pool's whole life; swaps for the window
+  const mb=await ethLogs(P.addr,[[T.mint,T.burn]],from,tip,over);
+  const mints=mb.filter(l=>l.topics[0]===T.mint), burns=mb.filter(l=>l.topics[0]===T.burn);
+  console.log('  (LP events read: '+mb.length+' over '+Math.round((tip-from)/7200)+' days'+(gaps?', '+gaps+' block range(s) unread':'')+')');
   const swapFrom=Math.max(from, tip-Math.ceil(DAYS*86400/spb)-50);
-  const swaps=await ethLogs(P.addr,[T.swap],swapFrom,tip);
+  const swaps=await ethLogs(P.addr,[T.swap],swapFrom,tip,budget(5*60e3));
   // tie each pool Mint/Burn to the position NFT it belongs to (the manager's event in the same transaction)
   const rc=new Map(); const txs=[...new Set([...mints,...burns].map(l=>l.transactionHash))];
-  for(const h of txs){ rc.set(h, await erpc('eth_getTransactionReceipt',[h])); }
+  const overR=budget(6*60e3); for(const h of txs){ if(overR()) break; rc.set(h, await erpc('eth_getTransactionReceipt',[h])); }
   const pos=new Map(); let direct=0;
   const apply=(l,sign)=>{ const r=rc.get(l.transactionHash); const li=parseInt(l.logIndex,16);
     const ev=(r?.logs||[]).filter(x=>String(x.address).toLowerCase()===NPM && x.topics[0]===(sign>0?T.inc:T.dec) && parseInt(x.logIndex,16)>li)
@@ -91,7 +99,7 @@ async function ethPool(P, rec){
 
 /* ---- Solana ---- */
 const SRPC=[process.env.SOL_RPC_URL,'https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com','https://solana.leorpc.com/?api_key=FREE','https://rpc.solanatracker.io/public'].filter(Boolean);
-async function srpc(method,params){ for(let k=0;k<2;k++) for(const u of SRPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1); if(r&&r.result!==undefined&&!r.error) return r.result; await sleep(400); } return null; }
+async function srpc(method,params){ for(let k=0;k<2;k++) for(const u of SRPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,15000); if(r&&r.result!==undefined&&!r.error) return r.result; await sleep(300); } return null; }
 const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const b58=buf=>{ let n=BigInt('0x'+Buffer.from(buf).toString('hex')||'0'), s=''; while(n>0n){ s=B58[Number(n%58n)]+s; n/=58n; } for(const x of buf){ if(x===0) s='1'+s; else break; } return s; };
 const u128=(b,o)=>{ let v=0n; for(let i=15;i>=0;i--) v=(v<<8n)+BigInt(b[o+i]); return v; };
@@ -111,7 +119,8 @@ async function solPool(P){
       if(Lq>0n){ live.push({mint,L:Lq,lo,hi}); if(lo<=tick&&tick<hi) inRange++; } }
     // when each live position was opened: the oldest transaction of its NFT; and who holds it
     const ws=new Set();
-    for(const p of live.slice(0,80)){
+    const overP=budget(4*60e3);
+    for(const p of live.slice(0,80)){ if(overP()) break;
       let before=null, oldest=null; for(let pg=0;pg<5;pg++){ const s=await srpc('getSignaturesForAddress',[p.mint,{limit:1000,...(before?{before}:{})}]); if(!Array.isArray(s)||!s.length) break; oldest=s[s.length-1]; before=oldest.signature; if(s.length<1000) break; }
       if(oldest?.blockTime){ p.t=oldest.blockTime*1000; const d=day(p.t); opened.set(d,(opened.get(d)||0)+1); }
       const la=await srpc('getTokenLargestAccounts',[p.mint]); const ta=la?.value?.find(x=>x.uiAmount>0)?.address;
@@ -121,7 +130,8 @@ async function solPool(P){
   }
   // transactions touching the pool, day by day (swaps and LP moves alike)
   const txDays=new Map(); let before=null, stop=Date.now()-DAYS*86400e3, n=0;
-  for(let pg=0;pg<60;pg++){ const s=await srpc('getSignaturesForAddress',[P.addr,{limit:1000,...(before?{before}:{})}]); if(!Array.isArray(s)||!s.length) break;
+  const overT=budget(3*60e3);
+  for(let pg=0;pg<60;pg++){ if(overT()) break; const s=await srpc('getSignaturesForAddress',[P.addr,{limit:1000,...(before?{before}:{})}]); if(!Array.isArray(s)||!s.length) break;
     let done=false; for(const x of s){ before=x.signature; if(!x.blockTime) continue; if(x.blockTime*1000<stop){ done=true; break; } if(x.err) continue; n++; const d=day(x.blockTime*1000); txDays.set(d,(txDays.get(d)||0)+1); }
     if(done||s.length<1000) break; }
   return {poolL, tick, positions, live:live.length, inRange, wallets, opened, txDays, txN:n, gpa:Array.isArray(gpa), liveList:live};
