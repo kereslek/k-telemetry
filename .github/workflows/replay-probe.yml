@@ -1,0 +1,30 @@
+# Can the chain's swap records rebuild WHY YOUR FEES MOVED back to August? Every LCX (new contract)
+# pool on Ethereum and every CPOOL pool on Raydium that trades: swaps since FROM, whether each source
+# serves them whole, whether every swap record decodes consistently, and what a full replay costs.
+# It does not open the deck's data or know which pools are the deck's. The log is public: counts,
+# dates, ratios and market data only.
+name: replay-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/replay-probe.mjs', '.github/workflows/replay-probe.yml']
+  workflow_dispatch:
+    inputs:
+      from: { description: 'first day (Budapest), YYYY-MM-DD', required: false, default: '2026-08-01' }
+      only: { description: 'eth, sol or both (empty)', required: false, default: '' }
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save js-sha3@0.9.3
+      - run: node scripts/replay-probe.mjs
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          FROM: ${{ github.event.inputs.from || '2026-08-01' }}
+          ONLY: ${{ github.event.inputs.only || '' }}
