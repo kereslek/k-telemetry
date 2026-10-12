@@ -165,6 +165,12 @@ try{
   const age=(Date.now()-cz.t)/36e5;
   (age<=30?OK:WARN)('pool census is '+age.toFixed(0)+' h old · '+cz.tokens.length+' token(s), '+cz.tokens.reduce((s,t)=>s+(t.count||0),0)+' pools listed, '+(cz.mine||[]).length+' of yours · checks: '
     +cz.checks.filter(c=>c.st==='ok').length+' agree, '+cz.checks.filter(c=>c.st==='look').length+' to look at, '+cz.checks.filter(c=>c.st==='na').length+' not readable');
+  // the swap replay that carries the panel back to August: fresh, and how its checks stand
+  try{ const rr=await fetch(LIVE+'pools-replay-main.json?t='+Date.now());
+    if(!rr.ok) WARN('swap replay: not published yet');
+    else { const rp=openJ(await rr.json()), ra=(Date.now()-rp.t)/36e5, ch=rp.checks||[];
+      (ra<=30?OK:WARN)('swap replay is '+ra.toFixed(0)+' h old · from '+rp.from+' · '+(rp.pools||[]).filter(p=>p.days).length+' pool(s) rebuilt · checks: '+ch.filter(c=>c.st==='ok').length+' agree, '+ch.filter(c=>c.st==='look').length+' to look at, '+ch.filter(c=>c.st==='na').length+' not comparable yet'); } }
+  catch(e){ WARN('swap replay: '+String(e.message||e).slice(0,60)); }
   for(const w of [390,1300]){
     await pg.setViewportSize({width:w,height:w<500?844:900});
     await pg.evaluate(()=>{ const p=document.querySelector('[data-panel="census"]'); if(p){ p.classList.remove('collapsed'); scrollTo(0,p.getBoundingClientRect().top+scrollY-60); } }); await pg.waitForTimeout(2500);
@@ -176,7 +182,9 @@ try{
       const lad=[...h.querySelectorAll('.cz-k .v')].map(e=>parseFloat(e.textContent));
       // the big picture: a card per token, and your fees = all its LPs' fees × your share, wherever every day is recorded
       const TK=C.tokens.map(T=>czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W)).filter(t=>t.U.length); let eq=0, eqBad=0;
-      for(const t of TK){ if(t.you==null||t.pie==null||t.slice==null||t.A.n<W.A.length||t.B.n<W.B.length) continue; eq++; if(Math.abs((1+t.you)-(1+t.pie)*(1+t.slice))>0.02*(1+Math.abs(t.you))) eqBad++; }
+      // in every comparison the page offers, where every day of both periods is recorded
+      for(const w of ['w','d','m']){ const Wx=czWins(w); for(const T of C.tokens){ const t=czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),Wx); if(!t.U.length) continue;
+        if(t.you==null||t.pie==null||t.slice==null||t.A.n<Wx.A.length||t.B.n<Wx.B.length) continue; eq++; if(Math.abs((1+t.you)-(1+t.pie)*(1+t.slice))>0.02*(1+Math.abs(t.you))) eqBad++; } }
       return {rows:rows.length, lines:rows.filter(r=>r.querySelector('.cz-ln').textContent.trim().length>20).length, chips:rows.filter(r=>r.querySelector('.cz-chip')).length, mine:(C.mine||[]).length,
         mult, bad, cards:h.querySelectorAll('.cz-tk').length, tks:TK.length, eq, eqBad, ladOk:lad.length===4*TK.length&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
     const fold=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody [data-cz="fold"][data-v="e"]'); if(!b) return false; const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');

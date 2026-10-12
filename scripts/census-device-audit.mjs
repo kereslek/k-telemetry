@@ -68,12 +68,16 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
     const f=await pg.evaluate(async()=>{ const out={};
       const before=document.querySelector('#censusBody .cz-row .cz-ln').textContent; document.querySelector('#censusBody [data-cz="win"][data-v="d"]').click(); await new Promise(r=>setTimeout(r,500));
       out.win=document.querySelector('#censusBody [data-cz="win"][data-v="d"]').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#censusBody .cz-row').length>0; out.changed=before!==document.querySelector('#censusBody .cz-row .cz-ln').textContent;
+      // the month against the last: the switch holds, every token keeps its card, the charts span the two months
+      const mb=document.querySelector('#censusBody [data-cz="win"][data-v="m"]'); if(mb){ mb.click(); await new Promise(r=>setTimeout(r,600));
+        out.month=document.querySelector('#censusBody [data-cz="win"][data-v="m"]').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#censusBody .cz-tk').length>0
+          &&[...document.querySelectorAll('#censusBody .cz-tchart')].every(c=>c.querySelectorAll('.hit').length>=30); } else out.month=null;   // offered once the rebuilt days are trusted
       document.querySelector('#censusBody [data-cz="win"][data-v="w"]').click(); await new Promise(r=>setTimeout(r,400));
       const tb=document.querySelectorAll('#censusBody [data-cz="tok"]'); if(tb[1]){ tb[1].click(); await new Promise(r=>setTimeout(r,400)); out.tok=document.querySelectorAll('#censusBody [data-cz="tok"]')[1].getAttribute('aria-pressed')==='true'; tb[0]&&document.querySelectorAll('#censusBody [data-cz="tok"]')[0].click(); } else out.tok=true;
       document.querySelector('#censusBody .cz-stat').click(); await new Promise(r=>setTimeout(r,1400));
       const ck=document.querySelector('#czChecks'), r=ck.getBoundingClientRect(); out.checks=!ck.querySelector('.cz-x').classList.contains('shut')&&r.top<innerHeight&&r.bottom>0;
       return out; }); Object.assign(f,fo);
-    say(f.b&&f.g&&f.e&&f.efit&&f.win&&f.tok&&f.checks, name+': folds '+['b','g','e'].map(k=>({b:'big picture',g:'pool by pool',e:'every pool'}[k])+(f[k]?' ✓':' ✗ (shut at '+f[k+'h']+' px)')).join(', ')+'; every-pool table '+(f.efit?'fits':'WIDER than the screen')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
+    say(f.b&&f.g&&f.e&&f.efit&&f.win&&f.month!==false&&f.tok&&f.checks, name+': folds '+['b','g','e'].map(k=>({b:'big picture',g:'pool by pool',e:'every pool'}[k])+(f[k]?' ✓':' ✗ (shut at '+f[k+'h']+' px)')).join(', ')+'; every-pool table '+(f.efit?'fits':'WIDER than the screen')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+', month against month '+(f.month?'works':f.month===null?'not offered yet (no rebuilt days trusted)':'FAILS')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
     say(!errs.length, name+': page errors '+errs.length);
   }catch(e){ say(false, name+': '+String(e.message||e).split('\n')[0].slice(0,90)); }
   await b.close();

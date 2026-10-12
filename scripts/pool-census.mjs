@@ -15,7 +15,7 @@ import { initLock, readJ, writeJ } from './lock.mjs';
 const OUT='deck-r7k4x9', SLUG=process.env.PROFILE||'main';
 const LCXN='0x8cd41041505885ef0ad3858181d66f17be8aae7e', CPOOL='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
 const TOKENS=[{key:'lcx', sym:'LCX', chain:'Ethereum', net:'eth', addr:LCXN}, {key:'cpool', sym:'CPOOL', chain:'Solana', net:'solana', addr:CPOOL}];
-const KEEP=120, H=3600e3, D=24*H;
+const KEEP=200, H=3600e3, D=24*H;   // days kept: back past 1 August, where the swap replay begins
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function j(u,opt,tries=3,ms=25000){ for(let k=0;k<tries;k++){ try{ const r=await fetch(u,{...opt,signal:AbortSignal.timeout(ms)}); if(r.ok) return await r.json(); if(r.status===429) await sleep(5000); }catch(e){} await sleep(1200*(k+1)); } return null; }
 const budget=ms=>{ const end=Date.now()+ms; return ()=>Date.now()>end; };
@@ -37,7 +37,7 @@ async function tokenPools(T){
     const mineIsBase=String(base||'').toLowerCase()===T.addr.toLowerCase();
     return {id:a.address, name:String(a.name||'?').replace(/\s+[\d.]+%$/,''), dex:x.relationships?.dex?.data?.id||'?', tvlIdx:+a.reserve_in_usd||0, vol24:+a.volume_usd?.h24||0,
       created:a.pool_created_at?Date.parse(a.pool_created_at):null, fee:fm?+fm[1]/100:null, px:mineIsBase?(+a.base_token_price_usd||null):(+a.quote_token_price_usd||null)}; }); }
-async function candles(T, id){ const r=await gt('/networks/'+T.net+'/pools/'+id+'/ohlcv/day?limit=61&currency=usd'); const m={};
+async function candles(T, id){ const r=await gt('/networks/'+T.net+'/pools/'+id+'/ohlcv/day?limit=130&currency=usd'); const m={};
   for(const c of r?.data?.attributes?.ohlcv_list||[]) m[day(c[0]*1000)]=r2(+c[5]); return r?m:null; }
 
 /* ---------- chains ---------- */
