@@ -224,7 +224,7 @@ async function ethSide(out, prevPools){
     pools.set(id,st); stats.eth.pools++;
   }
   for(const [id,st] of pools){ const P=T.pools.find(p=>String(p.id).toLowerCase()===id); const had=Object.keys(st.pos).length>0;
-    out.pools.push({id, tok:'lcx', chain:'eth', venue:'Uniswap v3', name:P?.name||null, fee:P?.fee??null, lpCut:1, mine:had, state:st}); }
+    out.pools.push({id, tok:'lcx', chain:'eth', venue:'Uniswap v3', name:P?.name||null, fee:P?.fee??null, lpCut:P?.lpCut??1, mine:had, state:st}); }
 }
 
 /* ---------- Solana: Raydium CLMM ---------- */
