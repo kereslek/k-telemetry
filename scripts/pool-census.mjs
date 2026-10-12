@@ -75,6 +75,53 @@ async function bookV4(P){
   for(const e of live){ if(overW()) break; const t=await j(BS+'/api/v2/transactions/'+e.tx,{},2,12000); if(t?.from?.hash) wallets.add(t.from.hash.toLowerCase()); }
   return {open:live.length, atPrice:at.length, wallets:wallets.size||null, opened:live.map(e=>day(e.first)),
     sum:L!=null&&at.length?r4(Number(at.reduce((s,e)=>s+e.L,0n)*10000n/(L||1n))/10000):null}; }
+/* The LP book of a Uniswap v3 pool: every position the position manager opened in it — the pool's own
+   Mint records, each read back through its receipt to the position it made — where each stands now, and
+   for one at the price that is not the deck's, the wallet holding it. Whole or nothing: a record or a
+   receipt not served leaves no book. Also the LPs' part of the fee, which is less than all of it where
+   the pool's fee switch is on (slot0's feeProtocol: the protocol takes 1/n of each swap's fee). */
+const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
+const V3MINT='0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde', V3INC='0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
+async function bookV3(P, mineIds){
+  const over=budget(5*60e3), pool=String(P.id).toLowerCase();
+  const tip=parseInt(await erpc('eth_blockNumber',[])||'0',16); if(!tip) return null;
+  const from=P.created?Math.max(0,tip-Math.ceil((Date.now()-P.created)/12000*1.05)-2000):0;
+  const seen=new Set(), txT=new Map();
+  // the pool's Mint records whose owner is the position manager: the whole range at once, else 25,000 blocks at a time
+  const range=async(a,b)=>{ let f=a; for(let n=0;n<40;n++){ if(over()) return false;
+      const q=new URLSearchParams({module:'logs',action:'getLogs',fromBlock:String(f),toBlock:String(b),address:pool,topic0:V3MINT,topic1:'0x'+NPM.slice(2).padStart(64,'0'),topic0_1_opr:'and'});
+      const r=await j(BS+'/api?'+q,{},3,60000); const a2=Array.isArray(r?.result)?r.result:null; if(!a2) return false;
+      let added=0; for(const l of a2){ const k=l.transactionHash+':'+l.logIndex; if(seen.has(k)) continue; seen.add(k); added++;
+        const t=parseInt(l.timeStamp,16)*1000; if(!txT.has(l.transactionHash)||t<txT.get(l.transactionHash)) txT.set(l.transactionHash,t); }
+      if(a2.length<1000||!added) return true; f=parseInt(a2[a2.length-1].blockNumber,16); } return false; };
+  if(!await range(from,tip)){ seen.clear(); txT.clear(); for(let w=from; w<=tip; w+=25000) if(!await range(w,Math.min(tip,w+24999))) return null; }
+  // each Mint's receipt names the position it went to (the manager's IncreaseLiquidity, topic1 = the position's id)
+  const ids=new Map(), hs=[...txT.keys()]; let missing=0;
+  for(let i=0;i<hs.length;i+=4){ if(over()) return null;
+    await Promise.all(hs.slice(i,i+4).map(async h=>{ const rc=await erpc('eth_getTransactionReceipt',[h]); if(!rc){ missing++; return; }
+      for(const g of rc.logs||[]) if(String(g.address).toLowerCase()===NPM&&g.topics[0]===V3INC){ const id=BigInt(g.topics[1]).toString(), t=txT.get(h); if(!ids.has(id)||t<ids.get(id)) ids.set(id,t); } })); }
+  if(missing) return null;
+  // the pool's own tokens and fee, to keep only positions in this pool (one transaction can open several)
+  const [t0,t1,fe,s0,lq]=await Promise.all(['0x0dfe1681','0xd21220a7','0xddca3f43','0x3850c7bd','0x1a686502'].map(d=>erpc('eth_call',[{to:pool,data:d},'latest'])));
+  if(!t0||!t1||!fe||!s0||!lq) return null;
+  const tok0=('0x'+w32(t0,0).slice(-40)).toLowerCase(), tok1=('0x'+w32(t1,0).slice(-40)).toLowerCase(), fee=Number(BigInt('0x'+w32(fe,0)));
+  const tick=i24(w32(s0,1)), fp=Number(BigInt('0x'+w32(s0,5))&0xffn), L=BigInt('0x'+w32(lq,0));
+  const cut=n=>n>0?1-1/n:1, lpCut=(cut(fp%16)+cut(fp>>4))/2;
+  const live=[]; const list=[...ids.keys()];
+  for(let i=0;i<list.length;i+=4){ if(over()) return null;
+    const got=await Promise.all(list.slice(i,i+4).map(async id=>({id, r:await erpc('eth_call',[{to:NPM,data:'0x99fbab88'+BigInt(id).toString(16).padStart(64,'0')},'latest'])})));
+    for(const {id,r} of got){ if(!r||r.length<2+64*8) continue;   // burned: no position any more
+      if(('0x'+w32(r,2).slice(-40)).toLowerCase()!==tok0||('0x'+w32(r,3).slice(-40)).toLowerCase()!==tok1||Number(BigInt('0x'+w32(r,4)))!==fee) continue;
+      const Lp=BigInt('0x'+w32(r,7)); if(Lp>0n) live.push({id, lo:i24(w32(r,5)), hi:i24(w32(r,6)), L:Lp, first:ids.get(id)}); } }
+  const at=live.filter(e=>e.lo<=tick&&tick<e.hi), mine=live.filter(e=>mineIds.has(e.id));
+  // who stands at the price: each position there, its part of the pool's liquidity at the price, and for one not the deck's, the wallet holding it
+  const atList=[]; const overH=budget(90e3);
+  for(const e of [...at].sort((a,b)=>b.L>a.L?1:b.L<a.L?-1:0)){ const isMine=mineIds.has(e.id); let w=null;
+    if(!isMine&&!overH()){ const o=await erpc('eth_call',[{to:NPM,data:'0x6352211e'+BigInt(e.id).toString(16).padStart(64,'0')},'latest']); if(o) w=('0x'+w32(o,0).slice(-40)).toLowerCase(); }
+    atList.push({mine:isMine, s:L>0n?r4(Number(e.L*1000000n/L)/1e6):null, ...(isMine?{}:{w})}); }
+  return {open:live.length, atPrice:at.length, opened:live.map(e=>day(e.first)), lpCut,
+    sum:L>0n&&at.length?r4(Number(at.reduce((s,e)=>s+e.L,0n)*10000n/L)/10000):null,
+    mineFound:mine.length, mineL:mine.reduce((s,e)=>s+e.L,0n).toString(), at:atList}; }
 /* the wallet holding a position NFT: the one token account with it, and that account's owner */
 async function holderOf(mint){
   const big=await srpc('getTokenLargestAccounts',[mint]); const acc=(big?.value||[]).find(x=>Number(x.amount)>0)?.address; if(!acc) return null;
@@ -163,6 +210,7 @@ for(const T of TOKENS){
   // LP books: the deck's pools and any real pool of $1k or more
   for(const P of pools.filter(x=>x.real&&(x.mine||x.tvl>=1000))){
     try{ if(P.venue==='Uniswap v4') P.book=await bookV4(P);
+         else if(P.venue==='Uniswap v3'){ const m=mine.get(String(P.id).toLowerCase()); P.book=await bookV3(P, new Set(m?m.ids:[])); if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
          else if(P.venue==='Raydium CLMM'){ const m=mine.get(P.id); P.book=await bookClmm(P, m?m.mints:new Set()); if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
          else P.book=null; }catch(e){ P.book=null; } }
   const days=[...new Set(pools.filter(x=>x.real).flatMap(x=>Object.keys(x.vol||{})))].sort();
@@ -228,3 +276,5 @@ console.log('share readings: '+shareKept+' kept, '+shareDropped+' dropped (taken
 console.log('pools listed: '+poolsN+' · trading: '+realN+' · own pools: '+out.mine.length+' · days of trading kept: '+Math.max(0,...out.tokens.map(t=>Object.keys(t.market).length))
   +' · days of share: '+Math.max(0,...out.mine.map(m=>Object.keys(m.share).length))+' · days of fees: '+Math.max(0,...out.mine.map(m=>Object.keys(m.fees).length)));
 console.log('checks: '+cnt('ok')+' agree · '+cnt('look')+' to look at · '+cnt('na')+' not readable');
+{ const tried=out.tokens.flatMap(t=>t.pools).filter(p=>p.real&&(p.mine||p.tvl>=1000)&&/Uniswap v[34]|Raydium CLMM/.test(p.venue)), by=v=>tried.filter(p=>p.venue===v);
+  console.log('LP books read: '+['Uniswap v3','Uniswap v4','Raydium CLMM'].map(v=>v+' '+by(v).filter(p=>p.book&&p.book.open!=null).length+' of '+by(v).length).join(' · ')); }
