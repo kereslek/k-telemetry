@@ -1567,6 +1567,7 @@
   .cz-x>div{overflow:hidden;min-width:0;min-height:0}
   .cz-x.shut{grid-template-rows:0fr;opacity:0}
   .cz-x.shut>div{visibility:hidden;transition:visibility 0s linear .38s}
+  .cz-x.snap,.cz-x.snap>div{transition:none!important}
   .cz-x>.cz-t{margin-top:0}
   .cz-x>.cz-t>table{margin-top:8px}
   /* G: one line per pool */
@@ -2357,7 +2358,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7741,6 +7742,8 @@ function czAnimate(host, first){
 { let t=null; addEventListener('resize',()=>{ clearTimeout(t); t=setTimeout(()=>{ const h=$('#censusBody'); if(!h||!state.census) return; if(Math.abs((h.clientWidth||0)-(+h.dataset.w||0))>40){ h.dataset.k=''; renderCensus(); } },250); },{passive:true}); }
 /* a tap outside a chart puts its day away */
 document.addEventListener('pointerdown',e=>{ if(e.pointerType==='mouse') return; document.querySelectorAll('#censusBody .cz-chart').forEach(ch=>{ if(ch.contains(e.target)) return; ch._tap=false; const t=ch.querySelector('.cz-tip'); if(t) t.style.display='none'; ch.querySelectorAll('.hit.on').forEach(x=>x.classList.remove('on')); }); },{passive:true});
+/* a fold always lands: once its time is up it is set to where it was going, so no engine can leave it half way */
+const czSnap=x=>{ clearTimeout(x._sn); x._sn=setTimeout(()=>{ x.classList.add('snap'); void x.offsetHeight; x.classList.remove('snap'); },460); };
 /* the switches: one listener for the whole panel */
 document.addEventListener('click',e=>{
   const b=e.target.closest&&e.target.closest('#censusBody [data-cz]'); if(!b) return;
@@ -7749,9 +7752,9 @@ document.addEventListener('click',e=>{
   if(k==='win'){ czWin=v; store.set('czWin',v); czJust='g'; }
   else if(k==='tok'){ czTok=+v; store.set('czTok',czTok); czJust='e'; }
   else if(k==='fold'){ czFold={...czFold,[v]:!czFold[v]}; store.set('czFold2',czFold);
-    const x=b.closest('.cz-sh')&&b.closest('.cz-sh').nextElementSibling; if(x&&x.classList.contains('cz-x')){ x.classList.toggle('shut',!!czFold[v]); b.textContent=czFold[v]?'SHOW ▸':'HIDE ▾'; b.setAttribute('aria-expanded',String(!czFold[v])); if(!czFold[v]) czReplay(x); if(state.census) host.dataset.k=czKey(state.census); return; } }
+    const x=b.closest('.cz-sh')&&b.closest('.cz-sh').nextElementSibling; if(x&&x.classList.contains('cz-x')){ x.classList.toggle('shut',!!czFold[v]); czSnap(x); b.textContent=czFold[v]?'SHOW ▸':'HIDE ▾'; b.setAttribute('aria-expanded',String(!czFold[v])); if(!czFold[v]) czReplay(x); if(state.census) host.dataset.k=czKey(state.census); return; } }
   else if(k==='open'){ czOpenSet.has(v)?czOpenSet.delete(v):czOpenSet.add(v); store.set('czOpen',[...czOpenSet]);
-    const x=b.closest('.cz-row')&&b.closest('.cz-row').querySelector('.cz-evx'); if(x){ const on=czOpenSet.has(v); x.classList.toggle('shut',!on); b.textContent=on?'DAYS ▾':'DAYS ▸'; b.setAttribute('aria-expanded',String(on)); if(on) czReplay(x); if(state.census) host.dataset.k=czKey(state.census); return; } }
+    const x=b.closest('.cz-row')&&b.closest('.cz-row').querySelector('.cz-evx'); if(x){ const on=czOpenSet.has(v); x.classList.toggle('shut',!on); czSnap(x); b.textContent=on?'DAYS ▾':'DAYS ▸'; b.setAttribute('aria-expanded',String(on)); if(on) czReplay(x); if(state.census) host.dataset.k=czKey(state.census); return; } }
   else if(k==='checks'){ czFold={...czFold,f:false}; store.set('czFold2',czFold); renderCensus(); const s=$('#czChecks'); if(s) setTimeout(()=>{ try{ s.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'}); }catch(err){ s.scrollIntoView(); } },60); return; }
   renderCensus();
 });
