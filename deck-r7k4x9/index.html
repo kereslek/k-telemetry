@@ -2360,7 +2360,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7570,20 +7570,30 @@ function czToken(T,mine,W){
   const own=mine.map(M=>({M,P:T.pools.find(p=>String(p.id).toLowerCase()===String(M.id).toLowerCase())})).filter(x=>x.P);
   const inU=own.filter(x=>U.includes(x.P)), outN=own.length-inU.length;
   const vol=(P,d)=>(P.vol&&P.vol[d])||0;
-  const tradeOf=d=>U.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>U.reduce((s,P)=>s+vol(P,d)*(P.fee||0)*(P.lpCut??1),0);
-  const first=inU.filter(x=>!x.M.past).map(x=>x.M.since).filter(Boolean).sort()[0]||null;
-  // your fees on a day, every pool of yours together, from one source; the relay's records start where each pool's did
-  const dayOf=(d,k)=>{ if(!inU.length) return null; let v=0, n=0;
-    for(const {M,P} of inU){ if(k!=='replay'&&(M.past||(M.since&&d<M.since))) continue; const x=czSrc[k](M,P,d); if(x==null) return null; v+=x; n++; }
-    return n?v:null; };   // a day before any record of a source began is not a day of no fees
-  const covers=(k,ds)=>ds.filter(d=>dayOf(d,k)!=null).length>=Math.ceil(ds.length/2);
+  const lpf=(P,d)=>vol(P,d)*(P.fee||0)*(P.lpCut??1);
+  const tradeOf=d=>U.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>U.reduce((s,P)=>s+lpf(P,d),0);
+  /* Your fees on a day, every pool of yours together, from one source, and the LPs' fees they are a
+     share of. A pool of yours without a figure that day (its record had not begun yet) leaves BOTH
+     sides — never yours alone, which reads as fees the other LPs took: pools whose records start on
+     different days once put a sole LP at half. It may leave only while it carries under 5% of the
+     day's fees; past that the day is not counted at all. */
+  const dayOf=(d,k)=>{ if(!inU.length) return null; const all=pieOf(d); let v=0, miss=0, n=0;
+    for(const {M,P} of inU){
+      if(k!=='replay'&&M.past){ const x=M.rep&&M.rep[d]; if(x&&(x.s>0||x.L>0)) miss+=lpf(P,d); continue; }   // a pool you have left: only the replay knows your part of it
+      const x=czSrc[k](M,P,d); if(x==null){ miss+=lpf(P,d); continue; } v+=x; n++; }
+    return n&&!(all>0&&miss>0.05*all)?{v, p:all-miss, miss}:null; };
+  const covers=(k,ds)=>ds.filter(d=>dayOf(d,k)).length>=Math.ceil(ds.length/2);
   const basis=CZ_BASIS.find(k=>covers(k,W.A)&&covers(k,W.B))||null, basisA=basis||CZ_BASIS.find(k=>covers(k,W.A))||null;
   const win=(ds,k)=>{ const t=czAvg(ds.map(tradeOf)), p=czAvg(ds.map(pieOf)); if(!k) return {trade:t, pie:p, you:null, share:null, n:0, k:null};
-    const ok=ds.filter(d=>dayOf(d,k)!=null); if(ok.length<Math.ceil(ds.length/2)) return {trade:t, pie:p, you:null, share:null, n:ok.length, k:null};
-    const you=czAvg(ok.map(d=>dayOf(d,k))), pOk=czAvg(ok.map(pieOf)); return {trade:t, pie:p, you, share:pOk>0?you/pOk:null, n:ok.length, k, est:k!=='actual'}; };
+    const ok=ds.map(d=>dayOf(d,k)).filter(Boolean); if(ok.length<Math.ceil(ds.length/2)) return {trade:t, pie:p, you:null, share:null, n:ok.length, k:null};
+    const you=czAvg(ok.map(x=>x.v)), pOk=czAvg(ok.map(x=>x.p));
+    // exact: every day recorded with every pool of yours in it, so your fees = the LPs' fees × your share to the cent
+    return {trade:t, pie:p, you, share:pOk>0?you/pOk:null, n:ok.length, k, est:k!=='actual', exact:ok.length===ds.length&&ok.every(x=>!x.miss)}; };
   const A=win(W.A,basisA), B=win(W.B,basis), ch=(a,b)=>a!=null&&b!=null&&b>0&&a>=0?a/b-1:null;
+  // the first day with your part known, from any source
+  let first=null; for(let i=200;i>=1&&!first;i--){ const d=czDay(i); if(CZ_BASIS.some(k=>dayOf(d,k))) first=d; }
   // a day for the chart: the comparison's own source where it has the day, otherwise the best there is
-  const yoursOf=d=>{ for(const k of [basis,'replay','actual','share']){ if(!k) continue; const v=dayOf(d,k); if(v!=null) return {v, k, est:k!=='actual', main:k===basis}; } return null; };
+  const yoursOf=d=>{ for(const k of [basis,'replay','actual','share']){ if(!k) continue; const x=dayOf(d,k); if(x) return {v:x.v, p:x.p, k, est:k!=='actual', main:k===basis}; } return null; };
   const rate=A.trade>0&&B.trade>0?ch(A.pie/A.trade,B.pie/B.trade):null;
   // your place now, over the newer period
   const sbar=M=>{ let v=W.A.map(d=>M.share&&M.share[d]).filter(Boolean).map(x=>x.s);
@@ -7612,7 +7622,7 @@ function czTokChart(r, cw){
   const {T,sc,W}=r, S=T.sym, days=[]; for(let i=W.span||30;i>=1;i--) days.push(czDay(i));
   const Wd=Math.max(280,Math.round(cw)), phone=Wd<520, L=4, R=4, hd=14, gap=10, xb=16;
   const h1=phone?78:96, h2=phone?50:60, y1t=hd, y1b=y1t+h1, y2t=y1b+gap+hd, y2b=y2t+h2, H=y2b+xb, cwid=(Wd-L-R)/days.length;
-  const pie=days.map(r.pieOf), yo=days.map(r.yoursOf), sh=days.map((d,i)=>yo[i]&&pie[i]>0?yo[i].v/pie[i]:null);
+  const pie=days.map(r.pieOf), yo=days.map(r.yoursOf), sh=days.map((d,i)=>yo[i]&&yo[i].p>0?yo[i].v/yo[i].p:null);
   const maxP=Math.max(1,...pie)*1.1, sv=sh.filter(x=>x!=null), maxS=sv.length?Math.max(...sv)*1.3:0.01;
   const X=i=>L+i*cwid, y1=v=>y1b-h1*v/maxP, y2=v=>y2b-h2*v/maxS;
   const inA=new Set(W.A), inB=new Set(W.B), tips={};

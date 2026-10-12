@@ -184,7 +184,7 @@ try{
       const TK=C.tokens.map(T=>czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W)).filter(t=>t.U.length); let eq=0, eqBad=0;
       // in every comparison the page offers, where every day of both periods is recorded
       for(const w of ['w','d','m']){ const Wx=czWins(w); for(const T of C.tokens){ const t=czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),Wx); if(!t.U.length) continue;
-        if(t.you==null||t.pie==null||t.slice==null||t.A.n<Wx.A.length||t.B.n<Wx.B.length) continue; eq++; if(Math.abs((1+t.you)-(1+t.pie)*(1+t.slice))>0.02*(1+Math.abs(t.you))) eqBad++; } }
+        if(t.you==null||t.pie==null||t.slice==null||!t.A.exact||!t.B.exact) continue; eq++; if(Math.abs((1+t.you)-(1+t.pie)*(1+t.slice))>0.02*(1+Math.abs(t.you))) eqBad++; } }
       return {rows:rows.length, lines:rows.filter(r=>r.querySelector('.cz-ln').textContent.trim().length>20).length, chips:rows.filter(r=>r.querySelector('.cz-chip')).length, mine:(C.mine||[]).length,
         mult, bad, cards:h.querySelectorAll('.cz-tk').length, tks:TK.length, eq, eqBad, ladOk:lad.length===4*TK.length&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
     const fold=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody [data-cz="fold"][data-v="e"]'); if(!b) return false; const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
@@ -195,6 +195,19 @@ try{
     (ok?OK:FAIL)('WHY FEES MOVED at '+w+': '+(r.none?'panel or census MISSING':r.cards+' token card(s) for '+r.tks+' token(s), your fees = LPs’ fees × your share in '+(r.eq-r.eqBad)+' of '+r.eq+'; '+r.rows+' pool line(s) for '+r.mine+' pool(s) of yours, '+r.lines+' with a sentence, '+r.chips+' with cause tags; causes multiply to the change in '
       +(r.mult-r.bad)+' of '+r.mult+'; shares '+(r.ladOk?'within 0–100%':'OUT OF RANGE')+'; '+r.ck+' of '+r.cks+' checks shown; folds '+(fold?'work':'do NOT work')+'; a pool’s days '+(open?'open with a chart':'do NOT open')+'; '+(r.hscroll?'page WIDER than the screen':'fits the screen')));
   }
+  /* The page's token maths on made-up records, the shape that once put a sole LP at 54%: pools whose
+     records start on different days, and a pool not yours carrying most of the trading. */
+  const self=await pg.evaluate(()=>{
+    const days=[]; for(let i=0;i<=40;i++) days.push(czDay(i));
+    const mk=(id,fee,base,mine)=>{ const vol={}; days.forEach((d,i)=>vol[d]=base*(1+0.6*Math.sin(i*1.7))); return {id,name:id,venue:'Raydium CLMM',fee,lpCut:0.84,real:true,mine,vol,tvl:1000}; };
+    const run=(pools,span,shares)=>{ const T={key:'x',sym:'X',chain:'Solana',pools,market:{}};
+      const mine=pools.filter(P=>P.mine).map(P=>{ const share={},exp={}; for(let i=1;i<=40;i++){ if(!span[P.id](i)) continue; const d=days[i], s=shares[P.id]??1; share[d]={s,tin:1,n:96}; exp[d]=P.vol[d]*P.fee*P.lpCut*s; }
+        return {id:P.id,tok:'x',n:1,valueNow:1000,share,fees:{},exp,ourL:{},value:{},since:Object.keys(share).sort()[0]||null}; });
+      return czToken(T,mine,czWins('w')).A.share; };
+    return {sole:run([mk('a',0.04,5000,true),mk('b',0.01,100,true),mk('c',0.04,30,true)],{a:i=>i<=5,b:i=>i<=20,c:i=>i<=20},{}),
+      half:run([mk('v3',0.01,1500,true),mk('v4',0.01,8500,false)],{v3:i=>i<=20},{v3:0.5})}; });
+  const soleOk=self.sole!=null&&Math.abs(self.sole-1)<1e-9, halfOk=self.half!=null&&Math.abs(self.half-0.075)<0.002;
+  (soleOk&&halfOk?OK:FAIL)('token shares on made-up records: a sole LP whose pools’ records start on different days '+(soleOk?'takes 100%':'does NOT take 100%')+'; half of a pool carrying 15% of the trading '+(halfOk?'takes 7.5%':'does NOT take 7.5%'));
 }catch(e){ FAIL('WHY FEES MOVED: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');
