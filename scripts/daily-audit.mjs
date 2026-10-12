@@ -173,16 +173,19 @@ try{
       let mult=0, bad=0;
       for(const T of C.tokens) for(const P of T.pools.filter(p=>p.mine)){ const x=czPool(T,P,by.get(String(P.id).toLowerCase()),W); if(x.basis==='pool'||x.thin||x.isNew||x.total==null||!(x.FA>0&&x.FB>0)) continue;
         const sum=Object.values(x.eff).filter(v=>v!=null&&isFinite(v)).reduce((s,v)=>s+v,0); mult++; if(Math.abs(Math.exp(sum)-(1+x.total))>0.02*(1+Math.abs(x.total))) bad++; }
-      const lad=[...h.querySelectorAll('.cz-lr .v')].map(e=>parseFloat(e.textContent));
+      const lad=[...h.querySelectorAll('.cz-k .v')].map(e=>parseFloat(e.textContent));
+      // the big picture: a card per token, and your fees = all its LPs' fees × your share, wherever every day is recorded
+      const TK=C.tokens.map(T=>czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W)).filter(t=>t.U.length); let eq=0, eqBad=0;
+      for(const t of TK){ if(t.you==null||t.pie==null||t.slice==null||t.A.n<W.A.length||t.B.n<W.B.length) continue; eq++; if(Math.abs((1+t.you)-(1+t.pie)*(1+t.slice))>0.02*(1+Math.abs(t.you))) eqBad++; }
       return {rows:rows.length, lines:rows.filter(r=>r.querySelector('.cz-ln').textContent.trim().length>20).length, chips:rows.filter(r=>r.querySelector('.cz-chip')).length, mine:(C.mine||[]).length,
-        mult, bad, ladOk:lad.length===4&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
+        mult, bad, cards:h.querySelectorAll('.cz-tk').length, tks:TK.length, eq, eqBad, ladOk:lad.length===4*TK.length&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
     const fold=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody [data-cz="fold"][data-v="e"]'); if(!b) return false; const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
       b.click(); await new Promise(r=>setTimeout(r,500)); const mid=x.classList.contains('shut'); b.click(); await new Promise(r=>setTimeout(r,500)); return mid!==was&&x.classList.contains('shut')===was; });
     const open=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody .cz-open'); if(!b) return false; const x=b.closest('.cz-row').querySelector('.cz-evx'), was=x.classList.contains('shut');
       b.click(); await new Promise(r=>setTimeout(r,900)); const bars=x.querySelectorAll('.cz-chart .bar').length, shown=!x.classList.contains('shut'); b.click(); await new Promise(r=>setTimeout(r,500)); return (was?shown:!shown)&&bars>0; });
-    const ok=!r.none&&r.rows===r.mine&&r.lines===r.rows&&r.chips===r.rows&&!r.bad&&r.ladOk&&r.ck===r.cks&&!r.hscroll&&fold&&open;
-    (ok?OK:FAIL)('WHY FEES MOVED at '+w+': '+(r.none?'panel or census MISSING':r.rows+' pool line(s) for '+r.mine+' pool(s) of yours, '+r.lines+' with a sentence, '+r.chips+' with cause tags; causes multiply to the change in '
-      +(r.mult-r.bad)+' of '+r.mult+'; share ladder '+(r.ladOk?'within 0–100%':'OUT OF RANGE')+'; '+r.ck+' of '+r.cks+' checks shown; folds '+(fold?'work':'do NOT work')+'; a pool’s days '+(open?'open with a chart':'do NOT open')+'; '+(r.hscroll?'page WIDER than the screen':'fits the screen')));
+    const ok=!r.none&&r.cards===r.tks&&!r.eqBad&&r.rows===r.mine&&r.lines===r.rows&&r.chips===r.rows&&!r.bad&&r.ladOk&&r.ck===r.cks&&!r.hscroll&&fold&&open;
+    (ok?OK:FAIL)('WHY FEES MOVED at '+w+': '+(r.none?'panel or census MISSING':r.cards+' token card(s) for '+r.tks+' token(s), your fees = LPs’ fees × your share in '+(r.eq-r.eqBad)+' of '+r.eq+'; '+r.rows+' pool line(s) for '+r.mine+' pool(s) of yours, '+r.lines+' with a sentence, '+r.chips+' with cause tags; causes multiply to the change in '
+      +(r.mult-r.bad)+' of '+r.mult+'; shares '+(r.ladOk?'within 0–100%':'OUT OF RANGE')+'; '+r.ck+' of '+r.cks+' checks shown; folds '+(fold?'work':'do NOT work')+'; a pool’s days '+(open?'open with a chart':'do NOT open')+'; '+(r.hscroll?'page WIDER than the screen':'fits the screen')));
   }
 }catch(e){ FAIL('WHY FEES MOVED: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});

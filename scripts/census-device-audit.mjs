@@ -19,15 +19,25 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
     await pg.goto(LIVE+'?audit='+Date.now(),{waitUntil:'domcontentloaded'});
     await pg.waitForFunction(()=>!!document.querySelector('#censusBody .cz-row'),null,{timeout:60000}).catch(()=>{});
     await pg.waitForTimeout(3000);
-    await pg.evaluate(()=>{ const p=document.querySelector('[data-panel="census"]'); if(p){ p.classList.remove('collapsed'); scrollTo(0,p.getBoundingClientRect().top+scrollY-60); } });
+    // the reader's own move (the page holds itself at the top against anything else while it opens)
+    await pg.evaluate(()=>{ dispatchEvent(new Event('wheel')); const p=document.querySelector('[data-panel="census"]'); if(p){ p.classList.remove('collapsed'); scrollTo(0,p.getBoundingClientRect().top+scrollY-60); } });
     await pg.waitForTimeout(2600);   // the entrance: numbers count, bars rise, lines draw
-    const a=await pg.evaluate(()=>{ const h=document.querySelector('#censusBody'), rows=[...h.querySelectorAll('.cz-row')];
-      const pre=h.classList.contains('cz-pre'), lad=[...h.querySelectorAll('.cz-lr .tr i')].map(i=>i.getBoundingClientRect().width), big=h.querySelector('.cz-sum');
+    const a=await pg.evaluate(()=>{ const h=document.querySelector('#censusBody'), rows=[...h.querySelectorAll('.cz-row')], cards=h.querySelectorAll('.cz-tk').length;
+      const pre=h.classList.contains('cz-pre'), lad=[...h.querySelectorAll('.cz-k')].filter(k=>k.querySelector('.v').textContent.trim()!=='—').map(k=>k.querySelector('.tr i').getBoundingClientRect().width), big=h.querySelector('.cz-sum');
       const fs=(e)=>e?parseFloat(getComputedStyle(e).fontSize):0;
-      return {rows:rows.length, pre, ladder:lad.length, ladderDrawn:lad.filter(x=>x>0).length, sumVisible:!!big&&big.getBoundingClientRect().height>20,
+      return {rows:rows.length, cards, pre, ladder:lad.length, ladderDrawn:lad.filter(x=>x>0).length, sumVisible:!!big&&big.getBoundingClientRect().height>20,
         lineFont:fs(h.querySelector('.cz-ln')), hscroll:document.documentElement.scrollWidth>innerWidth+1,
         smallTap:[...h.querySelectorAll('button')].filter(x=>{ const r=x.getBoundingClientRect(); return r.width>0&&r.height>0&&r.height<28; }).length}; });
-    say(a.rows>0&&!a.pre&&a.ladderDrawn===a.ladder&&a.sumVisible&&!a.hscroll, name+': panel shows '+a.rows+' pool line(s); entrance '+(a.pre?'STUCK before it played':'played and settled')+'; share bars drawn '+a.ladderDrawn+' of '+a.ladder+'; '+(a.hscroll?'page WIDER than the screen':'fits the screen'));
+    say(a.cards>0&&a.rows>0&&!a.pre&&a.ladderDrawn===a.ladder&&a.sumVisible&&!a.hscroll, name+': big picture shows '+a.cards+' token card(s), '+a.rows+' pool line(s) below; entrance '+(a.pre?'STUCK before it played':'played and settled')+'; share bars drawn '+a.ladderDrawn+' of '+a.ladder+'; '+(a.hscroll?'page WIDER than the screen':'fits the screen'));
+    // a day on a token's chart
+    const tc=await pg.$('#censusBody .cz-tchart'), tt=tc?await tc.$$('.hit'):[]; let ttip=false;
+    if(tt.length){ await pg.evaluate(()=>{ const c=document.querySelector('#censusBody .cz-tchart'); if(c) c.scrollIntoView({block:'center'}); }); await pg.waitForTimeout(400);
+      await tt[Math.floor(tt.length*0.5)][dev.hasTouch?'tap':'click'](); await pg.waitForTimeout(400);
+      ttip=await pg.evaluate(()=>{ const t=document.querySelector('#censusBody .cz-tchart .cz-tip'); return !!t&&getComputedStyle(t).display!=='none'&&t.textContent.length>10; }); }
+    say(ttip, name+': a '+(dev.hasTouch?'tap':'click')+' on a day of a token’s chart '+(ttip?'explains it':'shows NOTHING'));
+    // the pool-by-pool detail starts folded: open it as a finger would
+    if(await pg.evaluate(()=>{ const b=document.querySelector('#censusBody [data-cz="fold"][data-v="g"]'); return !!b&&b.closest('.cz-sh').nextElementSibling.classList.contains('shut'); })){
+      const gb=await pg.$('#censusBody [data-cz="fold"][data-v="g"]'); await gb.scrollIntoViewIfNeeded(); await gb[dev.hasTouch?'tap':'click'](); await pg.waitForTimeout(900); }
     say(a.lineFont>=12&&a.smallTap===0, name+': text '+a.lineFont+' px; '+(a.smallTap?a.smallTap+' button(s) under 28 px tall':'every button at least 28 px tall'));
     // a pool's days
     const tapper=dev.hasTouch?'tap':'click';
@@ -47,8 +57,9 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
     say(ev.open&&ev.h>150&&ev.bars>0&&ev.risen===ev.bars&&ev.label>=8&&!ev.tblOver&&tip.shown&&gone!==false, name+': a pool’s days open ('+Math.round(ev.h)+' px), '+ev.risen+' of '+ev.bars+' bars risen, chart labels '+Math.round(ev.label)+' px, day table '+(ev.tblOver?'WIDER than the screen':'fits')+', a '+tapper+' on a day '+(tip.shown?'explains it':'shows NOTHING (finger on '+tip.under+', day '+(tip.marked?'marked':'not marked')+')')+(gone==null?'':gone?', a tap elsewhere puts it away':', a tap elsewhere does NOT put it away'));
     // folds, the comparison, the checks chip
     const f=await pg.evaluate(async()=>{ const out={}; const fold=v=>document.querySelector('#censusBody [data-cz="fold"][data-v="'+v+'"]');
-      for(const v of ['g','e','et']){ const b=fold(v); if(!b){ out[v]=false; continue; } const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
-        b.click(); await new Promise(r=>setTimeout(r,900)); const h1=x.getBoundingClientRect().height, hid=getComputedStyle(x.firstElementChild).visibility==='hidden'; b.click(); await new Promise(r=>setTimeout(r,900)); const h2=x.getBoundingClientRect().height;
+      for(const v of ['b','g','e']){ const b=fold(v); if(!b){ out[v]=false; continue; } const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
+        const fit=()=>{ const t=x.querySelector('.cz-t'); return t?t.scrollWidth<=t.clientWidth+1:true; }; if(v==='e'&&!was) out.efit=fit();
+        b.click(); await new Promise(r=>setTimeout(r,900)); const h1=x.getBoundingClientRect().height, hid=getComputedStyle(x.firstElementChild).visibility==='hidden'; if(v==='e'&&was) out.efit=fit(); b.click(); await new Promise(r=>setTimeout(r,900)); const h2=x.getBoundingClientRect().height;
         out[v]=(was?h1>0:h1<1&&hid)&&(was?h2<1:h2>0)&&x.classList.contains('shut')===was; out[v+'h']=Math.round(was?h2:h1); }
       const before=document.querySelector('#censusBody .cz-row .cz-ln').textContent; document.querySelector('#censusBody [data-cz="win"][data-v="d"]').click(); await new Promise(r=>setTimeout(r,500));
       out.win=document.querySelector('#censusBody [data-cz="win"][data-v="d"]').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#censusBody .cz-row').length>0; out.changed=before!==document.querySelector('#censusBody .cz-row .cz-ln').textContent;
@@ -57,7 +68,7 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
       document.querySelector('#censusBody .cz-stat').click(); await new Promise(r=>setTimeout(r,1400));
       const ck=document.querySelector('#czChecks'), r=ck.getBoundingClientRect(); out.checks=!ck.querySelector('.cz-x').classList.contains('shut')&&r.top<innerHeight&&r.bottom>0;
       return out; });
-    say(f.g&&f.e&&f.et&&f.win&&f.tok&&f.checks, name+': folds '+['g','e','et'].map(k=>({g:'pools',e:'market',et:'pool table'}[k])+(f[k]?' ✓':' ✗ (shut at '+f[k+'h']+' px)')).join(', ')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
+    say(f.b&&f.g&&f.e&&f.efit&&f.win&&f.tok&&f.checks, name+': folds '+['b','g','e'].map(k=>({b:'big picture',g:'pool by pool',e:'every pool'}[k])+(f[k]?' ✓':' ✗ (shut at '+f[k+'h']+' px)')).join(', ')+'; every-pool table '+(f.efit?'fits':'WIDER than the screen')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
     say(!errs.length, name+': page errors '+errs.length);
   }catch(e){ say(false, name+': '+String(e.message||e).split('\n')[0].slice(0,90)); }
   await b.close();
