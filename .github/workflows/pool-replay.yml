@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       rebuild: { description: 'start over from the first day (1 = yes)', required: false, default: '' }
-      from: { description: 'first day, YYYY-MM-DD (UTC)', required: false, default: '2026-08-01' }
+      from: { description: 'first day, YYYY-MM-DD (UTC); empty carries on from the last run’s (1 August the first time)', required: false, default: '' }
       only: { description: 'eth, sol or both (empty)', required: false, default: '' }
   schedule:
     - cron: '41 3,15 * * *'   # 05:41 and 17:41 Budapest (CEST), after the census
@@ -28,7 +28,7 @@ jobs:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
           REBUILD: ${{ github.event.inputs.rebuild || '' }}
-          FROM: ${{ github.event.inputs.from || '2026-08-01' }}
+          FROM: ${{ github.event.inputs.from || '' }}
           ONLY: ${{ github.event.inputs.only || '' }}
           BUDGET_MIN: ${{ github.event_name == 'schedule' && '40' || '270' }}
       - name: Commit

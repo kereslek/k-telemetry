@@ -8,7 +8,8 @@
    day, its time in range, its liquidity, and the other LPs' liquidity at the price.
 
    Kept incrementally: each run reads only what happened since the last and carries the state (the
-   pool's price and liquidity, the deck's positions) forward. REBUILD=1 starts over from FROM.
+   pool's price and liquidity, the deck's positions) forward, from the first day the last run kept.
+   FROM given starts there instead (a different day starts over); REBUILD=1 starts over from it.
 
    Checked against every record the deck already keeps: the positions' own fee counters (per pool,
    per day, since mid-October), the relay's share readings, the fee ledger's month totals per token,
@@ -18,7 +19,7 @@
 import { initLock, readJ, writeJ, lockToken } from './lock.mjs';
 
 const OUT='deck-r7k4x9', SLUG=process.env.PROFILE||'main';
-const FROM=String(process.env.FROM||'2026-08-01'), T0=Date.parse(FROM+'T00:00:00Z');
+const FROM_IN=String(process.env.FROM||'').trim();
 const REBUILD=process.env.REBUILD==='1', START=Date.now(), BUDGET=(+process.env.BUDGET_MIN||70)*60e3;
 const over=()=>Date.now()-START>BUDGET;
 const LCXN='0x8cd41041505885ef0ad3858181d66f17be8aae7e', CPOOL='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
@@ -35,7 +36,10 @@ initLock(OUT);
 const rd=f=>{ try{ return readJ(OUT+'/'+f); }catch(e){ return null; } };
 const data=rd('data-'+SLUG+'.json'), census=rd('pools-'+SLUG+'.json'), bc=rd('blockcache.json')||{}, daily=rd('daily-'+SLUG+'.json'), fees=rd('fees-'+SLUG+'.json')||{}, cfg=rd('config.json')||{};
 if(!data||!census){ console.log('the relay’s data or the census could not be read: nothing done'); process.exit(1); }
-let prev=REBUILD?null:rd('pools-replay-'+SLUG+'.json'); if(prev&&(prev.v!==1||prev.from!==FROM)) prev=null;
+let prev=REBUILD?null:rd('pools-replay-'+SLUG+'.json'); if(prev&&prev.v!==1) prev=null;
+const FROM=FROM_IN||prev?.from||'2026-08-01', T0=Date.parse(FROM+'T00:00:00Z');
+if(!/^\d{4}-\d\d-\d\d$/.test(FROM)||!isFinite(T0)){ console.log('the first day is not a date (YYYY-MM-DD): nothing done'); process.exit(1); }
+if(prev&&prev.from!==FROM) prev=null;
 const prof=(cfg.profiles||[]).find(p=>p.slug===SLUG)||(cfg.profiles||[])[0]||{};
 const WAL={eth:new Set((prof.wallets||[]).filter(w=>w.chain==='ethereum').map(w=>String(w.address).toLowerCase())),
            sol:new Set((prof.wallets||[]).filter(w=>w.chain==='solana').map(w=>String(w.address)))};
@@ -45,10 +49,11 @@ const stats={eth:{pools:0,swaps:0,lp:0,mine:0,own:0,chunks:0,refused:0,receipts:
 /* ---------- the day books ----------
    Between two records the pool stands still: its tick, its liquidity and the deck's positions. That
    standing is booked by the second, day by day: seconds covered, seconds the deck had liquidity,
-   seconds it had liquidity in range, its liquidity, its share of the liquidity at the price, the
+   seconds it had liquidity in range, its liquidity, its share of the liquidity at the price (over the
+   seconds anyone's liquidity stood there, as the relay reads it: an empty price is no share at all), the
    others' liquidity at the price. A swap books its size (in the pool's first token) and the deck's
    share of it: the mean of its share before and after the swap, each counted only where in range. */
-const ACC=()=>({n:0,w:0,y:0,o:0,T:0,tA:0,tI:0,Lt:0,St:0,OLt:0});
+const ACC=()=>({n:0,w:0,y:0,o:0,T:0,tA:0,tI:0,Lt:0,St:0,OLt:0,TL:0});
 const accOf=(st,d)=>st.raw[d]||(st.raw[d]=ACC());
 const sumL=pos=>Object.values(pos).reduce((s,p)=>s+(p.L>0?p.L:0),0);
 const inL=(pos,tick)=>tick==null?0:Object.values(pos).reduce((s,p)=>s+(p.L>0&&p.lo!=null&&p.lo<=tick&&tick<p.hi?p.L:0),0);
@@ -57,7 +62,7 @@ function standing(st,t1){
   let t=st.t; const Lu=sumL(st.pos), Li=inL(st.pos,st.tick), La=st.L||0;
   while(t<t1){ const e=Math.min(t1,(Math.floor(t/D)+1)*D), dt=(e-t)/1000, a=accOf(st,day(t));
     a.T+=dt; if(Lu>0) a.tA+=dt; if(Li>0) a.tI+=dt; a.Lt+=Lu*dt;
-    if(La>0){ a.St+=Math.min(1,Li/La)*dt; a.OLt+=Math.max(0,La-Li)*dt; }
+    if(La>0){ a.TL+=dt; a.St+=Math.min(1,Li/La)*dt; a.OLt+=Math.max(0,La-Li)*dt; }
     t=e; }
   st.t=t1; }
 function onSwap(st,{t,tick,L,w,own}){
@@ -72,7 +77,7 @@ function onPool(st,{t,lo,hi,dL,tick,Lafter}){ standing(st,t);
   else if(st.tick!=null&&lo<=st.tick&&st.tick<hi) st.L=Math.max(0,(st.L||0)+dL); }
 function onMine(st,{t,k,lo,hi,dL}){ standing(st,t); const p=st.pos[k]||(st.pos[k]={lo:null,hi:null,L:0});
   if(lo!=null&&hi!=null){ p.lo=lo; p.hi=hi; } p.L=Math.max(0,p.L+dL); }
-const dayOut=a=>({n:a.n, s:a.w>0?r4(a.y/a.w):null, own:a.w>0&&a.o>0?r4(a.o/a.w):0, st:a.T>0?r4(a.St/a.T):null,
+const dayOut=a=>({n:a.n, s:a.w>0?r4(a.y/a.w):null, own:a.w>0&&a.o>0?r4(a.o/a.w):0, st:a.TL>0?r4(a.St/a.TL):null,
   tin:a.tA>0?r4(a.tI/a.tA):null, L:a.T>0?g6(a.Lt/a.T):null, oL:a.T>0?g6(a.OLt/a.T):null, cov:r4(Math.min(1,a.T/86400))});
 const newState=()=>({cur:null, t:null, tick:null, L:0, pos:{}, raw:{}, recent:[]});
 
@@ -312,7 +317,7 @@ async function solSide(out, prevPools){
     let liqSeen=0, liqAgree=0;
     for(const x of txs){ if(!x.t) continue;
       for(const e of x.ev){
-        if(e.k==='swap'&&e.pool===P.id){ const sp=Number(e.sp)/2**64, Pz=sp*sp, w=e.zfo?Number(e.a0):(Pz>0?Number(e.a1)/Pz:0), own=WAL.sol.has(x.payer);
+        if(e.k==='swap'&&e.pool===P.id){ const sp=Number(e.sp)/2**64, Pz=sp*sp, w=e.zfo?Number(e.a0):(Pz>0?Number(e.a1)/Pz:0), own=WAL.sol.has(x.payer)||x.signers.some(k=>WAL.sol.has(k));
           if(st.tick==null){ st.tick=e.tick; st.L=Number(e.L); }
           onSwap(st,{t:x.t, tick:e.tick, L:Number(e.L), w, own}); stats.sol.swaps++; if(own) stats.sol.own++; }
         else if(e.k==='liq'&&e.pool===P.id){ liqSeen++; if(st.L>0&&Math.abs(Number(e.Lb)-st.L)<=st.L*1e-6+1) liqAgree++; onPool(st,{t:x.t, tick:e.tick, Lafter:Number(e.La)}); stats.sol.lp++; }
@@ -330,7 +335,7 @@ async function solSide(out, prevPools){
 
 /* ---------- the checks: the rebuilt figures against every record the deck already keeps ---------- */
 function checks(out){
-  const C=(tok,st,t,x,k,g)=>out.checks.push({tok,grp:'rep',st,t,x,k,g:g!=null?r4(g):null});
+  const C=(tok,st,t,x,k,g,up)=>out.checks.push({tok,grp:'rep',st,t,x,k,g:g!=null?r4(g):null,...(up!=null?{up}:{})});
   const pct=x=>(x*100).toFixed(1)+'%', usd=x=>x==null?'—':'$'+(x>=1e4?(x/1e3).toFixed(1)+'k':x>=100?Math.round(x).toLocaleString('en-US'):x.toFixed(2));
   const lab=R=>(R.name||'pool')+(R.fee!=null?' '+(R.fee*100).toFixed(2).replace(/\.?0+$/,'')+'%':'')+' · '+R.venue;
   const usdDay=(R,P,d)=>{ const s=R.days[d]?.s; const v=P?.vol?.[d]; return s!=null&&v!=null&&R.fee!=null?v*R.fee*(R.lpCut??1)*s:null; };
@@ -340,11 +345,11 @@ function checks(out){
     C(R.tok, full.length?'ok':'na', 'Rebuilt from the chain · '+lab(R), full.length?full.length+' whole day(s) from '+full[0]+' to '+full[full.length-1]+' · '+ds.reduce((s,d)=>s+R.days[d].n,0)+' swaps':'nothing rebuilt yet','cover');
     if(M){ const fd=Object.keys(M.fees||{}).filter(d=>R.days[d]&&R.days[d].cov>=0.99).sort().slice(-7);
       const a=fd.reduce((s,d)=>s+(M.fees[d]||0),0), b=fd.reduce((s,d)=>s+(usdDay(R,P,d)||0),0);
-      if(fd.length&&a>0.5){ const g=Math.abs(b/a-1); C(R.tok, g<=0.15?'ok':'look', 'Rebuilt vs your fee counters · '+lab(R), 'rebuilt '+usd(b)+' vs counted '+usd(a)+' over '+fd.length+' day(s) · '+pct(g)+' apart','counters',g); }
+      if(fd.length&&a>0.5){ const g=Math.abs(b/a-1); C(R.tok, g<=0.15?'ok':'look', 'Rebuilt vs your fee counters · '+lab(R), 'rebuilt '+usd(b)+' vs counted '+usd(a)+' over '+fd.length+' day(s) · '+pct(g)+' apart','counters',g,b>a); }
       else C(R.tok,'na','Rebuilt vs your fee counters · '+lab(R),'needs a whole day of both records','counters');
       const sd=Object.keys(M.share||{}).filter(d=>R.days[d]&&R.days[d].cov>=0.99&&R.days[d].st!=null).sort().slice(-7);
       if(sd.length){ const a2=sd.reduce((s,d)=>s+M.share[d].s,0)/sd.length, b2=sd.reduce((s,d)=>s+R.days[d].st,0)/sd.length, g=a2>0?Math.abs(b2/a2-1):null;
-        C(R.tok, g!=null&&g<=0.15?'ok':'look', 'Rebuilt vs the relay’s share readings · '+lab(R), 'rebuilt '+pct(b2)+' vs read '+pct(a2)+' of the liquidity at the price over '+sd.length+' day(s)'+(g!=null?' · '+pct(g)+' apart':''),'share',g); } }
+        C(R.tok, g!=null&&g<=0.15?'ok':'look', 'Rebuilt vs the relay’s share readings · '+lab(R), 'rebuilt '+pct(b2)+' vs read '+pct(a2)+' of the liquidity at the price over '+sd.length+' day(s)'+(g!=null?' · '+pct(g)+' apart':''),'share',g,g!=null?b2>a2:null); } }
     if(R.chain==='sol'&&R.state?.liqCheck?.seen) { const q=R.state.liqCheck; C(R.tok, q.agree>=q.seen*0.8?'ok':'look', 'Pool liquidity, two records · '+lab(R), q.agree+' of '+q.seen+' liquidity changes start where the last swap left the pool','liq',q.seen?1-q.agree/q.seen:null); }
   }
   // the fee ledger's month totals per token
@@ -358,7 +363,7 @@ function checks(out){
       const startsLate=m.m===FROM.slice(0,7)&&FROM.slice(8)!=='01';
       if(!ds.length) continue;
       const g=want>0?Math.abs(got/want-1):null;
-      C(tk, gap||!whole||startsLate?'na':(g!=null&&g<=0.15?'ok':'look'), 'Month total · '+(tk==='lcx'?'LCX':'CPOOL')+' · '+m.m, 'rebuilt '+usd(got)+' vs the fee ledger’s '+usd(want)+(g!=null?' · '+pct(g)+' apart':'')+(gap?' · a day without the pool’s trading':'')+(!whole?' · not every day rebuilt whole':''),'month',g); } }
+      C(tk, gap||!whole||startsLate?'na':(g!=null&&g<=0.15?'ok':'look'), 'Month total · '+(tk==='lcx'?'LCX':'CPOOL')+' · '+m.m, 'rebuilt '+usd(got)+' vs the fee ledger’s '+usd(want)+(g!=null?' · '+pct(g)+' apart':'')+(gap?' · a day without the pool’s trading':'')+(!whole?' · not every day rebuilt whole':''),'month',g,g!=null?got>want:null); } }
 }
 /* the minute recorder's last 24 hours, pool by pool, against the swaps of the same hours */
 async function minuteCheck(out){
@@ -373,7 +378,7 @@ async function minuteCheck(out){
     const lab=(R.name||'pool')+' '+(R.fee*100).toFixed(2).replace(/\.?0+$/,'')+'% · '+R.venue;
     if(got<0.5&&reb<0.5){ out.checks.push({tok:R.tok, grp:'rep', st:'na', t:'Last 24 hours · '+lab, x:'too little earned on either record to compare', k:'minute', g:null}); continue; }
     const g=got>0?Math.abs(reb/got-1):null;
-    out.checks.push({tok:R.tok, grp:'rep', st:g!=null&&g<=0.2?'ok':'look', t:'Last 24 hours · '+lab, x:'rebuilt $'+reb.toFixed(2)+' vs the minute recorder’s $'+got.toFixed(2)+(g!=null?' · '+(g*100).toFixed(1)+'% apart':''), k:'minute', g:g!=null?r4(g):null}); }
+    out.checks.push({tok:R.tok, grp:'rep', st:g!=null&&g<=0.2?'ok':'look', t:'Last 24 hours · '+lab, x:'rebuilt $'+reb.toFixed(2)+' vs the minute recorder’s $'+got.toFixed(2)+(g!=null?' · '+(g*100).toFixed(1)+'% apart':''), k:'minute', g:g!=null?r4(g):null, ...(g!=null?{up:reb>got}:{})}); }
 }
 
 /* ---------- run ---------- */
@@ -402,5 +407,6 @@ console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.l
 console.log('  checks: '+cnt('ok')+' agree, '+cnt('look')+' to look at, '+cnt('na')+' not comparable yet · pools of the deck’s trusted for the page: '+out.pools.filter(p=>p.trust).length+' of '+out.pools.filter(p=>p.mine&&p.days).length);
 // each check by kind, status and gap only: which pool, token or amount it concerns stays in the sealed file
 const KIND={cover:'rebuilt days',counters:'vs fee counters',share:'vs share readings',liq:'pool liquidity, two records',month:'vs month total',minute:'vs minute record'};
-out.checks.forEach((c,i)=>console.log('    '+String(i+1).padStart(2)+'. '+(KIND[c.k]||c.k||'?')+' · '+(c.st==='ok'?'agrees':c.st==='look'?'TO LOOK AT':'not comparable')+(c.g!=null?' · '+(c.g*100).toFixed(1)+'% apart':'')));
+const HI={counters:['rebuilt','counters'],share:['rebuilt','readings'],month:['rebuilt','ledger'],minute:['rebuilt','minute record']};
+out.checks.forEach((c,i)=>console.log('    '+String(i+1).padStart(2)+'. '+(KIND[c.k]||c.k||'?')+' · '+(c.st==='ok'?'agrees':c.st==='look'?'TO LOOK AT':'not comparable')+(c.g!=null?' · '+(c.g*100).toFixed(1)+'% apart'+(c.up!=null&&HI[c.k]?', '+HI[c.k][c.up?0:1]+' higher':''):'')));
 for(const n of out.notes) console.log('  note: '+n);
