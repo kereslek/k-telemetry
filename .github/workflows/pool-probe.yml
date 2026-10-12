@@ -1,6 +1,7 @@
-# The deck's LCX (new contract) and CPOOL / SOL pools, examined from public chain and DEX data:
-# traffic day by day, depth, the LP book and newcomers, and the pool's slice of the token's trading.
-# The log is public: pool-level market data only, nothing about the deck's own positions.
+# Every pool of LCX (new contract) on Ethereum and of CPOOL on Solana, from public chain and DEX data:
+# trading day by day, size, price agreement, LP books and newcomers, and cross-checks between sources.
+# It does not open the deck's data or know which pools are the deck's. The log is public: pool totals
+# and counts only.
 name: pool-probe
 on:
   push:
@@ -19,8 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - run: npm i --no-save js-sha3@0.9.3
       - run: node scripts/pool-probe.mjs
         env:
-          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
           DAYS: ${{ github.event.inputs.days || '30' }}
