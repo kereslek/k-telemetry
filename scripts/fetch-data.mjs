@@ -1585,7 +1585,9 @@ async function evmSiblingPools(ck, focus){
   return pools;
 }
 
-async function buildCompetition(evmPositions, solPositions){
+/* `incomplete` names the chains this pass did not read whole: a share read without some of the
+   deck's positions is too low, so none is recorded for them (the section itself still shows). */
+async function buildCompetition(evmPositions, solPositions, incomplete=new Set()){
   const arenas=[], notes=[];
   const r2=x=>x==null?null:Math.round(x*100)/100;
   /* ---------------- Ethereum and friends ---------------- */
@@ -1621,7 +1623,7 @@ async function buildCompetition(evmPositions, solPositions){
         return { addr:e.addr, pairLabel:e.pairLabel, feeLabel:e.feeLabel, venue:e.venue,
           ids:e.ids, outIds:e.outIds, myUsd:r2(e.myUsd),
           myLiq:e.mine.toString(), poolLiq:e.poolLiq!=null?e.poolLiq.toString():null,
-          sharePct:sp, shareSeen:recordShare(g.ck+':'+e.addr, sp) }; });
+          sharePct:sp, shareSeen:incomplete.has(g.ck)?null:recordShare(g.ck+':'+e.addr, sp) }; });
       // everyone else trading the same token on this chain
       const sibs=await evmSiblingPools(g.ck, g.focus);
       const want=[g.focus.toLowerCase(), ...new Set(sibs.map(x=>x.quote.toLowerCase()))];
@@ -1692,7 +1694,7 @@ async function buildCompetition(evmPositions, solPositions){
         return { addr:e.addr, pairLabel:e.pairLabel, feeLabel:e.feeLabel, venue:e.venue, ids:e.ids,
           outIds:e.outIds, myUsd:r2(e.myUsd), tvlUsd:r2(e.tvlUsd), vol24Usd:r2(e.vol24Usd),
           myLiq:e.mine.toString(), poolLiq:e.poolLiq!=null?e.poolLiq.toString():null,
-          sharePct:sp, shareSeen:recordShare('sol:'+e.addr, sp) }; });
+          sharePct:sp, shareSeen:incomplete.has('sol')?null:recordShare('sol:'+e.addr, sp) }; });
       let rows=[], scope='Raydium pools on Solana';
       blockCache.rivals=blockCache.rivals||{};
       const ck2='sol:'+focus, hit=blockCache.rivals[ck2];
@@ -3955,7 +3957,7 @@ const main=async()=>{
        anything else is computed from. A chain that would not answer leaves the section absent,
        which the panel renders as absent rather than as a zero share. */
     let competition=null;
-    try{ competition=await buildCompetition(evmPositions, solPositions); }
+    try{ competition=await buildCompetition(evmPositions, solPositions, scanIncomplete); }
     catch(e){ logErr('competition', e); }
 
     /* A position's own fee figures without what the owner's own swaps paid into it. Done last: the

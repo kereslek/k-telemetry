@@ -77,7 +77,9 @@ const dayOut=a=>({n:a.n, s:a.w>0?r4(a.y/a.w):null, own:a.w>0&&a.o>0?r4(a.o/a.w):
 const newState=()=>({cur:null, t:null, tick:null, L:0, pos:{}, raw:{}, recent:[]});
 
 /* ---------- Ethereum: Uniswap v3 ---------- */
-const NODES=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://eth.blockscout.com/api/eth-rpc'];
+/* Blockscout's own node first: the free public nodes now refuse history (a personal token, a 10,000-block cap,
+   or nothing at all), and Blockscout answers both old logs and calls at old blocks. */
+const NODES=['https://eth.blockscout.com/api/eth-rpc','https://eth.drpc.org','https://ethereum-rpc.publicnode.com','https://1rpc.io/eth','https://eth.llamarpc.com'];
 const BS='https://eth.blockscout.com';
 async function rpcRaw(u,method,params,ms=25000){ return j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,ms); }
 async function rpcAt(u,method,params,ms=25000){ const r=await rpcRaw(u,method,params,ms); return r&&r.result!==undefined&&!r.error?r.result:undefined; }
@@ -223,7 +225,15 @@ async function ethSide(out, prevPools){
 /* ---------- Solana: Raydium CLMM ---------- */
 const KEYED=(process.env.SOL_RPC_URL||'').split(',').map(s=>s.trim()).filter(Boolean);
 const SRPC=[...KEYED,'https://api.mainnet-beta.solana.com'];
-async function srpc(method,params){ for(const u of SRPC){ const r=await rpcAt(u,method,params,30000); if(r!==undefined) return r; } return undefined; }
+/* Solana: the keyed node if there is one, then the public one. The public node turns a busy caller away
+   ("too many requests"); that is a pause, not a refusal, so it is asked again after one, two, four,
+   eight seconds. */
+async function srpc(method,params){
+  for(const u of SRPC){ for(let k=0;k<5;k++){ const r=await rpcRaw(u,method,params,30000);
+      if(r&&r.result!==undefined&&!r.error) return r.result;
+      const msg=String(r?.error?.message||''); if(r&&!/too many|rate|429|busy/i.test(msg)) break;   // a real refusal: the next node
+      await sleep(1000*2**k); } }
+  return undefined; }
 const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const b58=buf=>{ let n=BigInt('0x'+(Buffer.from(buf).toString('hex')||'0')), s=''; while(n>0n){ s=B58[Number(n%58n)]+s; n/=58n; } for(const x of buf){ if(x===0) s='1'+s; else break; } return s; };
 const u128=(b,o)=>{ let v=0n; for(let i=15;i>=0;i--) v=(v<<8n)+BigInt(b[o+i]); return v; };
@@ -251,7 +261,7 @@ async function sigsOf(addr, untilSig, sinceMs){
 /* a position the deck closed before the first day reached it: its range from its own opening record */
 async function openRange(mint){
   const s=await sigsOf(mint,null,null); if(!s.sigs.length) return null; const o=s.sigs[s.sigs.length-1];
-  const tx=await srpc('getTransaction',[o.signature,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]); if(!tx) return null;
+  const tx=await srpc('getTransaction',[o.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]); if(!tx) return null;
   const e=decodeTx(tx).ev.find(x=>x.k==='open'); return e?{lo:e.lo,hi:e.hi}:null; }
 
 async function solSide(out, prevPools){
@@ -270,7 +280,7 @@ async function solSide(out, prevPools){
     const S=await sigsOf(P.id, first?null:st.cur?.sig, first?T0:null);
     if(S.partial){ stats.unread++; out.notes.push('sol: a pool’s transaction list was not served whole this run; kept as it was'); out.pools.push(pv||{id:P.id}); continue; }
     const sigs=S.sigs.filter(x=>!x.err).reverse();   // oldest first
-    const getTx=async x=>{ const tx=await srpc('getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]); return tx?decodeTx(tx):null; };
+    const getTx=async x=>{ const tx=await srpc('getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]); return tx?decodeTx(tx):null; };
     // a keyed node takes four at a time; the public one two, with a breath between
     const txs=await mapLimit(sigs,KEYED.length?4:2,async x=>{ const r=await getTx(x); if(!KEYED.length) await sleep(180); return r; });
     // whatever a busy node turned away gets a second, slower pass

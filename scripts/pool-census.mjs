@@ -112,9 +112,18 @@ for(const p of data.sol||[]){ if(![p.mint0,p.mint1].includes(CPOOL)) continue;
   const e=mine.get(p.poolId)||{tok:'cpool', id:p.poolId, ids:[], value:0, inL:0n, poolL:null, mints:new Set(), ck:'sol'};
   e.ids.push(String(p.id)); e.value+=p.valueUsd||0; if(p.inRange&&p.liq) e.inL+=BigInt(p.liq); if(p.poolLiq!=null) e.poolL=BigInt(p.poolLiq); if(p.nftMint) e.mints.add(p.nftMint); mine.set(p.poolId,e); }
 
-/* the relay's share record, a point every pass: by UTC day, the mean share and the time in range */
+/* The relay's share record, a point every pass: by UTC day, the mean share and the time in range.
+   Only a pass that read every chain whole counts. A pass that lost a wallet's listing read the pool's
+   liquidity without that wallet's positions in it, so its share came out too low — to nothing, when
+   that wallet held them all. Those passes leave no point in the relay's fifteen-minute history
+   (hist-<slug>.json), so a reading belongs to a whole pass when that pass wrote its point at most ten
+   minutes before it; the next pass is a quarter of an hour on. */
 const shareHist=(bc&&bc.shareHist)||{};
-const shareOf=(ck,id)=>{ const k=Object.keys(shareHist).find(k=>k.toLowerCase()===(ck==='sol'?'sol:'+id:ck+':'+id).toLowerCase()); return k?shareHist[k]:[]; };
+const histPts=rd('hist-'+SLUG+'.json'), goodT=(Array.isArray(histPts)?histPts:[]).map(h=>h&&h.t).filter(Boolean).sort((a,b)=>a-b);
+const fromWholePass=t=>{ let lo=0, hi=goodT.length-1, best=null; while(lo<=hi){ const mid=(lo+hi)>>1; if(goodT[mid]<=t){ best=goodT[mid]; lo=mid+1; } else hi=mid-1; } return best!=null&&t-best<=10*60e3; };
+let shareKept=0, shareDropped=0;
+const shareOf=(ck,id)=>{ const k=Object.keys(shareHist).find(k=>k.toLowerCase()===(ck==='sol'?'sol:'+id:ck+':'+id).toLowerCase()); const all=k?shareHist[k]:[];
+  if(!goodT.length) return all; const kept=all.filter(p=>fromWholePass(p.t)); shareKept+=kept.length; shareDropped+=all.length-kept.length; return kept; };
 const byDay=pts=>{ const m={}; for(const p of pts){ const d=day(p.t); (m[d]=m[d]||[]).push(p.s/100); } const o={};
   for(const [d,a] of Object.entries(m)) o[d]={s:r4(a.reduce((x,y)=>x+y,0)/a.length), tin:r4(a.filter(x=>x>0).length/a.length), n:a.length}; return o; };
 /* the relay's per-position fee totals (every pass, 50 hours): fees per UTC day, for days the record covers whole */
@@ -166,7 +175,10 @@ for(const T of TOKENS){
 for(const [id,m] of mine){
   const T=out.tokens.find(t=>t.key===m.tok), P=T?.pools.find(p=>String(p.id).toLowerCase()===String(id).toLowerCase());
   const old=P0?.mine?.find(x=>x.id===id)||{};
-  const sh={...(old.share||{}), ...byDay(shareOf(m.ck,id))};
+  // the days the relay's record still covers come from it alone (filtered); older days stay as the last census kept them
+  const rawK=Object.keys(shareHist).find(k=>k.toLowerCase()===(m.ck==='sol'?'sol:'+id:m.ck+':'+id).toLowerCase()), covered=new Set((rawK?shareHist[rawK]:[]).map(p=>day(p.t)));
+  const keepOld=Object.fromEntries(Object.entries(old.share||{}).filter(([d])=>!covered.has(d)));
+  const sh={...keepOld, ...byDay(shareOf(m.ck,id))};
   const fe={...(old.fees||{}), ...feesByDay(m.ids)};
   const today=day(Date.now()), shareNow=m.poolL&&m.poolL>0n?r4(Number(m.inL*1000000n/m.poolL)/1e6):null;
   const ourL={...(old.ourL||{}), [today]:m.inL.toString()};
@@ -212,6 +224,7 @@ for(const T of out.tokens){
 }
 writeJ(OUT+'/pools-'+SLUG+'.json', out);
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
+console.log('share readings: '+shareKept+' kept, '+shareDropped+' dropped (taken in passes that did not read every chain)'+(goodT.length?'':' · the relay’s history could not be read, nothing filtered'));
 console.log('pools listed: '+poolsN+' · trading: '+realN+' · own pools: '+out.mine.length+' · days of trading kept: '+Math.max(0,...out.tokens.map(t=>Object.keys(t.market).length))
   +' · days of share: '+Math.max(0,...out.mine.map(m=>Object.keys(m.share).length))+' · days of fees: '+Math.max(0,...out.mine.map(m=>Object.keys(m.fees).length)));
 console.log('checks: '+cnt('ok')+' agree · '+cnt('look')+' to look at · '+cnt('na')+' not readable');
