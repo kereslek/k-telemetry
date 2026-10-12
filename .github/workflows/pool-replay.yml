@@ -1,0 +1,41 @@
+# The swap replay: WHY YOUR FEES MOVED back to 1 August, rebuilt from the chains' own swap records
+# and checked against the deck's fee counters, share readings, month totals and minute record.
+# Twice a day after the census it carries on from where it stopped; the first run (or a rebuild)
+# is started by hand. Written sealed; the log is public and carries counts and pass/fail only.
+name: pool-replay
+on:
+  workflow_dispatch:
+    inputs:
+      rebuild: { description: 'start over from the first day (1 = yes)', required: false, default: '' }
+      from: { description: 'first day, YYYY-MM-DD (UTC)', required: false, default: '2026-08-01' }
+      only: { description: 'eth, sol or both (empty)', required: false, default: '' }
+  schedule:
+    - cron: '41 3,15 * * *'   # 05:41 and 17:41 Budapest (CEST), after the census
+permissions:
+  contents: write
+concurrency: { group: pool-replay, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/pool-replay.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          REBUILD: ${{ github.event.inputs.rebuild || '' }}
+          FROM: ${{ github.event.inputs.from || '2026-08-01' }}
+          ONLY: ${{ github.event.inputs.only || '' }}
+          BUDGET_MIN: ${{ github.event_name == 'schedule' && '40' || '270' }}
+      - name: Commit
+        run: |
+          [ -f deck-r7k4x9/pools-replay-main.json ] || exit 0
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          git add deck-r7k4x9/pools-replay-main.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "swap replay $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1

@@ -1672,6 +1672,8 @@
   .cz-pre .cz-k .tr i{width:0}
   .cz-k .s{font-size:10.5px;color:var(--text-muted);line-height:1.35}
   .cz-tchart{margin-top:14px}
+  .cz-who{margin:-4px 0 12px;padding:8px 10px;border-left:2px solid var(--cz-amber);background:rgba(250,178,25,.06);font-size:12.5px;line-height:1.5;color:var(--text-secondary)}
+  .cz-who b{color:var(--text-primary);font-weight:600}
   @media(max-width:700px){
     .cz-eq{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)} .cz-eq .cz-q.you{grid-column:1/-1} .cz-eq .op.eqs{display:none}
     .cz-kp{grid-template-columns:repeat(2,minmax(0,1fr))} .cz-tk{padding:12px} .cz-q{padding:9px} .cz-q .n{font-size:18px} .cz-tl{font-size:13.5px}
@@ -2358,7 +2360,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.3';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.4';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7384,22 +7386,53 @@ function renderOps(){
    your time in range). First the big picture, each token as a whole (your fees = all its LPs' fees ×
    your share of them); then, folded, one line per pool naming the biggest causes with the pool's
    days one tap below it; every pool of the token; and the checks. */
-let czJust=null; const czKey=C=>C.t+'|'+czWin+'|'+czTok+'|'+JSON.stringify(czFold)+'|'+[...czOpenSet].sort().join(',');
+let czJust=null; const czKey=C=>C.t+'|'+(state.replay?state.replay.t:0)+'|'+czWin+'|'+czTok+'|'+JSON.stringify(czFold)+'|'+[...czOpenSet].sort().join(',');
 let czWin=store.get('czWin','w'), czTok=store.get('czTok',0), czFold=store.get('czFold2',{g:1,e:1,f:1}), czOpenSet=new Set(store.get('czOpen',[]));
 function loadCensus(){
   const slug=activeProfile()?.slug||'main';
   if(state._czAsk || (state.census!==undefined && state.censusSlug===slug && Date.now()-(state._czAt||0)<30*60e3)) return;
   state._czAsk=true;
-  lfetch('pools-'+slug+'.json?nc='+Date.now(),{cache:'no-store'})
-    .then(r=>r.ok?r.json():null)
-    .then(j=>{ state.census=j&&j.v===1&&Array.isArray(j.tokens)?j:null; })
+  // the census, and the swap replay that carries it back to August (scripts/pool-replay.mjs), sealed alike
+  const get=f=>lfetch(f+'?nc='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+  Promise.all([get('pools-'+slug+'.json'), get('pools-replay-'+slug+'.json')])
+    .then(([j,R])=>{ state.census=j&&j.v===1&&Array.isArray(j.tokens)?j:null; state.replay=R&&R.v===1&&Array.isArray(R.pools)?R:null; })
     .catch(()=>{ if(state.census===undefined) state.census=null; })
     .finally(()=>{ state.censusSlug=slug; state._czAsk=false; state._czAt=Date.now(); try{ renderCensus(); }catch(e){ console.error('renderCensus',e); } });
 }
 const czDay=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
-const czWins=w=>w==='d'
-  ? {A:[czDay(1)], B:[2,3,4,5,6,7,8].map(czDay), a:'yesterday', b:'the 7 days before', short:'YESTERDAY vs 7-DAY AVG'}
-  : {A:[1,2,3,4,5,6,7].map(czDay), B:[8,9,10,11,12,13,14].map(czDay), a:'this week', b:'last week', short:'THIS WEEK vs LAST'};
+const czMon=(y,m)=>{ const n=new Date(Date.UTC(y,m+1,0)).getUTCDate(), o=[]; for(let i=n;i>=1;i--) o.push(new Date(Date.UTC(y,m,i)).toISOString().slice(0,10)); return o; };
+const czMName=(y,m)=>new Date(Date.UTC(y,m,15)).toLocaleDateString('en-GB',{month:'long',timeZone:'UTC'});
+/* The two periods compared, newest day first, with the words for them. A month is the whole days of
+   yesterday's month against the whole month before it, compared a day at a time. */
+const czWins=w=>{
+  if(w==='d') return {k:'d', A:[czDay(1)], B:[2,3,4,5,6,7,8].map(czDay), a:'yesterday', b:'the 7 days before', than:'yesterday than their 7-day average', as:'yesterday as their 7-day average',
+    vs:'yesterday against the 7 days before', la:'YDAY', lb:'7 DAYS BEFORE', short:'YESTERDAY vs 7-DAY AVG', span:30};
+  if(w==='m'){ const yd=new Date(Date.now()-864e5), y=yd.getUTCFullYear(), m=yd.getUTCMonth(), cur=new Date().getUTCMonth()===m, py=m?y:y-1, pm=m?m-1:11;
+    const A=czMon(y,m).filter(d=>d<=czDay(1)), B=czMon(py,pm), na=czMName(y,m)+(cur?' so far':''), nb=czMName(py,pm);
+    return {k:'m', A, B, a:'in '+na, b:'in '+nb, than:'a day in '+na+' than in '+nb, as:'a day in '+na+' as in '+nb, vs:'a day in '+na+' against '+nb,
+      la:na.toUpperCase(), lb:nb.toUpperCase(), short:'THIS MONTH vs LAST', span:Math.max(30,A.length+B.length)}; }
+  return {k:'w', A:[1,2,3,4,5,6,7].map(czDay), B:[8,9,10,11,12,13,14].map(czDay), a:'this week', b:'last week', than:'this week than last week', as:'this week as last week',
+    vs:'this week against last week', la:'THIS WEEK', lb:'LAST WEEK', short:'THIS WEEK vs LAST', span:30}; };
+/* Your fees in a pool on a day, by where the figure comes from: the positions' own fee counters, the
+   swap replay (the pool's LPs' fees that day × your share of them, swap by swap), or your share as the
+   relay read it × the pool's fees. A comparison takes one source for both its periods, the first that
+   covers both, so a change of source never shows as a change of fees. */
+const czSrc={
+  actual:(M,P,d)=>M&&M.fees&&M.fees[d]!=null?M.fees[d]:null,
+  replay:(M,P,d)=>{ const x=M&&M.rep&&M.rep[d]; return x&&x.cov>=0.99&&x.s!=null&&P&&P.vol&&P.vol[d]!=null&&P.fee!=null?P.vol[d]*P.fee*(P.lpCut??1)*x.s:null; },
+  share:(M,P,d)=>M&&M.exp&&M.exp[d]!=null?M.exp[d]:null };
+const CZ_BASIS=['actual','replay','share'], CZ_BLBL={actual:'from your fee counters', replay:'rebuilt from the chain’s swaps', share:'estimated from your share'};
+/* The replay's days beside the census's own records; a pool you have left lives on in the replay. Only
+   a pool whose rebuilt days agree with your own records (the replay marks it trusted) is used; the
+   checks are shown either way, so a pool held back says why. */
+function czMerge(C,R){
+  const k=R?R.t:0; if(!C||C._rep===k) return; C._rep=k;
+  C.mine=(C.mine||[]).filter(M=>!M.past); for(const M of C.mine) delete M.rep; C.repChecks=[]; C.repFrom=null; C.repTrusted=0;
+  if(!R) return;
+  const K=id=>/^0x/i.test(String(id))?String(id).toLowerCase():String(id);
+  for(const p of R.pools||[]){ if(!p.days||!p.trust) continue; C.repTrusted++; const M=C.mine.find(m=>K(m.id)===K(p.id));
+    if(M) M.rep=p.days; else if(p.mine) C.mine.push({id:p.id, tok:p.tok, n:0, valueNow:0, past:1, share:{}, fees:{}, exp:{}, ourL:{}, value:{}, rep:p.days, since:null}); }
+  C.repChecks=Array.isArray(R.checks)?R.checks:[]; C.repFrom=R.from||null; }
 const czAvg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
 const czLn=(a,b)=>a>0&&b>0?Math.log(a/b):null;
 const czP=(x,d=0)=>x==null||!isFinite(x)?'—':(x*100).toFixed(d)+'%';
@@ -7413,24 +7446,26 @@ function czPool(T,P,M,W){
   const fee=P.fee||0, cut=P.lpCut??1, vol=d=>(P.vol&&P.vol[d])||0, mk=d=>(T.market&&T.market[d])||0;
   const vA=czAvg(W.A.map(vol)), vB=czAvg(W.B.map(vol)), mA=czAvg(W.A.map(mk)), mB=czAvg(W.B.map(mk));
   const slA=mA>0?vA/mA:null, slB=mB>0?vB/mB:null;
-  const sh=ds=>{ const v=ds.map(d=>M&&M.share&&M.share[d]).filter(Boolean); return v.length&&v.length>=Math.ceil(ds.length/2)?{s:czAvg(v.map(x=>x.s)),tin:czAvg(v.map(x=>x.tin)),n:v.length}:null; };
-  const sA=M?sh(W.A):null, sB=M?sh(W.B):null;
-  const act=ds=>M&&M.fees&&ds.every(d=>M.fees[d]!=null)?czAvg(ds.map(d=>M.fees[d])):null;
-  const fA=act(W.A), fB=act(W.B);
+  // your share at the price and time in range: the relay's readings, or the replay's where those do not reach
+  const shDay={relay:d=>M&&M.share&&M.share[d]||null, replay:d=>{ const x=M&&M.rep&&M.rep[d]; return x&&x.cov>=0.99&&x.st!=null?{s:x.st, tin:x.tin??0, L:x.L}:null; }};
+  const half=ds=>Math.ceil(ds.length/2), ssrc=M?['relay','replay'].find(k=>[W.A,W.B].every(ds=>ds.filter(d=>shDay[k](d)).length>=half(ds))):null;
+  const sh=ds=>{ if(!ssrc) return null; const v=ds.map(d=>shDay[ssrc](d)).filter(Boolean); return v.length?{s:czAvg(v.map(x=>x.s)),tin:czAvg(v.map(x=>x.tin)),n:v.length}:null; };
+  const sA=sh(W.A), sB=sh(W.B);
+  const val=(k,d)=>M?czSrc[k](M,P,d):null, kb=M?CZ_BASIS.find(k=>[W.A,W.B].every(ds=>ds.filter(d=>val(k,d)!=null).length>=half(ds))):null;
   let basis='pool', FA=vA*fee*cut, FB=vB*fee*cut;
-  if(fA!=null&&fB!=null){ basis='actual'; FA=fA; FB=fB; }
-  else if(sA&&sB){ basis='share'; FA=vA*fee*cut*sA.s; FB=vB*fee*cut*sB.s; }
+  if(kb==='share'&&sA&&sB){ basis='share'; FA=vA*fee*cut*sA.s; FB=vB*fee*cut*sB.s; }
+  else if(kb&&kb!=='share'){ basis=kb; const av=ds=>czAvg(ds.map(d=>val(kb,d)).filter(x=>x!=null)); FA=av(W.A); FB=av(W.B); }
   const eff={market:czLn(mA,mB), routing:czLn(slA,slB)};
   if(sA&&sB){
-    const L=ds=>{ const v=ds.map(d=>M.ourL&&M.ourL[d]).filter(x=>x!=null).map(Number); return v.length?czAvg(v):null; };
+    const L=ds=>{ const v=ssrc==='replay'?ds.map(d=>shDay.replay(d)).filter(Boolean).map(x=>x.L).filter(x=>x>0):ds.map(d=>M.ourL&&M.ourL[d]).filter(x=>x!=null).map(Number); return v.length?czAvg(v):null; };
     const you=(czLn(sA.tin,sB.tin)||0)+(czLn(L(W.A),L(W.B))||0);
     eff.you=you; eff.others=(czLn(sA.s,sB.s)||0)-you; }
   const total=FB>0?FA/FB-1:null;
-  if(basis==='actual'&&FA>0&&FB>0) eff.rest=Math.log(FA/FB)-['market','routing','you','others'].reduce((s,k)=>s+(eff[k]||0),0);
+  if((basis==='actual'||basis==='replay')&&FA>0&&FB>0) eff.rest=Math.log(FA/FB)-['market','routing','you','others'].reduce((s,k)=>s+(eff[k]||0),0);
   const born=P.created?new Date(P.created).toISOString().slice(0,10):null;
   const isNew=born&&born>W.B[W.B.length-1];
   const thin=!isNew&&(vA<100||vB<100);
-  return {T,P,M,W,vA,vB,mA,mB,slA,slB,sA,sB,FA,FB,basis,eff,total,isNew,thin,born};
+  return {T,P,M,W,vA,vB,mA,mB,slA,slB,sA,sB,ssrc,FA,FB,basis,eff,total,isNew,thin,born};
 }
 /* the pool that took more of the token's trading */
 function czRival(T,P,W){ let best=null;
@@ -7441,7 +7476,7 @@ function czRival(T,P,W){ let best=null;
 /* the line */
 function czLine(r){
   const {T,P,W}=r;
-  if(r.isNew) return 'A new pool (opened '+czDate(r.born)+'): '+czK(r.vA*W.A.length)+' traded '+(W.A.length>1?'in its first week':'yesterday')+'; nothing before it to compare with.';
+  if(r.isNew) return 'A new pool (opened '+czDate(r.born)+'): '+czK(r.vA*W.A.length)+' traded '+(W.k==='d'?'yesterday':W.k==='m'?W.a:'in its first week')+'; nothing before it to compare with.';
   if(r.thin) return '<b>Thin:</b> '+czK(r.vA)+' a day traded against '+czK(r.vB)+' before, too little to name a cause.'+(r.slA!=null&&r.slA<0.05&&r.slB!=null&&r.slB<0.05?' The '+T.sym+' trading sits in other pools.':'');
   const E=r.eff, parts=[];
   const say={
@@ -7471,20 +7506,23 @@ function czChips(r){
   for(const k of ks){ if(k==='rest'&&Math.abs(Math.expm1(E[k]))<0.03) continue; const v=Math.expm1(E[k]);
     out.push([lab[k]+' '+czSg(v), Math.abs(v)<0.03?'':v<0?'dn':'up', Math.min(1,Math.abs(E[k])/1.5), k===top&&Math.abs(v)>=0.03]); }
   if(r.basis==='share') out.push(['ESTIMATED FROM YOUR SHARE','est',0]);
+  if(r.basis==='replay') out.push(['REBUILT FROM THE CHAIN','est',0]);
   if(r.basis==='pool') out.push(['POOL ONLY','est',0]);
   return out; }
 
 /* B: one pool's days */
 function czEvidence(r, cw){
   const {P,M}=r, fee=P.fee||0, cut=P.lpCut??1, days=[]; for(let i=30;i>=1;i--) days.push(czDay(i));
-  const pf=d=>((P.vol&&P.vol[d])||0)*fee*cut, my=d=>M&&M.fees&&M.fees[d]!=null?{v:M.fees[d],a:1}:M&&M.exp&&M.exp[d]!=null?{v:M.exp[d],a:0}:null;
-  const d7=days.slice(-7), sh7=d7.map(d=>M&&M.share&&M.share[d]).filter(Boolean), my7=d7.map(my).filter(Boolean);
+  // your fees: the counters, else the replay, else your share × the pool's fees; your share: the relay's readings, else the replay's
+  const pf=d=>((P.vol&&P.vol[d])||0)*fee*cut, my=d=>{ const a=czSrc.actual(M,P,d); if(a!=null) return {v:a,a:1}; const r=czSrc.replay(M,P,d); if(r!=null) return {v:r,a:0,r:1}; const x=czSrc.share(M,P,d); return x!=null?{v:x,a:0}:null; };
+  const shOf=d=>M&&M.share&&M.share[d]||(M&&M.rep&&M.rep[d]&&M.rep[d].cov>=0.99&&M.rep[d].st!=null?{s:M.rep[d].st,tin:M.rep[d].tin??0,r:1}:null);
+  const d7=days.slice(-7), sh7=d7.map(shOf).filter(Boolean), my7=d7.map(my).filter(Boolean);
   const tiles=[['POOL SIZE',czK(P.tvl),P.tvlRay!=null&&P.tvlIdx!=null&&Math.abs(P.tvlIdx/Math.max(P.tvlRay,.01)-1)>0.1?'Raydium’s figure':'now'],
     ['TRADED · 7 DAYS',czK(d7.reduce((s,d)=>s+((P.vol&&P.vol[d])||0),0)),czK((P.vol&&P.vol[days[days.length-1]])||0)+' yesterday'],
     ['LPs’ FEES · 7 DAYS',czK(d7.reduce((s,d)=>s+pf(d),0)),(fee*100).toFixed(2).replace(/\.?0+$/,'')+'%'+(cut<1?' less Raydium’s '+Math.round((1-cut)*100)+'%':'')],
-    ['LPs IN THE POOL',P.book&&P.book.open!=null?String(P.book.open):'—',P.book&&P.book.open!=null?P.book.atPrice+' at the price'+(P.book.wallets?', '+P.book.wallets+' wallets':''):'not readable yet'],
+    ['LPs IN THE POOL',P.book&&P.book.open!=null?String(P.book.open):'—',P.book&&P.book.open!=null?P.book.atPrice+' at the price'+(P.book.wallets?', '+P.book.wallets+' wallets':'')+(Array.isArray(P.book.at)?(()=>{ const o=P.book.at.filter(x=>!x.mine); return o.length?' · '+o.length+' not yours ('+czP(o.reduce((s,x)=>s+(x.s||0),0),0)+')':' · all yours'; })():''):'not readable yet'],
     ['YOUR SHARE AT THE PRICE',sh7.length?czP(czAvg(sh7.map(x=>x.s)),1):'—',sh7.length?'7-day average · in range '+czP(czAvg(sh7.map(x=>x.tin))):'recorded from '+(M&&M.since?czDate(M.since):'the next census'),1],
-    ['YOUR FEES · 7 DAYS',my7.length?czK(my7.reduce((s,x)=>s+x.v,0)):'—',my7.length?(my7.every(x=>x.a)?'from your fee counters':'partly estimated from your share'):'recording',1]];
+    ['YOUR FEES · 7 DAYS',my7.length?czK(my7.reduce((s,x)=>s+x.v,0)):'—',my7.length?(my7.every(x=>x.a)?'from your fee counters':my7.some(x=>x.r)?'partly rebuilt from the chain’s swaps':'partly estimated from your share'):'recording',1]];
   const Wd=Math.max(300,Math.round(cw||640)), H=Wd<520?190:230, max=Math.max(1,...days.map(pf))*1.12, L=42, R=34, T=12, B=26; cw=(Wd-L-R)/days.length;
   const y=v=>T+(H-T-B)*(1-v/max), yS=v=>T+(H-T-B)*(1-v);
   let g='';
@@ -7495,17 +7533,17 @@ function czEvidence(r, cw){
     if(v>0) g+='<rect class="bar" style="--i:'+i+'" x="'+x0.toFixed(1)+'" y="'+y(v).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+(H-B-y(v)).toFixed(1)+'" fill="var(--cz-pool-hi)" opacity=".55"/>';
     if(m&&m.v>0) g+='<rect class="bar" style="--i:'+i+'" x="'+x0.toFixed(1)+'" y="'+y(Math.min(m.v,max)).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+(H-B-y(Math.min(m.v,max))).toFixed(1)+'" fill="var(--cz-you)"'+(m.a?'':' opacity=".55"')+'/>';
     const n=born.filter(x=>x===d).length; if(n) g+='<circle cx="'+(x0+w/2).toFixed(1)+'" cy="'+(H-B+9)+'" r="3.5" fill="var(--cz-new)"/>';
-    const s=M&&M.share&&M.share[d]; if(s) pts.push((x0+w/2).toFixed(1)+','+yS(s.s).toFixed(1));
+    const s=shOf(d); if(s) pts.push((x0+w/2).toFixed(1)+','+yS(s.s).toFixed(1));
     if((i%(Wd<520?7:5)===0&&i<days.length-3)||i===days.length-1) g+='<text x="'+(x0+w/2).toFixed(1)+'" y="'+(H-2)+'" fill="var(--text-muted)" font-size="9" font-family="var(--mono)" text-anchor="middle">'+d.slice(5)+'</text>';
     g+='<rect class="hit" data-d="'+d+'" x="'+(L+i*cw).toFixed(1)+'" y="'+T+'" width="'+cw.toFixed(1)+'" height="'+(H-T-B)+'"/>'; });
   if(pts.length>1){ g+='<polyline class="ln" points="'+pts.join(' ')+'" fill="none" stroke="var(--cz-you)" stroke-width="2" stroke-dasharray="2000" stroke-dashoffset="0" style="filter:drop-shadow(0 0 4px rgba(47,211,234,.6))"/>'; }
-  const rows=d7.slice().reverse().map(d=>{ const s=M&&M.share&&M.share[d], m=my(d), n=born.filter(x=>x===d).length;
+  const rows=d7.slice().reverse().map(d=>{ const s=shOf(d), m=my(d), n=born.filter(x=>x===d).length;
     return '<tr><td>'+czDate(d)+'</td><td>'+czK((P.vol&&P.vol[d])||0)+'</td><td>'+czK(pf(d))+'</td><td class="m cz-h">'+(n||'')+'</td><td class="y">'+(s?czP(s.s,1):'—')+'</td><td class="y cz-h">'+(s?czP(s.tin):'—')+'</td><td class="'+(m?m.a?'y':'e':'m')+'">'+(m?(m.a?'':'≈ ')+czK(m.v):'—')+'</td></tr>'; }).join('');
   return '<div class="cz-ev"><div class="cz-tiles">'+tiles.map(t=>'<div class="cz-tile'+(t[3]?' you':'')+'"><span class="l">'+t[0]+'</span><span class="v">'+t[1]+'</span><span class="s">'+t[2]+'</span></div>').join('')+'</div>'
     +'<div class="cz-chart" data-pool="'+esc(P.id)+'"><svg viewBox="0 0 '+Wd+' '+H+'" role="img" aria-label="Fees paid to this pool’s LPs each day, with your part and your share">'+g+'</svg><div class="cz-tip"></div></div>'
     +'<div class="cz-leg"><span><i style="background:var(--cz-pool-hi);opacity:.55"></i>LPs’ fees a day</span><span><i style="background:var(--cz-you)"></i>yours</span><span><i style="background:var(--cz-you);opacity:.55"></i>yours, estimated from your share</span><span><i style="background:var(--cz-you);height:2px;vertical-align:3px"></i>your share at the price</span><span><i style="background:var(--cz-new);border-radius:50%"></i>an LP arrived</span></div>'
     +'<div class="cz-t"><table><tr><th>DAY</th><th>TRADED</th><th>LPs’ FEES</th><th class="cz-h">LPs ARRIVED</th><th>SHARE</th><th class="cz-h">IN RANGE</th><th>YOURS</th></tr>'+rows+'</table></div>'
-    +'<p class="cz-note">≈ marks a day estimated from your share, before your fee counters covered it.</p></div>'; }
+    +'<p class="cz-note">≈ marks a day your fee counters do not cover: rebuilt from the chain’s swaps, or where those are missing, estimated from your share.</p></div>'; }
 
 /* E: your share of the market, over the last 7 complete days */
 function czMarket(T,mine){
@@ -7533,20 +7571,23 @@ function czToken(T,mine,W){
   const inU=own.filter(x=>U.includes(x.P)), outN=own.length-inU.length;
   const vol=(P,d)=>(P.vol&&P.vol[d])||0;
   const tradeOf=d=>U.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>U.reduce((s,P)=>s+vol(P,d)*(P.fee||0)*(P.lpCut??1),0);
-  const first=inU.map(x=>x.M.since).filter(Boolean).sort()[0]||null;
-  // your fees on a day: every pool of yours recorded by then, from its fee counter, or before the counters from its share
-  const yoursOf=d=>{ if(!first||d<first||!inU.length) return null; let v=0, est=false;
-    for(const {M} of inU){ if(M.since&&d<M.since) continue;
-      const f=M.fees&&M.fees[d]!=null?M.fees[d]:null, x=M.exp&&M.exp[d]!=null?M.exp[d]:null;
-      if(f==null&&x==null) return null; if(f==null) est=true; v+=f??x; }
-    return {v,est}; };
-  const win=ds=>{ const ok=ds.filter(d=>yoursOf(d)), full=ok.length>=Math.ceil(ds.length/2);
-    const you=full?czAvg(ok.map(d=>yoursOf(d).v)):null, pOk=full?czAvg(ok.map(pieOf)):null;
-    return {trade:czAvg(ds.map(tradeOf)), pie:czAvg(ds.map(pieOf)), you, share:full&&pOk>0?you/pOk:null, est:ok.some(d=>yoursOf(d).est), n:ok.length}; };
-  const A=win(W.A), B=win(W.B), ch=(a,b)=>a!=null&&b!=null&&b>0&&a>=0?a/b-1:null;
+  const first=inU.filter(x=>!x.M.past).map(x=>x.M.since).filter(Boolean).sort()[0]||null;
+  // your fees on a day, every pool of yours together, from one source; the relay's records start where each pool's did
+  const dayOf=(d,k)=>{ if(!inU.length) return null; let v=0, n=0;
+    for(const {M,P} of inU){ if(k!=='replay'&&(M.past||(M.since&&d<M.since))) continue; const x=czSrc[k](M,P,d); if(x==null) return null; v+=x; n++; }
+    return n?v:null; };   // a day before any record of a source began is not a day of no fees
+  const covers=(k,ds)=>ds.filter(d=>dayOf(d,k)!=null).length>=Math.ceil(ds.length/2);
+  const basis=CZ_BASIS.find(k=>covers(k,W.A)&&covers(k,W.B))||null, basisA=basis||CZ_BASIS.find(k=>covers(k,W.A))||null;
+  const win=(ds,k)=>{ const t=czAvg(ds.map(tradeOf)), p=czAvg(ds.map(pieOf)); if(!k) return {trade:t, pie:p, you:null, share:null, n:0, k:null};
+    const ok=ds.filter(d=>dayOf(d,k)!=null); if(ok.length<Math.ceil(ds.length/2)) return {trade:t, pie:p, you:null, share:null, n:ok.length, k:null};
+    const you=czAvg(ok.map(d=>dayOf(d,k))), pOk=czAvg(ok.map(pieOf)); return {trade:t, pie:p, you, share:pOk>0?you/pOk:null, n:ok.length, k, est:k!=='actual'}; };
+  const A=win(W.A,basisA), B=win(W.B,basis), ch=(a,b)=>a!=null&&b!=null&&b>0&&a>=0?a/b-1:null;
+  // a day for the chart: the comparison's own source where it has the day, otherwise the best there is
+  const yoursOf=d=>{ for(const k of [basis,'replay','actual','share']){ if(!k) continue; const v=dayOf(d,k); if(v!=null) return {v, k, est:k!=='actual', main:k===basis}; } return null; };
   const rate=A.trade>0&&B.trade>0?ch(A.pie/A.trade,B.pie/B.trade):null;
   // your place now, over the newer period
-  const sbar=M=>{ const v=W.A.map(d=>M.share&&M.share[d]).filter(Boolean); return v.length?czAvg(v.map(x=>x.s)):null; };
+  const sbar=M=>{ let v=W.A.map(d=>M.share&&M.share[d]).filter(Boolean).map(x=>x.s);
+    if(!v.length) v=W.A.map(d=>M.rep&&M.rep[d]&&M.rep[d].cov>=0.99?M.rep[d].st:null).filter(x=>x!=null); return v.length?czAvg(v):null; };
   const tvl=U.reduce((s,P)=>s+(P.tvl||0),0), va=P=>W.A.reduce((s,d)=>s+vol(P,d),0), ov=inU.reduce((s,x)=>s+va(x.P),0), tA=W.A.reduce((s,d)=>s+tradeOf(d),0);
   const took=inU.reduce((s,x)=>s+(sbar(x.M)||0)*va(x.P),0), anyS=inU.some(x=>sbar(x.M)!=null);
   const liq=tvl>0&&inU.length?inU.reduce((s,x)=>s+(x.M.valueNow||0),0)/tvl:null;
@@ -7554,21 +7595,21 @@ function czToken(T,mine,W){
   const need=W.B[Math.ceil(W.B.length/2)-1], wait=first?Math.round((Date.parse(first)-Date.parse(need))/864e5):null;
   // what moved your share of the LPs' fees: the trading moving between pools, other LPs at the price, or your own positions
   const pp=(P,ds)=>czAvg(ds.map(d=>vol(P,d)*(P.fee||0)*(P.lpCut??1)));
-  const yp=(M,ds)=>{ const v=ds.map(d=>M.fees&&M.fees[d]!=null?M.fees[d]:M.exp&&M.exp[d]!=null?M.exp[d]:null).filter(x=>x!=null); return v.length>=Math.ceil(ds.length/2)?czAvg(v):null; };
+  const yp=(M,P,ds)=>{ if(!basis) return null; const v=ds.map(d=>czSrc[basis](M,P,d)).filter(x=>x!=null); return v.length>=Math.ceil(ds.length/2)?czAvg(v):null; };
   let moved=null;
   if(A.share!=null&&B.share!=null){ const PA=czAvg(W.A.map(pieOf)), PB=czAvg(W.B.map(pieOf)), parts={routing:0,others:0,you:0};
-    if(PA>0&&PB>0){ for(const {M,P} of inU){ const a=pp(P,W.A), b=pp(P,W.B), ya=yp(M,W.A), yb=yp(M,W.B); if(ya==null||yb==null||!(a>0)||!(b>0)) continue;
+    if(PA>0&&PB>0){ for(const {M,P} of inU){ const a=pp(P,W.A), b=pp(P,W.B), ya=yp(M,P,W.A), yb=yp(M,P,W.B); if(ya==null||yb==null||!(a>0)||!(b>0)) continue;
         const wA=a/PA, wB=b/PB, sB=yb/b; parts.routing+=(wA-wB)*sB;
         const e=czPool(T,P,M,W).eff; if(e.you!=null&&e.others!=null){ parts.you+=wA*sB*Math.expm1(e.you); parts.others+=wA*sB*Math.exp(e.you)*Math.expm1(e.others); } }
-      let riv=null; for(const P of U){ if(inU.some(x=>x.P===P)) continue; const g=pp(P,W.A)/PA-pp(P,W.B)/PB; if(!riv||g>riv.g) riv={P,g}; }
+      let riv=null; for(const P of U){ if(inU.some(x=>x.P===P&&!x.M.past)) continue; const g=pp(P,W.A)/PA-pp(P,W.B)/PB; if(!riv||g>riv.g) riv={P,g}; }
       const dd=A.share-B.share, k=Object.keys(parts).sort((a,b)=>Math.abs(parts[b])-Math.abs(parts[a]))[0];
       moved={k:Math.sign(parts[k])===Math.sign(dd)&&Math.abs(parts[k])>=0.4*Math.abs(dd)?k:null, parts, d:dd, riv:riv&&riv.g>0.03?riv.P:null}; } }
-  return {T,W,sc,U,own,inU,outN,first,A,B,tradeOf,pieOf,yoursOf,moved, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
+  return {T,W,sc,U,own,inU,outN,first,A,B,basis,tradeOf,pieOf,yoursOf,moved, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
     liq, atp:anyS&&ov>0?took/ov:null, served:anyS&&tA>0?took/tA:null, fillBy:wait>0?czDay(-wait):null}; }
 
 /* the token's month: what all its LPs earned each day, and your share of it — two panels, one each */
 function czTokChart(r, cw){
-  const {T,sc,W}=r, S=T.sym, days=[]; for(let i=30;i>=1;i--) days.push(czDay(i));
+  const {T,sc,W}=r, S=T.sym, days=[]; for(let i=W.span||30;i>=1;i--) days.push(czDay(i));
   const Wd=Math.max(280,Math.round(cw)), phone=Wd<520, L=4, R=4, hd=14, gap=10, xb=16;
   const h1=phone?78:96, h2=phone?50:60, y1t=hd, y1b=y1t+h1, y2t=y1b+gap+hd, y2b=y2t+h2, H=y2b+xb, cwid=(Wd-L-R)/days.length;
   const pie=days.map(r.pieOf), yo=days.map(r.yoursOf), sh=days.map((d,i)=>yo[i]&&pie[i]>0?yo[i].v/pie[i]:null);
@@ -7580,7 +7621,7 @@ function czTokChart(r, cw){
   const lbl=(x,y,t,a,c)=>'<text x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" fill="'+(c||'var(--text-muted)')+'" font-size="9" font-family="var(--mono)" letter-spacing=".06em"'+(a?' text-anchor="'+a+'"':'')+' paint-order="stroke" stroke="var(--panel-2)" stroke-width="3">'+t+'</text>';
   let g='';
   // the two periods compared, shaded through both panels and named under the days
-  for(const [s,f,t] of [[sB,'rgba(255,255,255,.035)',W.A.length>1?'LAST WEEK':'7 DAYS BEFORE'],[sA,'rgba(53,214,232,.08)',W.A.length>1?'THIS WEEK':'YDAY']]) if(s){
+  for(const [s,f,t] of [[sB,'rgba(255,255,255,.035)',W.lb],[sA,'rgba(53,214,232,.08)',W.la]]) if(s){
     g+='<rect x="'+s[0].toFixed(1)+'" y="'+y1t+'" width="'+(s[1]-s[0]).toFixed(1)+'" height="'+(y2b-y1t)+'" fill="'+f+'"/>';
     g+=lbl((s[0]+s[1])/2,H-3,t,'middle'); }
   g+=lbl(L,H-3,czDate(days[0]),'start');
@@ -7590,9 +7631,9 @@ function czTokChart(r, cw){
   const pts=[];
   days.forEach((d,i)=>{ const x0=X(i)+cwid*.16, w=Math.max(1,cwid*.68), v=pie[i];
     if(v>0){ const yy=y1(v); g+='<rect class="bar" style="--i:'+i+'" x="'+x0.toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+(y1b-yy).toFixed(1)+'" rx="1.5" fill="'+(inA.has(d)?'#8fb3d6':inB.has(d)?'var(--cz-pool-hi)':'var(--cz-pool)')+'"/>'; }
-    if(sh[i]!=null){ const cx=x0+w/2, cy=y2(sh[i]); pts.push(cx.toFixed(1)+','+cy.toFixed(1)); g+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(phone?2:2.5)+'" fill="var(--cz-you)"'+(yo[i].est?' opacity=".6"':'')+'/>'; }
+    if(sh[i]!=null){ const cx=x0+w/2, cy=y2(sh[i]); pts.push(cx.toFixed(1)+','+cy.toFixed(1)); g+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(phone?(days.length>40?1.5:2):2.5)+'" fill="var(--cz-you)"'+(yo[i].main?'':' opacity=".55"')+'/>'; }
     const t=r.tradeOf(d); tips[d]='<b>'+czDate(d)+'</b><br>'+S+' traded '+czK(t)+' '+sc.on+'<br>its LPs earned '+czK(v)
-      +(sh[i]!=null?'<br><span class="y">your share '+czP(sh[i],1)+' · your fees '+(yo[i].est?'≈ ':'')+czK(yo[i].v)+'</span>':'');
+      +(sh[i]!=null?'<br><span class="y">your share '+czP(sh[i],1)+' · your fees '+(yo[i].est?'≈ ':'')+czK(yo[i].v)+'</span><br><span style="color:var(--text-muted)">'+CZ_BLBL[yo[i].k]+'</span>':'');
     g+='<rect class="hit" data-d="'+d+'" x="'+X(i).toFixed(1)+'" y="'+y1t+'" width="'+cwid.toFixed(1)+'" height="'+(y2b-y1t)+'"/>'; });
   if(pts.length>1) g+='<polyline class="ln" points="'+pts.join(' ')+'" fill="none" stroke="var(--cz-you)" stroke-width="2" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px rgba(47,211,234,.55))"/>';
   if(!sv.length) g+=lbl((L+Wd-R)/2,(y2t+y2b)/2+3,r.first?'recorded from '+czDate(r.first):'recorded from the next census','middle');
@@ -7618,7 +7659,7 @@ function czTokCard(r, cw){
   const q=(k,l,v,sub)=>'<div class="cz-q'+(top===k?' top':'')+'"><span class="l">'+l+(top===k?' <em>MAIN REASON</em>':'')+'</span><span class="n '+cls(v)+'"'+(v!=null?' data-cz-to="'+v+'" data-cz-a="1"':'')+'>'+arrow(v)+'</span>'
     +'<span class="tr"><i class="'+(v!=null&&v<0?'dn':'up')+'" style="--w:'+half(v).toFixed(1)+'%"></i></span><span class="s">'+sub+'</span></div>';
   const eq='<div class="cz-eq">'
-    +'<div class="cz-q you"><span class="l">YOUR '+S+' FEES</span><span class="cz-big '+cls(r.you)+'"'+(r.you!=null?' data-cz-to="'+r.you+'" data-cz-a="1"':'')+'>'+arrow(r.you)+'</span><span class="s">'+hs+(A.est||B.est?' · partly estimated from your share':'')+'</span></div>'
+    +'<div class="cz-q you"><span class="l">YOUR '+S+' FEES</span><span class="cz-big '+cls(r.you)+'"'+(r.you!=null?' data-cz-to="'+r.you+'" data-cz-a="1"':'')+'>'+arrow(r.you)+'</span><span class="s">'+hs+(A.k&&A.k!=='actual'?' · '+CZ_BLBL[A.k]:'')+'</span></div>'
     +'<span class="op eqs" aria-hidden="true">=</span>'
     +q('pie','ALL '+S+' LPs’ FEES',r.pie,A.pie!=null&&B.pie!=null?per(B.pie,W.B)+' → '+per(A.pie,W.A)+' · trading '+arrow(r.trade):'—')
     +'<span class="op" aria-hidden="true">×</span>'
@@ -7626,7 +7667,7 @@ function czTokCard(r, cw){
     +'</div>';
   // the sentence
   let s='';
-  if(r.pie!=null){ s='All '+S+' LPs '+sc.on+' earned '+(Math.abs(r.pie)<0.03?'about the same '+(W.A.length>1?W.a+' as '+W.b:'yesterday as their 7-day average'):'<b>'+pct(r.pie)+(r.pie<0?' less':' more')+'</b> '+(W.A.length>1?W.a+' than '+W.b:'yesterday than their 7-day average'));
+  if(r.pie!=null){ s='All '+S+' LPs '+sc.on+' earned '+(Math.abs(r.pie)<0.03?'about the same '+W.as:'<b>'+pct(r.pie)+(r.pie<0?' less':' more')+'</b> '+W.than);
     const why=[]; if(r.trade!=null) why.push(S+' trading '+sc.on+' '+(Math.abs(r.trade)<0.03?'held':(r.trade>0?'rose ':'fell ')+pct(r.trade)));
     if(r.rate!=null&&Math.abs(r.rate)>=0.05) why.push('more of it went through '+(r.rate<0?'lower':'higher')+'-fee pools');
     s+=(why.length?': '+why.join(', and '):'')+'. '; }
@@ -7634,14 +7675,24 @@ function czTokCard(r, cw){
     others:d=>d<0?'other LPs added liquidity at the price in your pools':'other LPs took liquidity away from the price in your pools',
     you:d=>d<0?'of your own positions: less time in range, or less liquidity':'of your own positions: more time in range, or more liquidity'};
   if(r.slice!=null) s+='Your share of what they earned '+(Math.abs(r.slice)<0.03?'held at <b>'+czP(A.share,1)+'</b>':(r.slice>0?'rose':'fell')+' to <b>'+czP(A.share,1)+'</b> from '+czP(B.share,1)+(mv&&mv.k?', mostly because '+because[mv.k](mv.d):''))+'.';
-  else if(A.share!=null) s+='You took <b>'+czP(A.share,1)+'</b> of it '+W.a+'.';
+  else if(A.share!=null) s+='Of everything they earned '+W.a+', you took <b>'+czP(A.share,1)+'</b>.';
   if(r.you!=null&&r.pie!=null&&r.slice!=null&&Math.abs(r.you)>=0.03) s+=' So your fees '+(r.you<0?'fell ':'rose ')+pct(r.you)+(r.pie>=0.03&&r.you<0?', even though its LPs earned more':r.pie<=-0.03&&r.you>0?', even though its LPs earned less':'')+'.';
   if(r.you==null&&r.fillBy) s+=' <span class="cz-fl">Your part of the comparison fills in by '+czDate(r.fillBy)+(W.A.length>1?'; YESTERDAY vs 7-DAY AVG compares it sooner':'')+'.</span>';
   const kp=[['OF THE LIQUIDITY',r.liq,'your money ÷ all the money in the pools '+sc.on+' that trade'],['AT THE PRICE',r.atp,'in your pools, where the trading happens'],
-    ['OF THE TRADING',r.served,'the part your liquidity took'],['OF LPs’ FEES',A.share,A.est?'partly estimated from your share':'what you earned ÷ what they earned']];
+    ['OF THE TRADING',r.served,'the part your liquidity took'],['OF ALL '+S+' LPs’ FEES',A.share,A.k&&A.k!=='actual'?CZ_BLBL[A.k]:'what you earned ÷ what every '+S+' LP earned']];
+  const sh=w=>String(w).slice(0,4)+'…'+String(w).slice(-4);
+  const who=r.inU.filter(x=>!x.M.past).map(({M,P})=>{ const at=P.book&&Array.isArray(P.book.at)?P.book.at:null, nm=esc(P.name)+czFee(P);
+      if(at&&at.length){ const you=at.filter(x=>x.mine).reduce((s,x)=>s+(x.s||0),0), oth=at.filter(x=>!x.mine), os=oth.reduce((s,x)=>s+(x.s||0),0), ws=[...new Set(oth.map(x=>x.w).filter(Boolean))];
+        return {nm, you, os, n:oth.length, ws, known:true}; }
+      const v=W.A.map(d=>M.share&&M.share[d]).filter(Boolean).map(x=>x.s); if(v.length){ const y=czAvg(v); return {nm, you:y, os:Math.max(0,1-y), n:null, ws:[], known:false}; }
+      return null; }).filter(Boolean);
+  const whoTxt=who.length?(who.every(x=>x.os<0.01)?'In your pools nobody else stands at the price: every swap there pays you.'
+    :who.filter(x=>x.os>=0.01).map(x=>x.known?'<b>'+x.nm+'</b>, now: you hold <b>'+czP(x.you,0)+'</b> of the liquidity at the price; '+x.n+' other position'+(x.n===1?'':'s')+' hold'+(x.n===1?'s':'')+' '+czP(x.os,0)+(x.ws.length?', in '+(x.ws.length===1?'wallet ':'wallets ')+x.ws.map(sh).join(', '):'')
+        :'<b>'+x.nm+'</b>, '+W.a+': you held <b>'+czP(x.you,0)+'</b> of the liquidity at the price; the other '+czP(x.os,0)+' belongs to positions the free sources cannot list yet').join('.<br>')
+      +(who.some(x=>x.known&&x.os>=0.01)?'. If a wallet there is yours, add it in ⚙ CONFIG and it counts as yours.':'.')):'';
   return '<div class="cz-tk" data-tok="'+esc(T.key)+'"><div class="cz-tkh"><span class="sym">'+S+'</span><span class="ch">'+T.chain.toUpperCase()+'</span>'
-    +'<span class="sc">your '+r.inU.length+' pool'+(r.inU.length===1?'':'s')+' among the '+r.U.length+' '+S+' pools '+sc.on+' that trade'+(r.outN?' · '+r.outN+' of yours elsewhere left out':'')+'</span></div>'
-    +eq+(s?'<p class="cz-tl">'+s+'</p>':'')
+    +(()=>{ const now=r.inU.filter(x=>!x.M.past).length, left=r.inU.length-now; return '<span class="sc">your '+now+' pool'+(now===1?'':'s')+' among the '+r.U.length+' '+S+' pools '+sc.on+' that trade'+(left?' · '+left+' you have left, counted for the days you were in '+(left===1?'it':'them'):'')+(r.outN?' · '+r.outN+' of yours elsewhere left out':'')+'</span></div>'; })()
+    +eq+(s?'<p class="cz-tl">'+s+'</p>':'')+(whoTxt?'<p class="cz-who">'+whoTxt+'</p>':'')
     +'<div class="cz-kp">'+kp.map((k,i)=>'<div class="cz-k"><span class="l">'+k[0]+'</span><span class="v"'+(k[1]!=null?' data-cz-to="'+k[1]+'" data-cz-p="1"':'')+'>'+czP(k[1],1)+'</span><span class="tr"><i style="--i:'+i+';--w:'+Math.max(k[1]!=null?1.5:0,Math.min(100,(k[1]||0)*100)).toFixed(1)+'%"></i></span><span class="s">'+k[2]+'</span></div>').join('')+'</div>'
     +czTokChart(r, cw)+'</div>'; }
 
@@ -7651,14 +7702,16 @@ function renderCensus(){
   const C=state.census;
   if(C===undefined){ if(!host.dataset.k) host.innerHTML='<div class="cz-empty">Reading the pool census…</div>'; return; }
   if(C===null){ host.dataset.k='none'; host.innerHTML='<div class="cz-empty">No pool census yet. It is written twice a day; this panel fills in after the first one.</div>'; return; }
+  czMerge(C, state.replay||null);
   const key=czKey(C);
   if(host.dataset.k===key) return;
   const first=state._czT!==C.t; state._czT=C.t;
   host.dataset.k=key;
   const hw=host.clientWidth||640, evW=Math.max(300,hw-28), cols=hw>=892?2:1, tkW=Math.max(260,(hw-(cols-1)*12)/cols-30); host.dataset.w=String(Math.round(host.clientWidth||0));
+  if(czWin==='m'&&!C.repTrusted) czWin='w';   // a month against the last needs the rebuilt days
   const W=czWins(czWin), mineBy=new Map((C.mine||[]).map(m=>[String(m.id).toLowerCase(),m]));
   const rows=[];
-  for(const T of C.tokens) for(const P of T.pools.filter(p=>p.mine)) rows.push(czPool(T,P,mineBy.get(String(P.id).toLowerCase()),W));
+  for(const T of C.tokens) for(const P of T.pools.filter(p=>p.mine)) rows.push(czPool(T,P,mineBy.get(String(P.id).toLowerCase())||mineBy.get(String(P.id)),W));
   rows.sort((a,b)=>(b.FB||0)+(b.FA||0)-(a.FB||0)-(a.FA||0));
   // the sentence for all of them, from the tokens as wholes
   const TK=C.tokens.map(T=>czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W)).filter(r=>r.U.length);
@@ -7667,13 +7720,13 @@ function renderCensus(){
   const arr=x=>x==null?'—':(Math.round(Math.abs(x)*100)===0?'■ ':x<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%';
   const dirc=tot==null?'cz-fl':tot<-0.02?'cz-dn':tot>0.02?'cz-up':'cz-fl';
   const fill=withMe.map(r=>r.fillBy).filter(Boolean).sort().pop();
-  const sum='<p class="cz-sum">'+(tot!=null?'All your pools together: <span class="cz-big '+dirc+'" data-cz-to="'+tot+'" data-cz-a="1">'+arr(tot)+'</span> '+W.a+' against '+W.b+' <span class="cz-sx">'+withMe.map(r=>r.T.sym+' '+arr(r.you)).join(' · ')+'</span>'
+  const sum='<p class="cz-sum">'+(tot!=null?'All your pools together: <span class="cz-big '+dirc+'" data-cz-to="'+tot+'" data-cz-a="1">'+arr(tot)+'</span> '+W.vs+' <span class="cz-sx">'+withMe.map(r=>r.T.sym+' '+arr(r.you)).join(' · ')+'</span>'
     :'<span class="cz-fl">All your pools together: your part compares '+(fill?'from '+czDate(fill):'once your share covers both periods')+'.</span> '+TK.map((r,i)=>(i?'all ':'All ')+r.T.sym+' LPs '+r.sc.on+' earned '+(r.pie==null?'—':Math.abs(r.pie)<0.03?'about the same':Math.abs(Math.round(r.pie*100))+'% '+(r.pie<0?'less':'more'))).join('; ')+' '+W.a+'.')+'</p>';
   const bp='<div class="cz-sec" id="czBig"><div class="cz-sh"><span class="k">THE BIG PICTURE</span><span class="d">each token as a whole: all your pools together, against everything its LPs earned</span><button type="button" class="cz-fold" data-cz="fold" data-v="b" aria-expanded="'+!czFold.b+'">'+(czFold.b?'SHOW ▸':'HIDE ▾')+'</button></div>'
     +'<div class="cz-x'+(czFold.b?' shut':'')+'"><div><div class="cz-tks">'+TK.map(r=>czTokCard(r,tkW)).join('')+'</div></div></div></div>';
-  const ck=C.checks||[], nOk=ck.filter(c=>c.st==='ok').length, nLook=ck.filter(c=>c.st==='look').length, nNa=ck.filter(c=>c.st==='na').length;
+  const ck=[...(C.checks||[]), ...(C.repChecks||[])], nOk=ck.filter(c=>c.st==='ok').length, nLook=ck.filter(c=>c.st==='look').length, nNa=ck.filter(c=>c.st==='na').length;
   const age=(Date.now()-C.t)/36e5;
-  const bar='<div class="cz-bar"><div class="cz-seg" role="group" aria-label="Compare"><button type="button" data-cz="win" data-v="w" aria-pressed="'+(czWin==='w')+'">THIS WEEK vs LAST</button><button type="button" data-cz="win" data-v="d" aria-pressed="'+(czWin==='d')+'">YESTERDAY vs 7-DAY AVG</button></div>'
+  const bar='<div class="cz-bar"><div class="cz-seg" role="group" aria-label="Compare"><button type="button" data-cz="win" data-v="w" aria-pressed="'+(czWin==='w')+'">THIS WEEK vs LAST</button><button type="button" data-cz="win" data-v="d" aria-pressed="'+(czWin==='d')+'">YESTERDAY vs 7-DAY AVG</button>'+(C.repTrusted?'<button type="button" data-cz="win" data-v="m" aria-pressed="'+(czWin==='m')+'">THIS MONTH vs LAST</button>':'')+'</div>'
     +'<span class="cz-age'+(age>30?' old':'')+'">census '+new Date(C.t).toLocaleString('en-GB',{timeZone:TZ,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})+'</span>'
     +'<button type="button" class="cz-stat'+(nLook?' look':'')+'" data-cz="checks" title="Open the checks">'+(nLook?'! <b>'+nLook+'</b> to look at · ':'✓ ')+'<b>'+nOk+'</b> checks agree'+(nNa?' · '+nNa+' not readable':'')+'</button></div>';
   const g='<div class="cz-sec"><div class="cz-sh"><span class="k">POOL BY POOL</span><span class="d">the detail: one line per pool, what moved it, biggest cause first</span><button type="button" class="cz-fold" data-cz="fold" data-v="g" aria-expanded="'+!czFold.g+'">'+(czFold.g?'SHOW ▸':'HIDE ▾')+'</button></div>'
@@ -7685,7 +7738,7 @@ function renderCensus(){
         +'<span class="cz-drv">'+czChips(r).map(x=>'<span class="cz-chip '+x[1]+(x[3]?' top':'')+'"'+(x[2]?' style="--w:'+Math.round(x[2]*46)+'px"':'')+'>'+x[0]+(x[2]?'<i></i>':'')+'</span>').join('')+'</span>'
         +'<div class="cz-x cz-evx'+(open?'':' shut')+'"><div>'+czEvidence(r, evW)+'</div></div></div>'; }).join('')+'</div></div></div>';
   // E: every pool of the token
-  const T=C.tokens[Math.min(czTok,C.tokens.length-1)], E=czMarket(T,(C.mine||[]).filter(m=>m.tok===T.key)), sc=czScope(T), Uv=T.pools.filter(p=>p.real&&sc.in(p)).reduce((s,P)=>s+E.v7(P),0);
+  const T=C.tokens[Math.min(czTok,C.tokens.length-1)], E=czMarket(T,(C.mine||[]).filter(m=>m.tok===T.key&&!m.past)), sc=czScope(T), Uv=T.pools.filter(p=>p.real&&sc.in(p)).reduce((s,P)=>s+E.v7(P),0);
   const etbl=T.pools.filter(p=>p.real||(p.tvl||0)>=100).sort((a,b)=>((b.real&&sc.in(b))-(a.real&&sc.in(a)))||(E.v7(b)-E.v7(a))||((b.tvl||0)-(a.tvl||0)));
   const offN=T.pools.filter(p=>!p.real).length, outN=T.pools.filter(p=>p.real&&!sc.in(p)).length;
   const e='<div class="cz-sec" id="czMarket"><div class="cz-sh"><span class="k">EVERY POOL</span><div class="cz-seg" role="group" aria-label="Token">'+C.tokens.map((t,i)=>'<button type="button" data-cz="tok" data-v="'+i+'" aria-pressed="'+(t===T)+'">'+t.sym+' · '+t.chain.toUpperCase()+'</button>').join('')+'</div><button type="button" class="cz-fold" data-cz="fold" data-v="e" aria-expanded="'+!czFold.e+'">'+(czFold.e?'SHOW ▸':'HIDE ▾')+'</button>'
@@ -7695,10 +7748,10 @@ function renderCensus(){
       return '<tr class="'+(P.mine?'mine':'')+(inS?'':' dim')+'"><td class="pn">'+esc(P.name)+czFee(P)+'<small>'+esc(String(P.venue||'').replace(/^[a-z]/,c=>c.toUpperCase()))+'</small></td><td>'+czK(P.tvl)+'</td><td>'+czK(E.v7(P))+'</td><td>'+(inS?czP(Uv>0?E.v7(P)/Uv:null,1):P.real?'outside':'—')+'</td><td class="m cz-h">'+(P.off==null?'—':(P.off>=0?'+':'−')+Math.abs(Math.round(P.off*100))+'%')+'</td>'
         +'<td class="lp cz-h">'+(P.book&&P.book.open!=null?P.book.open+' open, '+P.book.atPrice+' at the price'+(P.book.wallets?', '+P.book.wallets+' wallets':''):P.real?'not readable yet':'left out')+'</td><td class="y">'+(M&&P.tvl>0?czP(M.M.valueNow/P.tvl,1):'')+'</td><td class="y cz-h">'+(sb!=null?czP(sb,1):'')+'</td></tr>'; }).join('')+'</table></div></div></div>';
   // F
-  const grp={pub:'PUBLIC SOURCES AGAINST EACH OTHER AND THE CHAIN',mine:'YOUR FIGURES AGAINST THE POOL’S',perf:'PERFORMANCE'}, sym={ok:'✓',look:'!',na:'·'};
-  const f='<div class="cz-sec" id="czChecks"><div class="cz-sh"><span class="k">RECONCILIATION</span><span class="d">'+nOk+' agree · '+nLook+' to look at · '+nNa+' not readable · run with every census</span><button type="button" class="cz-fold" data-cz="fold" data-v="f" aria-expanded="'+!czFold.f+'">'+(czFold.f?'SHOW ▸':'HIDE ▾')+'</button></div>'
+  const grp={pub:'PUBLIC SOURCES AGAINST EACH OTHER AND THE CHAIN',mine:'YOUR FIGURES AGAINST THE POOL’S',rep:'REBUILT FROM THE CHAIN’S SWAPS, AGAINST YOUR OWN RECORDS',perf:'PERFORMANCE'}, sym={ok:'✓',look:'!',na:'·'};
+  const f='<div class="cz-sec" id="czChecks"><div class="cz-sh"><span class="k">RECONCILIATION</span><span class="d">'+nOk+' agree · '+nLook+' to look at · '+nNa+' not readable · run with every census'+(C.repFrom?' and every swap replay':'')+'</span><button type="button" class="cz-fold" data-cz="fold" data-v="f" aria-expanded="'+!czFold.f+'">'+(czFold.f?'SHOW ▸':'HIDE ▾')+'</button></div>'
     +'<div class="cz-x'+(czFold.f?' shut':'')+'"><div>'+C.tokens.map(T=>{ const cs=ck.filter(c=>c.tok===T.key); if(!cs.length) return '';
-      return '<div class="cz-grp" style="color:var(--text-secondary)">'+T.sym+' · '+T.chain.toUpperCase()+'</div>'+['pub','mine','perf'].map(k=>{ const xs=cs.filter(c=>c.grp===k).sort((a,b)=>(a.st==='look'?0:a.st==='na'?2:1)-(b.st==='look'?0:b.st==='na'?2:1)); if(!xs.length) return '';
+      return '<div class="cz-grp" style="color:var(--text-secondary)">'+T.sym+' · '+T.chain.toUpperCase()+'</div>'+['pub','mine','rep','perf'].map(k=>{ const xs=cs.filter(c=>c.grp===k).sort((a,b)=>(a.st==='look'?0:a.st==='na'?2:1)-(b.st==='look'?0:b.st==='na'?2:1)); if(!xs.length) return '';
         return '<div class="cz-grp">'+grp[k]+'</div>'+xs.map(c=>'<div class="cz-ck"><span class="st '+c.st+'">'+sym[c.st]+'</span><b>'+esc(c.t)+'</b><span class="x">'+esc(c.x)+'</span></div>').join(''); }).join(''); }).join('')+'</div></div></div>';
   host.innerHTML=bar+sum+bp+g+e+f;
   if(!first&&czJust){ const el=czJust==='e'?$('#czMarket'):host.querySelector('.cz-sec'); czJust=null; if(el) czReplay(el); }
@@ -7726,7 +7779,7 @@ function czAnimate(host, first){
     const tip=ch.querySelector('.cz-tip'), C=state.census, pid=ch.dataset.pool, tk=ch.dataset.tok;
     let T=null,P=null; if(pid) for(const t of C.tokens){ const p=t.pools.find(q=>String(q.id)===pid); if(p){ T=t; P=p; break; } }
     const M=pid?(C.mine||[]).find(m=>String(m.id).toLowerCase()===String(pid).toLowerCase()):null;
-    const html=d=>{ if(tk) return (czTips[tk]||{})[d]||''; if(!P) return ''; const v=(P.vol&&P.vol[d])||0, s=M&&M.share&&M.share[d], f=M&&M.fees&&M.fees[d]!=null?M.fees[d]:null, x=M&&M.exp&&M.exp[d]!=null?M.exp[d]:null;
+    const html=d=>{ if(tk) return (czTips[tk]||{})[d]||''; if(!P) return ''; const v=(P.vol&&P.vol[d])||0, s=M&&M.share&&M.share[d]||(M&&M.rep&&M.rep[d]&&M.rep[d].cov>=0.99&&M.rep[d].st!=null?{s:M.rep[d].st,tin:M.rep[d].tin??0}:null), f=czSrc.actual(M,P,d), x=czSrc.replay(M,P,d)??czSrc.share(M,P,d);
       return '<b>'+czDate(d)+'</b><br>traded '+czK(v)+(T&&T.market[d]?' · '+czP(v/T.market[d])+' of all '+T.sym:'')+'<br>LPs’ fees '+czK(v*(P.fee||0)*(P.lpCut??1))+(s?'<br><span class="y">your share '+czP(s.s,1)+' · in range '+czP(s.tin)+'</span>':'')+(f!=null?'<br><span class="y">your fees '+czK(f)+'</span>':x!=null?'<br><span class="y">your fees ≈ '+czK(x)+'</span>':''); };
     const show=(el)=>{ ch.querySelectorAll('.hit.on').forEach(x=>x.classList.remove('on')); el.classList.add('on');
       tip.innerHTML=html(el.dataset.d);
