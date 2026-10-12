@@ -83,7 +83,7 @@ async function bookV4(P){
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const V3MINT='0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde', V3INC='0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
 async function bookV3(P, mineIds){
-  const over=budget(6*60e3), pool=String(P.id).toLowerCase(), why={q:0, ok:0};
+  const over=budget(12*60e3), pool=String(P.id).toLowerCase(), why={q:0, ok:0};
   const tip=parseInt(await erpc('eth_blockNumber',[])||'0',16); if(!tip) return {fail:'no node gave the latest block'};
   const from=P.created?Math.max(0,tip-Math.ceil((Date.now()-P.created)/12000*1.05)-2000):0;
   const seen=new Set(), txT=new Map();
@@ -98,8 +98,8 @@ async function bookV3(P, mineIds){
   if(!await span(from,tip)) return {fail:over()?'out of time reading the Mint records ('+why.ok+' of '+why.q+' queries answered)':'Mint records not served ('+why.ok+' of '+why.q+' queries answered)'};
   // each Mint's receipt names the position it went to (the manager's IncreaseLiquidity, topic1 = the position's id)
   const ids=new Map(), hs=[...txT.keys()]; let missing=0;
-  for(let i=0;i<hs.length;i+=4){ if(over()) return {fail:'out of time reading receipts ('+i+' of '+hs.length+')'};
-    await Promise.all(hs.slice(i,i+4).map(async h=>{ const rc=await erpc('eth_getTransactionReceipt',[h]); if(!rc){ missing++; return; }
+  for(let i=0;i<hs.length;i+=6){ if(over()) return {fail:'out of time reading receipts ('+i+' of '+hs.length+')'};
+    await Promise.all(hs.slice(i,i+6).map(async h=>{ const rc=await erpc('eth_getTransactionReceipt',[h]); if(!rc){ missing++; return; }
       for(const g of rc.logs||[]) if(String(g.address).toLowerCase()===NPM&&g.topics[0]===V3INC){ const id=BigInt(g.topics[1]).toString(), t=txT.get(h); if(!ids.has(id)||t<ids.get(id)) ids.set(id,t); } })); }
   if(missing) return {fail:missing+' of '+hs.length+' receipts not served'};
   // the pool's own tokens and fee, to keep only positions in this pool (one transaction can open several)
@@ -109,8 +109,8 @@ async function bookV3(P, mineIds){
   const tick=i24(w32(s0,1)), fp=Number(BigInt('0x'+w32(s0,5))&0xffn), L=BigInt('0x'+w32(lq,0));
   const cut=n=>n>0?1-1/n:1, lpCut=(cut(fp%16)+cut(fp>>4))/2;
   const live=[]; const list=[...ids.keys()];
-  for(let i=0;i<list.length;i+=4){ if(over()) return {fail:'out of time reading positions ('+i+' of '+list.length+')'};
-    const got=await Promise.all(list.slice(i,i+4).map(async id=>({id, r:await erpc('eth_call',[{to:NPM,data:'0x99fbab88'+BigInt(id).toString(16).padStart(64,'0')},'latest'])})));
+  for(let i=0;i<list.length;i+=6){ if(over()) return {fail:'out of time reading positions ('+i+' of '+list.length+')'};
+    const got=await Promise.all(list.slice(i,i+6).map(async id=>({id, r:await erpc('eth_call',[{to:NPM,data:'0x99fbab88'+BigInt(id).toString(16).padStart(64,'0')},'latest'])})));
     for(const {id,r} of got){ if(!r||r.length<2+64*8) continue;   // burned: no position any more
       if(('0x'+w32(r,2).slice(-40)).toLowerCase()!==tok0||('0x'+w32(r,3).slice(-40)).toLowerCase()!==tok1||Number(BigInt('0x'+w32(r,4)))!==fee) continue;
       const Lp=BigInt('0x'+w32(r,7)); if(Lp>0n) live.push({id, lo:i24(w32(r,5)), hi:i24(w32(r,6)), L:Lp, first:ids.get(id)}); } }
