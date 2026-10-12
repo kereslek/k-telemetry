@@ -1624,19 +1624,7 @@
   .cz-t tr.mine td:first-child{color:var(--cz-you)}
   .cz-t tr.dim td{color:var(--text-muted);opacity:.75}
   .cz-t td.lp{white-space:normal;min-width:140px;text-align:left;color:var(--text-muted)}
-  /* E: your share of the market */
-  .cz-head{font-size:15px;line-height:1.5;margin:10px 0 12px;color:var(--text-primary);max-width:80ch}
-  .cz-head .y{font-family:var(--mono);font-weight:700;color:var(--cz-you);text-shadow:0 0 16px rgba(47,211,234,.4)}
-  .cz-lad{display:flex;flex-direction:column;gap:12px}
-  .cz-lr{display:grid;grid-template-columns:minmax(150px,200px) 1fr 64px;gap:4px 12px;align-items:center}
-  .cz-lr .l{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--text-secondary)}
-  .cz-lr .tr{height:12px;background:var(--line-soft);position:relative;overflow:hidden}
-  .cz-lr .tr i{position:absolute;left:0;top:0;bottom:0;width:var(--w,0);background:linear-gradient(90deg,rgba(47,211,234,.35),var(--cz-you));box-shadow:0 0 14px rgba(47,211,234,.55);
-    transition:width 1.1s cubic-bezier(.2,.7,.2,1);transition-delay:calc(var(--i,0)*140ms)}
-  .cz-pre .cz-lr .tr i{width:0}
-  .cz-lr .v{font-family:var(--mono);font-size:14px;font-weight:700;text-align:right;color:var(--cz-you)}
-  .cz-lr .w{grid-column:2/4;font-size:11.5px;color:var(--text-muted);line-height:1.45}
-  @media(max-width:620px){ .cz-lr{grid-template-columns:1fr 56px} .cz-lr .tr{grid-column:1/-1;order:3} .cz-lr .w{grid-column:1/-1;order:4} }
+  .cz-t td.pn{white-space:normal;min-width:108px} .cz-t td.pn small{display:block;font-size:9.5px;color:var(--text-muted);letter-spacing:.04em;margin-top:1px}
   /* F: the checks */
   .cz-ck{display:grid;grid-template-columns:20px 1fr;gap:2px 10px;padding:8px 2px;border-bottom:1px solid var(--line-soft)}
   .cz-ck .st{font-family:var(--mono);font-weight:700;text-align:center}
@@ -1646,13 +1634,54 @@
   .cz-grp{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--accent);padding:12px 2px 2px}
   .cz-empty{color:var(--text-muted);font-size:12.5px;padding:6px 0}
   .cz-note{color:var(--text-muted);font-size:11.5px;margin:8px 0 0;max-width:85ch}
+  /* THE BIG PICTURE: one card per token, your fees = all LPs' fees × your share of them */
+  .cz-sx{display:block;margin-top:4px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--text-secondary)}
+  .cz-tks{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:12px;margin-top:10px}
+  .cz-tk{position:relative;min-width:0;padding:14px;border:1px solid var(--line);background:radial-gradient(130% 90% at 100% 0%,rgba(53,214,232,.07),transparent 60%),var(--panel-2)}
+  .cz-tk::before{content:"";position:absolute;left:-1px;top:-1px;width:32px;height:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .cz-tkh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .cz-tkh .sym{font-family:var(--mono);font-size:19px;font-weight:700;letter-spacing:.06em;color:var(--text-primary)}
+  .cz-tkh .ch{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--accent)}
+  .cz-tkh .sc{flex:1 1 100%;font-size:11.5px;color:var(--text-muted)}
+  .cz-eq{display:grid;grid-template-columns:minmax(0,1.2fr) auto minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:stretch}
+  .cz-eq .op{align-self:center;font-family:var(--mono);font-size:20px;color:var(--text-muted)}
+  .cz-q{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:5px;min-width:0;padding:10px;border:1px solid var(--line-soft);background:var(--panel)}
+  .cz-q.you{border-color:var(--accent-dim);background:linear-gradient(160deg,rgba(53,214,232,.11),transparent 70%),var(--panel)}
+  .cz-q .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--text-secondary)}
+  .cz-q .l em{display:inline-block;font-style:normal;color:#ffd166;letter-spacing:.08em;margin-left:2px}
+  .cz-q .n{font-family:var(--mono);font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cz-q .cz-big{margin:0;white-space:nowrap}
+  .cz-q .s{font-size:11px;color:var(--text-muted);line-height:1.4}
+  .cz-q.top{border-color:#6b5114;box-shadow:inset 0 0 18px rgba(250,178,25,.14),0 0 14px rgba(250,178,25,.12)}
+  .cz-q.top::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.10) 50%,transparent 65%);transform:translateX(-120%);animation:czSheen 4.2s 1.4s ease-in-out infinite;pointer-events:none}
+  .cz-q .tr{position:relative;height:6px;margin:2px 0;background:var(--line-soft)}
+  .cz-q .tr::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--text-muted);opacity:.7}
+  .cz-q .tr i{position:absolute;top:0;bottom:0;width:var(--w,0);border-radius:2px;transition:width 1s .25s cubic-bezier(.2,.7,.2,1)}
+  .cz-q .tr i.up{left:50%;background:var(--cz-up);box-shadow:0 0 10px rgba(61,220,132,.6)}
+  .cz-q .tr i.dn{right:50%;background:var(--cz-dn);box-shadow:0 0 10px rgba(255,107,107,.6)}
+  .cz-pre .cz-q .tr i{width:0}
+  .cz-tl{font-size:14px;line-height:1.55;color:var(--text-secondary);margin:12px 0}
+  .cz-tl b{color:var(--text-primary);font-weight:600}
+  .cz-kp{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px}
+  .cz-k{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .cz-k .l{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--text-muted)}
+  .cz-k .v{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--cz-you);text-shadow:0 0 14px rgba(47,211,234,.35);font-variant-numeric:tabular-nums}
+  .cz-k .tr{position:relative;height:4px;overflow:hidden;background:var(--line-soft)}
+  .cz-k .tr i{position:absolute;left:0;top:0;bottom:0;width:var(--w,0);background:var(--cz-you);box-shadow:0 0 8px rgba(47,211,234,.6);transition:width 1.1s cubic-bezier(.2,.7,.2,1);transition-delay:calc(var(--i,0)*120ms)}
+  .cz-pre .cz-k .tr i{width:0}
+  .cz-k .s{font-size:10.5px;color:var(--text-muted);line-height:1.35}
+  .cz-tchart{margin-top:14px}
+  @media(max-width:700px){
+    .cz-eq{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)} .cz-eq .cz-q.you{grid-column:1/-1} .cz-eq .op.eqs{display:none}
+    .cz-kp{grid-template-columns:repeat(2,minmax(0,1fr))} .cz-tk{padding:12px} .cz-q{padding:9px} .cz-q .n{font-size:18px} .cz-tl{font-size:13.5px}
+  }
   @media(prefers-reduced-motion:reduce){
-    .cz-x,.cz-x.shut>div,.cz-chart .bar,.cz-chart .ln,.cz-lr .tr i,.cz-chip i{transition:none!important}
-    .cz-stat.look,.cz-chip.top::after,.cz-in .cz-sum::after{animation:none!important}
-    .cz-pre .cz-chart .bar{transform:none} .cz-pre .cz-lr .tr i,.cz-pre .cz-chip i{width:var(--w,0)}
+    .cz-x,.cz-x.shut>div,.cz-chart .bar,.cz-chart .ln,.cz-chip i,.cz-q .tr i,.cz-k .tr i{transition:none!important}
+    .cz-stat.look,.cz-chip.top::after,.cz-q.top::after,.cz-in .cz-sum::after{animation:none!important}
+    .cz-pre .cz-chart .bar{transform:none} .cz-pre .cz-chip i,.cz-pre .cz-q .tr i,.cz-pre .cz-k .tr i{width:var(--w,0)}
   }
   .cz-evx{grid-column:1/-1}
-  @media(max-width:520px){ .cz-t .cz-h{display:none} .cz-t th,.cz-t td{padding:5px 4px} .cz-ev .cz-t table{font-size:10px} }
+  @media(max-width:520px){ .cz-t .cz-h{display:none} .cz-t th,.cz-t td{padding:5px 4px} .cz-t th{white-space:normal;vertical-align:bottom} .cz-ev .cz-t table{font-size:10px} }
 </style>
 </head>
 <body>
@@ -2328,7 +2357,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.1';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.2';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7351,10 +7380,11 @@ function renderOps(){
    trading × its fee rate × your share of the liquidity at the price, so a change splits into four
    causes that multiply to it: MARKET (the token's trading on every pool), ROUTING (this pool's
    slice of that trading), OTHER LPs (their liquidity at the price) and YOU (your liquidity and
-   your time in range). Each pool gets one line naming the biggest causes, with the evidence; the
-   pool's days sit one tap below it; then your share of the whole market; then the checks. */
+   your time in range). First the big picture, each token as a whole (your fees = all its LPs' fees ×
+   your share of them); then, folded, one line per pool naming the biggest causes with the pool's
+   days one tap below it; every pool of the token; and the checks. */
 let czJust=null; const czKey=C=>C.t+'|'+czWin+'|'+czTok+'|'+JSON.stringify(czFold)+'|'+[...czOpenSet].sort().join(',');
-let czWin=store.get('czWin','w'), czTok=store.get('czTok',0), czFold=store.get('czFold',{f:1}), czOpenSet=new Set(store.get('czOpen',[]));
+let czWin=store.get('czWin','w'), czTok=store.get('czTok',0), czFold=store.get('czFold2',{g:1,e:1,f:1}), czOpenSet=new Set(store.get('czOpen',[]));
 function loadCensus(){
   const slug=activeProfile()?.slug||'main';
   if(state._czAsk || (state.census!==undefined && state.censusSlug===slug && Date.now()-(state._czAt||0)<30*60e3)) return;
@@ -7490,6 +7520,130 @@ function czMarket(T,mine){
   const topT=real.slice().sort((a,b)=>(b.tvl||0)-(a.tvl||0))[0], topV=real.slice().sort((a,b)=>v7(b)-v7(a))[0];
   return {d7,real,tvl,vol,fees,own,liq,atp,served,fs,est,topT,topV,v7,sbar}; }
 
+/* THE BIG PICTURE: each token as a whole. All your pools of it together, against everything its LPs
+   earned: your fees = all the LPs' fees × your share of them, so a change is the one times the other.
+   LCX is measured against every LCX pool that trades; CPOOL against its Raydium pools. */
+const CZ_SCOPE={cpool:{in:P=>/raydium/i.test(P.venue||''), on:'on Raydium'}};
+const czScope=T=>CZ_SCOPE[T.key]||{in:()=>true, on:'on '+T.chain};
+const czTips={};
+function czToken(T,mine,W){
+  const sc=czScope(T), U=T.pools.filter(p=>p.real&&sc.in(p));
+  const own=mine.map(M=>({M,P:T.pools.find(p=>String(p.id).toLowerCase()===String(M.id).toLowerCase())})).filter(x=>x.P);
+  const inU=own.filter(x=>U.includes(x.P)), outN=own.length-inU.length;
+  const vol=(P,d)=>(P.vol&&P.vol[d])||0;
+  const tradeOf=d=>U.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>U.reduce((s,P)=>s+vol(P,d)*(P.fee||0)*(P.lpCut??1),0);
+  const first=inU.map(x=>x.M.since).filter(Boolean).sort()[0]||null;
+  // your fees on a day: every pool of yours recorded by then, from its fee counter, or before the counters from its share
+  const yoursOf=d=>{ if(!first||d<first||!inU.length) return null; let v=0, est=false;
+    for(const {M} of inU){ if(M.since&&d<M.since) continue;
+      const f=M.fees&&M.fees[d]!=null?M.fees[d]:null, x=M.exp&&M.exp[d]!=null?M.exp[d]:null;
+      if(f==null&&x==null) return null; if(f==null) est=true; v+=f??x; }
+    return {v,est}; };
+  const win=ds=>{ const ok=ds.filter(d=>yoursOf(d)), full=ok.length>=Math.ceil(ds.length/2);
+    const you=full?czAvg(ok.map(d=>yoursOf(d).v)):null, pOk=full?czAvg(ok.map(pieOf)):null;
+    return {trade:czAvg(ds.map(tradeOf)), pie:czAvg(ds.map(pieOf)), you, share:full&&pOk>0?you/pOk:null, est:ok.some(d=>yoursOf(d).est), n:ok.length}; };
+  const A=win(W.A), B=win(W.B), ch=(a,b)=>a!=null&&b!=null&&b>0&&a>=0?a/b-1:null;
+  const rate=A.trade>0&&B.trade>0?ch(A.pie/A.trade,B.pie/B.trade):null;
+  // your place now, over the newer period
+  const sbar=M=>{ const v=W.A.map(d=>M.share&&M.share[d]).filter(Boolean); return v.length?czAvg(v.map(x=>x.s)):null; };
+  const tvl=U.reduce((s,P)=>s+(P.tvl||0),0), va=P=>W.A.reduce((s,d)=>s+vol(P,d),0), ov=inU.reduce((s,x)=>s+va(x.P),0), tA=W.A.reduce((s,d)=>s+tradeOf(d),0);
+  const took=inU.reduce((s,x)=>s+(sbar(x.M)||0)*va(x.P),0), anyS=inU.some(x=>sbar(x.M)!=null);
+  const liq=tvl>0&&inU.length?inU.reduce((s,x)=>s+(x.M.valueNow||0),0)/tvl:null;
+  // when the comparison of your part fills in: half the older period recorded
+  const need=W.B[Math.ceil(W.B.length/2)-1], wait=first?Math.round((Date.parse(first)-Date.parse(need))/864e5):null;
+  // what moved your share of the LPs' fees: the trading moving between pools, other LPs at the price, or your own positions
+  const pp=(P,ds)=>czAvg(ds.map(d=>vol(P,d)*(P.fee||0)*(P.lpCut??1)));
+  const yp=(M,ds)=>{ const v=ds.map(d=>M.fees&&M.fees[d]!=null?M.fees[d]:M.exp&&M.exp[d]!=null?M.exp[d]:null).filter(x=>x!=null); return v.length>=Math.ceil(ds.length/2)?czAvg(v):null; };
+  let moved=null;
+  if(A.share!=null&&B.share!=null){ const PA=czAvg(W.A.map(pieOf)), PB=czAvg(W.B.map(pieOf)), parts={routing:0,others:0,you:0};
+    if(PA>0&&PB>0){ for(const {M,P} of inU){ const a=pp(P,W.A), b=pp(P,W.B), ya=yp(M,W.A), yb=yp(M,W.B); if(ya==null||yb==null||!(a>0)||!(b>0)) continue;
+        const wA=a/PA, wB=b/PB, sB=yb/b; parts.routing+=(wA-wB)*sB;
+        const e=czPool(T,P,M,W).eff; if(e.you!=null&&e.others!=null){ parts.you+=wA*sB*Math.expm1(e.you); parts.others+=wA*sB*Math.exp(e.you)*Math.expm1(e.others); } }
+      let riv=null; for(const P of U){ if(inU.some(x=>x.P===P)) continue; const g=pp(P,W.A)/PA-pp(P,W.B)/PB; if(!riv||g>riv.g) riv={P,g}; }
+      const dd=A.share-B.share, k=Object.keys(parts).sort((a,b)=>Math.abs(parts[b])-Math.abs(parts[a]))[0];
+      moved={k:Math.sign(parts[k])===Math.sign(dd)&&Math.abs(parts[k])>=0.4*Math.abs(dd)?k:null, parts, d:dd, riv:riv&&riv.g>0.03?riv.P:null}; } }
+  return {T,W,sc,U,own,inU,outN,first,A,B,tradeOf,pieOf,yoursOf,moved, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
+    liq, atp:anyS&&ov>0?took/ov:null, served:anyS&&tA>0?took/tA:null, fillBy:wait>0?czDay(-wait):null}; }
+
+/* the token's month: what all its LPs earned each day, and your share of it — two panels, one each */
+function czTokChart(r, cw){
+  const {T,sc,W}=r, S=T.sym, days=[]; for(let i=30;i>=1;i--) days.push(czDay(i));
+  const Wd=Math.max(280,Math.round(cw)), phone=Wd<520, L=4, R=4, hd=14, gap=10, xb=16;
+  const h1=phone?78:96, h2=phone?50:60, y1t=hd, y1b=y1t+h1, y2t=y1b+gap+hd, y2b=y2t+h2, H=y2b+xb, cwid=(Wd-L-R)/days.length;
+  const pie=days.map(r.pieOf), yo=days.map(r.yoursOf), sh=days.map((d,i)=>yo[i]&&pie[i]>0?yo[i].v/pie[i]:null);
+  const maxP=Math.max(1,...pie)*1.1, sv=sh.filter(x=>x!=null), maxS=sv.length?Math.max(...sv)*1.3:0.01;
+  const X=i=>L+i*cwid, y1=v=>y1b-h1*v/maxP, y2=v=>y2b-h2*v/maxS;
+  const inA=new Set(W.A), inB=new Set(W.B), tips={};
+  const span=set=>{ const ix=days.map((d,i)=>set.has(d)?i:-1).filter(i=>i>=0); return ix.length?[X(ix[0]),X(ix[ix.length-1]+1)]:null; };
+  const sA=span(inA), sB=span(inB);
+  const lbl=(x,y,t,a,c)=>'<text x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" fill="'+(c||'var(--text-muted)')+'" font-size="9" font-family="var(--mono)" letter-spacing=".06em"'+(a?' text-anchor="'+a+'"':'')+' paint-order="stroke" stroke="var(--panel-2)" stroke-width="3">'+t+'</text>';
+  let g='';
+  // the two periods compared, shaded through both panels and named under the days
+  for(const [s,f,t] of [[sB,'rgba(255,255,255,.035)',W.A.length>1?'LAST WEEK':'7 DAYS BEFORE'],[sA,'rgba(53,214,232,.08)',W.A.length>1?'THIS WEEK':'YDAY']]) if(s){
+    g+='<rect x="'+s[0].toFixed(1)+'" y="'+y1t+'" width="'+(s[1]-s[0]).toFixed(1)+'" height="'+(y2b-y1t)+'" fill="'+f+'"/>';
+    g+=lbl((s[0]+s[1])/2,H-3,t,'middle'); }
+  g+=lbl(L,H-3,czDate(days[0]),'start');
+  g+='<line x1="'+L+'" x2="'+(Wd-R)+'" y1="'+y1b+'" y2="'+y1b+'" stroke="var(--grid)"/><line x1="'+L+'" x2="'+(Wd-R)+'" y1="'+y2b+'" y2="'+y2b+'" stroke="var(--grid)"/>';
+  g+=lbl(L,y1t-4,'ALL '+S+' LPs’ FEES '+sc.on.toUpperCase()+', A DAY','start')+lbl(Wd-R,y1t-4,'top '+czK(maxP/1.1),'end');
+  g+=lbl(L,y2t-4,'YOUR SHARE OF THEM','start')+(sv.length?lbl(Wd-R,y2t-4,'top '+czP(maxS/1.3,1),'end'):'');
+  const pts=[];
+  days.forEach((d,i)=>{ const x0=X(i)+cwid*.16, w=Math.max(1,cwid*.68), v=pie[i];
+    if(v>0){ const yy=y1(v); g+='<rect class="bar" style="--i:'+i+'" x="'+x0.toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+(y1b-yy).toFixed(1)+'" rx="1.5" fill="'+(inA.has(d)?'#8fb3d6':inB.has(d)?'var(--cz-pool-hi)':'var(--cz-pool)')+'"/>'; }
+    if(sh[i]!=null){ const cx=x0+w/2, cy=y2(sh[i]); pts.push(cx.toFixed(1)+','+cy.toFixed(1)); g+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(phone?2:2.5)+'" fill="var(--cz-you)"'+(yo[i].est?' opacity=".6"':'')+'/>'; }
+    const t=r.tradeOf(d); tips[d]='<b>'+czDate(d)+'</b><br>'+S+' traded '+czK(t)+' '+sc.on+'<br>its LPs earned '+czK(v)
+      +(sh[i]!=null?'<br><span class="y">your share '+czP(sh[i],1)+' · your fees '+(yo[i].est?'≈ ':'')+czK(yo[i].v)+'</span>':'');
+    g+='<rect class="hit" data-d="'+d+'" x="'+X(i).toFixed(1)+'" y="'+y1t+'" width="'+cwid.toFixed(1)+'" height="'+(y2b-y1t)+'"/>'; });
+  if(pts.length>1) g+='<polyline class="ln" points="'+pts.join(' ')+'" fill="none" stroke="var(--cz-you)" stroke-width="2" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px rgba(47,211,234,.55))"/>';
+  if(!sv.length) g+=lbl((L+Wd-R)/2,(y2t+y2b)/2+3,r.first?'recorded from '+czDate(r.first):'recorded from the next census','middle');
+  // each period's average, drawn across it: the comparison at a glance
+  const avgLine=(s,y,txt,c)=>s&&isFinite(y)?'<line x1="'+s[0].toFixed(1)+'" x2="'+s[1].toFixed(1)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="'+c+'" stroke-width="1.5" stroke-dasharray="4 3"/>'+lbl(s[0]+2,y-4,txt,'start','var(--text-secondary)'):'';
+  if(r.A.pie!=null) g+=avgLine(sA,y1(r.A.pie),W.A.length>1?czK(r.A.pie):'','var(--text-primary)')+avgLine(sB,y1(r.B.pie),czK(r.B.pie),'var(--text-secondary)');
+  if(r.A.share!=null) g+=avgLine(sA,y2(r.A.share),W.A.length>1?czP(r.A.share,1):'','var(--cz-you)');
+  if(r.B.share!=null) g+=avgLine(sB,y2(r.B.share),czP(r.B.share,1),'var(--cz-you)');
+  czTips[T.key]=tips;
+  return '<div class="cz-chart cz-tchart" data-tok="'+esc(T.key)+'"><svg viewBox="0 0 '+Wd+' '+H+'" role="img" aria-label="What all '+S+' LPs earned each day for 30 days, and your share of it">'+g+'</svg><div class="cz-tip"></div></div>'; }
+
+/* one card per token */
+function czTokCard(r, cw){
+  const {T,sc,W,A,B}=r, S=T.sym, pct=x=>Math.abs(Math.round(x*100))+'%';
+  const arrow=x=>x==null?'—':(Math.round(Math.abs(x)*100)===0?'■ ':x<0?'▼ ':'▲ ')+pct(x), cls=x=>x==null?'cz-fl':x<-0.02?'cz-dn':x>0.02?'cz-up':'cz-fl';
+  const half=x=>x==null?0:Math.min(50,Math.abs(Math.log1p(x))/Math.LN2*50);   // half the track: doubled, or halved
+  const lp=r.pie!=null?Math.abs(Math.log1p(r.pie)):0, ls=r.slice!=null?Math.abs(Math.log1p(r.slice)):0;
+  const top=r.pie!=null&&r.slice!=null&&Math.max(lp,ls)>=0.03?(lp>=ls?'pie':'slice'):null;
+  const per=(v,ds)=>czK(v)+(ds.length>1?' a day':'');
+  const hs=A.you!=null&&B.you!=null?per(A.you,W.A)+' '+W.a+', against '+per(B.you,W.B)+' '+W.b
+    :A.you!=null?per(A.you,W.A)+' '+W.a+(r.fillBy?'; the comparison fills in by '+czDate(r.fillBy):'')
+    :r.first?'recorded from '+czDate(r.first)+(r.fillBy?'; the comparison fills in by '+czDate(r.fillBy):''):'recorded from the next census';
+  const q=(k,l,v,sub)=>'<div class="cz-q'+(top===k?' top':'')+'"><span class="l">'+l+(top===k?' <em>MAIN REASON</em>':'')+'</span><span class="n '+cls(v)+'"'+(v!=null?' data-cz-to="'+v+'" data-cz-a="1"':'')+'>'+arrow(v)+'</span>'
+    +'<span class="tr"><i class="'+(v!=null&&v<0?'dn':'up')+'" style="--w:'+half(v).toFixed(1)+'%"></i></span><span class="s">'+sub+'</span></div>';
+  const eq='<div class="cz-eq">'
+    +'<div class="cz-q you"><span class="l">YOUR '+S+' FEES</span><span class="cz-big '+cls(r.you)+'"'+(r.you!=null?' data-cz-to="'+r.you+'" data-cz-a="1"':'')+'>'+arrow(r.you)+'</span><span class="s">'+hs+(A.est||B.est?' · partly estimated from your share':'')+'</span></div>'
+    +'<span class="op eqs" aria-hidden="true">=</span>'
+    +q('pie','ALL '+S+' LPs’ FEES',r.pie,A.pie!=null&&B.pie!=null?per(B.pie,W.B)+' → '+per(A.pie,W.A)+' · trading '+arrow(r.trade):'—')
+    +'<span class="op" aria-hidden="true">×</span>'
+    +q('slice','YOUR SHARE OF THEM',r.slice,A.share!=null&&B.share!=null?czP(B.share,1)+' → '+czP(A.share,1):A.share!=null?czP(A.share,1)+' '+W.a+(r.fillBy?' · compared from '+czDate(r.fillBy):''):'recording')
+    +'</div>';
+  // the sentence
+  let s='';
+  if(r.pie!=null){ s='All '+S+' LPs '+sc.on+' earned '+(Math.abs(r.pie)<0.03?'about the same '+(W.A.length>1?W.a+' as '+W.b:'yesterday as their 7-day average'):'<b>'+pct(r.pie)+(r.pie<0?' less':' more')+'</b> '+(W.A.length>1?W.a+' than '+W.b:'yesterday than their 7-day average'));
+    const why=[]; if(r.trade!=null) why.push(S+' trading '+sc.on+' '+(Math.abs(r.trade)<0.03?'held':(r.trade>0?'rose ':'fell ')+pct(r.trade)));
+    if(r.rate!=null&&Math.abs(r.rate)>=0.05) why.push('more of it went through '+(r.rate<0?'lower':'higher')+'-fee pools');
+    s+=(why.length?': '+why.join(', and '):'')+'. '; }
+  const mv=r.moved, because={routing:d=>d<0?'more of the trading went to pools you are not in'+(mv.riv?', above all '+esc(mv.riv.name)+czFee(mv.riv)+' '+esc(mv.riv.venue):''):'more of the trading came to the pools you are in',
+    others:d=>d<0?'other LPs added liquidity at the price in your pools':'other LPs took liquidity away from the price in your pools',
+    you:d=>d<0?'of your own positions: less time in range, or less liquidity':'of your own positions: more time in range, or more liquidity'};
+  if(r.slice!=null) s+='Your share of what they earned '+(Math.abs(r.slice)<0.03?'held at <b>'+czP(A.share,1)+'</b>':(r.slice>0?'rose':'fell')+' to <b>'+czP(A.share,1)+'</b> from '+czP(B.share,1)+(mv&&mv.k?', mostly because '+because[mv.k](mv.d):''))+'.';
+  else if(A.share!=null) s+='You took <b>'+czP(A.share,1)+'</b> of it '+W.a+'.';
+  if(r.you!=null&&r.pie!=null&&r.slice!=null&&Math.abs(r.you)>=0.03) s+=' So your fees '+(r.you<0?'fell ':'rose ')+pct(r.you)+(r.pie>=0.03&&r.you<0?', even though its LPs earned more':r.pie<=-0.03&&r.you>0?', even though its LPs earned less':'')+'.';
+  if(r.you==null&&r.fillBy) s+=' <span class="cz-fl">Your part of the comparison fills in by '+czDate(r.fillBy)+(W.A.length>1?'; YESTERDAY vs 7-DAY AVG compares it sooner':'')+'.</span>';
+  const kp=[['OF THE LIQUIDITY',r.liq,'your money ÷ all the money in the pools '+sc.on+' that trade'],['AT THE PRICE',r.atp,'in your pools, where the trading happens'],
+    ['OF THE TRADING',r.served,'the part your liquidity took'],['OF LPs’ FEES',A.share,A.est?'partly estimated from your share':'what you earned ÷ what they earned']];
+  return '<div class="cz-tk" data-tok="'+esc(T.key)+'"><div class="cz-tkh"><span class="sym">'+S+'</span><span class="ch">'+T.chain.toUpperCase()+'</span>'
+    +'<span class="sc">your '+r.inU.length+' pool'+(r.inU.length===1?'':'s')+' among the '+r.U.length+' '+S+' pools '+sc.on+' that trade'+(r.outN?' · '+r.outN+' of yours elsewhere left out':'')+'</span></div>'
+    +eq+(s?'<p class="cz-tl">'+s+'</p>':'')
+    +'<div class="cz-kp">'+kp.map((k,i)=>'<div class="cz-k"><span class="l">'+k[0]+'</span><span class="v"'+(k[1]!=null?' data-cz-to="'+k[1]+'" data-cz-p="1"':'')+'>'+czP(k[1],1)+'</span><span class="tr"><i style="--i:'+i+';--w:'+Math.max(k[1]!=null?1.5:0,Math.min(100,(k[1]||0)*100)).toFixed(1)+'%"></i></span><span class="s">'+k[2]+'</span></div>').join('')+'</div>'
+    +czTokChart(r, cw)+'</div>'; }
+
 function renderCensus(){
   const host=$('#censusBody'); if(!host) return;
   loadCensus();
@@ -7500,25 +7654,28 @@ function renderCensus(){
   if(host.dataset.k===key) return;
   const first=state._czT!==C.t; state._czT=C.t;
   host.dataset.k=key;
-  const evW=Math.max(300,(host.clientWidth||640)-28); host.dataset.w=String(Math.round(host.clientWidth||0));
+  const hw=host.clientWidth||640, evW=Math.max(300,hw-28), cols=hw>=892?2:1, tkW=Math.max(260,(hw-(cols-1)*12)/cols-30); host.dataset.w=String(Math.round(host.clientWidth||0));
   const W=czWins(czWin), mineBy=new Map((C.mine||[]).map(m=>[String(m.id).toLowerCase(),m]));
   const rows=[];
   for(const T of C.tokens) for(const P of T.pools.filter(p=>p.mine)) rows.push(czPool(T,P,mineBy.get(String(P.id).toLowerCase()),W));
   rows.sort((a,b)=>(b.FB||0)+(b.FA||0)-(a.FB||0)-(a.FA||0));
-  // the sentence for all of them
-  const FA=rows.filter(r=>!r.isNew&&r.basis!=='pool').reduce((s,r)=>s+r.FA,0), FB=rows.filter(r=>!r.isNew&&r.basis!=='pool').reduce((s,r)=>s+r.FB,0), tot=FB>0?FA/FB-1:null;
-  const tok=C.tokens.map(T=>{ const r=rows.find(x=>x.T===T&&!x.thin&&!x.isNew); if(!r) return null; const m=Math.expm1(r.eff.market||0);
-    let s=T.sym+' trading '+(Math.abs(m)<0.03?'held':(m>0?'rose ':'fell ')+Math.abs(Math.round(m*100))+'%');
-    const lost=rows.filter(x=>x.T===T&&!x.thin&&(x.eff.routing||0)<-0.1); if(lost.length){ const R=czRival(T,lost[0].P,W); if(R) s+=', and '+esc(R.Q.name)+czFee(R.Q)+' '+esc(R.Q.venue)+' took more of it'; }
-    return s; }).filter(Boolean);
+  // the sentence for all of them, from the tokens as wholes
+  const TK=C.tokens.map(T=>czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W)).filter(r=>r.U.length);
+  const withMe=TK.filter(r=>r.inU.length), done=withMe.length&&withMe.every(r=>r.A.you!=null&&r.B.you!=null);
+  const tot=done?withMe.reduce((s,r)=>s+r.A.you,0)/withMe.reduce((s,r)=>s+r.B.you,0)-1:null;
+  const arr=x=>x==null?'—':(Math.round(Math.abs(x)*100)===0?'■ ':x<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%';
   const dirc=tot==null?'cz-fl':tot<-0.02?'cz-dn':tot>0.02?'cz-up':'cz-fl';
-  const sum='<p class="cz-sum">'+(tot!=null?'Your fees from these pools: <span class="cz-big '+dirc+'" data-cz-to="'+tot+'">'+czSg(tot)+'</span> '+W.a+' against '+W.b+'. ':'<span class="cz-fl">Your share is recorded from '+((C.mine||[]).map(m=>m.since).filter(Boolean).sort()[0]?czDate((C.mine||[]).map(m=>m.since).filter(Boolean).sort()[0]):'the first census')+'; until it covers both periods the lines compare the pools themselves.</span> ')+(tok.length?tok.join('; ')+'.':'')+'</p>';
+  const fill=withMe.map(r=>r.fillBy).filter(Boolean).sort().pop();
+  const sum='<p class="cz-sum">'+(tot!=null?'All your pools together: <span class="cz-big '+dirc+'" data-cz-to="'+tot+'" data-cz-a="1">'+arr(tot)+'</span> '+W.a+' against '+W.b+' <span class="cz-sx">'+withMe.map(r=>r.T.sym+' '+arr(r.you)).join(' · ')+'</span>'
+    :'<span class="cz-fl">All your pools together: your part compares '+(fill?'from '+czDate(fill):'once your share covers both periods')+'.</span> '+TK.map((r,i)=>(i?'all ':'All ')+r.T.sym+' LPs '+r.sc.on+' earned '+(r.pie==null?'—':Math.abs(r.pie)<0.03?'about the same':Math.abs(Math.round(r.pie*100))+'% '+(r.pie<0?'less':'more'))).join('; ')+' '+W.a+'.')+'</p>';
+  const bp='<div class="cz-sec" id="czBig"><div class="cz-sh"><span class="k">THE BIG PICTURE</span><span class="d">each token as a whole: all your pools together, against everything its LPs earned</span><button type="button" class="cz-fold" data-cz="fold" data-v="b" aria-expanded="'+!czFold.b+'">'+(czFold.b?'SHOW ▸':'HIDE ▾')+'</button></div>'
+    +'<div class="cz-x'+(czFold.b?' shut':'')+'"><div><div class="cz-tks">'+TK.map(r=>czTokCard(r,tkW)).join('')+'</div></div></div></div>';
   const ck=C.checks||[], nOk=ck.filter(c=>c.st==='ok').length, nLook=ck.filter(c=>c.st==='look').length, nNa=ck.filter(c=>c.st==='na').length;
   const age=(Date.now()-C.t)/36e5;
   const bar='<div class="cz-bar"><div class="cz-seg" role="group" aria-label="Compare"><button type="button" data-cz="win" data-v="w" aria-pressed="'+(czWin==='w')+'">THIS WEEK vs LAST</button><button type="button" data-cz="win" data-v="d" aria-pressed="'+(czWin==='d')+'">YESTERDAY vs 7-DAY AVG</button></div>'
     +'<span class="cz-age'+(age>30?' old':'')+'">census '+new Date(C.t).toLocaleString('en-GB',{timeZone:TZ,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})+'</span>'
     +'<button type="button" class="cz-stat'+(nLook?' look':'')+'" data-cz="checks" title="Open the checks">'+(nLook?'! <b>'+nLook+'</b> to look at · ':'✓ ')+'<b>'+nOk+'</b> checks agree'+(nNa?' · '+nNa+' not readable':'')+'</button></div>';
-  const g='<div class="cz-sec"><div class="cz-sh"><span class="k">YOUR POOLS</span><span class="d">one line each: what moved your fees, biggest cause first</span><button type="button" class="cz-fold" data-cz="fold" data-v="g" aria-expanded="'+!czFold.g+'">'+(czFold.g?'SHOW ▸':'HIDE ▾')+'</button></div>'
+  const g='<div class="cz-sec"><div class="cz-sh"><span class="k">POOL BY POOL</span><span class="d">the detail: one line per pool, what moved it, biggest cause first</span><button type="button" class="cz-fold" data-cz="fold" data-v="g" aria-expanded="'+!czFold.g+'">'+(czFold.g?'SHOW ▸':'HIDE ▾')+'</button></div>'
     +'<div class="cz-x'+(czFold.g?' shut':'')+'"><div>'+rows.map(r=>{ const ch=r.total, c=ch==null?'':ch<-0.02?'dn':ch>0.02?'up':''; const open=czOpenSet.has(String(r.P.id));
       return '<div class="cz-row '+c+'"><span class="cz-pn">'+esc(r.P.name)+czFee(r.P)+'<small>'+esc(r.P.venue)+' · '+r.T.chain+'</small></span>'
         +'<span class="cz-ch '+(c==='dn'?'cz-dn':c==='up'?'cz-up':'cz-fl')+'"'+(ch!=null&&!r.thin&&!r.isNew?' data-cz-to="'+ch+'"':'')+'>'+(ch==null||r.isNew?'—':(ch<0?'▼ ':ch>0?'▲ ':'■ ')+Math.abs(Math.round(ch*100))+'%')+'</span>'
@@ -7526,35 +7683,29 @@ function renderCensus(){
         +'<button type="button" class="cz-open" data-cz="open" data-v="'+esc(r.P.id)+'" aria-expanded="'+open+'">'+(open?'DAYS ▾':'DAYS ▸')+'</button>'
         +'<span class="cz-drv">'+czChips(r).map(x=>'<span class="cz-chip '+x[1]+(x[3]?' top':'')+'"'+(x[2]?' style="--w:'+Math.round(x[2]*46)+'px"':'')+'>'+x[0]+(x[2]?'<i></i>':'')+'</span>').join('')+'</span>'
         +'<div class="cz-x cz-evx'+(open?'':' shut')+'"><div>'+czEvidence(r, evW)+'</div></div></div>'; }).join('')+'</div></div></div>';
-  // E
-  const T=C.tokens[Math.min(czTok,C.tokens.length-1)], E=czMarket(T,(C.mine||[]).filter(m=>m.tok===T.key));
-  const lad=[['ALL '+T.sym+' LIQUIDITY',E.liq,'Your money in '+T.sym+' pools ÷ all the money in the pools that trade ('+czK(E.tvl)+'). '+(E.topT?esc(E.topT.name)+czFee(E.topT)+' '+esc(E.topT.venue)+' holds '+czP(E.topT.tvl/E.tvl)+' of it'+(E.topT.mine?', and you are in it.':', and you are not in it.'):'')],
-    ['AT THE PRICE, YOUR POOLS',E.atp,'Of the liquidity that trades (in range) in the pools you are in, weighted by how much each one trades.'],
-    ['OF ALL THE TRADING',E.served,'Of all '+T.sym+' trading on '+T.chain+' ('+czK(E.vol)+' in 7 days), the part your liquidity took. '+(E.topV?esc(E.topV.name)+czFee(E.topV)+' '+esc(E.topV.venue)+' carried '+czP(E.vol>0?E.v7(E.topV)/E.vol:null)+' of it.':'')],
-    ['OF ALL LPs’ FEES',E.fs,'Of everything paid to '+T.sym+' LPs ('+czK(E.fees)+' in 7 days'+(T.pools.some(p=>p.real&&(p.lpCut??1)<1)?', after Raydium’s cut':'')+').'+(E.est?' Days before your fee counters are estimated from your share.':'')]];
-  const etbl=T.pools.filter(p=>p.real||(p.tvl||0)>=100).sort((a,b)=>(b.real-a.real)||(E.v7(b)-E.v7(a))||((b.tvl||0)-(a.tvl||0)));
-  const offN=T.pools.filter(p=>!p.real).length;
-  const e='<div class="cz-sec" id="czMarket"><div class="cz-sh"><span class="k">YOUR SHARE OF THE MARKET</span><div class="cz-seg" role="group" aria-label="Token">'+C.tokens.map((t,i)=>'<button type="button" data-cz="tok" data-v="'+i+'" aria-pressed="'+(t===T)+'">'+t.sym+' · '+t.chain.toUpperCase()+'</button>').join('')+'</div><button type="button" class="cz-fold" data-cz="fold" data-v="e" aria-expanded="'+!czFold.e+'">'+(czFold.e?'SHOW ▸':'HIDE ▾')+'</button></div>'
-    +'<div class="cz-x'+(czFold.e?' shut':'')+'"><div><p class="cz-head">You provide <span class="y" data-cz-to="'+(E.liq??'')+'" data-cz-p="1">'+czP(E.liq,1)+'</span> of all '+T.sym+' liquidity on '+T.chain+', <span class="y">'+czP(E.atp,1)+'</span> of it at the price in your pools, and took <span class="y">'+czP(E.fs,1)+'</span> of everything '+T.sym+' LPs earned in the last 7 days.</p>'
-    +'<div class="cz-lad">'+lad.map((l,i)=>'<div class="cz-lr"><span class="l">'+l[0]+'</span><div class="tr"><i style="--i:'+i+';--w:'+Math.max(0.5,(l[1]||0)*100).toFixed(1)+'%"></i></div><span class="v">'+czP(l[1],1)+'</span><span class="w">'+l[2]+'</span></div>').join('')+'</div>'
-    +'<div class="cz-sh" style="margin-top:12px;border-bottom:0"><span class="k">EVERY POOL</span><span class="d">'+T.count+' pools list '+T.sym+'; '+offN+' are dead, priced off the market, or the price index overstates them, and are left out</span><button type="button" class="cz-fold" data-cz="fold" data-v="et" aria-expanded="'+!czFold.et+'">'+(czFold.et?'SHOW ▸':'HIDE ▾')+'</button></div>'
-    +'<div class="cz-x'+(czFold.et?' shut':'')+'"><div class="cz-t"><table><tr><th>POOL</th><th>SIZE</th><th>TRADED · 7D</th><th>OF THE TRADING</th><th>PRICE vs MARKET</th><th>LP BOOK</th><th>YOURS</th><th>YOURS AT THE PRICE</th></tr>'
-    +etbl.map(P=>{ const M=E.own.find(x=>x.P===P); const sb=M?E.sbar(M.M):null;
-      return '<tr class="'+(P.mine?'mine':'')+(P.real?'':' dim')+'"><td>'+esc(P.name)+czFee(P)+' <span style="color:var(--text-muted)">'+esc(P.venue)+'</span></td><td>'+czK(P.tvl)+'</td><td>'+czK(E.v7(P))+'</td><td>'+czP(E.vol>0&&P.real?E.v7(P)/E.vol:null,1)+'</td><td class="m">'+(P.off==null?'—':(P.off>=0?'+':'−')+Math.abs(Math.round(P.off*100))+'%')+'</td>'
-        +'<td class="lp">'+(P.book&&P.book.open!=null?P.book.open+' open, '+P.book.atPrice+' at the price'+(P.book.wallets?', '+P.book.wallets+' wallets':''):P.real?'not readable yet':'left out')+'</td><td class="y">'+(M&&P.tvl>0?czP(M.M.valueNow/P.tvl,1):'')+'</td><td class="y">'+(sb!=null?czP(sb,1):'')+'</td></tr>'; }).join('')+'</table></div></div></div></div></div>';
+  // E: every pool of the token
+  const T=C.tokens[Math.min(czTok,C.tokens.length-1)], E=czMarket(T,(C.mine||[]).filter(m=>m.tok===T.key)), sc=czScope(T), Uv=T.pools.filter(p=>p.real&&sc.in(p)).reduce((s,P)=>s+E.v7(P),0);
+  const etbl=T.pools.filter(p=>p.real||(p.tvl||0)>=100).sort((a,b)=>((b.real&&sc.in(b))-(a.real&&sc.in(a)))||(E.v7(b)-E.v7(a))||((b.tvl||0)-(a.tvl||0)));
+  const offN=T.pools.filter(p=>!p.real).length, outN=T.pools.filter(p=>p.real&&!sc.in(p)).length;
+  const e='<div class="cz-sec" id="czMarket"><div class="cz-sh"><span class="k">EVERY POOL</span><div class="cz-seg" role="group" aria-label="Token">'+C.tokens.map((t,i)=>'<button type="button" data-cz="tok" data-v="'+i+'" aria-pressed="'+(t===T)+'">'+t.sym+' · '+t.chain.toUpperCase()+'</button>').join('')+'</div><button type="button" class="cz-fold" data-cz="fold" data-v="e" aria-expanded="'+!czFold.e+'">'+(czFold.e?'SHOW ▸':'HIDE ▾')+'</button>'
+    +'<span class="d" style="flex-basis:100%">'+T.count+' pools list '+T.sym+'; '+offN+' are dead, priced off the market, or the price index overstates them, and are left out'+(outN?'; '+outN+(outN===1?' trades':' trade')+' outside '+sc.on.replace(/^on /,'')+' and '+(outN===1?'is':'are')+' shown, not counted':'')+'</span></div>'
+    +'<div class="cz-x'+(czFold.e?' shut':'')+'"><div class="cz-t"><table><tr><th>POOL</th><th>SIZE</th><th>TRADED · 7D</th><th>OF THE TRADING</th><th class="cz-h">PRICE vs MARKET</th><th class="cz-h">LP BOOK</th><th>YOURS</th><th class="cz-h">YOURS AT THE PRICE</th></tr>'
+    +etbl.map(P=>{ const M=E.own.find(x=>x.P===P); const sb=M?E.sbar(M.M):null, inS=P.real&&sc.in(P);
+      return '<tr class="'+(P.mine?'mine':'')+(inS?'':' dim')+'"><td class="pn">'+esc(P.name)+czFee(P)+'<small>'+esc(String(P.venue||'').replace(/^[a-z]/,c=>c.toUpperCase()))+'</small></td><td>'+czK(P.tvl)+'</td><td>'+czK(E.v7(P))+'</td><td>'+(inS?czP(Uv>0?E.v7(P)/Uv:null,1):P.real?'outside':'—')+'</td><td class="m cz-h">'+(P.off==null?'—':(P.off>=0?'+':'−')+Math.abs(Math.round(P.off*100))+'%')+'</td>'
+        +'<td class="lp cz-h">'+(P.book&&P.book.open!=null?P.book.open+' open, '+P.book.atPrice+' at the price'+(P.book.wallets?', '+P.book.wallets+' wallets':''):P.real?'not readable yet':'left out')+'</td><td class="y">'+(M&&P.tvl>0?czP(M.M.valueNow/P.tvl,1):'')+'</td><td class="y cz-h">'+(sb!=null?czP(sb,1):'')+'</td></tr>'; }).join('')+'</table></div></div></div>';
   // F
   const grp={pub:'PUBLIC SOURCES AGAINST EACH OTHER AND THE CHAIN',mine:'YOUR FIGURES AGAINST THE POOL’S',perf:'PERFORMANCE'}, sym={ok:'✓',look:'!',na:'·'};
   const f='<div class="cz-sec" id="czChecks"><div class="cz-sh"><span class="k">RECONCILIATION</span><span class="d">'+nOk+' agree · '+nLook+' to look at · '+nNa+' not readable · run with every census</span><button type="button" class="cz-fold" data-cz="fold" data-v="f" aria-expanded="'+!czFold.f+'">'+(czFold.f?'SHOW ▸':'HIDE ▾')+'</button></div>'
     +'<div class="cz-x'+(czFold.f?' shut':'')+'"><div>'+C.tokens.map(T=>{ const cs=ck.filter(c=>c.tok===T.key); if(!cs.length) return '';
       return '<div class="cz-grp" style="color:var(--text-secondary)">'+T.sym+' · '+T.chain.toUpperCase()+'</div>'+['pub','mine','perf'].map(k=>{ const xs=cs.filter(c=>c.grp===k).sort((a,b)=>(a.st==='look'?0:a.st==='na'?2:1)-(b.st==='look'?0:b.st==='na'?2:1)); if(!xs.length) return '';
         return '<div class="cz-grp">'+grp[k]+'</div>'+xs.map(c=>'<div class="cz-ck"><span class="st '+c.st+'">'+sym[c.st]+'</span><b>'+esc(c.t)+'</b><span class="x">'+esc(c.x)+'</span></div>').join(''); }).join(''); }).join('')+'</div></div></div>';
-  host.innerHTML=bar+sum+g+e+f;
+  host.innerHTML=bar+sum+bp+g+e+f;
   if(!first&&czJust){ const el=czJust==='e'?$('#czMarket'):host.querySelector('.cz-sec'); czJust=null; if(el) czReplay(el); }
   $('#censusHint')&&($('#censusHint').textContent=C.tokens.map(t=>t.count+' '+t.sym+' pools').join(' · '));
   czAnimate(host, first);
 }
 /* the moving parts: numbers count up, bars rise, lines draw, a tap on a day explains it */
-function czCount(el){ const to=parseFloat(el.dataset.czTo); if(!isFinite(to)) return; const fmt=el.dataset.czP?(x=>czP(x,1)):el.classList.contains('cz-ch')?(x=>(to<0?'▼ ':to>0?'▲ ':'■ ')+Math.abs(Math.round(x*100))+'%'):czSg;
+function czCount(el){ const to=parseFloat(el.dataset.czTo); if(!isFinite(to)) return; const fmt=el.dataset.czP?(x=>czP(x,1)):(el.classList.contains('cz-ch')||el.dataset.czA)?(x=>(Math.round(Math.abs(to)*100)===0?'■ ':to<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%'):czSg;
   const t0=performance.now(), dur=1000; const step=now=>{ const p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3); el.textContent=fmt(to*e); if(p<1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
 function czDraw(el){ el.querySelectorAll('.cz-chart .ln').forEach(l=>{ try{ const n=l.getTotalLength(); if(!n) return; l.style.transition='none'; l.style.strokeDasharray=n; l.style.strokeDashoffset=n; void l.getBoundingClientRect(); l.style.transition=''; requestAnimationFrame(()=>requestAnimationFrame(()=>{ l.style.strokeDashoffset=0; })); }catch(e){} }); }
 /* play a part's entrance again: bars rise, lines draw, numbers count */
@@ -7571,11 +7722,13 @@ function czAnimate(host, first){
   } else { host.classList.remove('cz-pre'); host.classList.add('cz-in'); }
   // a day under the finger: the tooltip
   host.querySelectorAll('.cz-chart').forEach(ch=>{
-    const tip=ch.querySelector('.cz-tip'), C=state.census, pid=ch.dataset.pool;
-    let T=null,P=null; for(const t of C.tokens){ const p=t.pools.find(q=>String(q.id)===pid); if(p){ T=t; P=p; break; } }
-    const M=(C.mine||[]).find(m=>String(m.id).toLowerCase()===String(pid).toLowerCase());
-    const show=(el)=>{ ch.querySelectorAll('.hit.on').forEach(x=>x.classList.remove('on')); el.classList.add('on'); const d=el.dataset.d, v=(P.vol&&P.vol[d])||0, s=M&&M.share&&M.share[d], f=M&&M.fees&&M.fees[d]!=null?M.fees[d]:null, x=M&&M.exp&&M.exp[d]!=null?M.exp[d]:null;
-      tip.innerHTML='<b>'+czDate(d)+'</b><br>traded '+czK(v)+(T&&T.market[d]?' · '+czP(v/T.market[d])+' of all '+T.sym:'')+'<br>LPs’ fees '+czK(v*(P.fee||0)*(P.lpCut??1))+(s?'<br><span class="y">your share '+czP(s.s,1)+' · in range '+czP(s.tin)+'</span>':'')+(f!=null?'<br><span class="y">your fees '+czK(f)+'</span>':x!=null?'<br><span class="y">your fees ≈ '+czK(x)+'</span>':'');
+    const tip=ch.querySelector('.cz-tip'), C=state.census, pid=ch.dataset.pool, tk=ch.dataset.tok;
+    let T=null,P=null; if(pid) for(const t of C.tokens){ const p=t.pools.find(q=>String(q.id)===pid); if(p){ T=t; P=p; break; } }
+    const M=pid?(C.mine||[]).find(m=>String(m.id).toLowerCase()===String(pid).toLowerCase()):null;
+    const html=d=>{ if(tk) return (czTips[tk]||{})[d]||''; if(!P) return ''; const v=(P.vol&&P.vol[d])||0, s=M&&M.share&&M.share[d], f=M&&M.fees&&M.fees[d]!=null?M.fees[d]:null, x=M&&M.exp&&M.exp[d]!=null?M.exp[d]:null;
+      return '<b>'+czDate(d)+'</b><br>traded '+czK(v)+(T&&T.market[d]?' · '+czP(v/T.market[d])+' of all '+T.sym:'')+'<br>LPs’ fees '+czK(v*(P.fee||0)*(P.lpCut??1))+(s?'<br><span class="y">your share '+czP(s.s,1)+' · in range '+czP(s.tin)+'</span>':'')+(f!=null?'<br><span class="y">your fees '+czK(f)+'</span>':x!=null?'<br><span class="y">your fees ≈ '+czK(x)+'</span>':''); };
+    const show=(el)=>{ ch.querySelectorAll('.hit.on').forEach(x=>x.classList.remove('on')); el.classList.add('on');
+      tip.innerHTML=html(el.dataset.d);
       const r=el.getBoundingClientRect(), cr=ch.getBoundingClientRect(); tip.style.display='block';
       const half=(tip.offsetWidth||180)/2, x0=Math.max(half,Math.min(cr.width-half,r.left-cr.left+r.width/2)); tip.style.left=x0+'px'; tip.style.top='2px'; };
     ch.querySelectorAll('.hit').forEach(h=>{ h.addEventListener('mouseenter',()=>show(h)); h.addEventListener('click',e=>{ e.stopPropagation(); show(h); }); });
@@ -7595,11 +7748,11 @@ document.addEventListener('click',e=>{
   const host=$('#censusBody');
   if(k==='win'){ czWin=v; store.set('czWin',v); czJust='g'; }
   else if(k==='tok'){ czTok=+v; store.set('czTok',czTok); czJust='e'; }
-  else if(k==='fold'){ czFold={...czFold,[v]:!czFold[v]}; store.set('czFold',czFold);
+  else if(k==='fold'){ czFold={...czFold,[v]:!czFold[v]}; store.set('czFold2',czFold);
     const x=b.closest('.cz-sh')&&b.closest('.cz-sh').nextElementSibling; if(x&&x.classList.contains('cz-x')){ x.classList.toggle('shut',!!czFold[v]); b.textContent=czFold[v]?'SHOW ▸':'HIDE ▾'; b.setAttribute('aria-expanded',String(!czFold[v])); if(!czFold[v]) czReplay(x); if(state.census) host.dataset.k=czKey(state.census); return; } }
   else if(k==='open'){ czOpenSet.has(v)?czOpenSet.delete(v):czOpenSet.add(v); store.set('czOpen',[...czOpenSet]);
     const x=b.closest('.cz-row')&&b.closest('.cz-row').querySelector('.cz-evx'); if(x){ const on=czOpenSet.has(v); x.classList.toggle('shut',!on); b.textContent=on?'DAYS ▾':'DAYS ▸'; b.setAttribute('aria-expanded',String(on)); if(on) czReplay(x); if(state.census) host.dataset.k=czKey(state.census); return; } }
-  else if(k==='checks'){ czFold={...czFold,f:false}; store.set('czFold',czFold); renderCensus(); const s=$('#czChecks'); if(s) setTimeout(()=>{ try{ s.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'}); }catch(err){ s.scrollIntoView(); } },60); return; }
+  else if(k==='checks'){ czFold={...czFold,f:false}; store.set('czFold2',czFold); renderCensus(); const s=$('#czChecks'); if(s) setTimeout(()=>{ try{ s.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'}); }catch(err){ s.scrollIntoView(); } },60); return; }
   renderCensus();
 });
 
