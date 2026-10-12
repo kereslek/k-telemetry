@@ -75,6 +75,10 @@ async function bookV4(P){
   for(const e of live){ if(overW()) break; const t=await j(BS+'/api/v2/transactions/'+e.tx,{},2,12000); if(t?.from?.hash) wallets.add(t.from.hash.toLowerCase()); }
   return {open:live.length, atPrice:at.length, wallets:wallets.size||null, opened:live.map(e=>day(e.first)),
     sum:L!=null&&at.length?r4(Number(at.reduce((s,e)=>s+e.L,0n)*10000n/(L||1n))/10000):null}; }
+/* the wallet holding a position NFT: the one token account with it, and that account's owner */
+async function holderOf(mint){
+  const big=await srpc('getTokenLargestAccounts',[mint]); const acc=(big?.value||[]).find(x=>Number(x.amount)>0)?.address; if(!acc) return null;
+  const info=await srpc('getAccountInfo',[acc,{encoding:'jsonParsed'}]); return info?.value?.data?.parsed?.info?.owner||null; }
 /* the LP book of a Raydium CLMM pool, straight from its position accounts */
 async function bookClmm(P, mineMints){
   const acct=await srpc('getAccountInfo',[P.id,{encoding:'base64'}]); if(!acct?.value) return null;
@@ -89,8 +93,15 @@ async function bookClmm(P, mineMints){
     for(let pg=0;pg<3;pg++){ const s=await srpc('getSignaturesForAddress',[p.mint,{limit:1000,...(before?{before}:{})}]); if(!Array.isArray(s)||!s.length) break; oldest=s[s.length-1]; before=oldest.signature; if(s.length<1000) break; }
     if(oldest?.blockTime) opened.push(day(oldest.blockTime*1000)); }
   const mine=live.filter(e=>mineMints.has(e.mint));
+  /* Who stands at the price: each position there, its part of the pool's liquidity at the price, and for
+     one that is not among the deck's positions, the wallet holding it — so a position of the owner's in a
+     wallet the deck does not list shows up as exactly that. Sealed with the rest; never in the log. */
+  const atList=[]; const overH=budget(90e3);
+  for(const e of [...at].sort((a,b)=>b.L>a.L?1:b.L<a.L?-1:0)){ const isMine=mineMints.has(e.mint); let w=null;
+    if(!isMine&&!overH()){ try{ w=await holderOf(e.mint); }catch(err){} }
+    atList.push({mine:isMine, s:L>0n?r4(Number(e.L*1000000n/L)/1e6):null, ...(isMine?{}:{w})}); }
   return {open:live.length, atPrice:at.length, opened, lpCut, sum:L>0n&&at.length?r4(Number(at.reduce((s,e)=>s+e.L,0n)*10000n/L)/10000):null,
-    mineFound:mine.length, mineL:mine.reduce((s,e)=>s+e.L,0n).toString()}; }
+    mineFound:mine.length, mineL:mine.reduce((s,e)=>s+e.L,0n).toString(), at:atList}; }
 
 /* ---------- the deck's own positions, grouped by pool ---------- */
 const mine=new Map();
@@ -189,6 +200,9 @@ for(const T of out.tokens){
     if(ds.length&&fx>0.5){ const a=Math.abs(fa/fx-1); C(T.key,'mine',a<=0.25?'ok':'look','Fees · '+lab,'your positions’ own fee counters '+usd(fa)+' vs your share × the pool’s fees '+usd(fx)+' over '+ds.length+' day(s) · '+pct(a)+' apart'); }
     else C(T.key,'mine','na','Fees · '+lab,'needs a day of both records; the first comes with the next run');
     if(P.book&&P.book.mineFound!=null){ const n=M.n; C(T.key,'mine',P.book.mineFound===n?'ok':'look','Positions · '+lab,P.book.mineFound+' of your '+n+' position(s) found in the pool’s LP book'); }
+    if(P.book&&Array.isArray(P.book.at)&&P.book.at.length){ const you=P.book.at.filter(x=>x.mine).reduce((s,x)=>s+(x.s||0),0), oth=P.book.at.filter(x=>!x.mine);
+      const ws=[...new Set(oth.map(x=>x.w).filter(Boolean))], sh=w=>String(w).slice(0,4)+'…'+String(w).slice(-4);
+      C(T.key,'mine',oth.length?'look':'ok','At the price · '+lab, 'yours '+pct(you)+(oth.length?' · '+oth.length+' other position(s) '+pct(oth.reduce((s,x)=>s+(x.s||0),0))+(ws.length?' · held by '+ws.map(sh).join(', '):'')+' · if a wallet there is yours, add it in ⚙ CONFIG and it counts':' · nobody else stands at the price')); }
     if(M.tvlShareNow!=null) C(T.key,'mine',M.tvlShareNow<=1.005?'ok':'look','Value · '+lab,'your positions are '+pct(M.tvlShareNow)+' of the pool’s size'+(M.tvlShareNow>1.005?' · more than the pool holds, so one of the two figures is wrong':''));
     const sd=Object.keys(M.share).sort().slice(-7), tin=sd.length?sd.reduce((s,d)=>s+M.share[d].tin,0)/sd.length:null;
     if(tin!=null) C(T.key,'mine',tin>=0.9?'ok':'look','Time in range · '+lab,'in range '+pct(tin)+' of the last '+sd.length+' day(s)');
