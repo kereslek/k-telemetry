@@ -83,33 +83,34 @@ async function bookV4(P){
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const V3MINT='0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde', V3INC='0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
 async function bookV3(P, mineIds){
-  const over=budget(5*60e3), pool=String(P.id).toLowerCase();
-  const tip=parseInt(await erpc('eth_blockNumber',[])||'0',16); if(!tip) return null;
+  const over=budget(12*60e3), pool=String(P.id).toLowerCase(), why={q:0, ok:0};
+  const tip=parseInt(await erpc('eth_blockNumber',[])||'0',16); if(!tip) return {fail:'no node gave the latest block'};
   const from=P.created?Math.max(0,tip-Math.ceil((Date.now()-P.created)/12000*1.05)-2000):0;
   const seen=new Set(), txT=new Map();
-  // the pool's Mint records whose owner is the position manager: the whole range at once, else 25,000 blocks at a time
+  // the pool's Mint records whose owner is the position manager: a range at once, halved where Blockscout will not serve it whole
   const range=async(a,b)=>{ let f=a; for(let n=0;n<40;n++){ if(over()) return false;
       const q=new URLSearchParams({module:'logs',action:'getLogs',fromBlock:String(f),toBlock:String(b),address:pool,topic0:V3MINT,topic1:'0x'+NPM.slice(2).padStart(64,'0'),topic0_1_opr:'and'});
-      const r=await j(BS+'/api?'+q,{},3,60000); const a2=Array.isArray(r?.result)?r.result:null; if(!a2) return false;
+      why.q++; const r=await j(BS+'/api?'+q,{},2,30000); const a2=Array.isArray(r?.result)?r.result:null; if(!a2) return false; why.ok++;
       let added=0; for(const l of a2){ const k=l.transactionHash+':'+l.logIndex; if(seen.has(k)) continue; seen.add(k); added++;
         const t=parseInt(l.timeStamp,16)*1000; if(!txT.has(l.transactionHash)||t<txT.get(l.transactionHash)) txT.set(l.transactionHash,t); }
       if(a2.length<1000||!added) return true; f=parseInt(a2[a2.length-1].blockNumber,16); } return false; };
-  if(!await range(from,tip)){ seen.clear(); txT.clear(); for(let w=from; w<=tip; w+=25000) if(!await range(w,Math.min(tip,w+24999))) return null; }
+  const span=async(a,b)=>{ if(await range(a,b)) return true; if(over()||b-a<=25000) return false; const m=a+Math.floor((b-a)/2); return await span(a,m)&&await span(m+1,b); };
+  if(!await span(from,tip)) return {fail:over()?'out of time reading the Mint records ('+why.ok+' of '+why.q+' queries answered)':'Mint records not served ('+why.ok+' of '+why.q+' queries answered)'};
   // each Mint's receipt names the position it went to (the manager's IncreaseLiquidity, topic1 = the position's id)
   const ids=new Map(), hs=[...txT.keys()]; let missing=0;
-  for(let i=0;i<hs.length;i+=4){ if(over()) return null;
-    await Promise.all(hs.slice(i,i+4).map(async h=>{ const rc=await erpc('eth_getTransactionReceipt',[h]); if(!rc){ missing++; return; }
+  for(let i=0;i<hs.length;i+=6){ if(over()) return {fail:'out of time reading receipts ('+i+' of '+hs.length+')'};
+    await Promise.all(hs.slice(i,i+6).map(async h=>{ const rc=await erpc('eth_getTransactionReceipt',[h]); if(!rc){ missing++; return; }
       for(const g of rc.logs||[]) if(String(g.address).toLowerCase()===NPM&&g.topics[0]===V3INC){ const id=BigInt(g.topics[1]).toString(), t=txT.get(h); if(!ids.has(id)||t<ids.get(id)) ids.set(id,t); } })); }
-  if(missing) return null;
+  if(missing) return {fail:missing+' of '+hs.length+' receipts not served'};
   // the pool's own tokens and fee, to keep only positions in this pool (one transaction can open several)
   const [t0,t1,fe,s0,lq]=await Promise.all(['0x0dfe1681','0xd21220a7','0xddca3f43','0x3850c7bd','0x1a686502'].map(d=>erpc('eth_call',[{to:pool,data:d},'latest'])));
-  if(!t0||!t1||!fe||!s0||!lq) return null;
+  if(!t0||!t1||!fe||!s0||!lq) return {fail:'the pool’s own state not served'};
   const tok0=('0x'+w32(t0,0).slice(-40)).toLowerCase(), tok1=('0x'+w32(t1,0).slice(-40)).toLowerCase(), fee=Number(BigInt('0x'+w32(fe,0)));
   const tick=i24(w32(s0,1)), fp=Number(BigInt('0x'+w32(s0,5))&0xffn), L=BigInt('0x'+w32(lq,0));
   const cut=n=>n>0?1-1/n:1, lpCut=(cut(fp%16)+cut(fp>>4))/2;
   const live=[]; const list=[...ids.keys()];
-  for(let i=0;i<list.length;i+=4){ if(over()) return null;
-    const got=await Promise.all(list.slice(i,i+4).map(async id=>({id, r:await erpc('eth_call',[{to:NPM,data:'0x99fbab88'+BigInt(id).toString(16).padStart(64,'0')},'latest'])})));
+  for(let i=0;i<list.length;i+=6){ if(over()) return {fail:'out of time reading positions ('+i+' of '+list.length+')'};
+    const got=await Promise.all(list.slice(i,i+6).map(async id=>({id, r:await erpc('eth_call',[{to:NPM,data:'0x99fbab88'+BigInt(id).toString(16).padStart(64,'0')},'latest'])})));
     for(const {id,r} of got){ if(!r||r.length<2+64*8) continue;   // burned: no position any more
       if(('0x'+w32(r,2).slice(-40)).toLowerCase()!==tok0||('0x'+w32(r,3).slice(-40)).toLowerCase()!==tok1||Number(BigInt('0x'+w32(r,4)))!==fee) continue;
       const Lp=BigInt('0x'+w32(r,7)); if(Lp>0n) live.push({id, lo:i24(w32(r,5)), hi:i24(w32(r,6)), L:Lp, first:ids.get(id)}); } }
@@ -189,7 +190,7 @@ function feesByDay(ids){ const o={}; if(posHist.length<2) return o;
 /* ---------- run ---------- */
 const P0=prev&&prev.v===1?prev:null;
 const out={v:1, t:Date.now(), slug:SLUG, tokens:[], mine:[], checks:[]};
-let poolsN=0, realN=0;
+let poolsN=0, realN=0; const bookWhy=[];
 for(const T of TOKENS){
   const list=await tokenPools(T);
   let ray={}; if(T.net==='solana'){ const r=await j('https://api-v3.raydium.io/pools/info/mint?mint1='+T.addr+'&poolType=all&poolSortField=liquidity&sortType=desc&pageSize=100&page=1');
@@ -210,7 +211,8 @@ for(const T of TOKENS){
   // LP books: the deck's pools and any real pool of $1k or more
   for(const P of pools.filter(x=>x.real&&(x.mine||x.tvl>=1000))){
     try{ if(P.venue==='Uniswap v4') P.book=await bookV4(P);
-         else if(P.venue==='Uniswap v3'){ const m=mine.get(String(P.id).toLowerCase()); P.book=await bookV3(P, new Set(m?m.ids:[])); if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
+         else if(P.venue==='Uniswap v3'){ const m=mine.get(String(P.id).toLowerCase()); P.book=await bookV3(P, new Set(m?m.ids:[]));
+           if(P.book?.fail){ bookWhy.push('Uniswap v3: '+P.book.fail); P.book=null; } else if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
          else if(P.venue==='Raydium CLMM'){ const m=mine.get(P.id); P.book=await bookClmm(P, m?m.mints:new Set()); if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
          else P.book=null; }catch(e){ P.book=null; } }
   const days=[...new Set(pools.filter(x=>x.real).flatMap(x=>Object.keys(x.vol||{})))].sort();
@@ -277,4 +279,5 @@ console.log('pools listed: '+poolsN+' · trading: '+realN+' · own pools: '+out.
   +' · days of share: '+Math.max(0,...out.mine.map(m=>Object.keys(m.share).length))+' · days of fees: '+Math.max(0,...out.mine.map(m=>Object.keys(m.fees).length)));
 console.log('checks: '+cnt('ok')+' agree · '+cnt('look')+' to look at · '+cnt('na')+' not readable');
 { const tried=out.tokens.flatMap(t=>t.pools).filter(p=>p.real&&(p.mine||p.tvl>=1000)&&/Uniswap v[34]|Raydium CLMM/.test(p.venue)), by=v=>tried.filter(p=>p.venue===v);
-  console.log('LP books read: '+['Uniswap v3','Uniswap v4','Raydium CLMM'].map(v=>v+' '+by(v).filter(p=>p.book&&p.book.open!=null).length+' of '+by(v).length).join(' · ')); }
+  console.log('LP books read: '+['Uniswap v3','Uniswap v4','Raydium CLMM'].map(v=>v+' '+by(v).filter(p=>p.book&&p.book.open!=null).length+' of '+by(v).length).join(' · '));
+  for(const w of bookWhy) console.log('  not read: '+w); }
