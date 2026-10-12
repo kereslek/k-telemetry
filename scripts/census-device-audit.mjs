@@ -36,13 +36,20 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
     const ev=await pg.evaluate(()=>{ const x=document.querySelector('#censusBody .cz-row .cz-evx'), r=x.getBoundingClientRect(), bars=[...x.querySelectorAll('.cz-chart .bar')];
       const risen=bars.filter(b=>{ const t=getComputedStyle(b).transform; return t==='none'||!/matrix\(1, 0, 0, 0/.test(t); }).length;
       const svg=x.querySelector('.cz-chart svg'), txt=svg?svg.querySelector('text'):null; return {open:!x.classList.contains('shut'), h:r.height, bars:bars.length, risen, label:txt?txt.getBoundingClientRect().height:0, tblOver:(()=>{ const t=x.querySelector('.cz-t'); return t?t.scrollWidth>t.clientWidth+1:false; })()}; });
-    const hits=await pg.$$('#censusBody .cz-row:first-child .cz-evx .hit'); let tip=false;
-    if(hits.length){ await hits[Math.floor(hits.length*0.8)][tapper](); await pg.waitForTimeout(300); tip=await pg.evaluate(()=>{ const t=document.querySelector('#censusBody .cz-row:first-child .cz-tip'); return !!t&&getComputedStyle(t).display!=='none'&&t.textContent.length>10; }); }
-    say(ev.open&&ev.h>150&&ev.bars>0&&ev.risen===ev.bars&&ev.label>=8&&!ev.tblOver&&tip, name+': a pool’s days open ('+Math.round(ev.h)+' px), '+ev.risen+' of '+ev.bars+' bars risen, chart labels '+Math.round(ev.label)+' px, day table '+(ev.tblOver?'WIDER than the screen':'fits')+', a tap on a day '+(tip?'explains it':'shows NOTHING'));
+    // a day under the finger: the chart in the middle of the screen, a day near its middle
+    await pg.evaluate(()=>{ const c=document.querySelector('#censusBody .cz-row:first-child .cz-chart'); if(c) c.scrollIntoView({block:'center'}); }); await pg.waitForTimeout(500);
+    const hits=await pg.$$('#censusBody .cz-row:first-child .cz-evx .hit'); let tip={shown:false}, gone=null;
+    if(hits.length){ const h=hits[Math.floor(hits.length*0.6)];
+      const under=await h.evaluate(el=>{ const r=el.getBoundingClientRect(), u=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2); return u===el?'the day':u?(u.id||String(u.className&&u.className.baseVal!==undefined?u.className.baseVal:u.className||u.tagName)).slice(0,30):'nothing'; });
+      await h[tapper](); await pg.waitForTimeout(400);
+      tip=await pg.evaluate(()=>{ const t=document.querySelector('#censusBody .cz-row:first-child .cz-tip'); return {shown:!!t&&getComputedStyle(t).display!=='none'&&t.textContent.length>10, marked:!!document.querySelector('#censusBody .cz-row:first-child .hit.on')}; }); tip.under=under;
+      if(dev.hasTouch&&tip.shown){ const s=await pg.$('#censusBody .cz-sum'); if(s){ await s.tap(); await pg.waitForTimeout(300); gone=await pg.evaluate(()=>{ const t=document.querySelector('#censusBody .cz-row:first-child .cz-tip'); return !t||getComputedStyle(t).display==='none'; }); } } }
+    say(ev.open&&ev.h>150&&ev.bars>0&&ev.risen===ev.bars&&ev.label>=8&&!ev.tblOver&&tip.shown&&gone!==false, name+': a pool’s days open ('+Math.round(ev.h)+' px), '+ev.risen+' of '+ev.bars+' bars risen, chart labels '+Math.round(ev.label)+' px, day table '+(ev.tblOver?'WIDER than the screen':'fits')+', a '+tapper+' on a day '+(tip.shown?'explains it':'shows NOTHING (finger on '+tip.under+', day '+(tip.marked?'marked':'not marked')+')')+(gone==null?'':gone?', a tap elsewhere puts it away':', a tap elsewhere does NOT put it away'));
     // folds, the comparison, the checks chip
     const f=await pg.evaluate(async()=>{ const out={}; const fold=v=>document.querySelector('#censusBody [data-cz="fold"][data-v="'+v+'"]');
       for(const v of ['g','e','et']){ const b=fold(v); if(!b){ out[v]=false; continue; } const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
-        b.click(); await new Promise(r=>setTimeout(r,450)); const h1=x.getBoundingClientRect().height; b.click(); await new Promise(r=>setTimeout(r,450)); out[v]=(was?h1>0:h1<2)&&x.classList.contains('shut')===was; }
+        b.click(); await new Promise(r=>setTimeout(r,900)); const h1=x.getBoundingClientRect().height, hid=getComputedStyle(x.firstElementChild).visibility==='hidden'; b.click(); await new Promise(r=>setTimeout(r,900)); const h2=x.getBoundingClientRect().height;
+        out[v]=(was?h1>0:h1<1&&hid)&&(was?h2<1:h2>0)&&x.classList.contains('shut')===was; out[v+'h']=Math.round(was?h2:h1); }
       const before=document.querySelector('#censusBody .cz-row .cz-ln').textContent; document.querySelector('#censusBody [data-cz="win"][data-v="d"]').click(); await new Promise(r=>setTimeout(r,500));
       out.win=document.querySelector('#censusBody [data-cz="win"][data-v="d"]').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#censusBody .cz-row').length>0; out.changed=before!==document.querySelector('#censusBody .cz-row .cz-ln').textContent;
       document.querySelector('#censusBody [data-cz="win"][data-v="w"]').click(); await new Promise(r=>setTimeout(r,400));
@@ -50,7 +57,7 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
       document.querySelector('#censusBody .cz-stat').click(); await new Promise(r=>setTimeout(r,1400));
       const ck=document.querySelector('#czChecks'), r=ck.getBoundingClientRect(); out.checks=!ck.querySelector('.cz-x').classList.contains('shut')&&r.top<innerHeight&&r.bottom>0;
       return out; });
-    say(f.g&&f.e&&f.et&&f.win&&f.tok&&f.checks, name+': folds '+['g','e','et'].map(k=>({g:'pools',e:'market',et:'pool table'}[k])+(f[k]?' ✓':' ✗')).join(', ')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
+    say(f.g&&f.e&&f.et&&f.win&&f.tok&&f.checks, name+': folds '+['g','e','et'].map(k=>({g:'pools',e:'market',et:'pool table'}[k])+(f[k]?' ✓':' ✗ (shut at '+f[k+'h']+' px)')).join(', ')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
     say(!errs.length, name+': page errors '+errs.length);
   }catch(e){ say(false, name+': '+String(e.message||e).split('\n')[0].slice(0,90)); }
   await b.close();
