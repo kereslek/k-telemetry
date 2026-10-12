@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       days: { description: 'days of history', required: false, default: '30' }
+      only: { description: 'eth, sol or both (empty)', required: false, default: '' }
 permissions:
   contents: read
 jobs:
@@ -25,3 +26,4 @@ jobs:
         env:
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
           DAYS: ${{ github.event.inputs.days || '30' }}
+          ONLY: ${{ github.event.inputs.only || '' }}

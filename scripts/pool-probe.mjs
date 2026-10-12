@@ -38,7 +38,7 @@ async function bsLogs(params, over){
   const out=[], seen=new Set(); let from=params.fromBlock||0;
   for(let n=0;n<60;n++){ if(over&&over()) return {logs:out, partial:true};
     const q=new URLSearchParams({module:'logs',action:'getLogs',...params,fromBlock:String(from),toBlock:'latest'});
-    const r=await j(BS+'/api?'+q); const a=Array.isArray(r?.result)?r.result:null; if(!a) return {logs:out, partial:true, failed:true};
+    const r=await j(BS+'/api?'+q,{},3,60000); const a=Array.isArray(r?.result)?r.result:null; if(!a) return {logs:out, partial:true, failed:true};
     let added=0; for(const l of a){ const k=l.transactionHash+':'+l.logIndex; if(seen.has(k)) continue; seen.add(k); out.push(l); added++; }
     if(a.length<1000||!added) break; from=parseInt(a[a.length-1].blockNumber,16); }
   return {logs:out, partial:false}; }
@@ -59,10 +59,11 @@ const w=(data,i)=>data.slice(2+64*i,2+64*(i+1));
 
 async function uniBook(P){
   const v4=P.addr.length===66, over=budget(8*60e3);
-  const lp=v4 ? await bsLogs({address:PM4, topic0:EV.v4mod, topic1:P.addr, topic0_1_opr:'and'}, over)
-              : await bsLogs({address:P.addr, topic0:EV.v3mint}, over);
-  const burns=v4?{logs:[],partial:false}:await bsLogs({address:P.addr, topic0:EV.v3burn}, over);
   const startBlk=await erpc('eth_blockNumber',[]); const tip=startBlk?parseInt(startBlk,16):null;
+  const born=tip&&P.created?Math.max(0,tip-Math.ceil((Date.now()-P.created)/12000*1.05)-2000):0;
+  const lp=v4 ? await bsLogs({address:PM4, topic0:EV.v4mod, topic1:P.addr, topic0_1_opr:'and', fromBlock:born}, over)
+              : await bsLogs({address:P.addr, topic0:EV.v3mint, fromBlock:born}, over);
+  const burns=v4?{logs:[],partial:false}:await bsLogs({address:P.addr, topic0:EV.v3burn, fromBlock:born}, over);
   const swapFrom=tip?tip-Math.ceil(DAYS*86400/12.05):0;
   const sw=v4? await bsLogs({address:PM4, topic0:EV.v4swap, topic1:P.addr, topic0_1_opr:'and', fromBlock:swapFrom}, budget(5*60e3))
              : await bsLogs({address:P.addr, topic0:EV.v3swap, fromBlock:swapFrom}, budget(5*60e3));
@@ -156,7 +157,10 @@ async function market(net, token, sym, chainName){
   // LP books
   console.log('\n  LP books (positions open · at the price now · wallets · opened in the window, by week oldest→newest · closed in the window)');
   const checks=[];
-  for(const p of active.filter(x=>x.tvl>=100)){
+  const offOf=p=>mpx&&tokPx(p)>0?tokPx(p)/mpx-1:null;
+  const skipped=active.filter(x=>x.tvl>=100&&(x.tvl<1000||Math.abs(offOf(x)??0)>0.1));
+  if(skipped.length) console.log('  ('+skipped.length+' pool(s) not read: under $1k, or priced more than 10% off the market, so not trading)');
+  for(const p of active.filter(x=>x.tvl>=1000&&Math.abs(offOf(x)??0)<=0.1)){
     let b=null; const d=ray.get(p.addr), type=String(d?.type||'').toLowerCase(), dex=String(p.dex);
     try{
       if(net==='eth'&&/uniswap/.test(dex)) b=await uniBook(p);
@@ -186,5 +190,6 @@ async function market(net, token, sym, chainName){
 }
 
 console.log('window: '+DAYS+' days · '+(keccak?'event signatures computed':'event signatures from the built-in list'));
-await market('eth', LCXN, 'LCX (new contract)', 'Ethereum');
-await market('solana', CPOOL, 'CPOOL', 'Solana');
+const ONLY=String(process.env.ONLY||'');
+if(ONLY!=='sol') await market('eth', LCXN, 'LCX (new contract)', 'Ethereum');
+if(ONLY!=='eth') await market('solana', CPOOL, 'CPOOL', 'Solana');
