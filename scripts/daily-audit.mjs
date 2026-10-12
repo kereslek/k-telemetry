@@ -157,6 +157,34 @@ for(const w of [390,1300]){
       +' '+(after.vis>=0.9?'fully on screen':'NOT fully on screen')+', button '+(after.gone?'steps aside':'stays')+', a new fee '+(flash?'flashes it':'does NOT flash it'));
   }catch(e){ FAIL('LIVE button at '+w+': '+String(e.message||e).slice(0,60)); }
 }
+/* WHY YOUR FEES MOVED: the pool census is fresh, every pool of yours has its line, the causes
+   multiply to the change, the shares are shares, every check is shown, and the folds fold.
+   Counts and yes/no only. */
+try{
+  const cz=openJ(await (await fetch(LIVE+'pools-main.json?t='+Date.now())).json());
+  const age=(Date.now()-cz.t)/36e5;
+  (age<=30?OK:WARN)('pool census is '+age.toFixed(0)+' h old · '+cz.tokens.length+' token(s), '+cz.tokens.reduce((s,t)=>s+(t.count||0),0)+' pools listed, '+(cz.mine||[]).length+' of yours · checks: '
+    +cz.checks.filter(c=>c.st==='ok').length+' agree, '+cz.checks.filter(c=>c.st==='look').length+' to look at, '+cz.checks.filter(c=>c.st==='na').length+' not readable');
+  for(const w of [390,1300]){
+    await pg.setViewportSize({width:w,height:w<500?844:900});
+    await pg.evaluate(()=>{ const p=document.querySelector('[data-panel="census"]'); if(p){ p.classList.remove('collapsed'); scrollTo(0,p.getBoundingClientRect().top+scrollY-60); } }); await pg.waitForTimeout(2500);
+    const r=await pg.evaluate(()=>{ const h=document.querySelector('#censusBody'); if(!h||!state.census) return {none:true};
+      const C=state.census, rows=[...h.querySelectorAll('.cz-row')], W=czWins(czWin), by=new Map((C.mine||[]).map(m=>[String(m.id).toLowerCase(),m]));
+      let mult=0, bad=0;
+      for(const T of C.tokens) for(const P of T.pools.filter(p=>p.mine)){ const x=czPool(T,P,by.get(String(P.id).toLowerCase()),W); if(x.basis==='pool'||x.thin||x.isNew||x.total==null||!(x.FA>0&&x.FB>0)) continue;
+        const sum=Object.values(x.eff).filter(v=>v!=null&&isFinite(v)).reduce((s,v)=>s+v,0); mult++; if(Math.abs(Math.exp(sum)-(1+x.total))>0.02*(1+Math.abs(x.total))) bad++; }
+      const lad=[...h.querySelectorAll('.cz-lr .v')].map(e=>parseFloat(e.textContent));
+      return {rows:rows.length, lines:rows.filter(r=>r.querySelector('.cz-ln').textContent.trim().length>20).length, chips:rows.filter(r=>r.querySelector('.cz-chip')).length, mine:(C.mine||[]).length,
+        mult, bad, ladOk:lad.length===4&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
+    const fold=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody [data-cz="fold"][data-v="e"]'); if(!b) return false; const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
+      b.click(); await new Promise(r=>setTimeout(r,500)); const mid=x.classList.contains('shut'); b.click(); await new Promise(r=>setTimeout(r,500)); return mid!==was&&x.classList.contains('shut')===was; });
+    const open=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody .cz-open'); if(!b) return false; const x=b.closest('.cz-row').querySelector('.cz-evx'), was=x.classList.contains('shut');
+      b.click(); await new Promise(r=>setTimeout(r,900)); const bars=x.querySelectorAll('.cz-chart .bar').length, shown=!x.classList.contains('shut'); b.click(); await new Promise(r=>setTimeout(r,500)); return (was?shown:!shown)&&bars>0; });
+    const ok=!r.none&&r.rows===r.mine&&r.lines===r.rows&&r.chips===r.rows&&!r.bad&&r.ladOk&&r.ck===r.cks&&!r.hscroll&&fold&&open;
+    (ok?OK:FAIL)('WHY FEES MOVED at '+w+': '+(r.none?'panel or census MISSING':r.rows+' pool line(s) for '+r.mine+' pool(s) of yours, '+r.lines+' with a sentence, '+r.chips+' with cause tags; causes multiply to the change in '
+      +(r.mult-r.bad)+' of '+r.mult+'; share ladder '+(r.ladOk?'within 0–100%':'OUT OF RANGE')+'; '+r.ck+' of '+r.cks+' checks shown; folds '+(fold?'work':'do NOT work')+'; a pool’s days '+(open?'open with a chart':'do NOT open')+'; '+(r.hscroll?'page WIDER than the screen':'fits the screen')));
+  }
+}catch(e){ FAIL('WHY FEES MOVED: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');
 /* the wallet list and the balances read from it, in counts per chain only */
