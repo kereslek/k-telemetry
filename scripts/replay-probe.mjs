@@ -41,7 +41,14 @@ async function candles(net, addr){
 /* ---------- Ethereum ---------- */
 const BS='https://eth.blockscout.com';
 const NODES=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth',BS+'/api/eth-rpc'];
-async function rpcAt(u,method,params,ms=20000){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,ms); return r&&r.result!==undefined&&!r.error?r.result:undefined; }
+const why=new Map();
+const host=u=>u.replace(/^https:\/\//,'').split('/')[0];
+async function rpcAt(u,method,params,ms=20000){
+  let r=null, st=null;
+  try{ const x=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(ms)}); st=x.status; r=await x.json().catch(()=>null); }catch(e){ st=String(e.name||'error'); }
+  if(r&&r.result!==undefined&&!r.error) return r.result;
+  const k=host(u)+' '+method; if(!why.has(k)) why.set(k, (r&&r.error?String(r.error.message||JSON.stringify(r.error)):'HTTP '+st).replace(/0x[0-9a-fA-F]{8,}/g,'0x…').slice(0,110));
+  return undefined; }
 async function erpc(method,params){ for(const u of NODES){ const r=await rpcAt(u,method,params); if(r!==undefined) return r; } return undefined; }
 let keccak=null; try{ keccak=(await import('js-sha3')).keccak256; }catch(e){}
 const TOP={
@@ -95,15 +102,46 @@ async function ethPool(P, fromB, tip){
   if(bs.logs.length) console.log('      per week since '+FROM+': '+byWeek(tsB));
   // the public nodes, the same window
   t0=Date.now();
-  const nd=await nodeLogs(v4?{address:PM4, topics:[T.v4swap, P.addr]}:{address:P.addr, topics:[T.v3swap]}, fromB, tip, budget(10*60e3));
+  const nd=await nodeLogs(v4?{address:PM4, topics:[T.v4swap, P.addr]}:{address:P.addr, topics:[T.v3swap]}, fromB, tip, budget(90e3));
   const okN=nd.logs.filter(l=>evmSwapOk(l,v4)).length, withTs=nd.logs.filter(l=>l.blockTimestamp!=null).length;
   console.log('    public nodes: '+nf(nd.logs.length)+' swaps, '+nd.chunks+' chunk(s) of 9,000 blocks, '+nd.failed+' refused by every node, '+secs(t0)
     +' · decode consistently '+nf(okN)+' of '+nf(nd.logs.length)+' · records carrying their time '+nf(withTs)+' · served by '+Object.entries(nd.served).map(([k,v])=>k+' '+v).join(', '));
   const agree=!bs.partial&&!nd.partial?(bs.logs.length===nd.logs.length?'the two sources agree exactly':'the two sources differ by '+Math.abs(bs.logs.length-nd.logs.length)):'not compared (one source incomplete)';
   console.log('    '+agree);
-  if(v4){ t0=Date.now(); const m=await bsLogs({address:PM4, topic0:T.v4mod, topic1:P.addr, topic0_1_opr:'and', fromBlock:0}, budget(4*60e3));
+  if(v4){ t0=Date.now(); const born=P.created?Math.max(0,tip-Math.ceil((Date.now()-P.created)/12050*1.05)-2000):0; const m=await bsLogs({address:PM4, topic0:T.v4mod, topic1:P.addr, topic0_1_opr:'and', fromBlock:born}, budget(4*60e3));
     console.log('    liquidity changes (ModifyLiquidity), whole history: '+nf(m.logs.length)+' in '+m.pages+' page(s), '+secs(t0)+' · '+(m.failed?'REFUSED':m.partial?'stopped at the time limit':'whole')); }
   return {swaps:Math.max(bs.logs.length,nd.logs.length), whole:(!bs.partial&&okB===bs.logs.length)||(!nd.partial&&okN===nd.logs.length)}; }
+
+/* A Uniswap v3 pool has no topic of its own to filter on, and its whole-window queries were refused. Three
+   other ways in: Blockscout's log query in windows of 25,000 blocks; Blockscout's own paged address logs;
+   the public nodes in chunks of 2,000 blocks. */
+async function v3Pool(P, fromB, tip){
+  console.log('\n  '+P.name+' '+feeLbl(P.fee)+' · Uniswap v3 · size '+usd(P.tvl)+' · daily candles '+P.c.n+(P.c.oldest?' from '+P.c.oldest:'')+(P.c.more?' (and '+P.c.more+' more before)':''));
+  // 1. Blockscout's log query, window by window
+  let t0=Date.now(), n1=0, okW=0, badW=0; const ts1=[];
+  for(let a=fromB; a<=tip; a+=25000){ const b=Math.min(tip,a+24999); let from=a, whole=true;
+    for(let k=0;k<20;k++){ const q=new URLSearchParams({module:'logs',action:'getLogs',address:P.addr,topic0:T.v3swap,fromBlock:String(from),toBlock:String(b)});
+      const r=await j(BS+'/api?'+q,{},2,45000); const xs=Array.isArray(r?.result)?r.result:null; if(!xs){ whole=false; break; }
+      n1+=xs.length; for(const l of xs) ts1.push(parseInt(l.timeStamp,16)*1000); if(xs.length<1000) break; from=parseInt(xs[xs.length-1].blockNumber,16)+1; }
+    if(whole) okW++; else badW++; if(Date.now()-t0>8*60e3){ badW+=Math.ceil((tip-a)/25000)-1; break; } }
+  console.log('    Blockscout, 25,000-block windows: '+okW+' answered, '+badW+' refused · '+nf(n1)+' swaps · '+secs(t0)+(ts1.length?' · first '+day(Math.min(...ts1))+', last '+day(Math.max(...ts1)):''));
+  if(ts1.length&&!badW) console.log('      per week since '+FROM+': '+byWeek(ts1));
+  // 2. Blockscout's paged address logs (newest first), until the first day is passed
+  t0=Date.now(); let n2=0, pages=0, done=false, failed=false, next=null; const ok2=[];
+  while(!done&&Date.now()-t0<8*60e3){ const u=BS+'/api/v2/addresses/'+P.addr+'/logs'+(next?'?'+new URLSearchParams(next):'');
+    const r=await j(u,{},3,45000); pages++; if(!r||!Array.isArray(r.items)){ failed=true; break; }
+    for(const it of r.items){ if((it.block_number||0)<fromB){ done=true; break; } if((it.topics||[])[0]===T.v3swap){ n2++; ok2.push(it); } }
+    if(!r.next_page_params){ done=true; break; } next=r.next_page_params; }
+  const dec2=ok2.filter(it=>it.data&&evmSwapOk({data:it.data},false)).length;
+  console.log('    Blockscout paged address logs: '+nf(n2)+' swaps in '+pages+' page(s), '+secs(t0)+' · '+(failed?'REFUSED part way':done?'whole':'stopped at the time limit')+' · decode consistently '+nf(dec2)+' of '+nf(n2)+(ok2[0]&&ok2[0].block_timestamp?' · records carry their time':''));
+  // 3. the public nodes, 2,000 blocks at a time, the newest 40 chunks
+  t0=Date.now(); let n3=0, ch=0, ref=0; const served={};
+  for(let b=tip; b>fromB&&ch<40; b-=2000){ const a=Math.max(fromB,b-1999); ch++; let got;
+    for(const u of NODES){ got=await rpcAt(u,'eth_getLogs',[{address:P.addr,topics:[T.v3swap],fromBlock:'0x'+a.toString(16),toBlock:'0x'+b.toString(16)}],20000); if(Array.isArray(got)){ served[host(u)]=(served[host(u)]||0)+1; break; } }
+    if(!Array.isArray(got)) ref++; else n3+=got.length; await sleep(60); }
+  console.log('    public nodes, 2,000-block chunks (the newest '+ch+'): '+(ch-ref)+' answered, '+ref+' refused · '+nf(n3)+' swaps · '+secs(t0)+' · served by '+(Object.entries(served).map(([k,v])=>k+' '+v).join(', ')||'none'));
+  const whole=(okW>0&&!badW)||(!failed&&done);
+  return {swaps:Math.max(n1,n2), whole}; }
 
 /* a position's own record on the v3 position manager: a recent id, its whole history by its topic */
 async function npmCheck(fromB, tip){
@@ -147,9 +185,9 @@ async function solPool(P){
   if(ts.length) console.log('      per week since '+FROM+': '+byWeek(ts));
   if(!/clmm/i.test(P.venue)){ console.log('    (not a concentrated pool: its swaps are not replayed, its daily trading comes from the candles)'); return {txs:ok.length, ms:null}; }
   // a sample spread over the window: does each swap record decode, and agree with its own price?
-  const K=Math.min(40, ok.length), pick=[...new Set(Array.from({length:K},(_,i)=>Math.floor(i*(ok.length-1)/Math.max(1,K-1))))].map(i=>ok[i]);
+  const K=Math.min(30, ok.length), pick=[...new Set(Array.from({length:K},(_,i)=>Math.floor(i*(ok.length-1)/Math.max(1,K-1))))].map(i=>ok[i]);
   let got=0, sw=0, swOk=0, swMine=0, lq=0, lqOk=0, pos=0, ms=0, n=0; const lens=new Set(), show=[];
-  for(const x of pick){ const a=Date.now(); const tx=await srpc('getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]); ms+=Date.now()-a; n++;
+  for(const x of pick){ const a=Date.now(); const tx=await srpc('getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]); ms+=Date.now()-a; n++; await sleep(150);
     if(!tx) continue; got++;
     for(const e of evtsOf(tx)){
       if(e.k==='swap'){ sw++; lens.add(e.b.length); const s=swapEv(e.b); if(!s) continue; if(s.pool!==P.addr) continue; swMine++;
@@ -179,10 +217,12 @@ if(ONLY!=='sol'){
   console.log('\n######## LCX (new contract) on Ethereum · from block '+(fb?nf(fb.b)+' ('+fb.how+')':'—')+' to '+nf(tip));
   const pools=(await tokenPools('eth', LCXN)).filter(p=>p.addr&&/uniswap/.test(p.dex));
   for(const P of pools) P.c=await candles('eth', P.addr);
-  const live=pools.filter(P=>[...P.c.vol.entries()].some(([d,v])=>d>=FROM&&v>0)).sort((a,b)=>b.tvl-a.tvl);
-  console.log('  '+pools.length+' Uniswap pools list it; '+live.length+' traded since '+FROM);
-  let all=0, whole=true; for(const P of live){ const r=await ethPool(P, fb?fb.b:tip-600000, tip); all+=r.swaps; whole=whole&&r.whole; }
+  const traded=P=>[...P.c.vol.entries()].filter(([d])=>d>=FROM).reduce((s,[,v])=>s+(v||0),0);
+  const live=pools.filter(P=>traded(P)>=1000).sort((a,b)=>traded(b)-traded(a));
+  console.log('  '+pools.length+' Uniswap pools list it; '+live.length+' traded $1,000 or more since '+FROM);
+  let all=0, whole=true; for(const P of live){ const r=P.addr.length===66?await ethPool(P, fb?fb.b:tip-600000, tip):await v3Pool(P, fb?fb.b:tip-600000, tip); all+=r.swaps; whole=whole&&r.whole; }
   await npmCheck(fb?fb.b:tip-600000, tip);
+  if(why.size){ console.log('\n  what the nodes said when they refused:'); for(const [k,v] of why) console.log('    '+k+': '+v); why.clear(); }
   verdict.push('LCX: '+nf(all)+' swaps since '+FROM+' across '+live.length+' pool(s) · '+(whole?'every pool readable whole':'NOT every pool readable whole'));
 }
 if(ONLY!=='eth'){
@@ -195,10 +235,12 @@ if(ONLY!=='eth'){
     return {addr:a, name:g.name||((d?.mintA?.symbol||'?')+' / '+(d?.mintB?.symbol||'?')), tvl:d?+d.tvl:g.tvl||0, fee:d?.feeRate!=null?+d.feeRate:g.fee??null,
       venue:d?('Raydium '+(type==='concentrated'?'CLMM':type||'?')):(g.dex||'?'), ray:!!d||/raydium/i.test(g.dex||'')}; }).filter(P=>P.ray);
   for(const P of pools) P.c=await candles('solana', P.addr);
-  const live=pools.filter(P=>[...P.c.vol.entries()].some(([d,v])=>d>=FROM&&v>0)).sort((a,b)=>b.tvl-a.tvl);
-  console.log('  '+pools.length+' Raydium pools list it; '+live.length+' traded since '+FROM);
+  const tradedS=P=>[...P.c.vol.entries()].filter(([d])=>d>=FROM).reduce((s,[,v])=>s+(v||0),0);
+  const live=pools.filter(P=>tradedS(P)>=100).sort((a,b)=>tradedS(b)-tradedS(a));
+  console.log('  '+pools.length+' Raydium pools list it; '+live.length+' traded $100 or more since '+FROM);
   let txs=0, mins=0, ok=true; for(const P of live){ const x=await solPool(P); txs+=x.txs; if(x.ms) mins+=x.txs*x.ms/60000; if(x.ok===false) ok=false; if(/clmm/i.test(P.venue)) await clmmPositions(P); }
   console.log('\n  Solana calls: '+served.keyed+' answered by the keyed node, '+served.pub+' by the public one, '+served.miss+' by neither');
+  if(why.size){ console.log('  what the nodes said when they refused:'); for(const [k,v] of why) console.log('    '+k+': '+v); }
   verdict.push('CPOOL: '+nf(txs)+' transactions since '+FROM+' across '+live.length+' Raydium pool(s) · swap records '+(ok?'decode consistently':'do NOT all decode')+' · a full read ≈ '+Math.round(mins)+' min one at a time');
 }
 console.log('\n######## verdict'); for(const v of verdict) console.log('  '+v);
