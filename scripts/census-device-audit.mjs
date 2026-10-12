@@ -56,18 +56,23 @@ for(const [name,type,dev,reduce] of [['iPhone (Safari engine)',webkit,devices['i
       if(dev.hasTouch&&tip.shown){ const s=await pg.$('#censusBody .cz-sum'); if(s){ await s.tap(); await pg.waitForTimeout(300); gone=await pg.evaluate(()=>{ const t=document.querySelector('#censusBody .cz-row:first-child .cz-tip'); return !t||getComputedStyle(t).display==='none'; }); } } }
     say(ev.open&&ev.h>150&&ev.bars>0&&ev.risen===ev.bars&&ev.label>=8&&!ev.tblOver&&tip.shown&&gone!==false, name+': a pool’s days open ('+Math.round(ev.h)+' px), '+ev.risen+' of '+ev.bars+' bars risen, chart labels '+Math.round(ev.label)+' px, day table '+(ev.tblOver?'WIDER than the screen':'fits')+', a '+tapper+' on a day '+(tip.shown?'explains it':'shows NOTHING (finger on '+tip.under+', day '+(tip.marked?'marked':'not marked')+')')+(gone==null?'':gone?', a tap elsewhere puts it away':', a tap elsewhere does NOT put it away'));
     // folds, the comparison, the checks chip
-    const f=await pg.evaluate(async()=>{ const out={}; const fold=v=>document.querySelector('#censusBody [data-cz="fold"][data-v="'+v+'"]');
-      for(const v of ['b','g','e']){ const b=fold(v); if(!b){ out[v]=false; continue; } const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
-        const fit=()=>{ const t=x.querySelector('.cz-t'); return t?t.scrollWidth<=t.clientWidth+1:true; }; if(v==='e'&&!was) out.efit=fit();
-        b.click(); await new Promise(r=>setTimeout(r,900)); const h1=x.getBoundingClientRect().height, hid=getComputedStyle(x.firstElementChild).visibility==='hidden'; if(v==='e'&&was) out.efit=fit(); b.click(); await new Promise(r=>setTimeout(r,900)); const h2=x.getBoundingClientRect().height;
-        out[v]=(was?h1>0:h1<1&&hid)&&(was?h2<1:h2>0)&&x.classList.contains('shut')===was; out[v+'h']=Math.round(was?h2:h1); }
+    // the folds, each tapped where a finger would find it: on the screen
+    const fo={};
+    for(const v of ['b','g','e']){ const sel='#censusBody [data-cz="fold"][data-v="'+v+'"]', b=await pg.$(sel); if(!b){ fo[v]=false; continue; }
+      const st=()=>pg.evaluate(sel=>{ const b=document.querySelector(sel), x=b.closest('.cz-sh').nextElementSibling, t=x.querySelector('.cz-t');
+        return {shut:x.classList.contains('shut'), h:x.getBoundingClientRect().height, hid:getComputedStyle(x.firstElementChild).visibility==='hidden', fit:t?t.scrollWidth<=t.clientWidth+1:true}; }, sel);
+      const s0=await st(); if(v==='e'&&!s0.shut) fo.efit=s0.fit;
+      await b.scrollIntoViewIfNeeded(); await b[tapper](); await pg.waitForTimeout(900); const s1=await st(); if(v==='e'&&s0.shut) fo.efit=s1.fit;
+      await b.scrollIntoViewIfNeeded(); await b[tapper](); await pg.waitForTimeout(900); const s2=await st();
+      fo[v]=(s0.shut?s1.h>0:s1.h<1&&s1.hid)&&(s0.shut?s2.h<1:s2.h>0)&&s2.shut===s0.shut; fo[v+'h']=Math.round(s0.shut?s2.h:s1.h); }
+    const f=await pg.evaluate(async()=>{ const out={};
       const before=document.querySelector('#censusBody .cz-row .cz-ln').textContent; document.querySelector('#censusBody [data-cz="win"][data-v="d"]').click(); await new Promise(r=>setTimeout(r,500));
       out.win=document.querySelector('#censusBody [data-cz="win"][data-v="d"]').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#censusBody .cz-row').length>0; out.changed=before!==document.querySelector('#censusBody .cz-row .cz-ln').textContent;
       document.querySelector('#censusBody [data-cz="win"][data-v="w"]').click(); await new Promise(r=>setTimeout(r,400));
       const tb=document.querySelectorAll('#censusBody [data-cz="tok"]'); if(tb[1]){ tb[1].click(); await new Promise(r=>setTimeout(r,400)); out.tok=document.querySelectorAll('#censusBody [data-cz="tok"]')[1].getAttribute('aria-pressed')==='true'; tb[0]&&document.querySelectorAll('#censusBody [data-cz="tok"]')[0].click(); } else out.tok=true;
       document.querySelector('#censusBody .cz-stat').click(); await new Promise(r=>setTimeout(r,1400));
       const ck=document.querySelector('#czChecks'), r=ck.getBoundingClientRect(); out.checks=!ck.querySelector('.cz-x').classList.contains('shut')&&r.top<innerHeight&&r.bottom>0;
-      return out; });
+      return out; }); Object.assign(f,fo);
     say(f.b&&f.g&&f.e&&f.efit&&f.win&&f.tok&&f.checks, name+': folds '+['b','g','e'].map(k=>({b:'big picture',g:'pool by pool',e:'every pool'}[k])+(f[k]?' ✓':' ✗ (shut at '+f[k+'h']+' px)')).join(', ')+'; every-pool table '+(f.efit?'fits':'WIDER than the screen')+'; comparison switch '+(f.win?'works':'FAILS')+(f.changed?' (lines change)':'')+'; token switch '+(f.tok?'works':'FAILS')+'; the checks chip '+(f.checks?'opens the checks on screen':'does NOT open them'));
     say(!errs.length, name+': page errors '+errs.length);
   }catch(e){ say(false, name+': '+String(e.message||e).split('\n')[0].slice(0,90)); }
