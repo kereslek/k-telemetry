@@ -110,8 +110,18 @@ async function nodeLogs(filter, from, to){
     if(!Array.isArray(got)){ failed++; stats.eth.refused++; continue; }
     out.push(...got); const tb=await blockTs(b); if(tb) anchors.push([b,tb]); await sleep(60); }
   return {logs:out, anchors, partial:failed>0}; }
+/* Blockscout's own history, a thousand records a page, one kind of record per query; its records carry their time */
+async function bsLogs(address, topic0, from, to){
+  const out=[], seen=new Set(); let a=from;
+  for(let n=0;n<300;n++){ if(over()) return null;
+    const q=new URLSearchParams({module:'logs',action:'getLogs',address,topic0,fromBlock:String(a),toBlock:String(to)});
+    const r=await j(BS+'/api?'+q,{},3,60000); const xs=Array.isArray(r?.result)?r.result:null; if(!xs) return null;
+    let added=0; for(const l of xs){ const k=l.transactionHash+':'+l.logIndex; if(seen.has(k)) continue; seen.add(k); out.push(l); added++; }
+    if(xs.length<1000||!added) return out; a=bn(xs[xs.length-1].blockNumber); }
+  return null; }
 function timeOf(l, anchors){
   if(l.blockTimestamp) return bn(l.blockTimestamp)*1000;
+  if(l.timeStamp) return bn(l.timeStamp)*1000;
   const b=bn(l.blockNumber); let lo=null, hi=null; for(const a of anchors){ if(a[0]<=b) lo=a; if(a[0]>=b){ hi=a; break; } }
   if(lo&&hi&&hi[0]>lo[0]) return Math.round(lo[1]+(b-lo[0])*(hi[1]-lo[1])/(hi[0]-lo[0]));
   const a=lo||hi; return a?a[1]+(b-a[0])*12000:null; }
@@ -166,7 +176,11 @@ async function ethSide(out, prevPools){
   for(const [id,st0] of pools){
     if(over()){ stats.unread++; continue; }
     const st=structuredClone(st0); if(!(tip>st.cur)) continue;
-    const L=await nodeLogs({address:id, topics:[[TOP.swap,TOP.mint,TOP.burn]]}, st.cur+1, tip);
+    let L=await nodeLogs({address:id, topics:[[TOP.swap,TOP.mint,TOP.burn]]}, st.cur+1, tip);
+    if(L.partial&&!over()){   // the public nodes refused part of it: Blockscout keeps the whole history, whole or not at all
+      const parts=[]; let whole=true;
+      for(const t0 of [TOP.swap,TOP.mint,TOP.burn]){ const x=await bsLogs(id,t0,st.cur+1,tip); if(x===null){ whole=false; break; } parts.push(...x); }
+      if(whole){ L={logs:parts, anchors:L.anchors, partial:false}; out.notes.push('eth: a pool read from Blockscout'); } }
     if(L.partial){ stats.unread++; out.notes.push('eth: a pool’s records were not all served this run; kept as it was'); continue; }
     const logs=L.logs.sort((a,b)=>bn(a.blockNumber)-bn(b.blockNumber)||bn(a.logIndex)-bn(b.logIndex));
     // which of the position manager's deposits and withdrawals were the deck's: the receipt names the position
