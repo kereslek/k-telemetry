@@ -2360,7 +2360,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.5';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7585,11 +7585,14 @@ function czToken(T,mine,W){
   const covers=(k,ds)=>ds.filter(d=>dayOf(d,k)).length>=Math.ceil(ds.length/2);
   const basis=CZ_BASIS.find(k=>covers(k,W.A)&&covers(k,W.B))||null, basisA=basis||CZ_BASIS.find(k=>covers(k,W.A))||null;
   const win=(ds,k)=>{ const t=czAvg(ds.map(tradeOf)), p=czAvg(ds.map(pieOf)); if(!k) return {trade:t, pie:p, you:null, share:null, n:0, k:null};
-    const ok=ds.map(d=>dayOf(d,k)).filter(Boolean); if(ok.length<Math.ceil(ds.length/2)) return {trade:t, pie:p, you:null, share:null, n:ok.length, k:null};
+    const ok=ds.map(d=>dayOf(d,k)).filter(Boolean);
+    // under half the days recorded: no comparison, but your share on the days that are, said as such
+    if(ok.length<Math.ceil(ds.length/2)){ const pv=czAvg(ok.map(x=>x.p)); return {trade:t, pie:p, you:null, share:null, n:ok.length, k:null, part:ok.length&&pv>0?{share:czAvg(ok.map(x=>x.v))/pv, n:ok.length, k}:null}; }
     const you=czAvg(ok.map(x=>x.v)), pOk=czAvg(ok.map(x=>x.p));
     // exact: every day recorded with every pool of yours in it, so your fees = the LPs' fees × your share to the cent
     return {trade:t, pie:p, you, share:pOk>0?you/pOk:null, n:ok.length, k, est:k!=='actual', exact:ok.length===ds.length&&ok.every(x=>!x.miss)}; };
-  const A=win(W.A,basisA), B=win(W.B,basis), ch=(a,b)=>a!=null&&b!=null&&b>0&&a>=0?a/b-1:null;
+  const most=ds=>CZ_BASIS.map(k=>[k,ds.filter(d=>dayOf(d,k)).length]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
+  const A=win(W.A,basisA||most(W.A)), B=win(W.B,basis), ch=(a,b)=>a!=null&&b!=null&&b>0&&a>=0?a/b-1:null;
   // the first day with your part known, from any source
   let first=null; for(let i=200;i>=1&&!first;i--){ const d=czDay(i); if(CZ_BASIS.some(k=>dayOf(d,k))) first=d; }
   // a day for the chart: the comparison's own source where it has the day, otherwise the best there is
@@ -7658,6 +7661,9 @@ function czTokChart(r, cw){
 /* one card per token */
 function czTokCard(r, cw){
   const {T,sc,W,A,B}=r, S=T.sym, pct=x=>Math.abs(Math.round(x*100))+'%';
+  /* Nobody takes more than all of it. A share past 100% means your own fee records ran above what the
+     public trading figure implies; it is shown as all of it, and the sentence says by how much. */
+  const sP=x=>czP(x==null?null:Math.min(1,x),1), sNow=A.share??(A.part?A.part.share:null), over=sNow!=null&&sNow>1.005?sNow-1:0;
   const arrow=x=>x==null?'—':(Math.round(Math.abs(x)*100)===0?'■ ':x<0?'▼ ':'▲ ')+pct(x), cls=x=>x==null?'cz-fl':x<-0.02?'cz-dn':x>0.02?'cz-up':'cz-fl';
   const half=x=>x==null?0:Math.min(50,Math.abs(Math.log1p(x))/Math.LN2*50);   // half the track: doubled, or halved
   const lp=r.pie!=null?Math.abs(Math.log1p(r.pie)):0, ls=r.slice!=null?Math.abs(Math.log1p(r.slice)):0;
@@ -7673,7 +7679,8 @@ function czTokCard(r, cw){
     +'<span class="op eqs" aria-hidden="true">=</span>'
     +q('pie','ALL '+S+' LPs’ FEES',r.pie,A.pie!=null&&B.pie!=null?per(B.pie,W.B)+' → '+per(A.pie,W.A)+' · trading '+arrow(r.trade):'—')
     +'<span class="op" aria-hidden="true">×</span>'
-    +q('slice','YOUR SHARE OF THEM',r.slice,A.share!=null&&B.share!=null?czP(B.share,1)+' → '+czP(A.share,1):A.share!=null?czP(A.share,1)+' '+W.a+(r.fillBy?' · compared from '+czDate(r.fillBy):''):'recording')
+    +q('slice','YOUR SHARE OF THEM',r.slice,A.share!=null&&B.share!=null?sP(B.share)+' → '+sP(A.share):A.share!=null?sP(A.share)+' '+W.a+(r.fillBy?' · compared from '+czDate(r.fillBy):'')
+      :A.part?sP(A.part.share)+' on the '+A.part.n+' day'+(A.part.n===1?'':'s')+' recorded so far':'recording')
     +'</div>';
   // the sentence
   let s='';
@@ -7684,12 +7691,16 @@ function czTokCard(r, cw){
   const mv=r.moved, because={routing:d=>d<0?'more of the trading went to pools you are not in'+(mv.riv?', above all '+esc(mv.riv.name)+czFee(mv.riv)+' '+esc(mv.riv.venue):''):'more of the trading came to the pools you are in',
     others:d=>d<0?'other LPs added liquidity at the price in your pools':'other LPs took liquidity away from the price in your pools',
     you:d=>d<0?'of your own positions: less time in range, or less liquidity':'of your own positions: more time in range, or more liquidity'};
-  if(r.slice!=null) s+='Your share of what they earned '+(Math.abs(r.slice)<0.03?'held at <b>'+czP(A.share,1)+'</b>':(r.slice>0?'rose':'fell')+' to <b>'+czP(A.share,1)+'</b> from '+czP(B.share,1)+(mv&&mv.k?', mostly because '+because[mv.k](mv.d):''))+'.';
-  else if(A.share!=null) s+='Of everything they earned '+W.a+', you took <b>'+czP(A.share,1)+'</b>.';
+  if(r.slice!=null) s+='Your share of what they earned '+(Math.abs(r.slice)<0.03?'held at <b>'+sP(A.share)+'</b>':(r.slice>0?'rose':'fell')+' to <b>'+sP(A.share)+'</b> from '+sP(B.share)+(mv&&mv.k?', mostly because '+because[mv.k](mv.d):''))+'.';
+  else if(A.share!=null) s+='Of everything they earned '+W.a+', you took <b>'+(over?'all of it':sP(A.share))+'</b>.';
+  else if(A.part) s+=(W.A.length>1?'On the '+(A.part.n===1?'one day':A.part.n+' days')+' '+W.a+' with every pool of yours recorded':'On the day recorded')+', you took <b>'+(over?'all':sP(A.part.share))+'</b> of what they earned.';
+  if(over){ const ok=A.k||A.part?.k, by=Math.max(1,Math.round(over*100))+'%';
+    s+=' <span class="cz-fl">'+(ok==='share'?'The relay read your liquidity at the price '+by+' above the pool’s own figure (the two are read moments apart).'
+      :'Your fee counters ran '+by+' above what the public trading figures imply.')+'</span>'; }
   if(r.you!=null&&r.pie!=null&&r.slice!=null&&Math.abs(r.you)>=0.03) s+=' So your fees '+(r.you<0?'fell ':'rose ')+pct(r.you)+(r.pie>=0.03&&r.you<0?', even though its LPs earned more':r.pie<=-0.03&&r.you>0?', even though its LPs earned less':'')+'.';
   if(r.you==null&&r.fillBy) s+=' <span class="cz-fl">Your part of the comparison fills in by '+czDate(r.fillBy)+(W.A.length>1?'; YESTERDAY vs 7-DAY AVG compares it sooner':'')+'.</span>';
   const kp=[['OF THE LIQUIDITY',r.liq,'your money ÷ all the money in the pools '+sc.on+' that trade'],['AT THE PRICE',r.atp,'in your pools, where the trading happens'],
-    ['OF THE TRADING',r.served,'the part your liquidity took'],['OF ALL '+S+' LPs’ FEES',A.share,A.k&&A.k!=='actual'?CZ_BLBL[A.k]:'what you earned ÷ what every '+S+' LP earned']];
+    ['OF THE TRADING',r.served,'the part your liquidity took'],['OF ALL '+S+' LPs’ FEES',sNow==null?null:Math.min(1,sNow),(A.share==null&&A.part?A.part.n+' of '+W.A.length+' days recorded · ':'')+((A.k||A.part?.k)&&(A.k||A.part?.k)!=='actual'?CZ_BLBL[A.k||A.part.k]:'what you earned ÷ what every '+S+' LP earned')]];
   const sh=w=>String(w).slice(0,4)+'…'+String(w).slice(-4);
   const who=r.inU.filter(x=>!x.M.past).map(({M,P})=>{ const at=P.book&&Array.isArray(P.book.at)?P.book.at:null, nm=esc(P.name)+czFee(P);
       if(at&&at.length){ const you=at.filter(x=>x.mine).reduce((s,x)=>s+(x.s||0),0), oth=at.filter(x=>!x.mine), os=oth.reduce((s,x)=>s+(x.s||0),0), ws=[...new Set(oth.map(x=>x.w).filter(Boolean))];
