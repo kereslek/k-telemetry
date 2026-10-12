@@ -1,0 +1,31 @@
+# The pool census: every LCX (new) and CPOOL pool, and the deck's place in them, twice a day. Feeds
+# the dashboard's WHY FEES MOVED panel. Written sealed; the log is public and carries counts only.
+name: pool-census
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3,15 * * *'   # 05:23 and 17:23 Budapest (CEST)
+permissions:
+  contents: write
+concurrency: { group: pool-census, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/pool-census.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+      - name: Commit
+        run: |
+          [ -f deck-r7k4x9/pools-main.json ] || exit 0
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          git add deck-r7k4x9/pools-main.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "pool census $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1
