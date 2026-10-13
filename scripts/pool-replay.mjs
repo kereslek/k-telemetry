@@ -220,7 +220,7 @@ async function ethSide(out, prevPools){
         const xs=mineIn.get(l.transactionHash); if(xs){ const k=xs.findIndex(x=>Math.sign(x.dL)===sign&&Math.abs(Math.abs(x.dL)-amt)<=amt*1e-9+1);
           if(k>=0){ const x=xs.splice(k,1)[0]; onMine(st,{t,k:x.id,lo,hi,dL:x.dL}); stats.eth.mine++; } } } }
     if(tipT) standing(st,tipT);
-    st.cur=tip; st.recent=(st.recent||[]).filter(x=>x[0]>Date.now()-26*3600e3);
+    st.cur=tip; st.done=true; st.at=Date.now(); st.recent=(st.recent||[]).filter(x=>x[0]>Date.now()-26*3600e3);
     pools.set(id,st); stats.eth.pools++;
   }
   for(const [id,st] of pools){ const P=T.pools.find(p=>String(p.id).toLowerCase()===id); const had=Object.keys(st.pos).length>0;
@@ -263,74 +263,99 @@ async function sigsOf(addr, untilSig, sinceMs){
     for(const x of s){ if(sinceMs&&x.blockTime&&x.blockTime*1000<sinceMs) return {sigs:out, partial:false}; out.push(x); }
     if(s.length<1000) return {sigs:out, partial:false}; before=s[s.length-1].signature; }
   return {sigs:out, partial:true}; }
-/* a position the deck closed before the first day reached it: its range from its own opening record */
-async function openRange(mint){
-  const s=await sigsOf(mint,null,null); if(!s.sigs.length) return null; const o=s.sigs[s.sigs.length-1];
+/* a position's own opening record: the pool it was opened in, its range, and when (its NFT's first transaction) */
+async function openInfo(mint){
+  const s=await sigsOf(mint,null,null); if(s.partial||!s.sigs.length) return null; const o=s.sigs[s.sigs.length-1];
   const tx=await srpc('getTransaction',[o.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]); if(!tx) return null;
-  const e=decodeTx(tx).ev.find(x=>x.k==='open'); return e?{lo:e.lo,hi:e.hi}:null; }
+  const e=decodeTx(tx).ev.find(x=>x.k==='open'); return e?{pool:e.pool, lo:e.lo, hi:e.hi, t:(tx.blockTime||0)*1000}:null; }
+/* the personal position account a Raydium position NFT stands for: its program address (seed "position" + the NFT) */
+const B58M=Object.fromEntries([...B58].map((c,i)=>[c,i]));
+const b58d=s=>{ let n=0n; for(const c of s) n=n*58n+BigInt(B58M[c]); const b=[]; while(n>0n){ b.unshift(Number(n&255n)); n>>=8n; } for(const c of s){ if(c==='1') b.unshift(0); else break; } return Uint8Array.from(b); };
+const EP=(1n<<255n)-19n, ED=37095705934669439343138083508754565189542113879843219016388785533085940283555n;
+const mpow=(b,e,m)=>{ let r=1n; b%=m; while(e>0n){ if(e&1n) r=r*b%m; b=b*b%m; e>>=1n; } return r; };
+function onCurve(by){ let y=0n; for(let i=31;i>=0;i--) y=(y<<8n)|BigInt(i===31?(by[i]&0x7f):by[i]); if(y>=EP) return false;
+  const sg=(by[31]&0x80)>>7, y2=y*y%EP, u=(y2-1n+EP)%EP, v=(ED*y2+1n)%EP, v3=v*v%EP*v%EP, uv7=u*(v3*v3%EP*v%EP)%EP;
+  let x=u*v3%EP*mpow(uv7,(EP-5n)/8n,EP)%EP; const vxx=v*x%EP*x%EP;
+  if(vxx!==u){ if((vxx+u)%EP!==0n) return false; x=x*mpow(2n,(EP-1n)/4n,EP)%EP; }
+  return !(x===0n&&sg===1); }
+async function pda(seeds,prog){ const pg=b58d(prog), mk=new TextEncoder().encode('ProgramDerivedAddress');
+  for(let bump=255;bump>=0;bump--){ const parts=[...seeds,Uint8Array.from([bump]),pg,mk], buf=new Uint8Array(parts.reduce((n,x)=>n+x.length,0)); let o=0; for(const x of parts){ buf.set(x,o); o+=x.length; }
+    const h=new Uint8Array(await crypto.subtle.digest('SHA-256',buf)); if(!onCurve(h)) return b58(h); }
+  throw new Error('no program address'); }
+const CLMMP='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
 
+/* Raydium CLMM, read forward from the first day in batches. Each batch is read whole before it is booked;
+   the cursor (the last transaction booked) is kept, so a run that stops — out of time, or a transaction the
+   node would not serve — leaves the pool exactly there and the next run carries on from it. A pool is
+   brought up to the present only once every transaction since the first day has been booked. */
 async function solSide(out, prevPools){
   const T=census.tokens.find(t=>t.key==='cpool'); if(!T) return;
   const clmm=T.pools.filter(p=>p.venue==='Raydium CLMM'&&(p.real||p.mine));
-  // the deck's position NFTs, from every record that names one
-  const mints=new Set(), alive=new Map();
+  // the deck's position NFTs, from every record that names one; where each was opened, kept between runs
+  const mints=new Set(), alive=new Map(), info=new Map(Object.entries(prev?.mintInfo||{}));
   for(const p of data.sol||[]) if(p.nftMint&&p.poolId){ mints.add(p.nftMint); alive.set(p.nftMint,{pool:p.poolId, lo:p.tl, hi:p.tu, L:p.liq!=null?Number(BigInt(p.liq)):0}); }
   for(const r of DAILY) for(const p of r.ps||[]) if(p.c==='sol'&&(p.k0==='sol:'+CPOOL||p.k1==='sol:'+CPOOL)&&String(p.i).startsWith('sol:')) mints.add(String(p.i).slice(4));
   for(const k of Object.keys(bc.solHist||{})) if(k.startsWith('sol:')) mints.add(k.slice(4));
   for(const src of [fees.pos||{}, fees.closedPos||{}]) for(const [id,e] of Object.entries(src)) if(id.startsWith('sol:')&&String(e?.tk||'')==='sol:'+CPOOL) mints.add(id.slice(4));
+  const poolOf=async m=>{ const a=alive.get(m); if(a) return {pool:a.pool, lo:a.lo, hi:a.hi};
+    if(!info.has(m)&&!over()){ const o=await openInfo(m); if(o) info.set(m,o); } return info.get(m)||null; };
   const dataT=data.t||Date.now();
+  const getTx=async x=>{ const tx=await srpc('getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]); return tx?{...decodeTx(tx), sig:x.signature}:null; };
+  const readAll=async list=>{ const txs=await mapLimit(list,KEYED.length?4:2,async x=>{ const r=await getTx(x); if(!KEYED.length) await sleep(180); return r; });
+    for(let i=0;i<txs.length&&!over();i++) if(!txs[i]){ await sleep(250); txs[i]=await getTx(list[i]); }   // what a busy node turned away, once more, slower
+    return txs; };
   for(const P of clmm){
     if(over()){ stats.unread++; continue; }
-    const pv=prevPools.get(K(P.id)), st=pv&&pv.state?structuredClone(pv.state):newState(), first=!pv||!pv.state;
-    const S=await sigsOf(P.id, first?null:st.cur?.sig, first?T0:null);
+    const pv=prevPools.get(K(P.id)), st=pv&&pv.state?structuredClone(pv.state):newState();
+    if(st.init==null&&st.cur) st.init=true;   // a state carried from before batches: whole up to its cursor
+    // the first time: the deck's positions in this pool and where each stood on the first day,
+    // from each position's own records since then (today's liquidity less every deposit and withdrawal since)
+    if(!st.init){ let whole=true;
+      for(const m of mints){ if(over()){ whole=false; break; } const o=await poolOf(m); if(!o||o.pool!==P.id) continue;
+        if(o.t&&o.t>=T0) continue;   // opened inside the window: its opening record brings it in
+        const pd=await pda([new TextEncoder().encode('position'), b58d(m)], CLMMP);
+        const S=await sigsOf(pd,null,T0); if(S.partial){ whole=false; break; }
+        const txs=await readAll(S.sigs.filter(x=>!x.err)); if(txs.some(x=>!x)){ whole=false; break; }
+        if(txs.some(x=>x.ev.some(e=>e.k==='open'&&e.pool===P.id)&&x.signers.includes(m))) continue;   // opened inside the window after all
+        let d=0; for(const x of txs){ if(x.t>dataT) continue; for(const e of x.ev) if(e.mint===m){ if(e.k==='inc') d+=Number(e.dL); else if(e.k==='dec') d-=Number(e.dL); } }
+        const L0=Math.max(0,(alive.get(m)?.L||0)-d); if(L0>0&&o.lo!=null) st.pos[m]={lo:o.lo, hi:o.hi, L:L0}; }
+      if(!whole){ stats.unread++; out.notes.push('sol: where the deck’s positions stood on the first day was not read whole this run; the pool waits'); out.pools.push(pv||{id:P.id}); continue; }
+      st.t=T0; st.init=true; st.done=false; }
+    // every transaction since the cursor (or the first day), oldest first
+    const S=await sigsOf(P.id, st.cur?.sig||null, st.cur?null:T0);
     if(S.partial){ stats.unread++; out.notes.push('sol: a pool’s transaction list was not served whole this run; kept as it was'); out.pools.push(pv||{id:P.id}); continue; }
-    const sigs=S.sigs.filter(x=>!x.err).reverse();   // oldest first
-    const getTx=async x=>{ const tx=await srpc('getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]); return tx?decodeTx(tx):null; };
-    // a keyed node takes four at a time; the public one two, with a breath between
-    const txs=await mapLimit(sigs,KEYED.length?4:2,async x=>{ const r=await getTx(x); if(!KEYED.length) await sleep(180); return r; });
-    // whatever a busy node turned away gets a second, slower pass
-    for(let i=0;i<txs.length&&!over();i++) if(!txs[i]){ await sleep(250); txs[i]=await getTx(sigs[i]); }
-    const missing=txs.filter(x=>!x).length;
-    if(missing){ stats.unread++; stats.sol.refused+=missing; out.notes.push('sol: '+missing+' transaction(s) of a pool not served this run; kept as it was'); out.pools.push(pv||{id:P.id}); continue; }
-    stats.sol.txs+=txs.length;
-    for(const m of Object.keys(st.pos)) mints.add(m);
-    // the deck's own position records in this pool, and any it opened that no record named yet
-    for(const x of txs) for(const e of x.ev){ if(e.k==='open'&&e.pool===P.id&&WAL.sol.has(e.owner)){ const m=x.signers.find(s=>mints.has(s))||x.signers.find(s=>s!==x.payer); if(m){ mints.add(m); e.mint=m; } } }
-    for(const x of txs){ const opened=new Set(x.ev.filter(e=>e.k==='open'&&e.mint).map(e=>e.mint)); if(opened.size) x.ev=x.ev.filter(e=>!(e.k==='inc'&&opened.has(e.mint))); }
-    if(first){
-      // where each of the deck's positions stood on the first day: today's liquidity less everything since
-      const delta=new Map(); for(const x of txs){ if(x.t>dataT) continue; for(const e of x.ev){ const m=e.mint; if((e.k==='inc'||e.k==='dec')&&mints.has(e.mint)) delta.set(e.mint,(delta.get(e.mint)||0)+(e.k==='inc'?1:-1)*Number(e.dL)); if(e.k==='open'&&m) delta.set(m,(delta.get(m)||0)+Number(e.dL)); } }
-      for(const [m,a] of alive) if(a.pool===P.id&&!delta.has(m)) delta.set(m,0);
-      for(const [m,dl] of delta){ const a=alive.get(m); if(a&&a.pool!==P.id) continue;
-        const L0=Math.max(0,(a?a.L:0)-dl); if(!(L0>0)) continue;
-        const rg=a&&a.lo!=null?{lo:a.lo,hi:a.hi}:await openRange(m); if(!rg) continue; st.pos[m]={lo:rg.lo, hi:rg.hi, L:L0}; }
-      st.t=T0;
-      // the pool stands where its first record finds it, from the first day until then
-      for(const x of txs){ const e=x.ev.find(e=>(e.k==='swap'||e.k==='liq')&&e.pool===P.id); if(e){ st.tick=e.tick; st.L=Number(e.k==='swap'?e.L:e.Lb); break; } }
-    }
-    // the ranges of positions opened inside the window, for when their deposits come
-    const ranges=new Map(); for(const x of txs) for(const e of x.ev) if(e.k==='open'&&e.mint) ranges.set(e.mint,{lo:e.lo,hi:e.hi});
-    for(const [m,a] of alive) if(a.pool===P.id&&a.lo!=null) ranges.set(m,{lo:a.lo,hi:a.hi});
-    // a deposit or withdrawal of a position whose range nothing here gives: from its own opening record
-    const need=new Set(); for(const x of txs) for(const e of x.ev) if((e.k==='inc'||e.k==='dec')&&mints.has(e.mint)&&!(st.pos[e.mint]&&st.pos[e.mint].lo!=null)&&!ranges.has(e.mint)) need.add(e.mint);
-    for(const m of need){ if(over()) break; const rg=await openRange(m); if(rg) ranges.set(m,rg); }
-    let liqSeen=0, liqAgree=0;
-    for(const x of txs){ if(!x.t) continue;
-      for(const e of x.ev){
-        if(e.k==='swap'&&e.pool===P.id){ const sp=Number(e.sp)/2**64, Pz=sp*sp, w=e.zfo?Number(e.a0):(Pz>0?Number(e.a1)/Pz:0), own=WAL.sol.has(x.payer)||x.signers.some(k=>WAL.sol.has(k));
-          if(st.tick==null){ st.tick=e.tick; st.L=Number(e.L); }
-          onSwap(st,{t:x.t, tick:e.tick, L:Number(e.L), w, own}); stats.sol.swaps++; if(own) stats.sol.own++; }
-        else if(e.k==='liq'&&e.pool===P.id){ liqSeen++; if(st.L>0&&Math.abs(Number(e.Lb)-st.L)<=st.L*1e-6+1) liqAgree++; onPool(st,{t:x.t, tick:e.tick, Lafter:Number(e.La)}); stats.sol.lp++; }
-        else if((e.k==='inc'||e.k==='dec')&&mints.has(e.mint)){ const rg=st.pos[e.mint]||ranges.get(e.mint)||{};
-          onMine(st,{t:x.t, k:e.mint, lo:rg.lo??null, hi:rg.hi??null, dL:(e.k==='inc'?1:-1)*Number(e.dL)}); stats.sol.mine++; }
-        else if(e.k==='open'&&e.mint&&e.pool===P.id){ onMine(st,{t:x.t, k:e.mint, lo:e.lo, hi:e.hi, dL:Number(e.dL)}); stats.sol.mine++; } } }
-    standing(st, Date.now()-60e3);
-    const newest=S.sigs[0]; if(newest) st.cur={sig:newest.signature, slot:newest.slot};
+    const sigs=S.sigs.filter(x=>!x.err).reverse();
+    let i=0, liqSeen=0, liqAgree=0, stopped=null;
+    while(i<sigs.length){ if(over()){ stopped='time'; break; }
+      const chunk=sigs.slice(i,i+200), txs=await readAll(chunk);
+      let upto=txs.findIndex(x=>!x); if(upto<0) upto=txs.length;
+      const got=txs.slice(0,upto);
+      // the deck's own openings here (the opening record names the owner; the NFT is the transaction's other signer)
+      for(const x of got) for(const e of x.ev) if(e.k==='open'&&e.pool===P.id&&WAL.sol.has(e.owner)){ const m=x.signers.find(k=>mints.has(k))||x.signers.find(k=>k!==x.payer); if(m){ mints.add(m); e.mint=m; info.set(m,{pool:P.id, lo:e.lo, hi:e.hi, t:x.t}); } }
+      for(const x of got){ const op=new Set(x.ev.filter(e=>e.k==='open'&&e.mint).map(e=>e.mint)); if(op.size) x.ev=x.ev.filter(e=>!(e.k==='inc'&&op.has(e.mint))); }
+      // a deposit or withdrawal counts here only for a position of the deck's in this pool (one transaction can touch several)
+      const here=new Map(); for(const x of got) for(const e of x.ev) if((e.k==='inc'||e.k==='dec')&&mints.has(e.mint)&&!here.has(e.mint)){ const o=st.pos[e.mint]?{pool:P.id, ...st.pos[e.mint]}:await poolOf(e.mint); here.set(e.mint,o&&o.pool===P.id?o:null); }
+      if(st.tick==null){ for(const x of got){ const e=x.ev.find(e=>(e.k==='swap'||e.k==='liq')&&e.pool===P.id); if(e){ st.tick=e.tick; st.L=Number(e.k==='swap'?e.L:e.Lb); break; } } }   // the pool stands where its first record finds it
+      for(const x of got){ if(!x.t) continue;
+        for(const e of x.ev){
+          if(e.k==='swap'&&e.pool===P.id){ const sp=Number(e.sp)/2**64, Pz=sp*sp, w=e.zfo?Number(e.a0):(Pz>0?Number(e.a1)/Pz:0), own=WAL.sol.has(x.payer)||x.signers.some(k=>WAL.sol.has(k));
+            onSwap(st,{t:x.t, tick:e.tick, L:Number(e.L), w, own}); stats.sol.swaps++; if(own) stats.sol.own++; }
+          else if(e.k==='liq'&&e.pool===P.id){ liqSeen++; if(st.L>0&&Math.abs(Number(e.Lb)-st.L)<=st.L*1e-6+1) liqAgree++; onPool(st,{t:x.t, tick:e.tick, Lafter:Number(e.La)}); stats.sol.lp++; }
+          else if((e.k==='inc'||e.k==='dec')&&here.get(e.mint)){ const rg=here.get(e.mint);
+            onMine(st,{t:x.t, k:e.mint, lo:rg.lo??null, hi:rg.hi??null, dL:(e.k==='inc'?1:-1)*Number(e.dL)}); stats.sol.mine++; }
+          else if(e.k==='open'&&e.mint&&e.pool===P.id){ onMine(st,{t:x.t, k:e.mint, lo:e.lo, hi:e.hi, dL:Number(e.dL)}); stats.sol.mine++; } }
+        st.cur={sig:x.sig, slot:x.slot}; }
+      stats.sol.txs+=got.length; i+=upto;
+      if(upto<txs.length){ stopped=over()?'time':'refused'; stats.sol.refused+=txs.filter(x=>!x).length; break; } }
+    st.done=i>=sigs.length;
+    if(st.done){ standing(st, Date.now()-60e3); st.at=Date.now(); }   // up to the present only when nothing is left unread
+    else { stats.unread++; out.notes.push('sol: a pool read up to '+day(st.t||T0)+' this run ('+(stopped==='time'?'out of time':'a transaction not served')+'); the next run carries on from there'); }
     st.recent=(st.recent||[]).filter(x=>x[0]>Date.now()-26*3600e3);
     st.liqCheck={seen:(st.liqCheck?.seen||0)+liqSeen, agree:(st.liqCheck?.agree||0)+liqAgree};
     stats.sol.pools++;
     out.pools.push({id:P.id, tok:'cpool', chain:'sol', venue:'Raydium CLMM', name:P.name, fee:P.fee??null, lpCut:P.lpCut??0.84, mine:Object.keys(st.pos).length>0, state:st});
   }
+  out.mintInfo=Object.fromEntries(info);
 }
 
 /* ---------- the checks: the rebuilt figures against every record the deck already keeps ---------- */
@@ -373,7 +398,8 @@ async function minuteCheck(out){
   for(const p of data.eth||[]) if(p.pool){ lblPool.set(((p.pairLabel||'')+' '+(p.feeLabel||'')).trim(), String(p.pool).toLowerCase()); px.set(String(p.pool).toLowerCase(),{d0:p.d0, u0:p.usd0}); }
   for(const p of data.sol||[]) if(p.poolId&&p.venue!=='orca'){ lblPool.set(((p.pairLabel||'')+' '+(p.feeLabel||'')).trim(), p.poolId); px.set(p.poolId,{d0:p.d0, u0:p.usd0}); }
   const rec=new Map(); for(const r of m.mins){ if(r[0]<a||!r[3]) continue; for(const [k,v] of Object.entries(r[3])){ const pl=lblPool.get(String(k).trim()); if(pl) rec.set(pl,(rec.get(pl)||0)+v); } }
-  for(const R of out.pools.filter(p=>p.mine&&p.state)){ const q=px.get(String(R.id).toLowerCase()); if(!q||q.u0==null||q.d0==null||R.fee==null) continue;
+  // only a pool brought up to the present this run has the same 24 hours to compare
+  for(const R of out.pools.filter(p=>p.mine&&p.state&&p.state.done&&p.state.at>now-3*3600e3)){ const q=px.get(String(R.id).toLowerCase()); if(!q||q.u0==null||q.d0==null||R.fee==null) continue;
     const reb=(R.state.recent||[]).filter(x=>x[0]>=a).reduce((s,x)=>s+x[1],0)/10**q.d0*q.u0*R.fee*(R.lpCut??1), got=rec.get(String(R.id).toLowerCase())||0;
     const lab=(R.name||'pool')+' '+(R.fee*100).toFixed(2).replace(/\.?0+$/,'')+'% · '+R.venue;
     if(got<0.5&&reb<0.5){ out.checks.push({tok:R.tok, grp:'rep', st:'na', t:'Last 24 hours · '+lab, x:'too little earned on either record to compare', k:'minute', g:null}); continue; }
