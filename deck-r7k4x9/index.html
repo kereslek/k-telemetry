@@ -1610,6 +1610,8 @@
   .cz-pre .cz-chart .bar{transform:scaleY(0)}
   .cz-chart .ln{transition:stroke-dashoffset 1.6s .35s ease-out}
   .cz-chart .hit{fill:transparent;cursor:crosshair}
+  /* a day is chosen by its column: the lines, dots, bars and labels drawn over it let the finger through */
+  .cz-chart svg :not(.hit){pointer-events:none} .cz-chart svg .hit{pointer-events:all}
   .cz-chart .hit:hover,.cz-chart .hit.on{fill:rgba(53,214,232,.07)}
   .cz-tip{position:absolute;pointer-events:none;z-index:5;min-width:160px;max-width:240px;padding:8px 10px;border:1px solid var(--accent-dim);background:rgba(4,7,13,.94);
     font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--text-secondary);box-shadow:0 6px 24px rgba(0,0,0,.6),0 0 14px rgba(53,214,232,.15);transform:translateX(-50%);display:none}
@@ -2360,7 +2362,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.6';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.7';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7420,7 +7422,11 @@ const czWins=w=>{
 const czSrc={
   actual:(M,P,d)=>M&&M.fees&&M.fees[d]!=null?M.fees[d]:null,
   replay:(M,P,d)=>{ const x=M&&M.rep&&M.rep[d]; return x&&x.cov>=0.99&&x.s!=null&&P&&P.vol&&P.vol[d]!=null&&P.fee!=null?P.vol[d]*P.fee*(P.lpCut??1)*x.s:null; },
-  share:(M,P,d)=>M&&M.exp&&M.exp[d]!=null?M.exp[d]:null };
+  share:(M,P,d)=>M&&M.exp&&M.exp[d]!=null?M.exp[d]*(1-czOwnW(M,d)):null };
+/* Your own swaps through your own pools: what they pay comes back to you, so it is neither income nor
+   the market's trading. The replay knows their part of each day's trading (by weight); where it has the
+   day, they are left out of the trading, of all the LPs' fees, and of the share-based estimate alike. */
+const czOwnW=(M,d)=>{ const x=M&&M.rep&&M.rep[d]; return x&&x.cov>=0.99?Math.max(0,Math.min(1,x.ownW??x.own??0)):0; };
 const CZ_BASIS=['actual','replay','share'], CZ_BLBL={actual:'from your fee counters', replay:'rebuilt from the chain’s swaps', share:'estimated from your share'};
 /* The replay's days beside the census's own records; a pool you have left lives on in the replay. Only
    a pool whose rebuilt days agree with your own records (the replay marks it trusted) is used; the
@@ -7569,9 +7575,11 @@ function czToken(T,mine,W){
   const sc=czScope(T), U=T.pools.filter(p=>p.real&&sc.in(p));
   const own=mine.map(M=>({M,P:T.pools.find(p=>String(p.id).toLowerCase()===String(M.id).toLowerCase())})).filter(x=>x.P);
   const inU=own.filter(x=>U.includes(x.P)), outN=own.length-inU.length;
-  const vol=(P,d)=>(P.vol&&P.vol[d])||0;
+  const mOf=new Map(inU.map(x=>[x.P,x.M])), ownV=(P,d)=>((P.vol&&P.vol[d])||0)*czOwnW(mOf.get(P),d);
+  const vol=(P,d)=>((P.vol&&P.vol[d])||0)-ownV(P,d);   // the market's trading: your own swaps left out
   const lpf=(P,d)=>vol(P,d)*(P.fee||0)*(P.lpCut??1);
   const tradeOf=d=>U.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>U.reduce((s,P)=>s+lpf(P,d),0);
+  const ownTraded=W.A.reduce((s,d)=>s+U.reduce((q,P)=>q+ownV(P,d),0),0);
   /* Your fees on a day, every pool of yours together, from one source, and the LPs' fees they are a
      share of. A pool of yours without a figure that day (its record had not begun yet) leaves BOTH
      sides — never yours alone, which reads as fees the other LPs took: pools whose records start on
@@ -7617,7 +7625,7 @@ function czToken(T,mine,W){
       let riv=null; for(const P of U){ if(inU.some(x=>x.P===P&&!x.M.past)) continue; const g=pp(P,W.A)/PA-pp(P,W.B)/PB; if(!riv||g>riv.g) riv={P,g}; }
       const dd=A.share-B.share, k=Object.keys(parts).sort((a,b)=>Math.abs(parts[b])-Math.abs(parts[a]))[0];
       moved={k:Math.sign(parts[k])===Math.sign(dd)&&Math.abs(parts[k])>=0.4*Math.abs(dd)?k:null, parts, d:dd, riv:riv&&riv.g>0.03?riv.P:null}; } }
-  return {T,W,sc,U,own,inU,outN,first,A,B,basis,tradeOf,pieOf,yoursOf,moved, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
+  return {T,W,sc,U,own,inU,outN,first,A,B,basis,tradeOf,pieOf,yoursOf,moved,ownTraded, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
     liq, atp:anyS&&ov>0?took/ov:null, served:anyS&&tA>0?took/tA:null, fillBy:wait>0?czDay(-wait):null}; }
 
 /* the token's month: what all its LPs earned each day, and your share of it — two panels, one each */
@@ -7698,6 +7706,7 @@ function czTokCard(r, cw){
     s+=' <span class="cz-fl">'+(ok==='share'?'The relay read your liquidity at the price '+by+' above the pool’s own figure (the two are read moments apart).'
       :'Your fee counters ran '+by+' above what the public trading figures imply.')+'</span>'; }
   if(r.you!=null&&r.pie!=null&&r.slice!=null&&Math.abs(r.you)>=0.03) s+=' So your fees '+(r.you<0?'fell ':'rose ')+pct(r.you)+(r.pie>=0.03&&r.you<0?', even though its LPs earned more':r.pie<=-0.03&&r.you>0?', even though its LPs earned less':'')+'.';
+  if(r.ownTraded>=1) s+=' <span class="cz-fl">Your own swaps through your pools ('+czK(r.ownTraded)+' '+W.a+') are left out of the trading and of what the LPs earned: what they pay comes back to you.</span>';
   if(r.you==null&&r.fillBy) s+=' <span class="cz-fl">Your part of the comparison fills in by '+czDate(r.fillBy)+(W.A.length>1?'; YESTERDAY vs 7-DAY AVG compares it sooner':'')+'.</span>';
   const kp=[['OF THE LIQUIDITY',r.liq,'your money ÷ all the money in the pools '+sc.on+' that trade'],['AT THE PRICE',r.atp,'in your pools, where the trading happens'],
     ['OF THE TRADING',r.served,'the part your liquidity took'],['OF ALL '+S+' LPs’ FEES',sNow==null?null:Math.min(1,sNow),(A.share==null&&A.part?A.part.n+' of '+W.A.length+' days recorded · ':'')+((A.k||A.part?.k)&&(A.k||A.part?.k)!=='actual'?CZ_BLBL[A.k||A.part.k]:'what you earned ÷ what every '+S+' LP earned')]];

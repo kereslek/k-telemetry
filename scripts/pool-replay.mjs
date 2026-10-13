@@ -57,7 +57,7 @@ const stats={eth:{pools:0,swaps:0,lp:0,mine:0,own:0,chunks:0,refused:0,receipts:
    seconds anyone's liquidity stood there, as the relay reads it: an empty price is no share at all), the
    others' liquidity at the price. A swap books its size (in the pool's first token) and the deck's
    share of it: the mean of its share before and after the swap, each counted only where in range. */
-const ACC=()=>({n:0,w:0,y:0,o:0,T:0,tA:0,tI:0,Lt:0,St:0,OLt:0,TL:0});
+const ACC=()=>({n:0,w:0,y:0,o:0,ow:0,T:0,tA:0,tI:0,Lt:0,St:0,OLt:0,TL:0});
 const accOf=(st,d)=>st.raw[d]||(st.raw[d]=ACC());
 const sumL=pos=>Object.values(pos).reduce((s,p)=>s+(p.L>0?p.L:0),0);
 const inL=(pos,tick)=>tick==null?0:Object.values(pos).reduce((s,p)=>s+(p.L>0&&p.lo!=null&&p.lo<=tick&&tick<p.hi?p.L:0),0);
@@ -73,7 +73,7 @@ function onSwap(st,{t,tick,L,w,own}){
   standing(st,t);
   const pre=st.L>0&&st.tick!=null?Math.min(1,inL(st.pos,st.tick)/st.L):null, post=L>0?Math.min(1,inL(st.pos,tick)/L):0;
   const s=pre==null?post:(pre+post)/2, a=accOf(st,day(t));
-  a.n++; a.w+=w; if(own) a.o+=w*s; else a.y+=w*s;
+  a.n++; a.w+=w; if(own){ a.o+=w*s; a.ow=(a.ow||0)+w; } else a.y+=w*s;
   if(!own&&s>0&&t>Date.now()-26*3600e3) (st.recent=st.recent||[]).push([t,w*s]);
   st.tick=tick; st.L=L; }
 function onPool(st,{t,lo,hi,dL,tick,Lafter}){ standing(st,t);
@@ -81,7 +81,7 @@ function onPool(st,{t,lo,hi,dL,tick,Lafter}){ standing(st,t);
   else if(st.tick!=null&&lo<=st.tick&&st.tick<hi) st.L=Math.max(0,(st.L||0)+dL); }
 function onMine(st,{t,k,lo,hi,dL}){ standing(st,t); const p=st.pos[k]||(st.pos[k]={lo:null,hi:null,L:0});
   if(lo!=null&&hi!=null){ p.lo=lo; p.hi=hi; } p.L=Math.max(0,p.L+dL); }
-const dayOut=a=>({n:a.n, s:a.w>0?r4(a.y/a.w):null, own:a.w>0&&a.o>0?r4(a.o/a.w):0, st:a.TL>0?r4(a.St/a.TL):null,
+const dayOut=a=>({n:a.n, s:a.w>0?r4(a.y/a.w):null, own:a.w>0&&a.o>0?r4(a.o/a.w):0, ...(a.ow!=null?{ownW:a.w>0?r4(a.ow/a.w):0}:{}), st:a.TL>0?r4(a.St/a.TL):null,
   tin:a.tA>0?r4(a.tI/a.tA):null, L:a.T>0?g6(a.Lt/a.T):null, oL:a.T>0?g6(a.OLt/a.T):null, cov:r4(Math.min(1,a.T/86400))});
 const newState=()=>({cur:null, t:null, tick:null, L:0, pos:{}, raw:{}, recent:[]});
 
@@ -258,7 +258,7 @@ function decodeTx(tx){
     else if(h===EVT.dec&&b.length>=56) out.push({k:'dec', mint:b58(b.subarray(8,40)), dL:u128(b,40)});
     else if(h===EVT.open&&b.length>=128) out.push({k:'open', pool:b58(b.subarray(8,40)), owner:b58(b.subarray(72,104)), lo:b.readInt32LE(104), hi:b.readInt32LE(108), dL:u128(b,112)}); }
   const signers=keys.slice(1,Math.max(1,hdr.numRequiredSignatures||1));
-  return {t:(tx?.blockTime||0)*1000, slot:tx?.slot||0, payer:keys[0]||null, signers, ev:out}; }
+  return {t:(tx?.blockTime||0)*1000, slot:tx?.slot||0, payer:keys[0]||null, signers, ev:out, trunc:(tx?.meta?.logMessages||[]).some(l=>/log truncated/i.test(l))}; }
 async function sigsOf(addr, untilSig, sinceMs){
   const out=[]; let before=null;
   for(let n=0;n<400;n++){ if(over()) return {sigs:out, partial:true};
@@ -348,14 +348,15 @@ async function solSide(out, prevPools){
           else if((e.k==='inc'||e.k==='dec')&&here.get(e.mint)){ const rg=here.get(e.mint);
             onMine(st,{t:x.t, k:e.mint, lo:rg.lo??null, hi:rg.hi??null, dL:(e.k==='inc'?1:-1)*Number(e.dL)}); stats.sol.mine++; }
           else if(e.k==='open'&&e.mint&&e.pool===P.id){ onMine(st,{t:x.t, k:e.mint, lo:e.lo, hi:e.hi, dL:Number(e.dL)}); stats.sol.mine++; } }
-        st.cur={sig:x.sig, slot:x.slot}; }
+        st.cur={sig:x.sig, slot:x.slot, t:x.t}; if(x.trunc) stats.sol.trunc=(stats.sol.trunc||0)+1; if(!x.ev.some(e=>e.pool===P.id||here.get(e.mint))) stats.sol.quiet=(stats.sol.quiet||0)+1; }
       stats.sol.txs+=got.length; i+=upto;
       if(upto<txs.length){ stopped=over()?'time':'refused'; stats.sol.refused+=txs.filter(x=>!x).length; break; } }
     st.done=i>=sigs.length;
     if(st.done){ standing(st, Date.now()-60e3); st.at=Date.now(); }   // up to the present only when nothing is left unread
-    else { stats.unread++; out.notes.push('sol: a pool read up to '+day(st.t||T0)+' this run ('+(stopped==='time'?'out of time':'a transaction not served')+'); the next run carries on from there'); }
+    else { stats.unread++; out.notes.push('sol: a pool read up to '+day(st.cur?.t||st.t||T0)+' this run ('+(stopped==='time'?'out of time':'a transaction not served')+'); the next run carries on from there'); }
     st.recent=(st.recent||[]).filter(x=>x[0]>Date.now()-26*3600e3);
-    st.liqCheck={seen:(st.liqCheck?.seen||0)+liqSeen, agree:(st.liqCheck?.agree||0)+liqAgree};
+    if(st.liqCheck&&st.liqCheck.v!==2) st.liqCheck=null;   // counted afresh under the rule that agrees at an empty price
+    st.liqCheck={v:2, seen:(st.liqCheck?.seen||0)+liqSeen, agree:(st.liqCheck?.agree||0)+liqAgree};
     stats.sol.pools++;
     out.pools.push({id:P.id, tok:'cpool', chain:'sol', venue:'Raydium CLMM', name:P.name, fee:P.fee??null, lpCut:P.lpCut??0.84, mine:Object.keys(st.pos).length>0, state:st});
   }
@@ -435,7 +436,7 @@ if(BACK&&caught){ writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
 console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':prev?' (carried on from the last run)':' (first run)')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
 console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)');
-console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served');
+console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served · '+(stats.sol.quiet||0)+' with no record of the pool’s, '+(stats.sol.trunc||0)+' with the log cut short');
 console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.length);
 console.log('  checks: '+cnt('ok')+' agree, '+cnt('look')+' to look at, '+cnt('na')+' not comparable yet · pools of the deck’s trusted for the page: '+out.pools.filter(p=>p.trust).length+' of '+out.pools.filter(p=>p.mine&&p.days).length);
 // each check by kind, status and gap only: which pool, token or amount it concerns stays in the sealed file
