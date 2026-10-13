@@ -186,14 +186,14 @@ try{
       for(const w of ['w','d','m']){ const Wx=czWins(w); for(const T of C.tokens){ const t=czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),Wx); if(!t.U.length) continue;
         if(t.you==null||t.pie==null||t.slice==null||!t.A.exact||!t.B.exact) continue; eq++; if(Math.abs((1+t.you)-(1+t.pie)*(1+t.slice))>0.02*(1+Math.abs(t.you))) eqBad++; } }
       return {rows:rows.length, lines:rows.filter(r=>r.querySelector('.cz-ln').textContent.trim().length>20).length, chips:rows.filter(r=>r.querySelector('.cz-chip')).length, mine:(C.mine||[]).length,
-        mult, bad, cards:h.querySelectorAll('.cz-tk').length, tks:TK.length, eq, eqBad, ladOk:lad.length===4*TK.length&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
+        mult, bad, cards:h.querySelectorAll('.cz-tk').length, tks:TK.length, eq, eqBad, ladOk:lad.length===4*TK.length&&lad.every(v=>isNaN(v)||(v>=0&&v<=100)), ck:h.querySelectorAll('.cz-ck').length, cks:C.checks.length+(C.repChecks||[]).length, hscroll:document.documentElement.scrollWidth>innerWidth+1}; });
     const fold=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody [data-cz="fold"][data-v="e"]'); if(!b) return false; const x=b.closest('.cz-sh').nextElementSibling, was=x.classList.contains('shut');
       b.click(); await new Promise(r=>setTimeout(r,500)); const mid=x.classList.contains('shut'); b.click(); await new Promise(r=>setTimeout(r,500)); return mid!==was&&x.classList.contains('shut')===was; });
     const open=await pg.evaluate(async()=>{ const b=document.querySelector('#censusBody .cz-open'); if(!b) return false; const x=b.closest('.cz-row').querySelector('.cz-evx'), was=x.classList.contains('shut');
       b.click(); await new Promise(r=>setTimeout(r,900)); const bars=x.querySelectorAll('.cz-chart .bar').length, shown=!x.classList.contains('shut'); b.click(); await new Promise(r=>setTimeout(r,500)); return (was?shown:!shown)&&bars>0; });
     const ok=!r.none&&r.cards===r.tks&&!r.eqBad&&r.rows===r.mine&&r.lines===r.rows&&r.chips===r.rows&&!r.bad&&r.ladOk&&r.ck===r.cks&&!r.hscroll&&fold&&open;
     (ok?OK:FAIL)('WHY FEES MOVED at '+w+': '+(r.none?'panel or census MISSING':r.cards+' token card(s) for '+r.tks+' token(s), your fees = LPs’ fees × your share in '+(r.eq-r.eqBad)+' of '+r.eq+'; '+r.rows+' pool line(s) for '+r.mine+' pool(s) of yours, '+r.lines+' with a sentence, '+r.chips+' with cause tags; causes multiply to the change in '
-      +(r.mult-r.bad)+' of '+r.mult+'; shares '+(r.ladOk?'within 0–100%':'OUT OF RANGE')+'; '+r.ck+' of '+r.cks+' checks shown; folds '+(fold?'work':'do NOT work')+'; a pool’s days '+(open?'open with a chart':'do NOT open')+'; '+(r.hscroll?'page WIDER than the screen':'fits the screen')));
+      +(r.mult-r.bad)+' of '+r.mult+'; shares '+(r.ladOk?'within 0–100%':'OUT OF RANGE')+'; '+r.ck+' of '+r.cks+' checks shown (the census’s and the replay’s); folds '+(fold?'work':'do NOT work')+'; a pool’s days '+(open?'open with a chart':'do NOT open')+'; '+(r.hscroll?'page WIDER than the screen':'fits the screen')));
   }
   /* The page's token maths on made-up records, the shape that once put a sole LP at 54%: pools whose
      records start on different days, and a pool not yours carrying most of the trading. */
