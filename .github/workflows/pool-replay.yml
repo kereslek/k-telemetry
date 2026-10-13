@@ -9,6 +9,7 @@ on:
       rebuild: { description: 'start over from the first day (1 = yes)', required: false, default: '' }
       from: { description: 'first day, YYYY-MM-DD (UTC); empty carries on from the last run’s (1 August the first time)', required: false, default: '' }
       only: { description: 'eth, sol or both (empty)', required: false, default: '' }
+      back: { description: 'build a longer replay beside the page’s, from the first day given (1 = yes); it takes the page’s place once it reaches the present', required: false, default: '' }
   schedule:
     - cron: '41 3,15 * * *'   # 05:41 and 17:41 Budapest (CEST), after the census
 permissions:
@@ -23,7 +24,9 @@ jobs:
         with: { ref: gh-pages }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: node scripts/pool-replay.mjs
+      # the replay the page reads, carried on (not when a dispatch asks only for the longer one)
+      - if: github.event.inputs.back != '1'
+        run: node scripts/pool-replay.mjs
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
@@ -31,11 +34,24 @@ jobs:
           FROM: ${{ github.event.inputs.from || '' }}
           ONLY: ${{ github.event.inputs.only || '' }}
           BUDGET_MIN: ${{ github.event_name == 'schedule' && '40' || '270' }}
+      # the longer replay built beside it: started by a dispatch, then carried on by each scheduled run until it takes the page's place
+      - name: Longer replay
+        run: |
+          if [ "$BACK_IN" = "1" ] || [ -f deck-r7k4x9/pools-replay-back-main.json ]; then BACK=1 node scripts/pool-replay.mjs; else echo "no longer replay under way"; fi
+        env:
+          BACK_IN: ${{ github.event.inputs.back || '' }}
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          REBUILD: ${{ github.event.inputs.back == '1' && github.event.inputs.rebuild || '' }}
+          FROM: ${{ github.event.inputs.back == '1' && github.event.inputs.from || '' }}
+          ONLY: ${{ github.event.inputs.only || '' }}
+          BUDGET_MIN: ${{ github.event_name == 'schedule' && '40' || '270' }}
       - name: Commit
         run: |
-          [ -f deck-r7k4x9/pools-replay-main.json ] || exit 0
           git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
-          git add deck-r7k4x9/pools-replay-main.json
+          for f in deck-r7k4x9/pools-replay-main.json deck-r7k4x9/pools-replay-back-main.json; do
+            if [ -f "$f" ] || git ls-files --error-unmatch "$f" >/dev/null 2>&1; then git add -A -- "$f"; fi
+          done
           git diff --cached --quiet && exit 0
           git commit -q -m "swap replay $(date -u +%Y-%m-%dT%H:%MZ)"
           for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1

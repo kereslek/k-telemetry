@@ -17,8 +17,12 @@
    The log is public: counts, dates and pass/fail only — never a pool, a position, an amount or a
    share. */
 import { initLock, readJ, writeJ, lockToken } from './lock.mjs';
+import fs from 'node:fs';
 
 const OUT='deck-r7k4x9', SLUG=process.env.PROFILE||'main';
+/* BACK=1 builds a longer replay beside the one the page reads (pools-replay-back-<slug>.json), run after run,
+   and puts it in that one's place once every pool of it has reached the present. */
+const BACK=process.env.BACK==='1', FILE='pools-replay-'+(BACK?'back-':'')+SLUG+'.json';
 const FROM_IN=String(process.env.FROM||'').trim();
 const REBUILD=process.env.REBUILD==='1', START=Date.now(), BUDGET=(+process.env.BUDGET_MIN||70)*60e3;
 const over=()=>Date.now()-START>BUDGET;
@@ -36,7 +40,7 @@ initLock(OUT);
 const rd=f=>{ try{ return readJ(OUT+'/'+f); }catch(e){ return null; } };
 const data=rd('data-'+SLUG+'.json'), census=rd('pools-'+SLUG+'.json'), bc=rd('blockcache.json')||{}, daily=rd('daily-'+SLUG+'.json'), fees=rd('fees-'+SLUG+'.json')||{}, cfg=rd('config.json')||{};
 if(!data||!census){ console.log('the relay’s data or the census could not be read: nothing done'); process.exit(1); }
-let prev=REBUILD?null:rd('pools-replay-'+SLUG+'.json'); if(prev&&prev.v!==1) prev=null;
+let prev=REBUILD?null:rd(FILE); if(prev&&prev.v!==1) prev=null;
 const FROM=FROM_IN||prev?.from||'2026-08-01', T0=Date.parse(FROM+'T00:00:00Z');
 if(!/^\d{4}-\d\d-\d\d$/.test(FROM)||!isFinite(T0)){ console.log('the first day is not a date (YYYY-MM-DD): nothing done'); process.exit(1); }
 if(prev&&prev.from!==FROM) prev=null;
@@ -340,7 +344,7 @@ async function solSide(out, prevPools){
         for(const e of x.ev){
           if(e.k==='swap'&&e.pool===P.id){ const sp=Number(e.sp)/2**64, Pz=sp*sp, w=e.zfo?Number(e.a0):(Pz>0?Number(e.a1)/Pz:0), own=WAL.sol.has(x.payer)||x.signers.some(k=>WAL.sol.has(k));
             onSwap(st,{t:x.t, tick:e.tick, L:Number(e.L), w, own}); stats.sol.swaps++; if(own) stats.sol.own++; }
-          else if(e.k==='liq'&&e.pool===P.id){ liqSeen++; if(st.L>0&&Math.abs(Number(e.Lb)-st.L)<=st.L*1e-6+1) liqAgree++; onPool(st,{t:x.t, tick:e.tick, Lafter:Number(e.La)}); stats.sol.lp++; }
+          else if(e.k==='liq'&&e.pool===P.id){ liqSeen++; if(Math.abs(Number(e.Lb)-(st.L||0))<=(st.L||0)*1e-6+1) liqAgree++; onPool(st,{t:x.t, tick:e.tick, Lafter:Number(e.La)}); stats.sol.lp++; }
           else if((e.k==='inc'||e.k==='dec')&&here.get(e.mint)){ const rg=here.get(e.mint);
             onMine(st,{t:x.t, k:e.mint, lo:rg.lo??null, hi:rg.hi??null, dL:(e.k==='inc'?1:-1)*Number(e.dL)}); stats.sol.mine++; }
           else if(e.k==='open'&&e.mint&&e.pool===P.id){ onMine(st,{t:x.t, k:e.mint, lo:e.lo, hi:e.hi, dL:Number(e.dL)}); stats.sol.mine++; } }
@@ -424,9 +428,12 @@ const labOf=R=>(R.name||'pool')+(R.fee!=null?' '+(R.fee*100).toFixed(2).replace(
 for(const R of out.pools){ if(!R.days||!R.mine){ R.trust=false; continue; }
   const cs=out.checks.filter(c=>c.t&&c.t.endsWith(' · '+labOf(R))&&['counters','minute','share'].includes(c.k));
   R.trust=cs.some(c=>c.st==='ok')&&!cs.some(c=>c.st==='look'&&(c.k==='counters'||c.k==='minute')); }
-writeJ(OUT+'/pools-replay-'+SLUG+'.json', out);
+writeJ(OUT+'/'+FILE, out);
+// a backfill that has reached the present takes the place of the replay the page reads
+const caught=out.pools.filter(p=>p.state&&p.mine).every(p=>p.state.done)&&out.pools.some(p=>p.state&&p.mine);
+if(BACK&&caught){ writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(OUT+'/'+FILE); }
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
-console.log('swap replay since '+FROM+(REBUILD?' (rebuilt from the start)':prev?' (carried on from the last run)':' (first run)')+' · '+Math.round((Date.now()-START)/60000)+' min');
+console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':prev?' (carried on from the last run)':' (first run)')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
 console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)');
 console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served');
 console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.length);
