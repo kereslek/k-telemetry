@@ -150,8 +150,11 @@ function timeOf(l, anchors){
 /* the deck's own Ethereum transactions since a block: its swaps through its own pools are not income */
 async function ownTxs(fromB){
   const s=new Set(); let ok=0;
-  for(const w of WAL.eth){ const r=await j(BS+'/api?module=account&action=txlist&address='+w+'&startblock='+fromB+'&endblock=99999999&sort=asc',{},3,45000);
-    if(Array.isArray(r?.result)){ ok++; for(const x of r.result) if(x.hash) s.add(String(x.hash).toLowerCase()); } await sleep(150); }
+  // Blockscout turns a quick caller away: a pause between wallets, and those it refused asked again after a longer one
+  const ask=async w=>{ const r=await j(BS+'/api?module=account&action=txlist&address='+w+'&startblock='+fromB+'&endblock=99999999&sort=asc',{},3,45000);
+    if(!Array.isArray(r?.result)) return false; for(const x of r.result) if(x.hash) s.add(String(x.hash).toLowerCase()); return true; };
+  let left=[...WAL.eth];
+  for(let round=0; round<3&&left.length; round++){ const again=[]; for(const w of left){ if(await ask(w)) ok++; else again.push(w); await sleep(600+round*1400); } left=again; if(left.length) await sleep(5000); }
   return {set:s, ok, of:WAL.eth.size}; }
 
 async function ethSide(out, prevPools){

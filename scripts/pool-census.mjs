@@ -280,4 +280,6 @@ console.log('pools listed: '+poolsN+' · trading: '+realN+' · own pools: '+out.
 console.log('checks: '+cnt('ok')+' agree · '+cnt('look')+' to look at · '+cnt('na')+' not readable');
 { const tried=out.tokens.flatMap(t=>t.pools).filter(p=>p.real&&(p.mine||p.tvl>=1000)&&/Uniswap v[34]|Raydium CLMM/.test(p.venue)), by=v=>tried.filter(p=>p.venue===v);
   console.log('LP books read: '+['Uniswap v3','Uniswap v4','Raydium CLMM'].map(v=>v+' '+by(v).filter(p=>p.book&&p.book.open!=null).length+' of '+by(v).length).join(' · '));
-  for(const w of bookWhy) console.log('  not read: '+w); }
+  for(const w of bookWhy) console.log('  not read: '+w);
+  // the LPs' part of a Uniswap v3 pool's fee where its fee switch is on (market data, as the pool itself says)
+  for(const P of by('Uniswap v3').filter(p=>p.book&&p.book.lpCut!=null)) console.log('  Uniswap v3 '+P.name+' '+(P.fee*100).toFixed(2).replace(/\.?0+$/,'')+'%: the LPs keep '+(P.book.lpCut*100).toFixed(1)+'% of each swap’s fee'+(P.book.lpCut<1?' (the protocol takes the rest)':'')); }
