@@ -110,7 +110,7 @@ function extract(d, t){
       if(r.usd!=null && Math.abs(r.usd)<1){ small+=+r.usd; continue; }
       const e=agg[k]||(agg[k]={s:native?(r.chain==='sol'?'SOL':(r.chain==='polygon'?'POL':'ETH')):(r.symbol||'?'), a:0, d:0, usd:0, px:null, unp:0, nat:native?1:0});
       if(r.amount>0) e.a+=r.amount; else e.d+=r.amount;
-      if(r.usd!=null){ e.usd+=+r.usd; if(e.px==null&&px!=null) e.px=px; } else e.unp++;
+      if(r.usd!=null){ e.usd+=+r.usd; if(e.px==null&&px!=null) e.px=px; } else { e.unp++; if(r.amount>0) e.ua=(e.ua||0)+r.amount; }
     }
     wn=wallets.size;
   }
@@ -192,6 +192,9 @@ for(const s of snaps){
     iC=s.small;
     for(const [k,e] of Object.entries(s.agg)){
       let usd=e.usd;
+      /* A holding the price feed missed for a pass is not worth nothing: its own market around that
+         hour (the median of its prices in the 36 hours either side) values it. */
+      if(e.ua>0&&k!=='polygon:native'){ const r=refPx(k,s.t); if(r>0){ const add=e.ua*r; if(add>=MINUSD) s._pend=(s._pend||[]).concat([['unpriced',k,e.s,chainOfKey(k),0,add]]); usd+=add; } }
       if(k==='polygon:native' && e.a>0){
         const pp=polAt(s.t), now=pp!=null?(e.a+e.d)*pp:0;
         if(Math.abs(usd-now)>=1) s._pend=(s._pend||[]).concat([['pol-as-eth',k,'POL','polygon',e.px&&pp?e.px/pp:99,now-usd]]);
