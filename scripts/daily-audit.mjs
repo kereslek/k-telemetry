@@ -276,7 +276,16 @@ for(const f of ['config.json','costs-main.json','ledger-main.json','fees-main.js
   if(!LOCKED) break;
   try{ const j=await (await fetch(LIVE+f+'?t='+Date.now())).json(); (j&&j.lock===1?OK:FAIL)(f+' is published sealed'); }catch(e){ WARN(f+' unreadable'); } }
 
-const R=new Map([...relay.eth,...relay.sol].map(p=>[String(p.id),p]));
+/* The page and this audit must hold the same relay pass. Pages publishes each push a little after it
+   lands, so a pass committed just as the audit starts reaches the page but not the audit's first read,
+   and every figure that moves with a pass (fees, APR, LP vs holding) then reads as a mismatch. When the
+   page holds a newer pass, the relay is read again until it serves the same one. */
+let rel=relay;
+{ const pageT=await pg.evaluate(()=>state.relayAt||0);
+  for(let k=0;k<12&&pageT&&rel.t!==pageT;k++){ await new Promise(f=>setTimeout(f,10000));
+    try{ rel=openJ(await (await fetch(LIVE+'data-main.json?t='+Date.now())).json()); }catch(e){} }
+  if(pageT&&rel.t!==pageT) WARN('the page and this audit hold different relay passes; position figures compared across them'); }
+const R=new Map([...rel.eth,...rel.sol].map(p=>[String(p.id),p]));
 const MONEY=['costUsd','feesEverUsd','feeAprPct','feesSelfUsd','lpVsHodlUsd'];
 const live=await pg.evaluate(K=>[...state.positions.values()].map(p=>{ const o={id:String(p.id), lbl:p.pairLabel+' '+p.feeLabel, cached:!!p.cached, chain:p.chain, parity:p.parity||null};
   for(const k of [...K,'valueUsd','feesUsd','price','usd0','usd1','liq']) o[k]=p[k]; return o; }),MONEY);
@@ -336,7 +345,7 @@ if(sums.tUnclaimed!=null) (Math.abs(sums.tUnclaimed-sums.unclaimed)>0.02?FAIL:OK
 else WARN('UNCLAIMED FEES tile not found');
 const relayUnclaimed=[...R.values()].reduce((a,p)=>a+(p.feesUsd||0),0);
 (sums.unclaimed<relayUnclaimed*0.9?WARN:OK)('unclaimed on the page '+money(sums.unclaimed)+', relay '+money(relayUnclaimed));
-const relayIdle=(relay.idle&&relay.idle.rows||[]).reduce((a,r)=>a+(r.usd||0),0);
+const relayIdle=(rel.idle&&rel.idle.rows||[]).reduce((a,r)=>a+(r.usd||0),0);
 const inLps=(sums.tok.replace(/,/g,'').match(/\$([\d.]+) in LPs/)||[])[1];
 if(inLps!=null) (Math.abs(+inLps-sums.value)>2?FAIL:OK)('TOKEN EXPOSURE in LPs $'+inLps+' vs cards '+money(sums.value));
 if(relayIdle>100 && /\$0 idle/.test(sums.tok)) FAIL('TOKEN EXPOSURE reads "$0 idle" while the relay holds '+money(relayIdle)+' idle'); else OK('TOKEN EXPOSURE: '+sums.tok);
