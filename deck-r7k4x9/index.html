@@ -2362,7 +2362,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.10';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -11625,7 +11625,9 @@ function probeRelayDue(){
   if(state.duePolling||scanning) return;
   state.duePolling=true;
   relayNewerThan(state.relayAt||0)
-    .then(newer=>{ if(newer){ log('good','Server published fresh data — pulling it now.'); scan(); } })
+    /* the scan re-reads the relay only when a chain read failed or its last read is ten minutes old:
+       with both chains answering, "pulling it now" waited up to ten minutes for that clock */
+    .then(newer=>{ if(newer){ log('good','Server published fresh data — pulling it now.'); state.relayFetchedAt=0; scan(); } })
     .catch(()=>{})
     .finally(()=>{ state.duePolling=false; });
 }
@@ -11634,7 +11636,7 @@ function probeRelayDue(){
 async function hardRefresh(){
   const before=state.dataAt||0;
   scanning=false;
-  state.dueProbeAt=0;
+  state.dueProbeAt=0; state.relayFetchedAt=0;
   log('good','HARD REFRESH — re-reading the server file, cache bypassed.');
   await scan();
   if((state.dataAt||0)>before) log('good','Fresh data applied — '+fmtT(state.dataAt)+'.');
