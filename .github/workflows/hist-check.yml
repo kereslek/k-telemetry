@@ -3,6 +3,9 @@
 # The log is public: times, counts, ratios and tickers only.
 name: hist-check
 on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/hist-drop-check.mjs', '.github/workflows/hist-check.yml']
   workflow_dispatch:
     inputs:
       from: { description: 'from (ISO time, UTC); empty: the last four days', required: false, default: '' }
