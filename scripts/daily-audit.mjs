@@ -81,6 +81,14 @@ try{ const R=openJ(await (await fetch(LIVE+'recon-main.json?t='+Date.now())).jso
     ((r.loaded&&r.box&&r.rc&&r.hiOk&&r.over===0&&!r.hscroll)?OK:FAIL)('TOTAL view at '+w+': reconciled series '+(r.loaded?'loaded':'NOT loaded')+', box '+(r.box?'shown':'missing')
       +', chart high '+(r.hiOk?'reaches':'falls short of')+' the reconciled high, '+(r.over===0&&!r.hscroll?'fits the screen':'overflows'));
   }
+  /* the TOTAL line, as drawn: no point that leaves and comes straight back — under 80% of the
+     median of the three points before and the three after, with its neighbours where they were.
+     That is the shape of a misread (a holding the price feed missed for one pass), not of a market. */
+  { const d=await pg.evaluate(()=>{ const s=totalSeries(), md=a=>{ const q=[...a].sort((x,y)=>x-y), k=q.length>>1; return q.length%2?q[k]:(q[k-1]+q[k])/2; }; let dips=0, last=null;
+      for(let i=3;i<s.length-3;i++){ const nb=[...s.slice(i-3,i),...s.slice(i+1,i+4)].map(x=>x.v), m=md(nb);
+        if(m>0&&s[i].v<0.8*m&&s[i-1].v>=0.9*m&&s[i+1].v>=0.9*m){ dips++; last=s[i].t; } }
+      return {n:s.length, dips, last}; });
+    (d.dips?FAIL:OK)('TOTAL line as drawn: '+d.n+' points · one-point dips (the shape of a misread): '+d.dips+(d.last?' (latest '+new Date(d.last).toLocaleString('sv-SE',{timeZone:'Europe/Budapest'}).slice(0,16)+' Budapest)':'')); }
   /* POOLS: the pools' earnings (own swaps out) and the month-by-month bridge; every month must
      add up to its own change, and the chart's last point must be the fee ledger's running total */
   for(const w of [390,1300]){
