@@ -1,0 +1,26 @@
+# Where the portfolio history fell and came back: each run of points well below the day around it,
+# which part fell, and which wallet holding went missing in the relay's own snapshot of that moment.
+# The log is public: times, counts, ratios and tickers only.
+name: hist-check
+on:
+  workflow_dispatch:
+    inputs:
+      from: { description: 'from (ISO time, UTC); empty: the last four days', required: false, default: '' }
+      drop: { description: 'a point below this share of the day around it counts (0.8 = 80%)', required: false, default: '0.8' }
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages, fetch-depth: 0, path: gp }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: cp scripts/hist-drop-check.mjs scripts/lock.mjs gp/scripts/ && cd gp && node scripts/hist-drop-check.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          FROM: ${{ github.event.inputs.from || '' }}
+          DROP: ${{ github.event.inputs.drop || '0.8' }}
