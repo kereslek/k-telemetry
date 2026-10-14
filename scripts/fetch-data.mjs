@@ -3423,6 +3423,20 @@ const main=async()=>{
         if(r.usd!=null && r.amount>0) r.px=Number((r.usd/r.amount).toPrecision(8));
         r.usd = r.usd!=null ? Math.round(r.usd*100)/100 : null;   // null = unpriced, never 0
       }
+      /* A price the feed did not give this pass is not a price of zero. On 13 and 14 October the feed
+         left the wallets' LCX (and once SOL) unpriced for one pass, the wallet total lost half its
+         value, and the history chart drew a fall to half that never happened. The same token held in
+         an LP this pass is priced there — LCX at its pool's own rate, SOL from Jupiter — and that is
+         the page's price for it anyway, so it is used, and the row says where it came from. */
+      { const lpPx={}, WETHS={ethereum:'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', arbitrum:'0x82af49447d8a07e3bd95bd0d56f35241523fbab1', base:'0x4200000000000000000000000000000000000006', optimism:'0x4200000000000000000000000000000000000006'};
+        for(const p of evmPositions||[]){ const ck=p.chain||'ethereum';
+          if(p.usd0!=null) lpPx[ck+':'+String(p.token0).toLowerCase()]=p.usd0; if(p.usd1!=null) lpPx[ck+':'+String(p.token1).toLowerCase()]=p.usd1; }
+        for(const p of solPositions||[]){ if(p.usd0!=null&&p.mint0) lpPx['sol:'+p.mint0]=p.usd0; if(p.usd1!=null&&p.mint1) lpPx['sol:'+p.mint1]=p.usd1; }
+        const keyRow=r=>r.chain==='sol'?'sol:'+(r.native?SOL_MINT:r.addr):r.chain+':'+(r.native?(WETHS[r.chain]||'-'):String(r.addr).toLowerCase());
+        let filled=0;
+        for(const r of rows){ if(r.usd!=null||!(r.amount>0)) continue; const px=lpPx[keyRow(r)];
+          if(px>0){ r.px=Number(px.toPrecision(8)); r.usd=Math.round(r.amount*px*100)/100; r.pxFrom='lp'; filled++; } }
+        if(filled) console.log('balances: '+filled+' holding(s) the feed left unpriced, priced as in the LPs'); }
       rows.sort((x,y)=>(y.usd??-1)-(x.usd??-1));
       /* Provenance for any Solana holding worth caring about. A ticker proves nothing — this
          wallet holds a fake "Zcash" and a fake "JitoSOL" — so publish the facts that actually
@@ -3456,15 +3470,31 @@ const main=async()=>{
          wrote the difference into the day's record as a loss. The last complete read is kept
          instead, with its own timestamp, so the figure is old rather than wrong and the page can
          say how old. */
-      if(balFailed.length){
+      /* A holding that mattered in the last complete read (2% of it or more) and has no price now has
+         not become worthless: the read is incomplete, and is treated as one whose wallet would not
+         answer — the last complete read stands, marked as old. For two hours at most: past that a
+         token that really has lost its price is shown so, unpriced, rather than hidden. */
+      let pxGap=0;
+      if(!balFailed.length){
+        let prevIdle=null; try{ prevIdle=readJ(OUT+'/balances-'+profile.slug+'.json'); }catch(e){}
+        if(prevIdle&&Array.isArray(prevIdle.rows)&&prevIdle.totalUsd>0&&Date.now()-prevIdle.t<2*3600e3){
+          const was=new Map(); for(const r of prevIdle.rows) if(r.usd>=0.02*prevIdle.totalUsd){ const k=r.wallet+'|'+r.chain+'|'+r.addr; was.set(k,(was.get(k)||0)+r.usd); }
+          for(const r of rows) if(r.usd==null&&r.amount>0&&was.has(r.wallet+'|'+r.chain+'|'+r.addr)) pxGap++; }
+      }
+      if(balFailed.length||pxGap){
         let prevIdle=null;
         try{ prevIdle=readJ(OUT+'/balances-'+profile.slug+'.json'); }catch(e){}
-        logErr('balances', new Error(balFailed.length+' wallet(s) would not answer — holding the '
-          +(prevIdle?'last complete read from '+new Date(prevIdle.t).toISOString().slice(11,16)+' UTC':'reading back')));
-        if(prevIdle && Array.isArray(prevIdle.rows) && prevIdle.rows.length){
-          idle={...prevIdle, stale:true, staleWallets:balFailed.length};
+        if(pxGap&&!balFailed.length){
+          console.log('idle balances: held back —',pxGap,'holding(s) that matter came back unpriced');
+          if(prevIdle && Array.isArray(prevIdle.rows) && prevIdle.rows.length) idle={...prevIdle, stale:true, stalePx:pxGap};
+        }else{
+          logErr('balances', new Error(balFailed.length+' wallet(s) would not answer — holding the '
+            +(prevIdle?'last complete read from '+new Date(prevIdle.t).toISOString().slice(11,16)+' UTC':'reading back')));
+          if(prevIdle && Array.isArray(prevIdle.rows) && prevIdle.rows.length){
+            idle={...prevIdle, stale:true, staleWallets:balFailed.length};
+          }
+          console.log('idle balances: held back —',balFailed.length,'wallet(s) unreadable');
         }
-        console.log('idle balances: held back —',balFailed.length,'wallet(s) unreadable');
       }else{
         idle={ t:Date.now(), rows, totalUsd:Math.round(rows.reduce((s,r)=>s+(r.usd||0),0)*100)/100,
                unpriced:rows.filter(r=>r.usd==null).length, mintInfo };
