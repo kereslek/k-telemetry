@@ -281,9 +281,20 @@ for(const f of ['config.json','costs-main.json','ledger-main.json','fees-main.js
    and every figure that moves with a pass (fees, APR, LP vs holding) then reads as a mismatch. When the
    page holds a newer pass, the relay is read again until it serves the same one. */
 let rel=relay;
-{ const pageT=await pg.evaluate(()=>state.relayAt||0);
-  for(let k=0;k<12&&pageT&&rel.t!==pageT;k++){ await new Promise(f=>setTimeout(f,10000));
-    try{ rel=openJ(await (await fetch(LIVE+'data-main.json?t='+Date.now())).json()); }catch(e){} }
+{ /* the page reads the relay from raw GitHub as well as the published site, whichever is newer (the site
+     can lag a push by minutes): this audit reads both the same way, for the pass the page holds */
+  const RAWL=LIVE.replace(/^https:\/\/([^./]+)\.github\.io\/([^/]+)\//,'https://raw.githubusercontent.com/$1/$2/gh-pages/');
+  const at=async u=>{ try{ return openJ(await (await fetch(u+'data-main.json?t='+Date.now(),{cache:'no-store'})).json()); }catch(e){ return null; } };
+  let pageT=await pg.evaluate(()=>state.relayAt||0);
+  for(let k=0;k<12&&pageT&&rel.t!==pageT;k++){ let newest=null;
+    for(const u of [RAWL, LIVE]){ const x=await at(u); if(x&&(!newest||x.t>newest.t)) newest=x; if(x&&x.t===pageT){ rel=x; break; } }
+    if(rel.t===pageT) break;
+    // the page holds a pass older than both sources: it reads the new one, as its own SCAN does
+    // (a scan already running is waited out, and the relay is marked unread so this scan reads it)
+    if(newest&&newest.t>pageT){ await pg.evaluate(async()=>{ try{ for(let w=0;w<90&&scanning;w++) await new Promise(f=>setTimeout(f,1000));
+        state.relayFetchedAt=0; await scan(); }catch(e){} }); await new Promise(f=>setTimeout(f,4000));
+      pageT=await pg.evaluate(()=>state.relayAt||0); if(newest.t===pageT){ rel=newest; break; } }
+    else await new Promise(f=>setTimeout(f,10000)); }
   if(pageT&&rel.t!==pageT) WARN('the page and this audit hold different relay passes; position figures compared across them'); }
 const R=new Map([...rel.eth,...rel.sol].map(p=>[String(p.id),p]));
 const MONEY=['costUsd','feesEverUsd','feeAprPct','feesSelfUsd','lpVsHodlUsd'];
