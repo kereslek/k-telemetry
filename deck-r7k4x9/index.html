@@ -2362,7 +2362,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.8';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.9';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7443,6 +7443,9 @@ const czAvg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
 const czLn=(a,b)=>a>0&&b>0?Math.log(a/b):null;
 const czP=(x,d=0)=>x==null||!isFinite(x)?'—':(x*100).toFixed(d)+'%';
 const czSg=x=>x==null||!isFinite(x)?'—':(x>0?'+':x<0?'−':'')+Math.abs(Math.round(x*100))+'%';
+/* A change, with its arrow. One that rounds to nothing says "unchanged": "■ 0%" under YOUR SHARE OF THEM
+   read as a share of nothing, when it meant the share had not moved. */
+const czArr=x=>x==null||!isFinite(x)?'—':Math.round(Math.abs(x)*100)===0?'■ unchanged':(x<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%';
 const czK=v=>v==null||!isFinite(v)?'—':Math.abs(v)>=1e6?'$'+(v/1e6).toFixed(2)+'M':Math.abs(v)>=1e4?'$'+(v/1e3).toFixed(1)+'k':Math.abs(v)>=1000?'$'+Math.round(v).toLocaleString('en-US'):Math.abs(v)>=100?'$'+Math.round(v):'$'+v.toFixed(2);
 const czFee=P=>P.fee!=null?' '+(P.fee*100).toFixed(2).replace(/\.?0+$/,'')+'%':'';
 const czDate=d=>new Date(d+'T12:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
@@ -7672,10 +7675,12 @@ function czTokCard(r, cw){
   /* Nobody takes more than all of it. A share past 100% means your own fee records ran above what the
      public trading figure implies; it is shown as all of it, and the sentence says by how much. */
   const sP=x=>czP(x==null?null:Math.min(1,x),1), sNow=A.share??(A.part?A.part.share:null), over=sNow!=null&&sNow>1.005?sNow-1:0;
-  const arrow=x=>x==null?'—':(Math.round(Math.abs(x)*100)===0?'■ ':x<0?'▼ ':'▲ ')+pct(x), cls=x=>x==null?'cz-fl':x<-0.02?'cz-dn':x>0.02?'cz-up':'cz-fl';
+  const arrow=czArr, cls=x=>x==null?'cz-fl':x<-0.02?'cz-dn':x>0.02?'cz-up':'cz-fl';
   const half=x=>x==null?0:Math.min(50,Math.abs(Math.log1p(x))/Math.LN2*50);   // half the track: doubled, or halved
-  const lp=r.pie!=null?Math.abs(Math.log1p(r.pie)):0, ls=r.slice!=null?Math.abs(Math.log1p(r.slice)):0;
-  const top=r.pie!=null&&r.slice!=null&&Math.max(lp,ls)>=0.03?(lp>=ls?'pie':'slice'):null;
+  // the share's change as the card shows it: between the two shares as shown, neither past all of it
+  const slice=A.share!=null&&B.share!=null&&B.share>0?Math.min(1,A.share)/Math.min(1,B.share)-1:r.slice;
+  const lp=r.pie!=null?Math.abs(Math.log1p(r.pie)):0, ls=slice!=null?Math.abs(Math.log1p(slice)):0;
+  const top=r.pie!=null&&slice!=null&&Math.max(lp,ls)>=0.03?(lp>=ls?'pie':'slice'):null;
   const per=(v,ds)=>czK(v)+(ds.length>1?' a day':'');
   const hs=A.you!=null&&B.you!=null?per(A.you,W.A)+' '+W.a+', against '+per(B.you,W.B)+' '+W.b
     :A.you!=null?per(A.you,W.A)+' '+W.a+(r.fillBy?'; the comparison fills in by '+czDate(r.fillBy):'')
@@ -7687,7 +7692,7 @@ function czTokCard(r, cw){
     +'<span class="op eqs" aria-hidden="true">=</span>'
     +q('pie','ALL '+S+' LPs’ FEES',r.pie,A.pie!=null&&B.pie!=null?per(B.pie,W.B)+' → '+per(A.pie,W.A)+' · trading '+arrow(r.trade):'—')
     +'<span class="op" aria-hidden="true">×</span>'
-    +q('slice','YOUR SHARE OF THEM',r.slice,A.share!=null&&B.share!=null?sP(B.share)+' → '+sP(A.share):A.share!=null?sP(A.share)+' '+W.a+(r.fillBy?' · compared from '+czDate(r.fillBy):'')
+    +q('slice','YOUR SHARE OF THEM',slice,A.share!=null&&B.share!=null?sP(B.share)+' '+W.b+' → '+sP(A.share)+' '+W.a:A.share!=null?sP(A.share)+' '+W.a+(r.fillBy?' · compared from '+czDate(r.fillBy):'')
       :A.part?sP(A.part.share)+' on the '+A.part.n+' day'+(A.part.n===1?'':'s')+' recorded so far':'recording')
     +'</div>';
   // the sentence
@@ -7699,7 +7704,7 @@ function czTokCard(r, cw){
   const mv=r.moved, because={routing:d=>d<0?'more of the trading went to pools you are not in'+(mv.riv?', above all '+esc(mv.riv.name)+czFee(mv.riv)+' '+esc(mv.riv.venue):''):'more of the trading came to the pools you are in',
     others:d=>d<0?'other LPs added liquidity at the price in your pools':'other LPs took liquidity away from the price in your pools',
     you:d=>d<0?'of your own positions: less time in range, or less liquidity':'of your own positions: more time in range, or more liquidity'};
-  if(r.slice!=null) s+='Your share of what they earned '+(Math.abs(r.slice)<0.03?'held at <b>'+sP(A.share)+'</b>':(r.slice>0?'rose':'fell')+' to <b>'+sP(A.share)+'</b> from '+sP(B.share)+(mv&&mv.k?', mostly because '+because[mv.k](mv.d):''))+'.';
+  if(slice!=null) s+='Your share of what they earned '+(Math.abs(slice)<0.03?'held at <b>'+sP(A.share)+'</b>':(slice>0?'rose':'fell')+' to <b>'+sP(A.share)+'</b> from '+sP(B.share)+(mv&&mv.k?', mostly because '+because[mv.k](mv.d):''))+'.';
   else if(A.share!=null) s+='Of everything they earned '+W.a+', you took <b>'+(over?'all of it':sP(A.share))+'</b>.';
   else if(A.part) s+=(W.A.length>1?'On the '+(A.part.n===1?'one day':A.part.n+' days')+' '+W.a+' with every pool of yours recorded':'On the day recorded')+', you took <b>'+(over?'all':sP(A.part.share))+'</b> of what they earned.';
   if(over){ const ok=A.k||A.part?.k, by=Math.max(1,Math.round(over*100))+'%';
@@ -7747,7 +7752,7 @@ function renderCensus(){
   const TK=C.tokens.map(T=>czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W)).filter(r=>r.U.length);
   const withMe=TK.filter(r=>r.inU.length), done=withMe.length&&withMe.every(r=>r.A.you!=null&&r.B.you!=null);
   const tot=done?withMe.reduce((s,r)=>s+r.A.you,0)/withMe.reduce((s,r)=>s+r.B.you,0)-1:null;
-  const arr=x=>x==null?'—':(Math.round(Math.abs(x)*100)===0?'■ ':x<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%';
+  const arr=czArr;
   const dirc=tot==null?'cz-fl':tot<-0.02?'cz-dn':tot>0.02?'cz-up':'cz-fl';
   const fill=withMe.map(r=>r.fillBy).filter(Boolean).sort().pop();
   const sum='<p class="cz-sum">'+(tot!=null?'All your pools together: <span class="cz-big '+dirc+'" data-cz-to="'+tot+'" data-cz-a="1">'+arr(tot)+'</span> '+W.vs+' <span class="cz-sx">'+withMe.map(r=>r.T.sym+' '+arr(r.you)).join(' · ')+'</span>'
@@ -7762,7 +7767,7 @@ function renderCensus(){
   const g='<div class="cz-sec"><div class="cz-sh"><span class="k">POOL BY POOL</span><span class="d">the detail: one line per pool, what moved it, biggest cause first</span><button type="button" class="cz-fold" data-cz="fold" data-v="g" aria-expanded="'+!czFold.g+'">'+(czFold.g?'SHOW ▸':'HIDE ▾')+'</button></div>'
     +'<div class="cz-x'+(czFold.g?' shut':'')+'"><div>'+rows.map(r=>{ const ch=r.total, c=ch==null?'':ch<-0.02?'dn':ch>0.02?'up':''; const open=czOpenSet.has(String(r.P.id));
       return '<div class="cz-row '+c+'"><span class="cz-pn">'+esc(r.P.name)+czFee(r.P)+'<small>'+esc(r.P.venue)+' · '+r.T.chain+'</small></span>'
-        +'<span class="cz-ch '+(c==='dn'?'cz-dn':c==='up'?'cz-up':'cz-fl')+'"'+(ch!=null&&!r.thin&&!r.isNew?' data-cz-to="'+ch+'"':'')+'>'+(ch==null||r.isNew?'—':(ch<0?'▼ ':ch>0?'▲ ':'■ ')+Math.abs(Math.round(ch*100))+'%')+'</span>'
+        +'<span class="cz-ch '+(c==='dn'?'cz-dn':c==='up'?'cz-up':'cz-fl')+'"'+(ch!=null&&!r.thin&&!r.isNew?' data-cz-to="'+ch+'"':'')+'>'+(ch==null||r.isNew?'—':czArr(ch))+'</span>'
         +'<span class="cz-ln">'+czLine(r)+'</span>'
         +'<button type="button" class="cz-open" data-cz="open" data-v="'+esc(r.P.id)+'" aria-expanded="'+open+'">'+(open?'DAYS ▾':'DAYS ▸')+'</button>'
         +'<span class="cz-drv">'+czChips(r).map(x=>'<span class="cz-chip '+x[1]+(x[3]?' top':'')+'"'+(x[2]?' style="--w:'+Math.round(x[2]*46)+'px"':'')+'>'+x[0]+(x[2]?'<i></i>':'')+'</span>').join('')+'</span>'
@@ -7789,7 +7794,9 @@ function renderCensus(){
   czAnimate(host, first);
 }
 /* the moving parts: numbers count up, bars rise, lines draw, a tap on a day explains it */
-function czCount(el){ const to=parseFloat(el.dataset.czTo); if(!isFinite(to)) return; const fmt=el.dataset.czP?(x=>czP(x,1)):(el.classList.contains('cz-ch')||el.dataset.czA)?(x=>(Math.round(Math.abs(to)*100)===0?'■ ':to<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%'):czSg;
+function czCount(el){ const to=parseFloat(el.dataset.czTo); if(!isFinite(to)) return; const chg=el.classList.contains('cz-ch')||el.dataset.czA;
+  if(chg&&Math.round(Math.abs(to)*100)===0){ el.textContent=czArr(to); return; }
+  const fmt=el.dataset.czP?(x=>czP(x,1)):chg?(x=>(to<0?'▼ ':'▲ ')+Math.abs(Math.round(x*100))+'%'):czSg;
   const t0=performance.now(), dur=1000; const step=now=>{ const p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3); el.textContent=fmt(to*e); if(p<1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
 function czDraw(el){ el.querySelectorAll('.cz-chart .ln').forEach(l=>{ try{ const n=l.getTotalLength(); if(!n) return; l.style.transition='none'; l.style.strokeDasharray=n; l.style.strokeDashoffset=n; void l.getBoundingClientRect(); l.style.transition=''; requestAnimationFrame(()=>requestAnimationFrame(()=>{ l.style.strokeDashoffset=0; })); }catch(e){} }); }
 /* play a part's entrance again: bars rise, lines draw, numbers count */
