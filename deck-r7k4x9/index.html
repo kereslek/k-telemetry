@@ -2362,7 +2362,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.10';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.11';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -10290,8 +10290,10 @@ function gapSheetRefresh(){
   h+='</div>';
   if((g.own||[]).length) h+='<div class="gs-own">'+g.own.map(x=>'Your '+esc(x.lbl)+': '+esc(sym)+' at '+gapPx(x.usd)
     +(x.share!=null?' · you hold '+Math.round(x.share*100)+'% of the liquidity at this price':'')).join('<br>')+'</div>';
-  const L=((g.st&&g.st.log)||[]).slice(-5).reverse();
-  if(L.length) h+='<div class="gs-log"><b>Recent gaps</b>'+L.map(l=>'<div>'+gapHm(l.since)+'–'+gapHm(l.until)+' · '+l.mins+' min · peak '+gapPct(l.peak)+' · '
+  /* the recorder keeps two days of closed gaps: a gap from before today carries its day, not a bare time
+     that reads as today's (and one older than two days is not recent, whatever the recorder holds) */
+  const L=((g.st&&g.st.log)||[]).filter(l=>Date.now()-l.until<=48*3600e3).slice(-5).reverse();
+  if(L.length) h+='<div class="gs-log"><b>Recent gaps</b>'+L.map(l=>'<div>'+accTime(l.since)+'–'+gapHm(l.until)+' · '+l.mins+' min · peak '+gapPct(l.peak)+' · '
     +esc(GAP_VEN[l.buy]||l.buy)+' → '+esc(GAP_VEN[l.sell]||l.sell)+'</div>').join('')+'</div>';
   const lb=b&&gapLink(sym,b.buy), ls=b&&gapLink(sym,b.sell);
   h+='<div class="gs-acts">'+(lb?'<a class="hbtn" href="'+lb+'" target="_blank" rel="noopener noreferrer">Buy on '+esc(GAP_VEN[b.buy])+' ↗</a>':'')
