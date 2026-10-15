@@ -1,0 +1,23 @@
+# Why the daily Sui read stopped getting TradePort's answers: one wallet's page opened the way the
+# daily job opens it, described by hosts, statuses and yes/no. The log is public.
+name: sui-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/sui-probe.mjs', '.github/workflows/sui-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages, path: gp }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: cp scripts/sui-probe.mjs gp/scripts/ && cd gp && node scripts/sui-probe.mjs
+        env: { DECK_PASSPHRASE: '${{ secrets.DECK_PASSPHRASE }}' }
