@@ -1071,9 +1071,19 @@
   .sfx-wash{inset:0}
   .sfx-flash{inset:0;background:#fff6dc;opacity:0;mix-blend-mode:screen}
   .sfx-ring{border-radius:50%;border:2px solid #f5c451;box-shadow:0 0 22px rgba(245,196,81,.7),inset 0 0 22px rgba(245,196,81,.35);transform:translate(-50%,-50%)}
-  .sfx-stamp{left:50%;top:38%;transform:translate(-50%,-50%);font:700 56px var(--mono,ui-monospace,monospace);color:#f5c451;
-    text-shadow:0 0 22px rgba(245,196,81,.8),0 0 2px #000;white-space:nowrap;opacity:0;font-variant-numeric:tabular-nums}
-  @media(max-width:430px){ .sfx-stamp{font-size:40px} }
+  /* the whole-screen moment: the room dims, light turns behind the amount, a core blooms, sparks fly */
+  .sfx-veil{inset:0;background:#02050b;opacity:0}
+  .sfx-rays{transform:translate(-50%,-50%);width:170vmax;height:170vmax;border-radius:50%;opacity:0;mix-blend-mode:screen;
+    background:repeating-conic-gradient(from 0deg,rgba(255,226,150,0) 0deg 6deg,rgba(255,226,150,.2) 6deg 9deg);
+    -webkit-mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.55) 22%,transparent 58%);mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.55) 22%,transparent 58%)}
+  .sfx-bloom{transform:translate(-50%,-50%);width:74vmin;height:74vmin;border-radius:50%;opacity:0;mix-blend-mode:screen;
+    background:radial-gradient(circle,rgba(255,252,240,.95) 0,rgba(255,226,150,.6) 16%,rgba(245,196,81,.22) 38%,rgba(245,196,81,0) 66%)}
+  .sfx-cv{left:0;top:0;width:100%;height:100%}
+  .sfx-big{transform:translate(-50%,-50%);text-align:center;white-space:nowrap;opacity:0;font-family:var(--mono,ui-monospace,monospace);font-variant-numeric:tabular-nums}
+  .sfx-big .k{font-size:clamp(11px,2.6vw,15px);letter-spacing:.38em;color:#fff3cf;margin-bottom:.45em;text-shadow:0 0 12px rgba(245,196,81,.9)}
+  .sfx-big .v{font-weight:700;line-height:1;color:#ffe9a8;
+    text-shadow:0 0 8px rgba(255,236,170,.9),0 0 34px rgba(245,196,81,.85),0 0 90px rgba(245,196,81,.5),0 2px 2px rgba(0,0,0,.6)}
+  .sfx-big .p{margin-top:.6em;font-size:clamp(12px,3vw,17px);letter-spacing:.12em;color:var(--sfx-col,#35d6e8);text-shadow:0 0 14px currentColor}
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
   /* the catch-up sweep draws on a canvas over the dial; the card beside it says what came in */
   .fpd-cv{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
@@ -2029,6 +2039,13 @@
     <div class="flow-omit" id="gapCfgNote">Read by the minute recorder every two minutes, whether or not this page is open. Settings apply on every device.</div>
   </div>
   <div class="sec">
+    <h3>BIG FEE — THE WHOLE SCREEN</h3>
+    <label>A single fee of at least this much (US$) sets off the whole screen, wherever the page is scrolled. Smaller fees get smaller effects: a soft glow from a twentieth of it, a wave of light across the panels from a quarter.</label>
+    <input type="number" id="fxBig" min="1" max="100000" step="1" inputmode="decimal">
+    <div class="flow-omit" id="fxBigNote"></div>
+    <button class="hbtn" id="fxPreview" type="button" style="margin-top:9px">▶ PREVIEW IT</button>
+  </div>
+  <div class="sec">
     <h3>SCAN</h3>
     <label>Auto-refresh interval (seconds)</label>
     <input type="number" id="cfgInterval" min="15" max="600" step="5">
@@ -2362,7 +2379,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.11';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.12';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -2384,6 +2401,7 @@ const cfg = {
   critPct: store.get('edgeCritPct', 5),
   interval: (v=>(v===45||v===300)?900:v)(store.get('interval', 900)),   // default 15 min; migrates the old 45s / 5 min defaults
   rpc: store.get('rpc', RPCS[0]),
+  fxBig: store.get('fxBig', 100),   // the single fee that sets off the whole screen (screenFx)
 };
 { const raw=store.get('ids',null); if(raw && raw.join()!==cfg.ids.join()) store.set('ids',cfg.ids); }
 
@@ -10538,18 +10556,23 @@ function renderFeePulse60(host){
    trade a mark at its minute sized by what it paid and coloured by its pool. The inner ring fills
    toward a typical hour. Under it, the quiet since the last trade against every lull of the past
    day, and the latest fees whether or not they fall inside the hour. */
-/* A big fee reaches past the dial. Sized to the fee, so the everyday trickle stays calm:
-   under $5 the dial's own birth is all there is; $5-25 sends a cyan wash of light out from the
-   dial across the screen; $25-100 makes it gold and adds a ring that rolls across the page,
-   lighting each panel as it passes; $100 and up adds three camera-flash bursts with the amount
-   frozen in the middle. The bursts are 500 ms apart, never more than three in a second (the
-   limit for flashing content), warm white rather than red, and at most one strobe every eight
-   seconds however many big fees arrive together. Reduced motion gets a single soft glow. */
+/* A big fee reaches past the dial. Sized to the fee against one amount set in CONFIGURATION (BIG
+   FEE, $100 unless changed), so the everyday trickle stays calm: under a twentieth of it the dial's
+   own birth is all there is; from a twentieth a cyan wash of light goes out from the dial across the
+   screen; from a quarter it turns gold and a ring rolls across the page, lighting each panel as it
+   passes; at the amount itself the whole screen celebrates, wherever the page is scrolled: it dims,
+   three warm flashes go off, sparks in gold and the pool's colour burst from the middle and fall,
+   light turns slowly behind the amount as it counts up in large type with its pool beneath, and the
+   ring runs out past the corners. The flashes are 500 ms apart, never more than three in a second
+   (the limit for flashing content), warm white rather than red, and there is at most one
+   celebration every eight seconds however many big fees arrive together. Never in the way of a
+   tap. Reduced motion gets a single soft glow, and the amount. */
 const SFX={strobeAt:0};
-const sfxTier=v=>v>=100?3:v>=25?2:v>=5?1:0;
-function screenFx(v, from){
-  if(document.hidden || !(v>=5)) return;
+const fxBigAt=()=>Math.max(1, Number(cfg.fxBig)||100);
+const sfxTier=v=>{ const T=fxBigAt(); return v>=T?3:v>=T/4?2:v>=T/20?1:0; };
+function screenFx(v, from, o={}){
   const tier=sfxTier(v);
+  if(document.hidden || !tier) return;
   let L=document.getElementById('sfx');
   if(!L){ L=document.createElement('div'); L.id='sfx'; L.setAttribute('aria-hidden','true'); document.body.append(L); }
   const W=innerWidth, H=innerHeight, r=from&&from.getBoundingClientRect?from.getBoundingClientRect():null;
@@ -10557,32 +10580,93 @@ function screenFx(v, from){
   const cx=Math.max(0,Math.min(W,r?r.left+r.width/2:W/2)), cy=Math.max(0,Math.min(H,r?r.top+r.height/2:H/2));
   const add=(cls,css)=>{ const d=document.createElement('div'); d.className=cls; if(css) Object.assign(d.style,css); L.append(d); return d; };
   const run=(el,kf,o)=>{ try{ el.animate(kf,{fill:'both',...o}).onfinish=()=>el.remove(); }catch(err){ el.remove(); } };
-  const wash=(rgb,k,dur)=>run(add('sfx-wash',{background:`radial-gradient(circle at ${cx}px ${cy}px, rgba(${rgb},${.55*k}) 0, rgba(${rgb},${.22*k}) 30%, rgba(${rgb},${.08*k}) 60%, rgba(${rgb},0) 85%)`}),
+  const wash=(rgb,k,dur,x=cx,y=cy)=>run(add('sfx-wash',{background:`radial-gradient(circle at ${x}px ${y}px, rgba(${rgb},${.55*k}) 0, rgba(${rgb},${.22*k}) 30%, rgba(${rgb},${.08*k}) 60%, rgba(${rgb},0) 85%)`}),
     [{opacity:0,easing:'ease-out'},{opacity:1,offset:.15,easing:'ease-in-out'},{opacity:0}],{duration:dur});
-  const stamp=dur=>run(Object.assign(add('sfx-stamp'),{textContent:'+'+fmtUsd(v,2)}),
-    [{opacity:0,transform:'translate(-50%,-50%) scale(1.5)',easing:'cubic-bezier(.2,.8,.2,1)'},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.1},
-     {opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.75,easing:'ease-in'},{opacity:0,transform:'translate(-50%,-50%) scale(.96)'}],{duration:dur});
   const GOLD='245,196,81', CYAN='53,214,232';
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ wash(tier>1?GOLD:CYAN,tier>2?1.1:.8,2600); if(tier===3) stamp(3800); return; }
-  const wave=dur=>{
-    const far=Math.max(Math.hypot(cx,cy),Math.hypot(W-cx,cy),Math.hypot(cx,H-cy),Math.hypot(W-cx,H-cy));
-    const ring=add('sfx-ring',{left:cx+'px',top:cy+'px'});
+  const wave=(dur,x=cx,y=cy)=>{
+    const far=Math.max(Math.hypot(x,y),Math.hypot(W-x,y),Math.hypot(x,H-y),Math.hypot(W-x,H-y));
+    const ring=add('sfx-ring',{left:x+'px',top:y+'px'});
     run(ring,[{width:'0px',height:'0px',opacity:1},{width:2*far+'px',height:2*far+'px',opacity:.12}],{duration:dur,easing:'cubic-bezier(.25,.6,.4,1)'});
     for(const el of document.querySelectorAll('.tile,.panel')){
       const b=el.getBoundingClientRect(); if(b.bottom<0||b.top>H||b.right<0||b.left>W||!b.width) continue;
-      const d=Math.hypot(b.left+b.width/2-cx,b.top+b.height/2-cy), at=dur*Math.pow(Math.min(1,d/far),1.1)*0.85;
+      const d=Math.hypot(b.left+b.width/2-x,b.top+b.height/2-y), at=dur*Math.pow(Math.min(1,d/far),1.1)*0.85;
       setTimeout(()=>{ try{ el.animate([{boxShadow:'0 0 0 1px rgba(245,196,81,0)'},{boxShadow:'0 0 0 1px #f5c451, 0 0 26px rgba(245,196,81,.5)',offset:.2},
         {boxShadow:'0 0 0 1px rgba(245,196,81,0)'}],{duration:2000}); }catch(err){} },at); } };
+  // the whole-screen moment is centred on the screen, not on the dial
+  const X=W/2, Y=H*0.42, col=/^#[0-9a-f]{6}$/i.test(o.col||'')?o.col:'#35d6e8';
+  const amount=(dur,still)=>{
+    const b=add('sfx-big',{left:X+'px',top:Y+'px'}); b.style.setProperty('--sfx-col',col);
+    const k=document.createElement('div'), n=document.createElement('div'), p=document.createElement('div');
+    k.className='k'; n.className='v'; p.className='p';
+    // a preview says so, so it can never be taken for a fee that came in
+    k.textContent=o.preview?'PREVIEW':'FEE IN';
+    p.textContent=o.preview?'how a fee this size will look':(o.pool&&o.pool!=='pool not recorded'?o.pool:'');
+    b.append(k,n,p);
+    const fin='+'+fmtUsd(v,2); n.style.fontSize=Math.round(Math.max(30,Math.min(136,W*.15,W*.88/(.62*fin.length))))+'px';
+    if(still) n.textContent=fin;
+    else { const t0=performance.now(), cd=1300, tick=ts=>{ if(!b.isConnected) return; const q=Math.min(1,(ts-t0)/cd);
+        n.textContent=q<1?'+'+fmtUsd(v*(1-Math.pow(1-q,3)),2):fin; if(q<1) requestAnimationFrame(tick); }; n.textContent='+'+fmtUsd(0,2); requestAnimationFrame(tick); }
+    run(b, still?[{opacity:0},{opacity:1,offset:.12},{opacity:1,offset:.8},{opacity:0}]
+      :[{opacity:0,transform:'translate(-50%,-50%) scale(1.6)',easing:'cubic-bezier(.2,.8,.2,1)'},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.1},
+        {opacity:1,transform:'translate(-50%,-50%) scale(1.02)',offset:.8,easing:'ease-in'},{opacity:0,transform:'translate(-50%,-50%) scale(.96)'}],{duration:dur}); };
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){
+    if(tier===3){ wash(GOLD,1.1,3000,X,Y); amount(4200,true); } else wash(tier>1?GOLD:CYAN,.8,2600);
+    return; }
   const now=Date.now();
   if(tier===1){ wash(CYAN,.8,2000); return; }
-  if(tier===2 || now-SFX.strobeAt<8000){ wash(GOLD,1,2200); wave(2400); return; }
+  if(tier===2 || (!o.preview && now-SFX.strobeAt<8000)){ wash(GOLD,1,2200); wave(2400); return; }
   SFX.strobeAt=now;
-  const f=add('sfx-flash');
-  run(f,[{opacity:0,offset:0},{opacity:.85,offset:.02},{opacity:0,offset:.08},
+  const DUR=5200, rgbOf=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(',');
+  // the room darkens so the light reads
+  run(add('sfx-veil'),[{opacity:0},{opacity:.6,offset:.06},{opacity:.5,offset:.62},{opacity:0}],{duration:DUR,easing:'ease-out'});
+  // light turning slowly behind the amount
+  run(add('sfx-rays',{left:X+'px',top:Y+'px'}),[{opacity:0,transform:'translate(-50%,-50%) rotate(0deg) scale(.55)'},{opacity:1,transform:'translate(-50%,-50%) rotate(6deg) scale(1)',offset:.18},
+    {opacity:.75,transform:'translate(-50%,-50%) rotate(22deg) scale(1.08)',offset:.7},{opacity:0,transform:'translate(-50%,-50%) rotate(30deg) scale(1.12)'}],{duration:DUR,easing:'linear'});
+  // a white-hot core that blooms and cools to gold
+  run(add('sfx-bloom',{left:X+'px',top:Y+'px'}),[{opacity:0,transform:'translate(-50%,-50%) scale(.15)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.25)',offset:.12},
+    {opacity:.55,transform:'translate(-50%,-50%) scale(1)',offset:.4},{opacity:0,transform:'translate(-50%,-50%) scale(1.1)'}],{duration:2600,easing:'cubic-bezier(.2,.8,.2,1)'});
+  // three warm flashes, half a second apart
+  run(add('sfx-flash'),[{opacity:0,offset:0},{opacity:.85,offset:.02},{opacity:0,offset:.08},
          {opacity:0,offset:.31},{opacity:.7,offset:.33},{opacity:0,offset:.39},
          {opacity:0,offset:.62},{opacity:.55,offset:.64},{opacity:0,offset:.70},{opacity:0,offset:1}],{duration:1600,easing:'linear'});
-  stamp(4200);
-  setTimeout(()=>{ wash(GOLD,.7,3600); wave(2600); },1100);
+  // sparks: a burst with the first flash and a smaller one with the third, slowing, falling, twinkling out
+  { const cv=document.createElement('canvas'), g=cv.getContext&&cv.getContext('2d');
+    if(g){ const dpr=Math.min(2,devicePixelRatio||1); cv.className='sfx-cv'; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); L.append(cv); g.scale(dpr,dpr);
+      const reach=Math.max(.6,Math.min(1.3,Math.hypot(W,H)/1500)), pal=['255,226,150','245,196,81','255,248,232'], mine=rgbOf(col), P=[];
+      const burst=(n,at,k)=>{ for(let i=0;i<n;i++){ const a=Math.random()*6.2832, sp=(240+Math.random()*900)*k*reach;
+        P.push({x:X,y:Y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-80*Math.random(),at,life:1.3+Math.random()*1.8,w:1.1+Math.random()*2.4,
+          c:Math.random()<.3?mine:pal[Math.random()*3|0],tw:Math.random()*6.28}); } };
+      const n=Math.round(Math.min(180,70+W*H/8000)); burst(Math.round(n*.68),0,1); burst(Math.round(n*.32),1,.75);
+      const t0=performance.now(); let prev=t0;
+      const step=ts=>{ if(!cv.isConnected) return; const t=(ts-t0)/1000, dt=Math.min(.05,(ts-prev)/1000); prev=ts;
+        g.clearRect(0,0,W,H); g.globalCompositeOperation='lighter'; g.lineCap='round'; let alive=0;
+        for(const q of P){ if(t<q.at){ alive++; continue; } const age=t-q.at; if(age>q.life) continue; alive++;
+          const drag=Math.pow(.18,dt), px=q.x, py=q.y; q.vx*=drag; q.vy=q.vy*drag+380*dt; q.x+=q.vx*dt; q.y+=q.vy*dt;
+          const f=1-age/q.life, a=Math.max(0,Math.pow(f,1.2)*(.7+.3*Math.sin(q.tw+age*20)));
+          g.strokeStyle='rgba('+q.c+','+a.toFixed(3)+')'; g.lineWidth=q.w; g.beginPath(); g.moveTo(px-(q.x-px)*1.5,py-(q.y-py)*1.5); g.lineTo(q.x,q.y); g.stroke(); }
+        if(alive) requestAnimationFrame(step); else cv.remove(); };
+      requestAnimationFrame(step); } }
+  amount(4600,false);
+  // the gold light and the ring after the third flash
+  setTimeout(()=>{ wash(GOLD,.7,3600,X,Y); wave(2600,X,Y); },1050);
+}
+/* How often each effect would have gone off over the last 24 hours, for the BIG FEE setting: from
+   the minute recorder's record, each minute's fees (a trade rarely spans two). Read when the
+   configuration opens and kept five minutes; shown only there, on this device. */
+const FXN={at:0, mins:null, from:null};
+async function fxNote(open){
+  const note=document.getElementById('fxBigNote'); if(!note) return;
+  if(open && Date.now()-FXN.at>5*60000 && PULSE_URL){
+    note.textContent='Reading the last 24 hours…';
+    try{ const r=await fetch(PULSE_URL+'/m?n=1440'+(LOCK.tok?'&k='+LOCK.tok:''),{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
+      const j=await r.json(), m=Array.isArray(j.mins)?j.mins:[];
+      FXN.mins=m.map(x=>Number(x[1])||0); FXN.from=m.length?m[0][0]:null; FXN.at=Date.now(); }
+    catch(e){ FXN.mins=null; } }
+  if(!FXN.mins){ note.textContent='How often these would have gone off could not be read just now.'; return; }
+  const T=fxBigAt(), lv=[T/20,T/4,T], c=lv.map(x=>FXN.mins.filter(u=>u>=x).length), top=FXN.mins.reduce((a,u)=>Math.max(a,u),0);
+  const hrs=FXN.from?Math.max(1,Math.round((Date.now()-FXN.from)/3600e3)):24, pl=k=>k+' time'+(k===1?'':'s');
+  note.innerHTML='Over the last '+hrs+' hours this would have gone off: the whole screen <b>'+pl(c[2])+'</b> (from '+fmtUsd(T,2)+'), a wave <b>'+pl(c[1]-c[2])+'</b> (from '+fmtUsd(lv[1],2)
+    +'), a glow <b>'+pl(c[0]-c[1])+'</b> (from '+fmtUsd(lv[0],2)+') · the biggest minute brought +'+fmtUsd(top,2)+'.';
 }
 function renderFeePulse60m(host){
   const wrap=el('div','fp24 fpd'); wrap.id='fp60';
@@ -10775,7 +10859,7 @@ function renderFeePulse60m(host){
     const [x,y]=pt(0,R), col=e.col, usd=e.t.usd, big=D.typical!=null && usd>=D.typical, small=usd<0.5;
     try{ document.dispatchEvent(new CustomEvent('kt-fee',{detail:{col, usd}})); }catch(err){}   // LIVE flashes with it while the clock is off screen
     const pool=e.t.pools.length?e.t.pools[0][0]:'pool not recorded', when=hl(e.t.t);
-    if(still){ e.glide=1; e.show=1; e.scale=0; screenFx(usd,dw); await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
+    if(still){ e.glide=1; e.show=1; e.scale=0; screenFx(usd,dw,{col,pool}); await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
     const anim=sweepAnim();
     const hideSweep=()=>{ try{ return sw.animate([{opacity:1},{opacity:0}],{duration:350,fill:'forwards'}); }catch(err){ return null; } };
     const showSweep=fade=>{ // back on the clock's own phase, faded in while it realigns
@@ -10784,7 +10868,7 @@ function renderFeePulse60m(host){
     if(small||compact){
       read.innerHTML='▸ CONTACT '+esc(when)+' · +'+fmtUsd(usd,2)+' · '+esc(pool);
       const fade=hideSweep(); whip((Date.now()%7000)/7000*360, 900); await tween(260,()=>{});
-      flare(x,y,500); rings(x,y,col,{n:1,dur:900,gap:0,reach:90,push:false}); screenFx(usd,dw);
+      flare(x,y,500); rings(x,y,col,{n:1,dur:900,gap:0,reach:90,push:false}); screenFx(usd,dw,{col,pool});
       e.show=1; e.flash=1; tween(520,p=>{ e.scale=ez.spring(p,1.9); });
       const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
       tween(1400,p=>{ ft.setAttribute('y',(y+8-22*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); }).then(()=>ft.remove());
@@ -10806,7 +10890,7 @@ function renderFeePulse60m(host){
     try{ dw.animate([{transform:'scale(1)'},{transform:'scale(1.045)'},{transform:'scale(.993)'},{transform:'scale(1)'}],{duration:700,easing:'cubic-bezier(.2,.8,.2,1)'}); }catch(err){}
     flare(x,y,1300); rings(x,y,col,{n:3,dur:2600,gap:320,reach:175,push:true});
     if(big){ goldWaves(3); goldEdge(); }
-    screenFx(usd,dw);
+    screenFx(usd,dw,{col,pool});
     e.show=1; e.flash=1; tween(1000,p=>{ e.scale=ez.spring(p,3.2); });
     const ft=mk('text',{x:x+20,y:y+8,'text-anchor':'start'},'fpd-amt fpd-amt-birth','+'+fmtUsd(usd,2)); fx.append(ft);
     tween(2600,p=>{ ft.setAttribute('y',(y+8-26*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); },150).then(()=>ft.remove());
@@ -10856,7 +10940,7 @@ function renderFeePulse60m(host){
         live.set(k,e); }
       /* A trade still growing (readings every few seconds add to it) can cross into a bigger tier
          after its birth; the screen answers then, once per tier. */
-      if(e.show && e.glide>=1 && sfxTier(t.usd)>e.tier){ e.tier=sfxTier(t.usd); screenFx(t.usd,dw); }
+      if(e.show && e.glide>=1 && sfxTier(t.usd)>e.tier){ e.tier=sfxTier(t.usd); screenFx(t.usd,dw,{col:poolColor(t.lbl), pool:t.lbl}); }
       e.t=t; e.r=dotR(t.usd); e.col=poolColor(t.lbl);
       e.h.setAttribute('fill',glow(e.col)); e.d.setAttribute('aria-label',hl(t.t)+' '+fmtUsd(t.usd,2));
       e.a.textContent=fmtUsd(t.usd,t.usd<100?2:0); }
@@ -10967,7 +11051,7 @@ function renderFeePulse60m(host){
     let n=0, shown=base, lastA=0;
     const ping=(x,y,col,reach,i)=>{ const c=mk('circle',{cx:x,cy:y,r:3,fill:'none',stroke:col,'stroke-width':2}); fx.append(c);
       tween(1300,q=>{ c.setAttribute('r',(3+reach*ez.out(q)).toFixed(1)); c.setAttribute('opacity',(0.9*(1-q)).toFixed(3)); c.setAttribute('stroke-width',(2*(1-q)+.3).toFixed(2)); },i*240).then(()=>c.remove()); };
-    const paint=e=>{ e.painted=1; const age=Math.max(0,(Date.now()-e.t.at)/60000), [x,y]=pt(age,R), col=e.col, isN=isNew(e), bigT=e.t.usd>=5;
+    const paint=e=>{ e.painted=1; const age=Math.max(0,(Date.now()-e.t.at)/60000), [x,y]=pt(age,R), col=e.col, isN=isNew(e), bigT=sfxTier(e.t.usd)>0;
       pc.save(); pc.globalCompositeOperation='lighter';
       if(isN){
         // bearing line from the centre, then a bloom that cools from white into the pool's colour
@@ -10979,7 +11063,7 @@ function renderFeePulse60m(host){
         const [lx,ly]=pt(age,R-30), tx=mk('text',{x:lx,y:ly+5,'text-anchor':'middle'},'fpd-amt fpd-amt-birth','+'+fmtUsd(e.t.usd,2)); fx.append(tx);
         tween(2200,q=>{ tx.setAttribute('y',(ly+5-10*ez.out(q)).toFixed(1)); tx.setAttribute('opacity',(q<.65?1:1-(q-.65)/.35).toFixed(3)); }).then(()=>tx.remove());
         n++; subH.textContent='CONTACTS '+n+' OF '+fresh.length; shown+=e.t.usd; setTotal(shown);
-        if(e===top && bigT) screenFx(e.t.usd,dw);
+        if(e===top && bigT) screenFx(e.t.usd,dw,{col:e.col, pool:e.t.lbl});
       } else {
         const g=pc.createRadialGradient(x,y,0,x,y,14); g.addColorStop(0,rgbaOf(col,.55)); g.addColorStop(1,rgbaOf(col,0)); pc.fillStyle=g; pc.beginPath(); pc.arc(x,y,14,0,7); pc.fill();
         e.show=1; e.flash=.3; tween(500,q=>{ e.lit=q; }); tween(900,q=>{ e.flash=.3*(1-q); });
@@ -11566,6 +11650,11 @@ function wireSettings(){
   wp.addEventListener('change',()=>{cfg.warnPct=Math.max(1,+wp.value||15);store.set('edgeWarnPct',cfg.warnPct);renderAll();});
   cp.addEventListener('change',()=>{cfg.critPct=Math.max(.5,+cp.value||5);store.set('edgeCritPct',cfg.critPct);renderAll();});
   iv.addEventListener('change',()=>{cfg.interval=Math.max(15,+iv.value||45);store.set('interval',cfg.interval);state.countdown=cfg.interval;});
+  // BIG FEE: from what single fee the whole screen celebrates (the smaller effects scale with it)
+  { const fb=$('#fxBig'); fb.value=fxBigAt();
+    fb.addEventListener('change',()=>{ const v=Math.round(Math.min(100000,Math.max(1,+fb.value||100))*100)/100; cfg.fxBig=v; fb.value=v; store.set('fxBig',v); fxNote(); });
+    $('#fxPreview').addEventListener('click',()=>{ close(); setTimeout(()=>screenFx(fxBigAt(),null,{preview:true}),380); });
+    $('#btnSettings').addEventListener('click',()=>{ fb.value=fxBigAt(); fxNote(true); }); }
   rp.addEventListener('change',()=>{cfg.rpc=rp.value;store.set('rpc',cfg.rpc);rpcIndex=Math.max(0,RPCS.indexOf(cfg.rpc));log('info','Primary RPC → '+rp.value);});
   $('#customRpcBtn').addEventListener('click',()=>{
     const u=$('#customRpcInput').value.trim();
