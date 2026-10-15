@@ -57,9 +57,11 @@ for(const w of wallets){
     const cols={}; for(const j of got.fetchWalletItemsCollections||[]) for(const c of sui(j).collections||[]) cols[c.id]=c;
     for(const x of inv) if(x.collection&&x.collection.id&&!cols[x.collection.id]) cols[x.collection.id]=x.collection;
     for(const [id,n] of Object.entries(held)){ const c=cols[id]||{};
-      // floors come in MIST (1e-9 SUI); a floor already in SUI would be far below a million
+      /* floors come in MIST (1e-9 SUI); a floor already in SUI would be far below a million. A floor
+         of 0 is TradePort saying nothing is listed: no price, not a price of nothing (the deck showed
+         three such collections at $0.00 among the priced instead of under "no market price") */
       const f=c.floor!=null?Number(c.floor):null;
-      row.cols.push({id, slug:c.slug||null, title:c.title||null, type:ntype[id]||null, n, floor:f==null?null:(f>1e5?f/1e9:f)}); row.n+=n; }
+      row.cols.push({id, slug:c.slug||null, title:c.title||null, type:ntype[id]||null, n, floor:f>0?(f>1e5?f/1e9:f):null}); row.n+=n; }
     if(st){ row.value=st.value!=null?Number(st.value)/1e9:null; row.usd=st.usd_value!=null?Number(st.usd_value):null; }
     for(const j of got.cached_fetchCryptoUSDRates||[]) for(const r of sui(j).crypto_rates||[]) if(/^sui$/i.test(r.crypto)&&/usd/i.test(r.fiat)) res.tp.rate=Number(r.rate);
   }
