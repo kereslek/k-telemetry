@@ -25,30 +25,35 @@ for(const w of wallets){
   pg.on('response',async r=>{ if(!/graphql\.tradeport/.test(r.url())) return;
     try{ const op=(JSON.parse(r.request().postData()||'{}').operationName)||''; const j=await r.json(); (got[op]=got[op]||[]).push(j); }catch(e){} });
   /* What the wallet page asks TradePort's data service for. Until 10 Oct one answer
-     (fetchOwnedCollectionAndNftIds) listed every NFT held with its collection; TradePort retired it,
-     and this read waited for it on every run after. Now: fetchWalletStats gives, per collection, how
-     many the wallet holds (and the wallet's value); fetchWalletItemsCollections each held collection's
-     floor; fetchWalletOwnedCollections and fetchWalletInventoryWithListings each collection's on-chain
-     type. The inventory pages as the screen scrolls, so it counts only when the stats are missing. */
-  const done=()=>got.fetchWalletStats&&got.fetchWalletItemsCollections&&(got.fetchWalletOwnedCollections||got.fetchWalletInventoryWithListings);
+     (fetchOwnedCollectionAndNftIds) listed every NFT the wallet holds with its collection; TradePort
+     retired it, and this read waited for it on every run after. Now: fetchWalletOwnedCollections lists
+     the wallet's collections with their on-chain type, fetchWalletStats how many it holds of each
+     (and the wallet's value), fetchWalletItemsCollections each collection's floor. The stats also
+     count NFTs outside the owned list (8 in one wallet on 15 Oct, no floor, not among its items); the
+     old answer left them out and so does this. A wallet with nothing gets no stats: the owned list
+     coming back empty is its whole answer. The inventory pages as the screen scrolls, so it counts
+     only where the stats say nothing. */
+  const owned=()=>(got.fetchWalletOwnedCollections||[]).flatMap(j=>((j&&j.data&&j.data.sui)||{}).collections||[]).filter(c=>c&&c.id);
+  const done=()=>got.fetchWalletOwnedCollections&&got.fetchWalletItemsCollections&&(got.fetchWalletStats||!owned().length);
   let ok=false;
   for(let k=0;k<2&&!ok;k++){
     try{ await pg.goto('https://www.tradeport.xyz/sui/'+w.address+'?tab=items',{waitUntil:'domcontentloaded',timeout:60000}); }catch(e){}
     for(let s=0;s<30&&!done();s++) await pg.waitForTimeout(1000);
-    await pg.waitForTimeout(2000);   // the type answers can trail the counts by a moment
-    ok=!!(got.fetchWalletStats&&got.fetchWalletItemsCollections);
+    // an empty owned list can come before the stats of a wallet that has something: a moment more
+    if(done()&&!got.fetchWalletStats) await pg.waitForTimeout(3000);
+    ok=!!done();
   }
   await pg.close();
-  const row={tail:tail(w.address), ok, n:0, value:null, usd:null, cols:[]};
+  const row={tail:tail(w.address), ok, n:0, value:null, usd:null, cols:[], outside:0};
   if(ok){
     const sui=x=>(x&&x.data&&x.data.sui)||{};
     const st=sui((got.fetchWalletStats||[])[0]).new_wallet_stats, inv=(got.fetchWalletInventoryWithListings||[]).flatMap(j=>sui(j).nfts||[]).filter(Boolean);
-    const held={};
-    if(st&&Array.isArray(st.collection_stats)){ for(const c of st.collection_stats){ const n=Number(c&&c.wallet_stats&&c.wallet_stats.holdings_count)||0; if(c&&c.collection_id&&n>0) held[c.collection_id]=(held[c.collection_id]||0)+n; } }
-    else for(const x of inv) if(!x.burned&&x.collection&&x.collection.id) held[x.collection.id]=(held[x.collection.id]||0)+1;
-    const ntype={}, typeOf=c=>c&&c.id&&c.chain_state&&c.chain_state.nft_type&&!ntype[c.id]&&(ntype[c.id]=String(c.chain_state.nft_type));
-    for(const j of got.fetchWalletOwnedCollections||[]) for(const c of sui(j).collections||[]) typeOf(c);
-    for(const x of inv) typeOf(x.collection);
+    const statN={}; for(const c of (st&&st.collection_stats)||[]){ const n=Number(c&&c.wallet_stats&&c.wallet_stats.holdings_count)||0; if(c&&c.collection_id&&n>0) statN[c.collection_id]=(statN[c.collection_id]||0)+n; }
+    const invN={}; for(const x of inv) if(!x.burned&&x.collection&&x.collection.id) invN[x.collection.id]=(invN[x.collection.id]||0)+1;
+    const held={}, ntype={};
+    for(const c of owned()){ const n=statN[c.id]||invN[c.id]||0; if(n>0) held[c.id]=n;
+      const t=c.chain_state&&c.chain_state.nft_type; if(t&&!ntype[c.id]) ntype[c.id]=String(t); }
+    row.outside=Object.entries(statN).filter(([id])=>!(id in held)).reduce((a,[,n])=>a+n,0);
     const cols={}; for(const j of got.fetchWalletItemsCollections||[]) for(const c of sui(j).collections||[]) cols[c.id]=c;
     for(const x of inv) if(x.collection&&x.collection.id&&!cols[x.collection.id]) cols[x.collection.id]=x.collection;
     for(const [id,n] of Object.entries(held)){ const c=cols[id]||{};
@@ -60,7 +65,7 @@ for(const w of wallets){
   }
   res.tp.wallets.push(row);
   const fl=row.cols.reduce((a,c)=>a+(c.floor||0)*c.n,0);
-  console.log('a wallet on TradePort: '+(ok?'read':'NOT READ')+' · NFTs '+row.n+' · collections '+row.cols.length+' · with a floor '+row.cols.filter(c=>c.floor>0).length+' · with a type '+row.cols.filter(c=>c.type).length
+  console.log('a wallet on TradePort: '+(ok?'read':'NOT READ')+' · NFTs '+row.n+' · collections '+row.cols.length+' · with a floor '+row.cols.filter(c=>c.floor>0).length+' · with a type '+row.cols.filter(c=>c.type).length+(row.outside?' · counted by TradePort outside the owned collections and left out: '+row.outside:'')
     +(row.value>0?' · sum of floors vs TradePort’s wallet value: '+(fl/row.value).toFixed(2):''));
 }
 await b.close();
