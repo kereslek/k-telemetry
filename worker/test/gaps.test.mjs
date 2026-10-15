@@ -67,6 +67,13 @@ t('step: a gap whose route goes unpriced is a miss, not a close', ()=>{
   st=step(st,{net:0.9,buy:'a',sell:'b'},t0+840e3,cfg,all); st=step(st,{net:1.2,buy:'a',sell:'c'},t0+960e3,cfg,noB);
   assert.equal(st.open.sell,'c'); assert.equal(st.open.since,t0+840e3);
 });
+t('step: the log keeps 48 hours on a quiet reading too, not only when a gap closes', ()=>{
+  const cfg={...DEFAULT_CFG, minNet:0.5}, h=3600e3, t0=1e12;
+  let st={hist:[], log:[{since:t0-73*h, until:t0-72*h, mins:60, peak:0.9, buy:'a', sell:'b'},
+                       {since:t0-25*h, until:t0-24*h, mins:60, peak:0.8, buy:'a', sell:'b'}], open:null, miss:0};
+  st=step(st,{net:-3,buy:'a',sell:'b'},t0,cfg); assert.equal(st.log.length,1); assert.equal(st.log[0].until,t0-24*h);
+  st=step(st,null,t0+25*h,cfg); assert.equal(st.log.length,0,'a reading with no quotes prunes it as well');
+});
 t('step: history keeps an hour', ()=>{
   let st=null; for(let i=0;i<100;i++) st=step(st,{net:0.1,buy:'a',sell:'b'},1e12+i*120e3,DEFAULT_CFG);
   assert.ok(st.hist.length===31, 'hist '+st.hist.length);

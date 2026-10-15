@@ -73,6 +73,9 @@ export function step(st, best, now, cfg, priced){
   st=st||{hist:[], log:[], open:null, miss:0};
   st.hist.push([now, best?Math.round(best.net*1000)/1000:null]);
   st.hist=st.hist.filter(h=>now-h[0]<=KEEP_HIST);
+  /* the log keeps 48 hours on every reading, not only when a gap closes: in a quiet market nothing
+     closed for days, the old gaps stayed, and the deck listed week-old gaps as recent */
+  st.log=(st.log||[]).filter(l=>now-l.until<=KEEP_LOG).slice(-60);
   /* no reading, or the open gap's own route went unpriced (a venue that did not answer): a miss,
      not a close — two in a row close it */
   const lost=st.open&&priced&&!(priced.has(st.open.buy)&&priced.has(st.open.sell));
