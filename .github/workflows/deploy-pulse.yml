@@ -47,6 +47,8 @@ jobs:
             done
           fi
           [ -n "$SUB" ] || { echo "::error::Could not register a workers.dev subdomain."; exit 1; }
+          # masked before it enters the environment: every later step prints its environment in this public log
+          echo "::add-mask::$ACC"
           echo "CLOUDFLARE_ACCOUNT_ID=$ACC" >> $GITHUB_ENV
           echo "sub=$SUB" >> $GITHUB_OUTPUT
       - name: Deploy
