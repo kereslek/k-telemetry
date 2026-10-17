@@ -16,7 +16,7 @@ const KEY=crypto.pbkdf2Sync(PASS, Buffer.from(L.salt,'base64'), L.iter, 64, 'sha
 const open=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm',KEY,Buffer.from(e.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
   return JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')); };
 const t=Date.now();
-const [cfg,data,fees,costs,ledger]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json','ledger-main.json'].map(f=>j(SITE+f+'?t='+t)))).map(x=>x?open(x):null);
+const [cfg,data,fees,costs,ledger,replay]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json','ledger-main.json','pools-replay-main.json'].map(f=>j(SITE+f+'?t='+t)))).map(x=>x?open(x):null);
 const W=cfg.profiles.flatMap(p=>p.wallets||[]), WE=W.filter(x=>x.chain==='ethereum').map(x=>x.address.toLowerCase()), WS=W.filter(x=>x.chain==='solana').map(x=>x.address);
 // the relay writes an Ethereum log index in hex (…:0x12f), this audit in decimal (…:303)
 const normId=id=>String(id).replace(/:0x([0-9a-f]+)$/i,(_,h)=>':'+parseInt(h,16));
@@ -36,7 +36,7 @@ for(const id of Object.keys(fees.closedPos||{}).filter(x=>/^\d+$/.test(x))){
 const ownSol=new Map((data.sol||[]).map(p=>[p.poolId,p.id.slice(0,12)+' '+(p.pairLabel||'')+' '+(p.feeLabel||'')]));
 console.log('own pools: '+ownEth.size+' Ethereum, '+(data.sol||[]).length+' Solana positions');
 
-const found=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, lastTx=0;
+const found=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, lastTx=0;
 const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822', XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; let solSeen=0, solMine=0;
 // ---- Ethereum
 const BS='https://eth.blockscout.com/api/v2', SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
@@ -46,7 +46,10 @@ for(const w of WE){
     const r=await j(url); if(!r) break; let older=false;
     for(const tx of r.items||[]){
       if(Date.parse(tx.timestamp)<START){ older=true; continue; }
-      if(String(tx.from&&tx.from.hash).toLowerCase()!==w || tx.status!=='ok') continue;
+      const from=String(tx.from&&tx.from.hash).toLowerCase(), to=String(tx.to&&tx.to.hash).toLowerCase(), val=tx.value&&BigInt(tx.value)>0n;
+      // ETH itself, as opposed to tokens: leaving for an outside address, moving between the deck's wallets, or arriving from outside
+      if(val&&tx.status==='ok'){ if(from===w) (WE.includes(to)?coin.own++:coin.out++); else if(to===w&&!WE.includes(from)) coin.in++; }
+      if(from!==w || tx.status!=='ok') continue;
       const lg=await j(BS+'/transactions/'+tx.hash+'/logs'); await sleep(150);
       ethSent++; const tops=new Set(((lg&&lg.items)||[]).map(x=>x.topics&&x.topics[0]));
       if(tops.has(SWAP_V3)) kinds.v3++; else if(tops.has(SWAP_V4)) kinds.v4++; else if(tops.has(SWAP_V2)) kinds.v2++; else if(tops.has(XFER)) kinds.transfer++; else kinds.other++;
@@ -59,7 +62,7 @@ for(const w of WE){
       const sw=((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===SWAP_V3);
       for(const s of sw){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) { other.eth++; continue; }
-        const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id)});
+        const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id)});
       } }
     url=(!older&&r.next_page_params)?BS+'/addresses/'+w+'/transactions?'+new URLSearchParams(r.next_page_params):null;
   }
@@ -77,7 +80,7 @@ for(const w of WE){
       for(const s of ((lg&&lg.items)||[]).filter(y=>y.topics&&y.topics[0]===SWAP_V3)){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) continue;
         const id='eth:'+h+':'+s.index;
-        found.push({chain:'eth',t:x.timestamp,id,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),filled:1}); }
+        found.push({chain:'eth',t:x.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),filled:1}); }
     }
     tu=(!older&&r.next_page_params)?BS+'/addresses/'+w+'/token-transfers?'+new URLSearchParams(r.next_page_params):null;
   }
@@ -119,7 +122,7 @@ for(const w of WS){
       if(!logs.some(l=>/Instruction: Swap/i.test(l))) continue;
       const pools=[...ownSol.keys()].filter(p=>keys.includes(p));
       if(!pools.length){ other.sol++; continue; }
-      for(const p of pools){ const id='sol:'+s.signature+':'+p; found.push({chain:'sol',t:new Date(s.blockTime*1000).toISOString(),id,pool:ownSol.get(p),booked:booked.has(id),back:pendBack.get(id),who:w}); }
+      for(const p of pools){ const id='sol:'+s.signature+':'+p; found.push({chain:'sol',t:new Date(s.blockTime*1000).toISOString(),id,addr:p,pool:ownSol.get(p),booked:booked.has(id),back:pendBack.get(id),who:w}); }
     }
     if(sigs.length<100) break;
   }
@@ -139,11 +142,24 @@ for(const c of ['eth','sol']){ const f=found.filter(x=>x.chain===c);
     console.log('     not booked: made '+age.toFixed(0)+' min ago · relay data '+((Date.now()-(data.t||0))/60000).toFixed(0)+' min old, '+((data.t||0)>Date.parse(x.t)?'newer':'older')+' than the swap'
       +' · the relay has '+(seen?'counted this transaction':pend?'queued it, not yet counted':'not seen it')+' · deck positions in that pool: '+mine.length+', in range now: '+inr); }
 }
+/* The swap replay leaves the deck's own trading out of "your share of the pools' trading", so the share
+   counts other traders only: each own-pool swap above, once the replay has read past it, must show as
+   own trading in that pool's day (UTC). Pools the replay does not rebuild (only LCX and CPOOL pools
+   are) are counted apart. */
+{ const R=new Map(((replay&&replay.pools)||[]).map(p=>[String(p.id).toLowerCase(),p])), c={read:0,own:0,waiting:0,notIn:0};
+  for(const x of found){ const P=R.get(String(x.addr||'').toLowerCase()), at=Date.parse(x.t);
+    if(!P||!P.state){ c.notIn++; continue; }
+    if(!(P.state.t>=at)){ c.waiting++; continue; }
+    c.read++; const dd=P.days&&P.days[new Date(at).toISOString().slice(0,10)];
+    if(dd&&((dd.ownW||0)>0||(dd.own||0)>0)) c.own++; }
+  console.log((c.read===c.own?'ok   ':'MISS ')+'own-pool swaps in the swap replay (your share leaves them out): read past '+c.read+', set aside as your own '+c.own
+    +' · not read yet '+c.waiting+' · in pools it does not rebuild '+c.notIn+' · replay '+(replay&&replay.t?((Date.now()-replay.t)/3600e3).toFixed(1)+' h old':'not readable')); }
 // the month's fees only ever rise: a harvest moves them from unclaimed to collected
 const ticks=(fees.ticks||[]).filter(x=>x[0]>=START);
 let drops=0, worst=0; for(let i=1;i<ticks.length;i++){ const d=ticks[i][1]-ticks[i-1][1]; if(d< -0.01){ drops++; worst=Math.min(worst,d/Math.max(1,ticks[i-1][1])); } }
 console.log((drops?'WARN ':'ok   ')+'month-to-date fee readings today: '+ticks.length+' · steps down: '+drops+(drops?' (largest '+(worst*100).toFixed(2)+'% of the total)':''));
 console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets');
+console.log('ETH itself sent from the deck\u2019s wallets: '+coin.out+' to outside addresses, '+coin.own+' between its own wallets · arrived from outside: '+coin.in);
 console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' to its own wallets, '+solMove.out+' to outside addresses'+(solMove.other?', '+solMove.other+' unclear':''));
 /* Solana positions the deck's wallets touched today: a harvest (or a withdrawal, which collects the
    fees with it) moves fees from unclaimed to collected, so the position's booked fee total must
