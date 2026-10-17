@@ -254,12 +254,18 @@ try{ const m=await (await fetch('https://kt-pulse.kereslek.workers.dev/m?n=5&t='
   // every pool the recorder reads gets a price, or its trades show no price line
   for(const [c,v] of Object.entries(m.pools||{})) if(v&&v[1]) (v[0]===v[1]?OK:FAIL)('recorder prices '+v[0]+' of '+v[1]+' '+c+' pools');
   if(!m.pools) WARN('recorder does not report its pool prices');
-  /* your own swaps, which LATEST FEES lists apart (never as fees): that the recorder keeps them and
-     its scan for them is not failing. Counts only. */
+  /* your own swaps, which LATEST FEES lists apart (never as fees): that the recorder keeps them, and
+     what its last look on each chain did (it looks once a minute, a few asks at a time). Counts
+     and the kind of failure only. */
   if(!Array.isArray(m.mine)) WARN('recorder does not list your own swaps (an older recorder?)');
-  else { const own=m.mine.filter(x=>x.own), err=(m.err||[]).some(e=>/own-swap list/.test(String(e)));
-    (err?WARN:OK)('your own swaps the recorder lists (last 24 h): '+m.mine.length+' · through your own pools '+own.length+', elsewhere '+(m.mine.length-own.length)
-      +' · with your pool\u2019s price before and after '+own.filter(x=>Array.isArray(x.px)).length+' · its scan '+(err?'reported an error':'clean')); } }
+  else { const own=m.mine.filter(x=>x.own), S=m.mineScan||{};
+    OK('your own swaps the recorder lists (last 24 h): '+m.mine.length+' · through your own pools '+own.length+', elsewhere '+(m.mine.length-own.length)
+      +' · with your pool\u2019s price before and after '+own.filter(x=>Array.isArray(x.px)).length);
+    for(const [c,lab] of [['eth','Ethereum'],['sol','Solana']]){ const d=S[c], pools=m.pools&&m.pools[c]&&m.pools[c][1];
+      if(!d){ WARN('own-swap scan, '+lab+': no look reported yet'); continue; }
+      const age=(Date.now()-d.at)/60000, idle=pools&&(!d.tok||!d.w);
+      (d.err||age>5||idle||(c==='eth'&&d.behind>300)?WARN:OK)('own-swap scan, '+lab+': last look '+age.toFixed(1)+' min ago · watching '+d.tok+' token(s) in '+d.w+' wallet(s)'
+        +' · asks '+d.asks+' · still to open '+d.q+(c==='eth'?' · blocks still to look through '+d.behind:'')+' · '+(d.err?'failed: '+d.err:'no failure')); } } }
 catch(e){ FAIL('minute recorder unreachable: '+e.message); }
 /* trades recorded since prices were kept (5 Oct, 09:36 UTC) carry the price after the trade */
 try{ const m=await (await fetch('https://kt-pulse.kereslek.workers.dev/m?n=180&t='+Date.now()+(TOK?'&k='+TOK:''))).json();
