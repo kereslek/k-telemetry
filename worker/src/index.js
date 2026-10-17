@@ -11,6 +11,7 @@
    never shows as a spike beside a hole. Gaps over 30 minutes are dropped, not smeared. */
 import {positionsFrom, readGrowth, earned, poolTraded, SOL_RPCS, EVM_RPCS, one} from './sampler.js';
 import {TOKENS, DEFAULT_CFG, readToken, opportunities, step} from './gaps.js';
+import {scanMine} from './mine.js';
 
 const KEEP=1440, MAX_SPAN=30, MIN=60000;
 const cors={'access-control-allow-origin':'*','x-robots-tag':'noindex'};
@@ -24,6 +25,17 @@ const cors={'access-control-allow-origin':'*','x-robots-tag':'noindex'};
    with the pools they came from. The gaps between minute runs are the quiet stretches the lull
    meter compares against, and `from` says how far back the record reaches. */
 const TRADE_MIN=0.005, EV_KEEP=3*60*MIN, EV_MAX=5000;
+/* Your own swaps as the dashboard shows them, newest first (mine.js): each through your own pool
+   also with that pool's price just before and just after it, from this recorder's readings, and
+   the part of its fee that came back to your positions (kept out of the record: never income). */
+function mineOut(m){
+  return (m.mine||[]).slice(-40).reverse().map(x=>{
+    const L=(x.pool&&m.pxLog&&m.pxLog[x.pool])||[]; let P0=null, P1=null;
+    for(const [t,P] of L){ if(t<x.t) P0=P; else { P1=P; break; } }
+    const back=x.pool?(m.own||[]).filter(r=>r[2]===x.pool&&r[1]-5000<=x.t&&r[0]+5000>=x.t).reduce((a,r)=>a+r[3],0):0;
+    return {t:x.t, chain:x.chain, tok:x.tok, side:x.side, other:x.other, usd:x.usd, venue:x.venue, own:x.own||null,
+            ...(P0&&P1?{px:[P0,P1]}:{}), ...(back>=0.0005?{back:Math.round(back*100)/100}:{})}; });
+}
 function tradesOf(all, ev, evStart){
   const r=x=>Math.round(x*1e4)/1e4, out=[];
   const runs=[]; let cur=null;
@@ -82,14 +94,16 @@ export class Pulse {
 
   async load(){
     if(this.mem) return this.mem;
-    const [prev,mins,cache,meta,ev,evStart,own,selfSeen,poolPrev]=await Promise.all(['prev','mins','cache','meta','ev','evStart','own','selfSeen','poolPrev'].map(k=>this.s.get(k)));
+    const [prev,mins,cache,meta,ev,evStart,own,selfSeen,poolPrev,mine,mineSt,pxLog]=await Promise.all(['prev','mins','cache','meta','ev','evStart','own','selfSeen','poolPrev','mine','mineSt','pxLog'].map(k=>this.s.get(k)));
     // another request may have loaded it while this one waited
-    if(!this.mem) this.mem={prev:prev||{}, mins:mins||{}, cache:cache||{}, meta:meta||{}, ev:ev||[], evStart:evStart??null, own:own||[], selfSeen:selfSeen||{}, poolPrev:poolPrev||{}};
+    if(!this.mem) this.mem={prev:prev||{}, mins:mins||{}, cache:cache||{}, meta:meta||{}, ev:ev||[], evStart:evStart??null, own:own||[], selfSeen:selfSeen||{}, poolPrev:poolPrev||{},
+                            mine:mine||[], mineSt:mineSt||{}, pxLog:pxLog||{}};
     return this.mem;
   }
   async save(){
     const m=this.mem; if(!m) return;
-    await this.s.put({prev:m.prev, mins:m.mins, cache:m.cache, meta:m.meta, ev:m.ev, evStart:m.evStart, own:m.own, selfSeen:m.selfSeen, poolPrev:m.poolPrev||{}});
+    await this.s.put({prev:m.prev, mins:m.mins, cache:m.cache, meta:m.meta, ev:m.ev, evStart:m.evStart, own:m.own, selfSeen:m.selfSeen, poolPrev:m.poolPrev||{},
+                      mine:m.mine||[], mineSt:m.mineSt||{}, pxLog:m.pxLog||{}});
     this.savedAt=Date.now();
   }
 
@@ -133,7 +147,7 @@ export class Pulse {
     const rows=all.filter(r=>r[0]>=since).map(r=>r[3]?r:r.slice(0,3));
     const fast=Date.now()-this.watchAt<10000;
     const pairs={}; for(const p of (this.src&&this.src.ps)||[]) if(p.lbl&&p.s0&&p.s1) pairs[p.lbl]=[p.s0,p.s1];
-    return Response.json({now:Date.now(), ...m.meta, fast, ...(fail?{fail}:{}), mins:rows, pairs, ...tradesOf(all, m.ev, m.evStart)});
+    return Response.json({now:Date.now(), ...m.meta, fast, ...(fail?{fail}:{}), mins:rows, pairs, ...tradesOf(all, m.ev, m.evStart), mine:mineOut(m)});
   }
 
   // the dashboard's own position list and prices, refreshed every ten minutes
@@ -307,7 +321,9 @@ export class Pulse {
          paid in; down, token0), and an unmoved price says nothing (null), not "both ways" */
       const dir=b.feeOn?(a&&a.P>0&&b.P>0&&b.P!==a.P?(b.P>a.P?1:0):null):undefined;
       traded[pl]={P:b.P, usd:T?T.in0*p.usd0+T.in1*p.usd1:null, dir};
-      m.poolPrev[pl]=b; }
+      m.poolPrev[pl]=b;
+      if(b.P>0){ const L=(m.pxLog=m.pxLog||{})[pl]||(m.pxLog[pl]=[]); if(!L.length||L[L.length-1][1]!==b.P) L.push([cur.t,b.P]);
+        while(L.length&&cur.t-L[0][0]>3*60*MIN) L.shift(); } }
     for(const p of ps){
       const b=cur.g[p.id]; if(!b) continue;
       const a=prev[p.id];
@@ -349,6 +365,11 @@ export class Pulse {
     if(m.ev.length && m.ev[0][0]<evCut){ m.ev=m.ev.filter(x=>x[0]>=evCut); if(m.evStart!=null) m.evStart=Math.max(m.evStart,evCut); }
     m.own=m.own.filter(r=>cur.t-r[0]<26*60*MIN);
     if(this.src) this.reconcile(m);
+    /* your own swaps, to be shown beside the trades and never counted: at most every 20 s a chain,
+       a failure kept where /m shows it and the fee record untouched by it */
+    try{ const got=await scanMine(m.mineSt||(m.mineSt={}), {ps:all, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs, chains});
+      m.mine=[...(m.mine||[]),...got].filter(x=>cur.t-x.t<24*60*MIN).sort((a,b)=>a.t-b.t).slice(-150); this.err.mine=null; }
+    catch(e){ this.err.mine='own-swap list: '+String(e.message||e).slice(0,120); }
     const fresh=Object.values(prev).filter(x=>cur.t-x.t<90000).length;
     // what has been kept out as the deck's own swaps: caught live, and settled against the relay's list
     const ownOut={live:m.own.length, liveUsd:Math.round(m.own.reduce((x,r)=>x+r[3],0)*100)/100, settled:Object.keys(m.selfSeen).length};

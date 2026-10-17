@@ -196,9 +196,11 @@ async function growthSol(ps, cache, rpcs){
 export function positionsFrom(data){
   const ps=[];
   for(const p of data.eth||[]) if(p.pool&&/^\d+$/.test(String(p.id))&&p.usd0!=null&&p.usd1!=null)
-    ps.push({id:String(p.id), chain:'eth', pool:p.pool.toLowerCase(), d0:p.d0, d1:p.d1, usd0:p.usd0, usd1:p.usd1, lbl:(p.pairLabel||'')+' '+(p.feeLabel||''), s0:p.m0&&p.m0.symbol, s1:p.m1&&p.m1.symbol, inr:p.inRange!==false});
+    ps.push({id:String(p.id), chain:'eth', pool:p.pool.toLowerCase(), d0:p.d0, d1:p.d1, usd0:p.usd0, usd1:p.usd1, lbl:(p.pairLabel||'')+' '+(p.feeLabel||''), s0:p.m0&&p.m0.symbol, s1:p.m1&&p.m1.symbol, inr:p.inRange!==false,
+             t0:p.token0?String(p.token0).toLowerCase():null, t1:p.token1?String(p.token1).toLowerCase():null});
   for(const p of data.sol||[]) if(p.pda&&p.poolId&&p.venue!=='orca'&&p.usd0!=null&&p.usd1!=null)
-    ps.push({id:p.id, chain:'sol', pool:p.poolId, pda:p.pda, d0:p.d0, d1:p.d1, usd0:p.usd0, usd1:p.usd1, lbl:(p.pairLabel||'')+' '+(p.feeLabel||''), s0:p.m0&&p.m0.symbol, s1:p.m1&&p.m1.symbol, inr:p.inRange!==false});
+    ps.push({id:p.id, chain:'sol', pool:p.poolId, pda:p.pda, d0:p.d0, d1:p.d1, usd0:p.usd0, usd1:p.usd1, lbl:(p.pairLabel||'')+' '+(p.feeLabel||''), s0:p.m0&&p.m0.symbol, s1:p.m1&&p.m1.symbol, inr:p.inRange!==false,
+             m0:p.mint0||null, m1:p.mint1||null});
   return ps;
 }
 

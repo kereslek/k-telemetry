@@ -25,6 +25,8 @@ jobs:
           tail -5 /tmp/probe.log
       - name: Gap engine unit tests
         run: node worker/test/gaps.test.mjs
+      - name: Own-swap detection unit tests
+        run: node worker/test/mine.test.mjs
       - name: Gap engine, live venues, in the Workers runtime
         working-directory: worker
         run: |
