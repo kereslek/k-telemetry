@@ -21,7 +21,7 @@ const BASE_SOL={[WSOL]:'SOL','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v':'USD
 const SOL_VENUES={'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4':'Jupiter','CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK':'Raydium CLMM',
   '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8':'Raydium AMM','CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C':'Raydium CPMM',
   'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc':'Orca','LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo':'Meteora DLMM','Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB':'Meteora'};
-const DAY=86400000, EVERY=20000;
+const DAY=86400000;
 const SWAP_LOG=/Instruction: (Swap|SwapV2|SwapBaseIn|SwapBaseOut|SwapBaseInput|SwapBaseOutput|Route|RouteV2|SharedAccountsRoute|ExactOutRoute|SharedAccountsExactOutRoute)\b/i;
 
 /* The tokens of your pools worth watching (each side that is not ETH, SOL or a dollar), with what
@@ -82,35 +82,74 @@ export function solSwapOf(tx, w, T, ownPools){
           usd:Math.round(Math.abs(d[k])*tk.usd*100)/100, venue, own:ownId?ownPools.get(ownId):null, pool:ownId};
 }
 
-/* Look for new swaps of yours on the chains being read, at most every 20 seconds a chain. `st` is
-   kept between readings: the last Ethereum block looked at and the transactions already looked at
-   (a day). Returns the new swaps, each with its block's time. */
-export async function scanMine(st, {ps, wallets, solRpcs, chains, now=Date.now()}){
-  const T=tracked(ps), out=[]; st.seen=st.seen||{}; st.at=st.at||{};
+/* Look for new swaps of yours, a little at a time. Each look asks the chains at most `budget`
+   times a chain (a request to this recorder may only make so many), carries on where the last look
+   stopped, and keeps every swap it found even when a later ask fails: a transaction is marked as
+   looked at only once it has been read in full. `st` is kept between looks: the last Ethereum
+   block looked through, the transactions still to open, those already opened (a day), and what
+   each chain's last look did, in counts only (`st.diag`, which /m and the daily audit show).
+   Returns the new swaps, each with its block's time and its transaction (`id`, never shown), so
+   the day's list holds each swap once. `call` is the chain ask (one, from sampler.js), handed one
+   endpoint at a time so that every endpoint tried counts against the budget; the endpoint that
+   last answered a method is tried first. */
+const BUDGET=18, MARGIN=3, CHUNK=1000, OUT=new Error('budget'), good=new Map();
+const kind=e=>{ const s=String(e&&e.message||e); return /too many subrequests/i.test(s)?'request limit':/429|rate.?limit|too many requests/i.test(s)?'rate limit'
+  :/timed? ?out|timeout|abort/i.test(s)?'timeout':'rpc error'; };
+export async function scanMine(st, {ps, wallets, solRpcs, chains=['eth','sol'], now=Date.now(), budget=BUDGET, call=one}){
+  const T=tracked(ps), out=[]; st.seen=st.seen||{}; st.diag=st.diag||{};
   const W={eth:((wallets&&wallets.eth)||[]).map(x=>String(x).toLowerCase()), sol:(wallets&&wallets.sol)||[]};
-  if(chains.includes('eth') && T.eth.size && W.eth.length && now-(st.at.eth||0)>=EVERY){ st.at.eth=now;
-    const latest=parseInt(await one(EVM_RPCS,'eth_blockNumber',[]),16);
-    let from=st.ethBlock!=null?st.ethBlock+1:latest-7200;                 // the first look reaches back a day
-    if(st.ethBlock!=null&&latest-from>2000) from=latest-2000;              // after a long sleep, the last few hours
-    const pad=a=>'0x'+a.slice(2).padStart(64,'0'), tw=W.eth.map(pad), toks=[...T.eth.keys()], hashes=new Set();
-    for(let a=from;a<=latest;a+=1000){ const q={address:toks, fromBlock:'0x'+a.toString(16), toBlock:'0x'+Math.min(latest,a+999).toString(16)};
-      for(const topics of [[TRANSFER,tw],[TRANSFER,null,tw]]) for(const l of (await one(EVM_RPCS,'eth_getLogs',[{...q,topics}]))||[]) hashes.add(l.transactionHash); }
-    st.ethBlock=latest;
-    for(const h of hashes){ if(st.seen[h]) continue;
-      const rc=await one(EVM_RPCS,'eth_getTransactionReceipt',[h]);
-      if(!rc) continue; st.seen[h]=now; if(rc.status!=='0x1') continue;
-      const r=evmSwapOf(rc,null,W.eth,T.eth,T.pools.eth); if(!r) continue;
-      const b=await one(EVM_RPCS,'eth_getBlockByNumber',[rc.blockNumber,false]); r.t=b&&b.timestamp?parseInt(b.timestamp,16)*1000:now;
-      out.push(r); } }
-  if(chains.includes('sol') && T.sol.size && W.sol.length && now-(st.at.sol||0)>=EVERY){ st.at.sol=now;
-    for(const w of W.sol){
-      const sigs=await one(solRpcs,'getSignaturesForAddress',[w,{limit:st.solOnce?15:40, commitment:'confirmed'}]);
-      for(const g of sigs||[]){ if(st.seen[g.signature]) continue; const ts=(g.blockTime||0)*1000;
-        if(g.err||!ts||now-ts>DAY){ st.seen[g.signature]=now; continue; }
-        const tx=await one(solRpcs,'getTransaction',[g.signature,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
-        if(!tx) continue; st.seen[g.signature]=now;
-        const r=solSwapOf(tx,w,T.sol,T.pools.sol); if(r){ r.t=ts; out.push(r); } } }
-    st.solOnce=true; }
+  for(const c of ['eth','sol']){ if(!chains.includes(c)) continue;
+    const D=st.diag[c]={at:now, tok:T[c].size, w:W[c].length, asks:0, found:0, q:0, err:null};
+    if(!T[c].size||!W[c].length) continue;
+    let n=0; const ask=async(rpcs,method,params)=>{ const errs=[], g=good.get(c+method), order=g&&rpcs.includes(g)?[g,...rpcs.filter(u=>u!==g)]:rpcs;
+      for(const u of order){ if(n>=budget) throw OUT; n++;
+        try{ const r=await call([u],method,params); good.set(c+method,u); return r; }catch(e){ errs.push(String(e&&e.message||e)); } }
+      throw new Error(errs.join(' | ')||'no rpc'); };
+    try{ await (c==='eth'?ethLook(st,T,W.eth,ask,out,now):solLook(st,T,W.sol,solRpcs,ask,out,now,budget)); }
+    catch(e){ if(e!==OUT) D.err=kind(e); }
+    D.asks=n; D.found=out.filter(x=>x.chain===c).length; D.q=((c==='eth'?st.qe:st.qs)||[]).length;
+    if(c==='eth') D.behind=st.top!=null&&st.ethBlock!=null?Math.max(0,st.top-st.ethBlock):null; }
   for(const k of Object.keys(st.seen)) if(now-st.seen[k]>DAY+3600e3) delete st.seen[k];
   return out;
+}
+/* Ethereum: the transactions found earlier are opened first, then the blocks since the last look,
+   a thousand at a time, for transfers of your pools' tokens to or from your wallets. Blocks are
+   looked through up to three short of the newest, so a node a block or two behind still has them. */
+async function ethLook(st,T,W,ask,out,now){
+  const q=st.qe=st.qe||[], pad=a=>'0x'+a.slice(2).padStart(64,'0'), tw=W.map(pad), toks=[...T.eth.keys()], hex=v=>'0x'+v.toString(16);
+  const open=async()=>{ while(q.length){ const x=q[0];
+    if(st.seen[x.h]){ q.shift(); continue; }
+    const rc=await ask(EVM_RPCS,'eth_getTransactionReceipt',[x.h]);
+    // not there yet (the node answering is behind): tried again on a later look, given up after five
+    if(!rc){ q.shift(); if(++x.n<5) q.push(x); else st.seen[x.h]=now; return; }
+    const r=rc.status==='0x1'?evmSwapOf(rc,null,W,T.eth,T.pools.eth):null;
+    if(r){ const b=await ask(EVM_RPCS,'eth_getBlockByNumber',[rc.blockNumber,false]); r.t=b&&b.timestamp?parseInt(b.timestamp,16)*1000:now; r.id=x.h; out.push(r); }
+    st.seen[x.h]=now; q.shift(); } };
+  await open();
+  const top=parseInt(await ask(EVM_RPCS,'eth_blockNumber',[]),16)-MARGIN; if(!(top>0)) throw new Error('no block number');
+  st.top=top;
+  if(st.ethBlock==null||top-st.ethBlock>7200) st.ethBlock=top-7200;          // the first look, or one after a day asleep, reaches back a day
+  while(st.ethBlock<top){ const a=st.ethBlock+1, z=Math.min(top,a+CHUNK-1), f={address:toks, fromBlock:hex(a), toBlock:hex(z)}, hs=new Set();
+    for(const topics of [[TRANSFER,tw],[TRANSFER,null,tw]]) for(const l of (await ask(EVM_RPCS,'eth_getLogs',[{...f,topics}]))||[]) hs.add(l.transactionHash);
+    st.ethBlock=z;
+    for(const h of hs) if(!st.seen[h]&&!q.some(x=>x.h===h)) q.push({h, n:0});
+    await open(); }
+}
+/* Solana: each wallet's latest signatures (a day's worth, up to a hundred, its first time; then
+   the last 25), a few wallets a look when there are many, then their transactions. */
+async function solLook(st,T,W,rpcs,ask,out,now,budget){
+  const q=st.qs=st.qs||[], first=st.first=st.first||{};
+  for(let i=0, k=Math.min(W.length,Math.ceil(budget/2)); i<k; i++){ const w=W[(st.wi||0)%W.length];
+    const sigs=await ask(rpcs,'getSignaturesForAddress',[w,{limit:first[w]?25:100, commitment:'confirmed'}]);
+    first[w]=1; st.wi=((st.wi||0)+1)%W.length;
+    for(const g of sigs||[]){ const ts=(g.blockTime||0)*1000;
+      if(st.seen[g.signature]||q.some(x=>x.s===g.signature)) continue;
+      if(g.err||!ts||now-ts>DAY){ st.seen[g.signature]=now; continue; }
+      q.push({s:g.signature, w, ts, n:0}); } }
+  while(q.length){ const x=q[0];
+    if(st.seen[x.s]){ q.shift(); continue; }
+    const tx=await ask(rpcs,'getTransaction',[x.s,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
+    if(!tx){ q.shift(); if(++x.n<5) q.push(x); else st.seen[x.s]=now; break; }
+    const r=solSwapOf(tx,x.w,T.sol,T.pools.sol); if(r){ r.t=x.ts; r.id=x.s; out.push(r); }
+    st.seen[x.s]=now; q.shift(); }
 }

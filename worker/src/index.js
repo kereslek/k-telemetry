@@ -124,6 +124,10 @@ export class Pulse {
       G.cfg=gapCfg({...(G.cfg||{}), ...b, venues:{...((G.cfg||{}).venues||{}), ...(b.venues||{})}, fees:{...((G.cfg||{}).fees||{}), ...(b.fees||{})}});
       await this.s.put('gaps',G); return Response.json({cfg:G.cfg});
     }
+    if(u.pathname==='/mine'){
+      try{ return Response.json(await this.mineRun()); }
+      catch(e){ return Response.json({err:String(e&&e.message||e).slice(0,200)},{status:500}); }
+    }
     if(u.pathname==='/tick'){
       // a failed minute is kept where /m can show it, instead of vanishing into the logs
       try{ const r=await this.tick(); await this.s.put('fail',null);
@@ -147,7 +151,7 @@ export class Pulse {
     const rows=all.filter(r=>r[0]>=since).map(r=>r[3]?r:r.slice(0,3));
     const fast=Date.now()-this.watchAt<10000;
     const pairs={}; for(const p of (this.src&&this.src.ps)||[]) if(p.lbl&&p.s0&&p.s1) pairs[p.lbl]=[p.s0,p.s1];
-    return Response.json({now:Date.now(), ...m.meta, fast, ...(fail?{fail}:{}), mins:rows, pairs, ...tradesOf(all, m.ev, m.evStart), mine:mineOut(m)});
+    return Response.json({now:Date.now(), ...m.meta, fast, ...(fail?{fail}:{}), mins:rows, pairs, ...tradesOf(all, m.ev, m.evStart), mine:mineOut(m), mineScan:(m.mineSt&&m.mineSt.diag)||null});
   }
 
   // the dashboard's own position list and prices, refreshed every ten minutes
@@ -286,6 +290,23 @@ export class Pulse {
     m.ev=m.ev.filter(ev=>ev[2]>=TRADE_MIN);
   }
 
+  /* Your own swaps, to be shown beside the trades and never counted (mine.js). Looked for once a
+     minute in a request of its own (the cron's), so its asks never share the minute's readings'
+     budget; what it finds joins the day's list, each swap once. The fee record is untouched. */
+  async mineRun(){
+    if(this.mining) return this.mining;
+    return this.mining=(async()=>{
+      const m=await this.load(), ps=await this.positions(), now=Date.now();
+      // the first scan (17 Oct, one big look inside each reading) is started afresh: it looks back a day again
+      if(!m.mineSt||m.mineSt.v!==2){ m.mineSt={v:2}; m.mine=[]; }
+      const got=await scanMine(m.mineSt, {ps, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs:this.solRpcs(), now});
+      const ids=new Set((m.mine||[]).map(x=>x.id));
+      m.mine=[...(m.mine||[]),...got.filter(x=>!ids.has(x.id))].filter(x=>now-x.t<24*60*MIN).sort((a,b)=>a.t-b.t).slice(-150);
+      await this.s.put({mine:m.mine, mineSt:m.mineSt});
+      return {found:got.length, scan:m.mineSt.diag};
+    })().finally(()=>{ this.mining=null; });
+  }
+
   // one chain at a time; asks that arrive while a read is under way share it
   readChain(c){
     if(!this.busy[c]) this.busy[c]=this.read([c]).finally(()=>{ this.busy[c]=null; });
@@ -365,11 +386,6 @@ export class Pulse {
     if(m.ev.length && m.ev[0][0]<evCut){ m.ev=m.ev.filter(x=>x[0]>=evCut); if(m.evStart!=null) m.evStart=Math.max(m.evStart,evCut); }
     m.own=m.own.filter(r=>cur.t-r[0]<26*60*MIN);
     if(this.src) this.reconcile(m);
-    /* your own swaps, to be shown beside the trades and never counted: at most every 20 s a chain,
-       a failure kept where /m shows it and the fee record untouched by it */
-    try{ const got=await scanMine(m.mineSt||(m.mineSt={}), {ps:all, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs, chains});
-      m.mine=[...(m.mine||[]),...got].filter(x=>cur.t-x.t<24*60*MIN).sort((a,b)=>a.t-b.t).slice(-150); this.err.mine=null; }
-    catch(e){ this.err.mine='own-swap list: '+String(e.message||e).slice(0,120); }
     const fresh=Object.values(prev).filter(x=>cur.t-x.t<90000).length;
     // what has been kept out as the deck's own swaps: caught live, and settled against the relay's list
     const ownOut={live:m.own.length, liveUsd:Math.round(m.own.reduce((x,r)=>x+r[3],0)*100)/100, settled:Object.keys(m.selfSeen).length};
@@ -447,6 +463,8 @@ export default {
   async scheduled(ev, env, ctx){
     const stub=env.PULSE.get(env.PULSE.idFromName('main'));
     ctx.waitUntil(stub.fetch('https://pulse/tick'));
+    // your own swaps: a request of its own too, so its asks never eat into the minute's reading
+    ctx.waitUntil(stub.fetch('https://pulse/mine'));
     /* the price-gap reading, every even minute, as a request of its own so it never shares the
        minute's budget (a separate two-minute schedule never reached it in production) */
     if(Math.floor((ev.scheduledTime||Date.now())/60000)%2===0) ctx.waitUntil(stub.fetch('https://pulse/gapstick?via=cron'));
