@@ -48,11 +48,13 @@ for(const w of WE){
       if(Date.parse(tx.timestamp)<START){ older=true; continue; }
       const from=String(tx.from&&tx.from.hash).toLowerCase(), to=String(tx.to&&tx.to.hash).toLowerCase(), val=tx.value&&BigInt(tx.value)>0n;
       // ETH itself, as opposed to tokens: leaving for an outside address, moving between the deck's wallets, or arriving from outside
-      if(val&&tx.status==='ok'){ if(from===w) (WE.includes(to)?coin.own++:coin.out++); else if(to===w&&!WE.includes(from)) coin.in++; }
+      if(val&&tx.status==='ok'&&from!==w&&to===w&&!WE.includes(from)) coin.in++;
       if(from!==w || tx.status!=='ok') continue;
       const lg=await j(BS+'/transactions/'+tx.hash+'/logs'); await sleep(150);
       ethSent++; const tops=new Set(((lg&&lg.items)||[]).map(x=>x.topics&&x.topics[0]));
       if(tops.has(SWAP_V3)) kinds.v3++; else if(tops.has(SWAP_V4)) kinds.v4++; else if(tops.has(SWAP_V2)) kinds.v2++; else if(tops.has(XFER)) kinds.transfer++; else kinds.other++;
+      // ETH itself sent, not paid into a swap: a card top-up, an exchange deposit, a move between the deck's wallets
+      if(val&&!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2)) (WE.includes(to)?coin.own++:coin.out++);
       lastTx=Math.max(lastTx, Date.parse(tx.timestamp)||0);
       // tokens sent to an address that is not one of the deck's: leaving the tracked wallets
       if(!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2))
@@ -62,7 +64,7 @@ for(const w of WE){
       const sw=((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===SWAP_V3);
       for(const s of sw){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) { other.eth++; continue; }
-        const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id)});
+        const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),data:s.data,tx:tx.hash});
       } }
     url=(!older&&r.next_page_params)?BS+'/addresses/'+w+'/transactions?'+new URLSearchParams(r.next_page_params):null;
   }
@@ -80,7 +82,7 @@ for(const w of WE){
       for(const s of ((lg&&lg.items)||[]).filter(y=>y.topics&&y.topics[0]===SWAP_V3)){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) continue;
         const id='eth:'+h+':'+s.index;
-        found.push({chain:'eth',t:x.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),filled:1}); }
+        found.push({chain:'eth',t:x.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),filled:1,data:s.data,tx:h}); }
     }
     tu=(!older&&r.next_page_params)?BS+'/addresses/'+w+'/token-transfers?'+new URLSearchParams(r.next_page_params):null;
   }
@@ -135,6 +137,17 @@ for(const c of ['eth','sol']){ const f=found.filter(x=>x.chain===c);
   console.log((f.every(x=>x.booked)?'ok   ':'MISS ')+c+' swaps through an own pool today: '+f.length+' · booked as own-swap fees: '+f.filter(x=>x.booked).length+(f.some(x=>x.filled)?' · filled by a third party: '+f.filter(x=>x.filled).length:''));
   /* why one is not booked (yes/no and minutes only): too recent for the relay, not yet seen by it,
      or seen with nothing coming back because none of the deck's liquidity in that pool was in range */
+  /* An Ethereum one: the relay books what came back to the deck, which is nothing when none of its
+     liquidity in that pool was in range at the tick the swap left behind (read from the swap's own
+     event, as the relay reads it). Yes/no and minutes only: never the share. */
+  if(c==='eth') for(const x of f.filter(x=>!x.booked)){
+    const age=(Date.now()-Date.parse(x.t))/60000, seen=(costs.txs||{})[x.tx]||(costs.txs||{})[String(x.tx).toLowerCase()];
+    let inR=null; try{ const d=String(x.data||'').replace(/^0x/,''), wd=i=>BigInt('0x'+d.slice(64*i,64*(i+1)));
+      let tk=wd(4); if(tk>=(1n<<255n)) tk-=(1n<<256n); const tick=Number(tk);
+      const mine=(data.eth||[]).filter(q=>String(q.pool).toLowerCase()===String(x.addr).toLowerCase());
+      inR=mine.some(q=>{ const sc=10**((q.d0||18)-(q.d1||18)), lo=Math.round(Math.log(q.priceLower/sc)/Math.log(1.0001)), hi=Math.round(Math.log(q.priceUpper/sc)/Math.log(1.0001)); return lo<=tick&&tick<hi&&BigInt(q.liq||0)>0n; }); }catch(e){}
+    console.log('     not booked: made '+age.toFixed(0)+' min ago · relay data '+((Date.now()-(data.t||0))/60000).toFixed(0)+' min old, '+((data.t||0)>Date.parse(x.t)?'newer':'older')+' than the swap'
+      +' · the relay has '+(seen===1?'counted this transaction':seen===2?'filed it as a plain transfer':'not seen it')+' · deck liquidity in range at the price the swap left: '+(inR==null?'not readable':inR?'yes':'NO, so nothing came back to book')); }
   if(c==='sol') for(const x of f.filter(x=>!x.booked)){
     const sig=x.id.split(':')[1], pool=x.id.split(':')[2], age=(Date.now()-Date.parse(x.t))/60000;
     const seen=!!((costs.solTxs||{})[sig]||(costs.prevSolTxs||{})[sig]), pend=!!((costs.solWalletTx||{})[sig]);
@@ -154,10 +167,18 @@ for(const c of ['eth','sol']){ const f=found.filter(x=>x.chain===c);
     if(dd&&((dd.ownW||0)>0||(dd.own||0)>0)) c.own++; }
   console.log((c.read===c.own?'ok   ':'MISS ')+'own-pool swaps in the swap replay (your share leaves them out): read past '+c.read+', set aside as your own '+c.own
     +' · not read yet '+c.waiting+' · in pools it does not rebuild '+c.notIn+' · replay '+(replay&&replay.t?((Date.now()-replay.t)/3600e3).toFixed(1)+' h old':'not readable')); }
+/* A total that fell: back to where it stood before the fall, and how many readings that took (a
+   harvest read on the chain one pass before the relay's scan books what it collected dips for a
+   pass and comes back; one that never comes back lost fees) */
+function recovery(series){
+  let worst=null; for(let i=1;i<series.length;i++){ if(!(series[i]<series[i-1]-0.01)) continue; const was=series[i-1];
+    let k=i; while(k<series.length&&series[k]<was-0.01) k++;
+    const r={n:k-i, back:k<series.length, now:series[series.length-1]/Math.max(1e-9,was)}; if(!worst||!r.back||r.n>worst.n) worst=r; if(!r.back) break; }
+  return !worst?'':worst.back?' and came back after '+worst.n+' reading(s)':' and has NOT come back (now '+(worst.now*100).toFixed(1)+'% of where it stood)'; }
 // the month's fees only ever rise: a harvest moves them from unclaimed to collected
 const ticks=(fees.ticks||[]).filter(x=>x[0]>=START);
 let drops=0, worst=0; for(let i=1;i<ticks.length;i++){ const d=ticks[i][1]-ticks[i-1][1]; if(d< -0.01){ drops++; worst=Math.min(worst,d/Math.max(1,ticks[i-1][1])); } }
-console.log((drops?'WARN ':'ok   ')+'month-to-date fee readings today: '+ticks.length+' · steps down: '+drops+(drops?' (largest '+(worst*100).toFixed(2)+'% of the total)':''));
+console.log((drops?'WARN ':'ok   ')+'month-to-date fee readings today: '+ticks.length+' · steps down: '+drops+(drops?' (largest '+(worst*100).toFixed(2)+'% of the total'+recovery(ticks.map(x=>x[1]))+')':''));
 console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets');
 console.log('ETH itself sent from the deck\u2019s wallets: '+coin.out+' to outside addresses, '+coin.own+' between its own wallets · arrived from outside: '+coin.in);
 console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' to its own wallets, '+solMove.out+' to outside addresses'+(solMove.other?', '+solMove.other+' unclear':''));
@@ -167,9 +188,10 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
 { const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
   for(const [id,e] of solPos){ const L=(ledger||{})[id]||{}, p=(data.sol||[]).find(q=>q.id===id)||{};
     const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
+    const back=fell?recovery(series):'';
     const after=series.length>1&&hist.length&&hist[hist.length-1][0]>lastTx;
     console.log((fell||L.txErr?'WARN ':'ok   ')+'a Solana position: harvests '+e.harvest+', collected through DecreaseLiquidity (Raydium\u2019s harvest, or a withdrawal) '+e.decrease+', added '+e.increase+(e.other?', other '+e.other:'')
-      +' · booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings) · harvest scan '+(L.txErr?'reported an error':'clean')+(L.harvestGap?' · a harvest only partly read, filled from the owed balance':'')
+      +' · booked fee total fell: '+(fell?fell+' time(s)'+back:'never')+' ('+series.length+' readings) · harvest scan '+(L.txErr?'reported an error':'clean')+(L.harvestGap?' · a harvest only partly read, filled from the owed balance':'')
       +' · fees owed now '+((p.feesUsd||0)>0?'above zero':'zero')+' · read after today\u2019s last transaction: '+(after?'yes':'not yet')); }
   if(!solPos.size) console.log('Solana positions touched today: 0'); }
 { const it=data.idle&&data.idle.t; console.log((lastTx&&it&&it<lastTx?'WARN ':'ok   ')+'wallet balances read after the latest of these transactions: '+(lastTx?(it&&it>=lastTx?'yes':'no'):'n/a')); }
@@ -186,6 +208,6 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
     for(const [name,t0] of Object.entries(EV)){ let c=0; for(let a=from;a<=tip;a+=9000){ const r=await erpc('eth_getLogs',[{address:NPM,fromBlock:'0x'+a.toString(16),toBlock:'0x'+Math.min(tip,a+8999).toString(16),topics:[t0,topic]}]); if(Array.isArray(r)) c+=r.length; } n[name]=c; }
     const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
     if(!(n.collect||n.increase||n.decrease)){ quiet++; continue; }
-    console.log((fell?'WARN ':'ok   ')+'an Ethereum position: harvests '+n.collect+', tokens added '+n.increase+', tokens withdrawn '+n.decrease+' · its booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings)'); }
+    console.log((fell?'WARN ':'ok   ')+'an Ethereum position: harvests '+n.collect+', tokens added '+n.increase+', tokens withdrawn '+n.decrease+' · its booked fee total fell: '+(fell?fell+' time(s)'+recovery(series):'never')+' ('+series.length+' readings)'); }
   console.log('Ethereum positions with no harvest, top-up or withdrawal: '+quiet); }
 console.log('positions now: '+(data.eth||[]).length+' Ethereum, '+(data.sol||[]).length+' Solana · relay errors: '+((data.errors||[]).length));
