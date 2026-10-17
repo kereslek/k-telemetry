@@ -1132,6 +1132,15 @@
   .fpd-lh .lg{float:right;font-weight:400;letter-spacing:0;text-transform:none;color:var(--text-muted)}
   .fpd-lh .lg b{font-weight:600}.fpd-lh .lg .sd{color:var(--status-critical)}.fpd-lh .lg .bt{color:var(--status-good)}
   .fpd-feed .empty{display:block;color:var(--text-muted)}
+  /* your own swaps among the trades: violet, marked YOU, never an amount earned */
+  .fpd-feed li.mine{background:rgba(180,140,255,.07);box-shadow:inset 2px 0 0 #b48cff}
+  .fpd-feed li.mine .tm{padding-left:5px}
+  .fpd-feed li.mine .leg,.fpd-feed li.mine .pxl{white-space:normal;flex-wrap:wrap}
+  .fpd-feed li.mine .amt{color:#cdb6ff;text-align:right}
+  .fpd-feed li.mine .amt small{display:block;font-size:10px;font-weight:400;color:#b48cff}
+  .you{display:inline-block;font:700 8.5px/1.4 var(--mono);letter-spacing:.08em;color:#140b24;background:#b48cff;border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:1px}
+  .fpd-feed .mnote{font-size:10.5px;color:#a995d8}
+  .fpd-feed .aft{grid-column:2 / -1;font-size:10.5px;color:#b48cff;margin-top:-2px}
 
   /* ---- touch and legibility (UX audit) ---- */
   @media (max-width:760px){
@@ -2379,7 +2388,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.12';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.13';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -10424,6 +10433,39 @@ function legHtml(g){
   const sy=g.syms.slice().sort((x,y)=>legRank(x)-legRank(y)).map(legSym);
   return w('<span class="leg">'+dot+'<b>'+esc(sy.join(' / '))+'</b><small>'+esc(g.fee)+'</small></span>');
 }
+/* A token's price as a reader sees it: plain dollars, never cents ($0.0668 reads as a price, 6.68¢
+   reads as six dollars) */
+const pxFmt=usd=>usd>=1?fmtUsd(usd, usd<10?3:2):usd>=0.01?'$'+usd.toFixed(4):'$'+usd.toPrecision(3);
+/* Your own swaps, from the minute recorder (newest first): never income, so never a fee row. */
+function pulseMine(){ const P=state.pulse; return P&&Array.isArray(P.mine)?P.mine.filter(x=>x&&x.t>0&&x.tok):[]; }
+/* One of your swaps in LATEST FEES, beside the trades: violet and marked YOU, with what you sold and
+   what you got, where it went through and its size; through your own pool also the price it left
+   there against the price just before (the recorder's readings either side of it) and the part of
+   its fee that came back to you, which is not income. */
+function mineHtml(x){
+  const sold=x.side==='sold'?x.tok:x.other, bought=x.side==='sold'?x.other:x.tok;
+  const via=x.own?'via your pool '+x.own:'via '+(x.venue||'another pool');
+  const leg=legSpan('<span class="you">YOU</span>', sold, bought, esc(via), null);
+  let mv='';
+  if(x.own && Array.isArray(x.px) && x.px[0]>0 && x.px[1]>0){
+    const pos=[...state.positions.values()].find(p=>(p.pairLabel+' '+p.feeLabel)===x.own && p.usd0!=null && p.usd1!=null);
+    if(pos){ const s0=(pos.m0&&pos.m0.symbol)||String(pos.pairLabel).split(' / ')[0], first=legSym(s0)===legSym(x.tok);
+      const u=P=>first?P*pos.usd1:pos.usd0/P, a=u(x.px[0]), b=u(x.px[1]);
+      if(a>0&&b>0){ const ch=(b/a-1)*100, up=ch>=0;
+        mv='<span class="pxl">'+esc(legSym(x.tok))+' price '+pxFmt(a)+' → <b class="'+(up?'up':'dn')+'">'+pxFmt(b)+' '+(up?'▲':'▼')+Math.abs(ch).toFixed(Math.abs(ch)<1?2:1)+'%</b></span>'; } } }
+  const back=x.back>0?'<span class="mnote">'+fmtUsd(x.back,2)+' of its fee came back to you · not income</span>':'';
+  return '<span class="legw">'+leg+mv+back+'</span>';
+}
+/* A trade that came within five minutes after a swap of yours in the same token: how soon. An
+   arbitrage bot answering your swap shows here, typically within seconds; past five minutes a trade
+   is no longer told apart from the market's own. */
+function afterMine(t, mine){
+  const syms=new Set((t.legs||[]).flatMap(g=>(g.syms||[]).map(legSym)));
+  const x=mine.find(m=>m.t<=t.at && t.at-m.t<=5*60000 && syms.has(legSym(m.tok)));
+  if(!x) return '';
+  const d=Math.max(0,Math.round((t.at-x.t)/1000));
+  return '<span class="aft">⟲ '+(d<90?d+' s':Math.round(d/60)+' min')+' after your swap ('+esc(x.side)+' '+esc(legSym(x.tok))+')</span>';
+}
 function pulseTrades(){
   const P=state.pulse; if(!P||!Array.isArray(P.trades)) return [];
   const now=Date.now();
@@ -10731,10 +10773,10 @@ function renderFeePulse60m(host){
   // ---- beside the dial: the reading, the quiet, the latest fees
   const side=el('div','fpd-side'); grid.append(side);
   const read=el('div','fp-read fpd-read'), stats=el('div','fpd-stats'), qm=el('div','fpd-quiet'), lh=el('div','fpd-lh'), list=el('ul','fpd-feed');
-  lh.innerHTML='LATEST FEES<span class="lg">trader <b class="sd">sold</b> · <b class="bt">bought</b></span>';
+  lh.innerHTML='LATEST FEES<span class="lg">trader <b class="sd">sold</b> · <b class="bt">bought</b> · <span class="you">YOU</span> your swap</span>';
   side.append(read,stats,qm,lh,list);
   wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
-    +'A trade here is a run of back-to-back readings that found fees (every few seconds while this page is open, every minute otherwise); a new one arrives bright and dims as it goes round, fading out over its last quarter-hour. Typical hour is the last 24 hours\' average. Fees your own swaps pay into your own pools are left out, here as everywhere: they are your money going round, not income.'));
+    +'A trade here is a run of back-to-back readings that found fees (every few seconds while this page is open, every minute otherwise); a new one arrives bright and dims as it goes round, fading out over its last quarter-hour. Typical hour is the last 24 hours\' average. Fees your own swaps pay into your own pools are left out, here as everywhere: they are your money going round, not income. Your swaps themselves are listed apart, in violet and marked YOU (any venue, in a token of your pools), with the price they left in your pool and how soon the next trades came: never counted as a fee.'));
 
   /* ---- the marks ----
      Each trade keeps one mark for as long as it is on the face. The mark is placed from the
@@ -10976,10 +11018,16 @@ function renderFeePulse60m(host){
       qm.innerHTML='<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
         +' <span class="unit">(typical lull '+med+' min)</span></div>'
         +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'; }
-    list.innerHTML=TR.length?'':'<li class="empty">No trades recorded yet.</li>';
-    for(const t of TR.slice(0,8)){ const li=document.createElement('li');
+    const rows=TR.slice(0,12), MINE=pulseMine(), from=rows.length?rows[rows.length-1].at-60000:Date.now()-60*60000;
+    const items=[...rows.map(t=>({at:t.at, t})), ...MINE.filter(x=>x.t>=from).map(x=>({at:x.t, x}))].sort((a,b)=>b.at-a.at);
+    list.innerHTML=items.length?'':'<li class="empty">No trades recorded yet.</li>';
+    for(const it of items){ const li=document.createElement('li');
+      if(it.x){ const x=it.x; li.className='mine';
+        li.innerHTML='<span class="tm">'+hl(x.t)+'</span><span class="legs">'+mineHtml(x)+'</span><span class="amt">'+(x.usd>0?'≈'+fmtUsd(x.usd,x.usd<10?2:0):'—')+'<small>your swap</small></span>';
+        list.append(li); continue; }
+      const t=it.t, aft=afterMine(t,MINE);
       li.innerHTML='<span class="tm">'+hl(t.t)+'</span><span class="legs">'+(t.legs&&t.legs.length?t.legs.map(legHtml).join(''):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
-        +(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
+        +aft+(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
       list.append(li); }
   };
   /* ---- catch-up: the first sweep ----
