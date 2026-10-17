@@ -375,6 +375,13 @@ if(relayIdle>100 && /\$0 idle/.test(sums.tok)) FAIL('TOKEN EXPOSURE reads "$0 id
 (errs.length?FAIL:OK)('page errors: '+(errs.join(' | ')||'none'));
 const pxShown=await pg.evaluate(()=>document.querySelectorAll('.fpd-feed .pxl').length);
 OK('price lines in LATEST FEES: '+pxShown);
+/* LATEST FEES lists up to twelve trades, and your own swaps among them apart: each marked YOU and
+   "your swap", never a fee. Counts only. */
+const feed=await pg.evaluate(()=>{ const L=[...document.querySelectorAll('.fpd-feed li:not(.empty)')], mine=L.filter(li=>li.classList.contains('mine'));
+  return {trades:L.length-mine.length, mine:mine.length, marked:mine.filter(li=>li.querySelector('.you')&&/your swap/.test(li.textContent)).length,
+          after:document.querySelectorAll('.fpd-feed .aft').length}; });
+(feed.trades<=12&&feed.marked===feed.mine?OK:FAIL)('LATEST FEES: '+feed.trades+' trade(s) (at most 12) · your own swaps shown among them '+feed.mine
+  +(feed.mine?', each marked YOU and "your swap": '+(feed.marked===feed.mine?'yes':'NO ('+feed.marked+')'):'')+' · trades noted as coming after a swap of yours: '+feed.after);
 const logLines=await pg.evaluate(()=>[...document.querySelectorAll('#logBody > *')].map(e=>e.innerText.replace(/\s+/g,' ').trim()).filter(t=>/Live\/relay check/.test(t)));
 if(!LOCKED) for(const t of logLines) notes.push('event log: '+t); else if(logLines.length) notes.push(logLines.length+' live/relay check line(s) in the event log');
 // close the page the way a person closing the tab would, so the access log ends this visit now
