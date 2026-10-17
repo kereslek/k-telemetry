@@ -28,13 +28,20 @@ const TRADE_MIN=0.005, EV_KEEP=3*60*MIN, EV_MAX=5000;
 /* Your own swaps as the dashboard shows them, newest first (mine.js): each through your own pool
    also with that pool's price just before and just after it, from this recorder's readings, and
    the part of its fee that came back to your positions (kept out of the record: never income). */
+/* A pool's price in effect just before a moment and its first new price after it, from this
+   recorder's readings: null unless both are known and the new one came within 15 minutes (an
+   older "after" would be some later trade's, not the swap's). */
+function pxAround(L,t){
+  let P0=null, P1=null;
+  for(const [s,P] of L||[]){ if(s<t) P0=P; else { if(s-t<=15*MIN) P1=P; break; } }
+  return P0&&P1?[P0,P1]:null;
+}
 function mineOut(m){
   return (m.mine||[]).slice(-40).reverse().map(x=>{
-    const L=(x.pool&&m.pxLog&&m.pxLog[x.pool])||[]; let P0=null, P1=null;
-    for(const [t,P] of L){ if(t<x.t) P0=P; else { P1=P; break; } }
+    const px=x.px||(x.pool&&m.pxLog?pxAround(m.pxLog[x.pool],x.t):null);
     const back=x.pool?(m.own||[]).filter(r=>r[2]===x.pool&&r[1]-5000<=x.t&&r[0]+5000>=x.t).reduce((a,r)=>a+r[3],0):0;
     return {t:x.t, chain:x.chain, tok:x.tok, side:x.side, other:x.other, usd:x.usd, venue:x.venue, own:x.own||null,
-            ...(P0&&P1?{px:[P0,P1]}:{}), ...(back>=0.0005?{back:Math.round(back*100)/100}:{})}; });
+            ...(px?{px}:{}), ...(back>=0.0005?{back:Math.round(back*100)/100}:{})}; });
 }
 function tradesOf(all, ev, evStart){
   const r=x=>Math.round(x*1e4)/1e4, out=[];
@@ -302,6 +309,8 @@ export class Pulse {
       const got=await scanMine(m.mineSt, {ps, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs:this.solRpcs(), now});
       const ids=new Set((m.mine||[]).map(x=>x.id));
       m.mine=[...(m.mine||[]),...got.filter(x=>!ids.has(x.id))].filter(x=>now-x.t<24*60*MIN).sort((a,b)=>a.t-b.t).slice(-150);
+      // a swap through your pool keeps its pool's price before and after once both are known: the price log holds three hours, the list a day
+      for(const x of m.mine) if(x.pool&&!x.px&&now-x.t<3*60*MIN){ const px=pxAround(m.pxLog&&m.pxLog[x.pool],x.t); if(px) x.px=px; }
       await this.s.put({mine:m.mine, mineSt:m.mineSt});
       return {found:got.length, scan:m.mineSt.diag};
     })().finally(()=>{ this.mining=null; });
@@ -344,7 +353,8 @@ export class Pulse {
       traded[pl]={P:b.P, usd:T?T.in0*p.usd0+T.in1*p.usd1:null, dir};
       m.poolPrev[pl]=b;
       if(b.P>0){ const L=(m.pxLog=m.pxLog||{})[pl]||(m.pxLog[pl]=[]); if(!L.length||L[L.length-1][1]!==b.P) L.push([cur.t,b.P]);
-        while(L.length&&cur.t-L[0][0]>3*60*MIN) L.shift(); } }
+        // three hours of price changes and the price in effect when they begin, so a quiet pool keeps its last one
+        while(L.length>1&&cur.t-L[1][0]>3*60*MIN) L.shift(); } }
     for(const p of ps){
       const b=cur.g[p.id]; if(!b) continue;
       const a=prev[p.id];
