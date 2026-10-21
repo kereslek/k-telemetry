@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - run: npm i --no-save js-sha3@0.9.3
       - run: node scripts/lcx-recon.mjs
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
