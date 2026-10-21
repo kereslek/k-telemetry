@@ -1,0 +1,24 @@
+# LCX's market on Ethereum day by day, rebuilt from the chain beside GeckoTerminal and the sealed
+# census's pool records (scripts/lcx-recon.mjs). Public log: market data only.
+name: lcx-recon
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/lcx-recon.mjs', '.github/workflows/lcx-recon.yml']
+  workflow_dispatch:
+    inputs:
+      days: { description: 'days of history', required: false, default: '62' }
+permissions:
+  contents: read
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/lcx-recon.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          DAYS: ${{ github.event.inputs.days || '62' }}
