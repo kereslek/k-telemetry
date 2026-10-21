@@ -37,8 +37,9 @@ async function tokenPools(T){
     const mineIsBase=String(base||'').toLowerCase()===T.addr.toLowerCase();
     return {id:a.address, name:String(a.name||'?').replace(/\s+[\d.]+%$/,''), dex:x.relationships?.dex?.data?.id||'?', tvlIdx:+a.reserve_in_usd||0, vol24:+a.volume_usd?.h24||0,
       created:a.pool_created_at?Date.parse(a.pool_created_at):null, fee:fm?+fm[1]/100:null, px:mineIsBase?(+a.base_token_price_usd||null):(+a.quote_token_price_usd||null)}; }); }
-async function candles(T, id){ const r=await gt('/networks/'+T.net+'/pools/'+id+'/ohlcv/day?limit=130&currency=usd'); const m={};
-  for(const c of r?.data?.attributes?.ohlcv_list||[]) m[day(c[0]*1000)]=r2(+c[5]); return r?m:null; }
+/* a pool's trading a day, and the token's own price in it (its close, in dollars) */
+async function candles(T, id){ const r=await gt('/networks/'+T.net+'/pools/'+id+'/ohlcv/day?limit=130&currency=usd&token='+T.addr); const vol={}, px={};
+  for(const c of r?.data?.attributes?.ohlcv_list||[]){ const d=day(c[0]*1000); vol[d]=r2(+c[5]); if(+c[4]>0) px[d]=+(+c[4]).toPrecision(6); } return r?{vol, px}:null; }
 
 /* ---------- chains ---------- */
 const BS='https://eth.blockscout.com';
@@ -190,9 +191,9 @@ function feesByDay(ids){ const o={}; if(posHist.length<2) return o;
 /* ---------- run ---------- */
 const P0=prev&&prev.v===1?prev:null;
 const out={v:1, t:Date.now(), slug:SLUG, tokens:[], mine:[], checks:[]};
-let poolsN=0, realN=0; const bookWhy=[];
+let poolsN=0, realN=0, onN=0, onD=0; const bookWhy=[];
 for(const T of TOKENS){
-  const list=await tokenPools(T);
+  const list=[...new Map((await tokenPools(T)).map(p=>[p.id,p])).values()];   // the index can list a pool twice
   let ray={}; if(T.net==='solana'){ const r=await j('https://api-v3.raydium.io/pools/info/mint?mint1='+T.addr+'&poolType=all&poolSortField=liquidity&sortType=desc&pageSize=100&page=1');
     for(const d of (Array.isArray(r?.data?.data)?r.data.data:(Array.isArray(r?.data)?r.data:[]))) ray[d.id]=d;
     for(const [id,d] of Object.entries(ray)) if(!list.some(p=>p.id===id)) list.push({id, name:(d.mintA?.symbol||'?')+' / '+(d.mintB?.symbol||'?'), dex:'raydium', tvlIdx:null, vol24:+d.day?.volume||0, created:d.openTime?+d.openTime*1000:null, fee:d.feeRate!=null?+d.feeRate:null, px:null}); }
@@ -205,9 +206,21 @@ for(const T of TOKENS){
     pools.push({id:p.id, name:p.name, venue, fee, tvl:r2(tvl), tvlIdx:r2(p.tvlIdx), tvlRay:r2(tvlRay), off, created:p.created, mine:own,
       real:own||(tvl>=100&&(off==null||Math.abs(off)<=0.1)), lpCut:/Raydium CLMM/.test(venue)?0.84:1,
       ray:R?{w:r2(R.week?.volume), wf:r2(R.week?.volumeFee), m:r2(R.month?.volume), mf:r2(R.month?.volumeFee), apr7:R.week?.feeApr!=null?r2(R.week.feeApr):null, d:r2(R.day?.volume)}:null, vol24:r2(p.vol24)}); }
-  // trading day by day, kept beyond the 60 days the index serves
-  for(const P of pools.filter(x=>x.real)){ const c=await candles(T,P.id); const old=P0?.tokens?.find(t=>t.key===T.key)?.pools?.find(q=>q.id===P.id)?.vol||{};
-    P.vol={...old,...(c||{})}; const ks=Object.keys(P.vol).sort(); if(ks.length>KEEP) for(const k of ks.slice(0,ks.length-KEEP)) delete P.vol[k]; P.volOk=!!c; }
+  /* Trading day by day, kept beyond the 60 days the index serves, and the token's price in the pool, for
+     every pool of $100 or more or with any trading. A pool counts in the market on the days its price
+     stood within 10% of the market's (`on`): one off the market today may have traded at it before, and
+     one at the market today may not have. The market's price on a day: the pools at it today, weighted
+     by that day's trading. A day without a price keeps today's standing; the deck's own pools always count. */
+  const cand=pools.filter(x=>x.real||x.tvl>=100||x.vol24>0);
+  const trim=o=>{ const ks=Object.keys(o).sort(); if(ks.length>KEEP) for(const k of ks.slice(0,ks.length-KEEP)) delete o[k]; return o; };
+  for(const P of cand){ const c=await candles(T,P.id), old=P0?.tokens?.find(t=>t.key===T.key)?.pools?.find(q=>q.id===P.id)||{};
+    P.vol=trim({...(old.vol||{}),...(c?.vol||{})}); P.px=trim({...(old.px||{}),...(c?.px||{})}); P.volOk=!!c; }
+  const mpxD={}; for(const d of new Set(cand.flatMap(P=>Object.keys(P.vol)))){ let a=0, w=0;
+    for(const P of cand) if(P.real&&P.vol[d]>0&&P.px[d]>0){ a+=P.px[d]*P.vol[d]; w+=P.vol[d]; }
+    if(w>0) mpxD[d]=a/w; }
+  for(const P of cand){ P.on={}; for(const [d,v] of Object.entries(P.vol)) if(v>0){ const m=mpxD[d], p=P.px[d];
+    P.on[d]=P.mine||(m>0&&p>0?Math.abs(p/m-1)<=0.1:P.real)?1:0; } }
+  onN+=cand.filter(P=>!P.real&&Object.values(P.on).some(Boolean)).length; onD+=cand.filter(P=>!P.real).reduce((s,P)=>s+Object.values(P.on).filter(Boolean).length,0);
   // LP books: the deck's pools and any real pool of $1k or more
   for(const P of pools.filter(x=>x.real&&(x.mine||x.tvl>=1000))){
     try{ if(P.venue==='Uniswap v4') P.book=await bookV4(P);
@@ -215,8 +228,8 @@ for(const T of TOKENS){
            if(P.book?.fail){ bookWhy.push('Uniswap v3: '+P.book.fail); P.book=null; } else if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
          else if(P.venue==='Raydium CLMM'){ const m=mine.get(P.id); P.book=await bookClmm(P, m?m.mints:new Set()); if(P.book?.lpCut!=null) P.lpCut=r4(P.book.lpCut); }
          else P.book=null; }catch(e){ P.book=null; } }
-  const days=[...new Set(pools.filter(x=>x.real).flatMap(x=>Object.keys(x.vol||{})))].sort();
-  const market={}; for(const d of days) market[d]=r2(pools.filter(x=>x.real&&x.vol).reduce((s,x)=>s+(x.vol[d]||0),0));
+  const days=[...new Set(cand.flatMap(x=>Object.keys(x.vol||{})))].sort();
+  const market={}; for(const d of days) market[d]=r2(cand.reduce((s,x)=>s+(x.on&&x.on[d]?(x.vol[d]||0):0),0));
   out.tokens.push({key:T.key, sym:T.sym, chain:T.chain, price:mpx, count:list.length, pools, market});
   poolsN+=list.length; realN+=pools.filter(x=>x.real).length;
 }
@@ -275,6 +288,7 @@ for(const T of out.tokens){
 writeJ(OUT+'/pools-'+SLUG+'.json', out);
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
 console.log('share readings: '+shareKept+' kept, '+shareDropped+' dropped (taken in passes that did not read every chain)'+(goodT.length?'':' · the relay’s history could not be read, nothing filtered'));
+console.log('pools off the market today, counted on the days they stood at it: '+onN+' pool(s), '+onD+' pool-day(s)');
 console.log('pools listed: '+poolsN+' · trading: '+realN+' · own pools: '+out.mine.length+' · days of trading kept: '+Math.max(0,...out.tokens.map(t=>Object.keys(t.market).length))
   +' · days of share: '+Math.max(0,...out.mine.map(m=>Object.keys(m.share).length))+' · days of fees: '+Math.max(0,...out.mine.map(m=>Object.keys(m.fees).length)));
 console.log('checks: '+cnt('ok')+' agree · '+cnt('look')+' to look at · '+cnt('na')+' not readable');

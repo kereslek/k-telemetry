@@ -97,8 +97,11 @@ if(PASS){ const L=await j(SITE+'lock.json?t='+Date.now());
       return JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')); };
     const x=await j(SITE+'pools-main.json?t='+Date.now()); try{ C=x?open(x):null; }catch(e){ C=null; } } }
 const T=C?.tokens?.find(t=>t.key==='lcx'), cP=id=>T?.pools?.find(p=>String(p.id).toLowerCase()===id);
-const c3=cP(v3.id), c4=cP(v4.id), real=(T?.pools||[]).filter(p=>p.real);
-const pie=d=>real.reduce((s,P)=>s+((P.vol&&P.vol[d])||0)*(P.fee||0)*(P.lpCut??1),0);
+/* the census's all-LPs'-fees total as the page counts it: a pool on the days it stood at the market (its
+   day-by-day record), or, in a census from before that record, the pools at the market today */
+const c3=cP(v3.id), c4=cP(v4.id), real=(T?.pools||[]).filter(p=>p.real||(p.on&&Object.values(p.on).some(Boolean)));
+const onD=(P,d)=>P.on&&P.on[d]!=null?P.on[d]===1:!!P.real;
+const pie=d=>real.reduce((s,P)=>s+(onD(P,d)?((P.vol&&P.vol[d])||0)*(P.fee||0)*(P.lpCut??1):0),0);
 
 /* ---------- report ---------- */
 console.log('LCX on Ethereum, '+DAYS+' days to '+DAYLIST[DAYLIST.length-1]+' (UTC) · ETH priced on '+[...ethUsd.keys()].filter(d=>DAYLIST.includes(d)).length+' of '+DAYS+' days');
@@ -110,7 +113,7 @@ console.log('Uniswap v4 LCX/ETH now: LP fee '+(lf4!=null?(lf4/1e4).toFixed(4).re
 for(const k of ['v4','v3']){ const ds=[...chain[k].by.keys()].sort().reverse().filter(d=>ethUsd.get(d)&&chain[k].by.get(d).lcx>0).slice(0,7);
   const e=ds.reduce((s,d)=>s+chain[k].by.get(d).eth*ethUsd.get(d),0), l=ds.reduce((s,d)=>s+chain[k].by.get(d).lcx,0);
   console.log('  '+k+': LCX priced from its swaps over its last '+ds.length+' trading day(s): '+(l>0?'$'+(e/l).toPrecision(4):'—')+' (the side read as ETH is '+(l>0&&e/l<1?'ETH, as it should be':'NOT ETH: the sizes below are wrong')+')'); }
-console.log('census: '+(C?'opened, read '+((Date.now()-C.t)/3600e3).toFixed(1)+' h ago · '+real.length+' LCX pools counted in its total · its fee rate for v4 '+(c4?.fee!=null?(c4.fee*100)+'%':'—')+', for v3 '+(c3?.fee!=null?(c3.fee*100)+'%':'—'):'not opened'));
+console.log('census: '+(C?'opened, read '+((Date.now()-C.t)/3600e3).toFixed(1)+' h ago · '+real.length+' LCX pools counted in its total ('+real.filter(p=>!p.real).length+' of them only on the days they stood at the market) · its fee rate for v4 '+(c4?.fee!=null?(c4.fee*100)+'%':'—')+', for v3 '+(c3?.fee!=null?(c3.fee*100)+'%':'—'):'not opened'));
 console.log('\n            ------------- v4 LCX/ETH -------------   ------------- v3 LCX/WETH ------------   ---- all LPs’ fees ----');
 console.log('day (UTC)    swaps   chain $   Gecko $  census $    swaps   chain $   Gecko $  census $    census   chain   ratio');
 const tot={c:0,k:0}; let gap3=0, gap4=0, zero3=0;

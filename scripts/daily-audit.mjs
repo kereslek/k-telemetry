@@ -212,10 +212,15 @@ try{
       const mine=pools.filter(P=>P.mine).map(P=>{ const share={},exp={}; for(let i=1;i<=40;i++){ if(!span[P.id](i)) continue; const d=days[i], s=shares[P.id]??1; share[d]={s,tin:1,n:96}; exp[d]=P.vol[d]*P.fee*P.lpCut*s; }
         return {id:P.id,tok:'x',n:1,valueNow:1000,share,fees:{},exp,ourL:{},value:{},since:Object.keys(share).sort()[0]||null}; });
       return czToken(T,mine,czWins('w')).A.share; };
+    /* a pool off the market today that traded at it on three of this week's days counts on those three only:
+       a sole LP's share of the week is its pool's fees over its pool's and that pool's on those days */
+    const v3=mk('v3',0.01,1000,true), off=mk('off',0.10,500,false); off.real=false; off.on={}; for(let i=1;i<=7;i++) off.on[days[i]]=i<=3?1:0;
+    let a=0, b=0; for(let i=1;i<=7;i++){ a+=v3.vol[days[i]]; if(i<=3) b+=off.vol[days[i]]*10; }
     return {sole:run([mk('a',0.04,5000,true),mk('b',0.01,100,true),mk('c',0.04,30,true)],{a:i=>i<=5,b:i=>i<=20,c:i=>i<=20},{}),
-      half:run([mk('v3',0.01,1500,true),mk('v4',0.01,8500,false)],{v3:i=>i<=20},{v3:0.5})}; });
-  const soleOk=self.sole!=null&&Math.abs(self.sole-1)<1e-9, halfOk=self.half!=null&&Math.abs(self.half-0.075)<0.002;
-  (soleOk&&halfOk?OK:FAIL)('token shares on made-up records: a sole LP whose pools’ records start on different days '+(soleOk?'takes 100%':'does NOT take 100%')+'; half of a pool carrying 15% of the trading '+(halfOk?'takes 7.5%':'does NOT take 7.5%'));
+      half:run([mk('v3',0.01,1500,true),mk('v4',0.01,8500,false)],{v3:i=>i<=20},{v3:0.5}), onDays:run([v3,off],{v3:i=>i<=20},{}), onWant:a/(a+b)}; });
+  const soleOk=self.sole!=null&&Math.abs(self.sole-1)<1e-9, halfOk=self.half!=null&&Math.abs(self.half-0.075)<0.002, onOk=self.onDays!=null&&Math.abs(self.onDays-self.onWant)<1e-6;
+  (soleOk&&halfOk&&onOk?OK:FAIL)('token shares on made-up records: a sole LP whose pools’ records start on different days '+(soleOk?'takes 100%':'does NOT take 100%')+'; half of a pool carrying 15% of the trading '+(halfOk?'takes 7.5%':'does NOT take 7.5%')
+    +'; a pool off the market today counts on the days it traded at it '+(onOk?'and only then':'— NOT as it should'));
 }catch(e){ FAIL('WHY FEES MOVED: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');

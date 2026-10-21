@@ -2388,7 +2388,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.13';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.14';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7601,14 +7601,22 @@ function czMarket(T,mine){
 const CZ_SCOPE={cpool:{in:P=>/raydium/i.test(P.venue||''), on:'on Raydium'}};
 const czScope=T=>CZ_SCOPE[T.key]||{in:()=>true, on:'on '+T.chain};
 const czTips={};
+/* A pool counts in a day's market when its price stood within 10% of the market's that day (the
+   census's day-by-day record, `on`); a census from before that record counts the pools at the market
+   today, every day. So a pool off the market now still counts on the days it traded at it. */
+const czOn=(P,d)=>P.on&&P.on[d]!=null?P.on[d]===1:!!P.real;
 function czToken(T,mine,W){
-  const sc=czScope(T), U=T.pools.filter(p=>p.real&&sc.in(p));
+  const sc=czScope(T), U=T.pools.filter(p=>p.real&&sc.in(p)), UD=T.pools.filter(p=>sc.in(p)&&(p.real||(p.on&&Object.values(p.on).some(Boolean))));
   const own=mine.map(M=>({M,P:T.pools.find(p=>String(p.id).toLowerCase()===String(M.id).toLowerCase())})).filter(x=>x.P);
   const inU=own.filter(x=>U.includes(x.P)), outN=own.length-inU.length;
   const mOf=new Map(inU.map(x=>[x.P,x.M])), ownV=(P,d)=>((P.vol&&P.vol[d])||0)*czOwnW(mOf.get(P),d);
-  const vol=(P,d)=>((P.vol&&P.vol[d])||0)-ownV(P,d);   // the market's trading: your own swaps left out
+  const vol=(P,d)=>czOn(P,d)?((P.vol&&P.vol[d])||0)-ownV(P,d):0;   // the market's trading: your own swaps left out
   const lpf=(P,d)=>vol(P,d)*(P.fee||0)*(P.lpCut??1);
-  const tradeOf=d=>U.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>U.reduce((s,P)=>s+lpf(P,d),0);
+  const tradeOf=d=>UD.reduce((s,P)=>s+vol(P,d),0), pieOf=d=>UD.reduce((s,P)=>s+lpf(P,d),0);
+  /* the part of all the LPs' fees that went through pools of yours: your share of them is your share inside
+     your pools times this. A pool you have left counts on the days the replay has you in it. */
+  const partOf=d=>{ const a=pieOf(d); if(!(a>0)||!inU.length) return null;
+    return inU.reduce((s,{M,P})=>{ const x=M.past&&M.rep&&M.rep[d]; return M.past&&!(x&&(x.s>0||x.L>0))?s:s+lpf(P,d); },0)/a; };
   const ownTraded=W.A.reduce((s,d)=>s+U.reduce((q,P)=>q+ownV(P,d),0),0);
   /* Your fees on a day, every pool of yours together, from one source, and the LPs' fees they are a
      share of. A pool of yours without a figure that day (its record had not begun yet) leaves BOTH
@@ -7655,7 +7663,7 @@ function czToken(T,mine,W){
       let riv=null; for(const P of U){ if(inU.some(x=>x.P===P&&!x.M.past)) continue; const g=pp(P,W.A)/PA-pp(P,W.B)/PB; if(!riv||g>riv.g) riv={P,g}; }
       const dd=A.share-B.share, k=Object.keys(parts).sort((a,b)=>Math.abs(parts[b])-Math.abs(parts[a]))[0];
       moved={k:Math.sign(parts[k])===Math.sign(dd)&&Math.abs(parts[k])>=0.4*Math.abs(dd)?k:null, parts, d:dd, riv:riv&&riv.g>0.03?riv.P:null}; } }
-  return {T,W,sc,U,own,inU,outN,first,A,B,basis,tradeOf,pieOf,yoursOf,moved,ownTraded, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
+  return {T,W,sc,U,own,inU,outN,first,A,B,basis,tradeOf,pieOf,partOf,yoursOf,moved,ownTraded, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
     liq, atp:anyS&&ov>0?took/ov:null, served:anyS&&tA>0?took/tA:null, fillBy:wait>0?czDay(-wait):null}; }
 
 /* the token's month: what all its LPs earned each day, and your share of it — two panels, one each */
@@ -7664,7 +7672,9 @@ function czTokChart(r, cw){
   const Wd=Math.max(280,Math.round(cw)), phone=Wd<520, L=4, R=4, hd=14, gap=10, xb=16;
   const h1=phone?78:96, h2=phone?50:60, y1t=hd, y1b=y1t+h1, y2t=y1b+gap+hd, y2b=y2t+h2, H=y2b+xb, cwid=(Wd-L-R)/days.length;
   const pie=days.map(r.pieOf), yo=days.map(r.yoursOf), sh=days.map((d,i)=>yo[i]&&yo[i].p>0?yo[i].v/yo[i].p:null);
-  const maxP=Math.max(1,...pie)*1.1, sv=sh.filter(x=>x!=null), maxS=sv.length?Math.max(...sv)*1.3:0.01;
+  // beside your share, dashed: the part of all the LPs' fees that went through pools of yours (your share inside them is the gap)
+  const pt=days.map(d=>r.partOf(d)), pv=pt.filter(x=>x!=null);
+  const maxP=Math.max(1,...pie)*1.1, sv=sh.filter(x=>x!=null), maxS=sv.length||pv.length?Math.max(...sv,...pv)*1.2:0.01;
   const X=i=>L+i*cwid, y1=v=>y1b-h1*v/maxP, y2=v=>y2b-h2*v/maxS;
   const inA=new Set(W.A), inB=new Set(W.B), tips={};
   const span=set=>{ const ix=days.map((d,i)=>set.has(d)?i:-1).filter(i=>i>=0); return ix.length?[X(ix[0]),X(ix[ix.length-1]+1)]:null; };
@@ -7672,20 +7682,28 @@ function czTokChart(r, cw){
   const lbl=(x,y,t,a,c)=>'<text x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" fill="'+(c||'var(--text-muted)')+'" font-size="9" font-family="var(--mono)" letter-spacing=".06em"'+(a?' text-anchor="'+a+'"':'')+' paint-order="stroke" stroke="var(--panel-2)" stroke-width="3">'+t+'</text>';
   let g='';
   // the two periods compared, shaded through both panels and named under the days
-  for(const [s,f,t] of [[sB,'rgba(255,255,255,.035)',W.lb],[sA,'rgba(53,214,232,.08)',W.la]]) if(s){
+  for(const [s,f] of [[sB,'rgba(255,255,255,.035)'],[sA,'rgba(53,214,232,.08)']]) if(s)
     g+='<rect x="'+s[0].toFixed(1)+'" y="'+y1t+'" width="'+(s[1]-s[0]).toFixed(1)+'" height="'+(y2b-y1t)+'" fill="'+f+'"/>';
-    g+=lbl((s[0]+s[1])/2,H-3,t,'middle'); }
-  g+=lbl(L,H-3,czDate(days[0]),'start');
+  // the periods' names under them, kept inside the chart and apart (a one-day period sits at the right edge); the first day's date where there is room
+  const tw=t=>t.length*5.9, wa=tw(W.la), wb=tw(W.lb), d0=czDate(days[0]);
+  const cA=sA?Math.min((sA[0]+sA[1])/2,Wd-R-wa/2):null, cB=sB?Math.min((sB[0]+sB[1])/2,(cA!=null?cA-wa/2-8:Wd-R)-wb/2):null;
+  if(sB) g+=lbl(cB,H-3,W.lb,'middle'); if(sA) g+=lbl(cA,H-3,W.la,'middle');
+  if(!(cB!=null&&cB-wb/2<L+tw(d0)+8)) g+=lbl(L,H-3,d0,'start');
   g+='<line x1="'+L+'" x2="'+(Wd-R)+'" y1="'+y1b+'" y2="'+y1b+'" stroke="var(--grid)"/><line x1="'+L+'" x2="'+(Wd-R)+'" y1="'+y2b+'" y2="'+y2b+'" stroke="var(--grid)"/>';
   g+=lbl(L,y1t-4,'ALL '+S+' LPs’ FEES '+sc.on.toUpperCase()+', A DAY','start')+lbl(Wd-R,y1t-4,'top '+czK(maxP/1.1),'end');
-  g+=lbl(L,y2t-4,'YOUR SHARE OF THEM','start')+(sv.length?lbl(Wd-R,y2t-4,'top '+czP(maxS/1.3,1),'end'):'');
-  const pts=[];
+  g+=lbl(L,y2t-4,'YOUR SHARE OF THEM','start')+(sv.length?lbl(Wd-R,y2t-4,'top '+czP(Math.max(...sv),1),'end'):'');
+  if(pv.length){ const lx=L+112; g+='<line x1="'+lx+'" x2="'+(lx+12)+'" y1="'+(y2t-7)+'" y2="'+(y2t-7)+'" stroke="var(--cz-you)" stroke-width="1.5" stroke-dasharray="3 2" opacity=".6"/>'+lbl(lx+16,y2t-4,phone?'POOLS’ PART':'YOUR POOLS’ PART','start'); }
+  const pts=[], ptp=[];
   days.forEach((d,i)=>{ const x0=X(i)+cwid*.16, w=Math.max(1,cwid*.68), v=pie[i];
+    if(pt[i]!=null) ptp.push((x0+w/2).toFixed(1)+','+y2(pt[i]).toFixed(1));
     if(v>0){ const yy=y1(v); g+='<rect class="bar" style="--i:'+i+'" x="'+x0.toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+(y1b-yy).toFixed(1)+'" rx="1.5" fill="'+(inA.has(d)?'#8fb3d6':inB.has(d)?'var(--cz-pool-hi)':'var(--cz-pool)')+'"/>'; }
     if(sh[i]!=null){ const cx=x0+w/2, cy=y2(sh[i]); pts.push(cx.toFixed(1)+','+cy.toFixed(1)); g+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(phone?(days.length>40?1.5:2):2.5)+'" fill="var(--cz-you)"'+(yo[i].main?'':' opacity=".55"')+'/>'; }
     const t=r.tradeOf(d); tips[d]='<b>'+czDate(d)+'</b><br>'+S+' traded '+czK(t)+' '+sc.on+'<br>its LPs earned '+czK(v)
-      +(sh[i]!=null?'<br><span class="y">your share '+czP(sh[i],1)+' · your fees '+(yo[i].est?'≈ ':'')+czK(yo[i].v)+'</span><br><span style="color:var(--text-muted)">'+CZ_BLBL[yo[i].k]+'</span>':'');
+      +(sh[i]!=null?'<br><span class="y">your share '+czP(sh[i],1)+' · your fees '+(yo[i].est?'≈ ':'')+czK(yo[i].v)+'</span>':'')
+      +(pt[i]!=null?'<br><span style="color:var(--text-secondary)">your pools carried '+czP(pt[i],1)+' of it</span>':'')
+      +(sh[i]!=null?'<br><span style="color:var(--text-muted)">'+CZ_BLBL[yo[i].k]+'</span>':'');
     g+='<rect class="hit" data-d="'+d+'" x="'+X(i).toFixed(1)+'" y="'+y1t+'" width="'+cwid.toFixed(1)+'" height="'+(y2b-y1t)+'"/>'; });
+  if(ptp.length>1) g+='<polyline points="'+ptp.join(' ')+'" fill="none" stroke="var(--cz-you)" stroke-width="1.5" stroke-dasharray="3 2" stroke-linejoin="round" opacity=".6"/>';
   if(pts.length>1) g+='<polyline class="ln" points="'+pts.join(' ')+'" fill="none" stroke="var(--cz-you)" stroke-width="2" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px rgba(47,211,234,.55))"/>';
   if(!sv.length) g+=lbl((L+Wd-R)/2,(y2t+y2b)/2+3,r.first?'recorded from '+czDate(r.first):'recorded from the next census','middle');
   // each period's average, drawn across it: the comparison at a glance
@@ -7835,7 +7853,8 @@ function czAnimate(host, first){
   if(!reduce&&first){
     host.classList.add('cz-pre'); host.classList.remove('cz-in');
     const go=()=>{ host.classList.remove('cz-pre'); host.classList.add('cz-in'); czDraw(host); host.querySelectorAll('[data-cz-to]').forEach(czCount); };
-    if('IntersectionObserver' in window){ const io=new IntersectionObserver(es=>{ if(es.some(x=>x.isIntersecting)){ io.disconnect(); go(); } },{threshold:0.15}); io.observe(host); }
+    // enough of it on screen: 15% of the panel, or 40% of the screen when the panel is too tall for 15% to fit
+    if('IntersectionObserver' in window){ const io=new IntersectionObserver(es=>{ if(es.some(x=>x.isIntersecting&&x.intersectionRect.height>=Math.min(0.15*x.boundingClientRect.height,0.4*innerHeight))){ io.disconnect(); go(); } },{threshold:[0,0.05,0.1,0.15]}); io.observe(host); }
     else go();
   } else { host.classList.remove('cz-pre'); host.classList.add('cz-in'); }
   // a day under the finger: the tooltip
