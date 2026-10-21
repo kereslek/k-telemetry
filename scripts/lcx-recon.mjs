@@ -155,19 +155,3 @@ for(const d of DAYLIST){ const px=ethUsd.get(d); if(!px) continue; const s4=chai
   if(extra.get(d)||Math.abs((c||0)-k)>Math.max(1,0.03*k)) console.log('  '+d+'  '+lp(usd(c),8)+'  '+lp(usd(k),8)+'  '+lp(usd(x),8)+(extra.get(d)?'   +'+usd(extra.get(d))+' from other pools':'')); }
 console.log('  over the '+DAYS+' days: census '+usd(sc)+' · main pools '+usd(sk)+' · with other pools at the market '+usd(sx)+' (days not listed agree within 3%)');
 
-/* Does the deck hold liquidity in the v4 pool? The dashboard reads Uniswap v3 positions only, so any held
-   there would be missing from your share. Each open position the v4 position manager holds in the pool
-   (by its ModifyLiquidity records), and whose wallet holds it now. Counts only. */
-if(C&&PASS){ const L2=await j(SITE+'lock.json?t='+Date.now()), K2=crypto.pbkdf2Sync(PASS, Buffer.from(L2.salt,'base64'), L2.iter, 64, 'sha256').subarray(0,32);
-  const open2=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm',K2,Buffer.from(e.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
-    return JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')); };
-  let W=null; try{ const cfg=open2(await j(SITE+'config.json?t='+Date.now())); W=new Set((cfg.profiles||[]).flatMap(p=>p.wallets||[]).filter(w=>w.chain==='ethereum').map(w=>String(w.address).toLowerCase())); }catch(e){}
-  const POSM='0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e', t=topic('ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)');
-  if(W&&t){ const r=await bsLogs({address:PM4, topic0:t, topic1:v4.id, topic0_1_opr:'and', fromBlock:0}), net=new Map(); let other=0;
-    for(const l of r.logs){ const sender='0x'+l.topics[2].slice(26).toLowerCase(), dL=sInt(wd(l.data,2),256), salt=BigInt('0x'+wd(l.data,3));
-      if(sender!==POSM){ if(dL>0n) other++; continue; } net.set(salt,(net.get(salt)||0n)+dL); }
-    const live=[...net].filter(([,L])=>L>0n); let mine=0, read=0;
-    for(const [id] of live){ const o=await call(POSM,'0x6352211e'+id.toString(16).padStart(64,'0')); if(!o) continue; read++; if(W.has('0x'+o.slice(-40).toLowerCase())) mine++; }
-    console.log('\nUniswap v4 LCX/ETH: '+live.length+' open position(s) through the position manager, owner read for '+read+' · held by the deck’s own wallets: '+mine
-      +(other?' · '+other+' deposit(s) made outside the position manager (not attributable)':'')+(r.failed?' (its records were cut short)':'')); }
-  else console.log('\nUniswap v4 LCX/ETH: the deck’s wallets or the event signature could not be read; not checked'); }
