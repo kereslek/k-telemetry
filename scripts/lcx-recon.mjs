@@ -57,7 +57,7 @@ const SW3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67', 
 /* Uniswap's fee switch. v3: the pool's feeProtocol (each side 1/n of the fee to the protocol), now and
    every time it was set (SetFeeProtocol). v4: the pool's protocol fee and LP fee now (StateView), and
    every ProtocolFeeUpdated for it. */
-let keccak=null; try{ keccak=(await import('js-sha3')).keccak256; }catch(e){}
+let keccak=null; try{ const m=await import('js-sha3'); keccak=m.keccak256||m.default?.keccak256||null; }catch(e){}
 const topic=s=>keccak?'0x'+keccak(s):null;
 const NODES=['https://eth.blockscout.com/api/eth-rpc','https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth'];
 async function call(to,data){ for(const u of NODES){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to,data},'latest']})},2,20000); if(r?.result&&r.result.length>2) return r.result; } return null; }
