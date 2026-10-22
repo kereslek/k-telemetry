@@ -18,6 +18,8 @@ const open=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base6
 const t=Date.now();
 const [cfg,data,fees,costs,ledger,replay]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json','ledger-main.json','pools-replay-main.json'].map(f=>j(SITE+f+'?t='+t)))).map(x=>x?open(x):null);
 const W=cfg.profiles.flatMap(p=>p.wallets||[]), WE=W.filter(x=>x.chain==='ethereum').map(x=>x.address.toLowerCase()), WS=W.filter(x=>x.chain==='solana').map(x=>x.address);
+// holdings-only wallets: the relay watches what they hold and does not sweep them for swaps
+const HOLD=new Set(W.filter(x=>x.role==='hold').map(x=>String(x.address).toLowerCase()));
 // the relay writes an Ethereum log index in hex (…:0x12f), this audit in decimal (…:303)
 const normId=id=>String(id).replace(/:0x([0-9a-f]+)$/i,(_,h)=>':'+parseInt(h,16));
 const booked=new Set([...(fees.selfDone||[]), ...((costs.selfPend||[]).map(x=>x.id))].map(normId));
@@ -64,7 +66,7 @@ for(const w of WE){
       const sw=((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===SWAP_V3);
       for(const s of sw){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) { other.eth++; continue; }
-        const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),data:s.data,tx:tx.hash});
+        const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),data:s.data,tx:tx.hash,hold:HOLD.has(w)});
       } }
     url=(!older&&r.next_page_params)?BS+'/addresses/'+w+'/transactions?'+new URLSearchParams(r.next_page_params):null;
   }
@@ -147,7 +149,8 @@ for(const c of ['eth','sol']){ const f=found.filter(x=>x.chain===c);
       const mine=(data.eth||[]).filter(q=>String(q.pool).toLowerCase()===String(x.addr).toLowerCase());
       inR=mine.some(q=>{ const sc=10**((q.d0||18)-(q.d1||18)), lo=Math.round(Math.log(q.priceLower/sc)/Math.log(1.0001)), hi=Math.round(Math.log(q.priceUpper/sc)/Math.log(1.0001)); return lo<=tick&&tick<hi&&BigInt(q.liq||0)>0n; }); }catch(e){}
     console.log('     not booked: made '+age.toFixed(0)+' min ago · relay data '+((Date.now()-(data.t||0))/60000).toFixed(0)+' min old, '+((data.t||0)>Date.parse(x.t)?'newer':'older')+' than the swap'
-      +' · the relay has '+(seen===1?'counted this transaction':seen===2?'filed it as a plain transfer':'not seen it')+' · deck liquidity in range at the price the swap left: '+(inR==null?'not readable':inR?'yes':'NO, so nothing came back to book')); }
+      +' · the relay has '+(seen===1?'counted this transaction':seen===2?'filed it as a plain transfer':'not seen it')+' · deck liquidity in range at the price the swap left: '+(inR==null?'not readable':inR?'yes':'NO, so nothing came back to book')
+      +' · sent from a holdings-only wallet (one the relay does not sweep for swaps): '+(x.hold?'YES':'no')); }
   if(c==='sol') for(const x of f.filter(x=>!x.booked)){
     const sig=x.id.split(':')[1], pool=x.id.split(':')[2], age=(Date.now()-Date.parse(x.t))/60000;
     const seen=!!((costs.solTxs||{})[sig]||(costs.prevSolTxs||{})[sig]), pend=!!((costs.solWalletTx||{})[sig]);
