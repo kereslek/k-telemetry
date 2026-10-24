@@ -230,7 +230,7 @@ try{
   else {
     const M=openJ(await r0.json()), age=(Date.now()-M.t)/36e5;
     (age<=3?OK:WARN)('momentum reading is '+age.toFixed(1)+' h old · '+(M.status==='ok'?'a level today':M.status==='short'?'waiting for history':'no reading')
-      +(M.test?' · long test '+Math.round(M.test.years)+' years, '+Math.round(M.test.cov*100)+'% of the tokens covered':' · long test not run'));
+      +(M.test?' · long test '+(M.test.years<2?M.test.years.toFixed(1):Math.round(M.test.years))+' years, '+Math.round(M.test.cov*100)+'% of the tokens covered':' · long test not run'));
     for(const w of [390,1440]){
       await pg.setViewportSize({width:w,height:w<500?844:900});
       await pg.evaluate(()=>scrollTo(0,0)); await pg.waitForTimeout(1500);

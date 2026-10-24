@@ -100,6 +100,10 @@ async function press(pg, errs, c){
   if(dis) return {disabled:true};
   const vis=await h.evaluate(e=>{ const r=e.getBoundingClientRect(); const st=getComputedStyle(e); return r.width>0&&r.height>0&&st.visibility!=='hidden'&&st.display!=='none'&&!e.closest('[hidden]'); }).catch(()=>false);
   if(!vis) return {hidden:true};
+  /* a person's next move is a touch or a scroll, and that is what tells the page a jump is over (a
+     jump keeps nudging its target into place for a few seconds); a script scroll does not, so the
+     page would pull the next control away from under the press. Say it the way a finger does. */
+  await pg.evaluate(()=>dispatchEvent(new WheelEvent('wheel'))).catch(()=>{});
   await h.evaluate(e=>e.scrollIntoView({block:'center'})).catch(()=>{}); await pg.waitForTimeout(250);
   /* the page is never still (clock, countdown, live feeds): watch it for a moment first, and count
      after the press only changes to nodes that were not already changing */
