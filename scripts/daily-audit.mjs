@@ -222,6 +222,37 @@ try{
   (soleOk&&halfOk&&onOk?OK:FAIL)('token shares on made-up records: a sole LP whose pools’ records start on different days '+(soleOk?'takes 100%':'does NOT take 100%')+'; half of a pool carrying 15% of the trading '+(halfOk?'takes 7.5%':'does NOT take 7.5%')
     +'; a pool off the market today counts on the days it traded at it '+(onOk?'and only then':'— NOT as it should'));
 }catch(e){ FAIL('WHY FEES MOVED: '+String(e.message||e).slice(0,60)); }
+/* MOMENTUM: the hourly reading is fresh, and the tile, the panel and the floating button say what it
+   says. Pass or fail and counts only: never a level, a token or a date of yours. */
+try{
+  const r0=await fetch(LIVE+'momentum-main.json?t='+Date.now());
+  if(!r0.ok) WARN('momentum: no reading published yet');
+  else {
+    const M=openJ(await r0.json()), age=(Date.now()-M.t)/36e5;
+    (age<=3?OK:WARN)('momentum reading is '+age.toFixed(1)+' h old · '+(M.status==='ok'?'a level today':M.status==='short'?'waiting for history':'no reading')
+      +(M.test?' · long test '+Math.round(M.test.years)+' years, '+Math.round(M.test.cov*100)+'% of the tokens covered':' · long test not run'));
+    for(const w of [390,1440]){
+      await pg.setViewportSize({width:w,height:w<500?844:900});
+      await pg.evaluate(()=>scrollTo(0,0)); await pg.waitForTimeout(1500);
+      const r=await pg.evaluate(()=>{ const M=state.momentum, ok=!!(M&&M.status==='ok'&&M.now&&M.now.L!=null), L=ok?M.now.L:null, lv=x=>x==null?'—':(x?(x>0?'▲':'▼')+Math.abs(x):'0');
+        const tile=document.querySelector('#moTile'), q=tile&&tile.getBoundingClientRect(), quick=document.querySelector('#quickAdd'), ps=[...document.querySelectorAll('#panelStack > .panel')].map(p=>p.dataset.panel);
+        return { has:!!tile, tileMatch:!!tile&&(ok?document.querySelector('#moTileLvl').textContent.startsWith(lv(L)):document.querySelector('#moTileLvl').textContent==='—'),
+          hintMatch:!ok||document.querySelector('#moHint').textContent.startsWith(lv(L)+' · '),
+          first:!!(tile&&quick&&(tile.compareDocumentPosition(quick)&Node.DOCUMENT_POSITION_FOLLOWING)), onScreen:!!q&&q.bottom<=innerHeight,
+          order:ps.indexOf('momentum')===ps.indexOf('action')+1, stripe:document.querySelectorAll('#moTileStrip i').length,
+          floatHidden:!document.querySelector('#toMo')?.classList.contains('show'), hs:document.documentElement.scrollWidth>innerWidth+1 }; });
+      // a tap on the tile lands on the panel, under the jump strip
+      await pg.evaluate(()=>document.querySelector('#moTileHeat')?.click()); await pg.waitForTimeout(2300);
+      const land=await pg.evaluate(()=>{ const p=document.querySelector('.mo-panel'), want=(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34)+12; return !!p&&Math.abs(p.getBoundingClientRect().top-want)<=12; });
+      const ok=r.has&&r.tileMatch&&r.hintMatch&&r.first&&r.onScreen&&r.stripe===30&&r.floatHidden&&!r.hs&&land;
+      (ok?OK:FAIL)('MOMENTUM at '+w+': tile '+(r.has?(r.first?'first under the jump strip':'NOT first under the jump strip')+(r.onScreen?', whole on the first screen':', NOT whole on the first screen'):'MISSING')
+        +'; tile and panel '+(r.tileMatch&&r.hintMatch?'agree with the reading':'DISAGREE with the reading')+'; 30-day strip '+(r.stripe===30?'drawn':'NOT drawn')
+        +'; floating button '+(r.floatHidden?'hidden at the top':'SHOWN at the top')+'; a tap on the tile '+(land?'lands on the panel':'does NOT land on the panel')+(r.hs?'; SIDEWAYS SCROLL':''));
+      (r.order?OK:WARN)('MOMENTUM panel at '+w+' '+(r.order?'right after PRIORITY':'not right after PRIORITY (a saved panel order?)'));
+    }
+    await pg.evaluate(()=>scrollTo(0,0));
+  }
+}catch(e){ FAIL('MOMENTUM: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');
 /* the wallet list and the balances read from it, in counts per chain only */

@@ -50,25 +50,36 @@ export const isStable=(s,u)=>!!s&&STABLE.test(s)&&u>0.9&&u<1.1;
 export const extAt=(ext,k,d)=>{ const e=ext&&ext[k]; if(!e) return null; return e[dayStr(dayNum(d)+1)]??e[d]??null; };
 
 /* The index: 100 on the first day with holdings, then each day the return of the day before's
-   holdings at this day's prices. A record price far from the outside one (a misread) gives way to
-   it; a token with neither price that day is left out, and the share that was priced is kept. */
+   holdings at this day's prices. The records' own prices are trusted: an outside history is first
+   brought to their level (its median ratio to them), and a record price is replaced only when it is
+   a one-day spike that both neighbouring days contradict, or, on the first and last day, when it
+   is half again off the calibrated outside price. A token with no price that day is left out, and
+   the share that was priced is kept. */
 export function buildIndex(recs, ext={}){
   const use=recs.filter(r=>r&&r.d&&(Array.isArray(r.ps)||Array.isArray(r.w))).sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
-  const H=use.map(holdingsOf), px=[];
+  const H=use.map(holdingsOf), n=use.length, LN15=Math.log(1.5);
+  // the outside history at the records' level
+  const scale={}; let rescaled=0, agree=0;
+  for(const k of Object.keys(ext)){ const rs=[]; H.forEach((h,j)=>{ const e=h.get(k), x=extAt(ext,k,use[j].d); if(e&&x>0) rs.push(e.u/x); });
+    if(rs.length>=5){ const m=median(rs); scale[k]=m; if(Math.abs(Math.log(m))>Math.log(1.25)) rescaled++; else agree++; } }
+  const extS=(k,d)=>{ const x=extAt(ext,k,d); return x>0?x*(scale[k]??1):null; };
+  const px=H.map(h=>{ const P=new Map(); for(const [k,e] of h) P.set(k,e.u); return P; });
   let misreads=0;
-  use.forEach((r,j)=>{ const P=new Map();
-    for(const [k,e] of H[j]){ let u=e.u; const x=extAt(ext,k,r.d);
-      if(x>0 && Math.abs(Math.log(u/x))>Math.log(1.5)){ u=x; misreads++; }
-      P.set(k,u); }
-    px.push(P); });
-  const priceOn=(j,k)=>px[j].get(k) ?? extAt(ext,k,use[j].d);
+  for(let j=0;j<n;j++) for(const [k,u] of px[j]){
+    const a=j>0?H[j-1].get(k)?.u:null, b=j<n-1?H[j+1].get(k)?.u:null, x=extS(k,use[j].d);
+    let bad=false;
+    if(a>0&&b>0) bad=Math.abs(Math.log(u/a))>LN15&&Math.abs(Math.log(u/b))>LN15&&Math.abs(Math.log(a/b))<Math.log(1.25);
+    else if(x>0) bad=Math.abs(Math.log(u/x))>LN15;
+    if(bad){ px[j].set(k, x>0?x:Math.sqrt(a*b)); misreads++; }
+  }
+  const priceOn=(j,k)=>px[j].get(k) ?? extS(k,use[j].d);
   const days=[]; let I=100;
-  if(use.length) days.push({d:use[0].d, i:100, r:0, cov:1, H:H[0], P:px[0], first:true});
-  for(let j=1;j<use.length;j++){
+  if(n) days.push({d:use[0].d, i:100, r:0, cov:1, H:H[0], P:px[0], first:true});
+  for(let j=1;j<n;j++){
     let pnl=0, pv=0, V=0; const parts=new Map();
     for(const [k,e] of H[j-1]){ const p0=px[j-1].get(k), p1=priceOn(j,k); V+=e.a*(p0||0);
       if(!(p0>0&&p1>0)) continue;
-      // a price that triples or thirds overnight with nothing outside to confirm it is a misread, not a market
+      // a price that triples or thirds overnight with nothing to confirm it is a misread, not a market
       if(!(ext[k]) && Math.abs(Math.log(p1/p0))>Math.log(3)){ misreads++; continue; }
       pnl+=e.a*(p1-p0); pv+=e.a*p0; parts.set(k,{w:e.a*p0, r:p1/p0-1, s:e.s}); }
     const r=pv>0?pnl/pv:0, cov=V>0?pv/V:0, gap=Math.round(dayNum(use[j].d)-dayNum(use[j-1].d));
@@ -79,7 +90,7 @@ export function buildIndex(recs, ext={}){
     for(const v of parts.values()) v.w=pv>0?v.w/pv:0;
     days.push({d:use[j].d, i:I, r:step, cov, H:H[j], P:px[j], parts});
   }
-  return {days, misreads, records:use.length};
+  return {days, misreads, records:n, scale, rescaled, agree};
 }
 
 /* Levels on any daily series (the index, or one token's price). */
@@ -204,8 +215,9 @@ export function summarize(rs, vals){
    (for the steady level). Nothing in here is an amount: the index starts at 100, tokens carry their
    share of the value, and every move is a ratio. */
 export function analyze({recs, ext={}, prev=null, today=null, mixYears=3}){
-  const {days, misreads, records}=buildIndex(recs, ext);
-  const base={v:1, records, misreads};
+  const {days, misreads, records, scale, rescaled, agree}=buildIndex(recs, ext);
+  const base={v:1, records, misreads, diag:{rescaled, agree}};
+  const extS=(k,d)=>{ const x=extAt(ext,k,d); return x>0?x*(scale[k]??1):null; };
   if(days.length<2) return {...base, status:'none', need:24};
   const vals=days.map(x=>x.i), ds=days.map(x=>x.d), lv=levels(vals), last=days.length-1;
   const raw=lv[last].L;
@@ -221,14 +233,14 @@ export function analyze({recs, ext={}, prev=null, today=null, mixYears=3}){
 
   /* tokens: share of the value now, own level, move over 6 days, part of the index move */
   const lastH=(()=>{ for(let j=last;j>=0;j--) if(days[j].H) return j; return null; })();
-  const priceAt=(j,k)=>{ for(let q=j;q>=Math.max(0,j-2);q--){ const p=days[q].P&&days[q].P.get(k); if(p>0) return p; } return extAt(ext,k,ds[j]); };
+  const priceAt=(j,k)=>{ for(let q=j;q>=Math.max(0,j-2);q--){ const p=days[q].P&&days[q].P.get(k); if(p>0) return p; } return extS(k,ds[j]); };
   const tokens=[];
   if(lastH!=null){ const H=days[lastH].H; let V=0; for(const e of H.values()) V+=e.a*(days[lastH].P.get(e.k)||0);
     for(const e of H.values()){ const u=days[lastH].P.get(e.k)||0, w=V>0?e.a*u/V:0;
       if(isStable(e.s,u)||w<0.02) continue;
       const lo=Math.max(0,last-60), ser=[]; for(let j=lo;j<=last;j++) ser.push(priceAt(j,e.k)||null);
       // a token's level needs a month of its own prices: the outside history gives it one when the records do not
-      const pre=[]; if(ext[e.k]) for(let n=dayNum(ds[lo])-45;n<dayNum(ds[lo]);n++){ const p=ext[e.k][dayStr(n+1)]??ext[e.k][dayStr(n)]; if(p>0) pre.push(p); }
+      const pre=[]; if(ext[e.k]) for(let n=dayNum(ds[lo])-45;n<dayNum(ds[lo]);n++){ const p=extS(e.k,dayStr(n)); if(p>0) pre.push(p); }
       const full=[...pre,...ser].map(x=>x>0?x:null), ok=full.map((x,i)=>x??full.slice(0,i).reverse().find(y=>y>0)??null);
       const tl=levels(ok), tL=tl[tl.length-1]?.L??null, n=ok.length-1;
       let c6=0; for(let j=Math.max(1,last-5);j<=last;j++){ const pt=days[j].parts&&days[j].parts.get(e.k); if(pt) c6+=pt.w*pt.r; }
