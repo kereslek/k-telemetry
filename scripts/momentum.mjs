@@ -9,7 +9,7 @@
    the price file is sealed too, because the tokens it lists are the ones held. The log is public:
    pass/fail and counts only — never an amount, a token, a level or a date of yours. */
 import { initLock, readJ, writeJ, lockOn } from './lock.mjs';
-import { analyze, canon, isStable, holdingsOf, dayStr, dayNum } from './momentum-core.mjs';
+import { analyze, chain, canon, isStable, holdingsOf, dayStr, dayNum } from './momentum-core.mjs';
 
 const OUT='deck-r7k4x9', SLUG=process.env.PROFILE||'main', YEARS=3, MAXTOK=12;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -57,11 +57,13 @@ async function chart(id, from, span){
   const c=j&&j.coins&&(j.coins[id]||Object.values(j.coins)[0]);
   return Array.isArray(c&&c.prices)?c.prices:null;
 }
-const now=Date.now(), end=Math.floor(now/864e5)*86400; let calls=0, fetched=0, kept=0, failedTok=0;
+/* a price file written before the old contract was joined on nearby days is fetched in full again once */
+const PXV=2, now=Date.now(), end=Math.floor(now/864e5)*86400; let calls=0, fetched=0, kept=0, failedTok=0;
+const joins=[];
 cache.px=cache.px||{};
 for(const k of named){
   const id=ids.get(k), have=cache.px[k];
-  const full=!have||have.id!==id||!(now-(have.full||0)<20*3600e3);
+  const full=!have||have.id!==id||have.v!==PXV||!(now-(have.full||0)<20*3600e3);
   const days=full?Math.round(YEARS*365.25)+3:12, from=end-days*86400, d=full?{}:{...have.d};
   let got=0, bad=false;
   for(let s=from; s<end; s+=365*86400){
@@ -70,11 +72,11 @@ for(const k of named){
     for(const p of pts){ const t=+p.timestamp, v=+p.price; if(!(t>0&&v>0)) continue; d[dayStr(Math.round(t/86400))]=v; got++; }
     await sleep(400);
   }
-  if(got&&full&&BEFORE[k]){ const first=Object.keys(d).sort()[0], old={};
+  if(got&&full&&BEFORE[k]){ const old={};
     for(let s=from; s<end; s+=365*86400){ const pts=await chart(BEFORE[k], s, Math.min(365, Math.ceil((end-s)/86400)+1)); calls++;
       for(const p of pts||[]){ const t=+p.timestamp, v=+p.price; if(t>0&&v>0) old[dayStr(Math.round(t/86400))]=v; } await sleep(400); }
-    const join=old[first]; if(join>0) for(const [dd,v] of Object.entries(old)) if(dd<first) d[dd]=v*d[first]/join; }
-  if(got){ cache.px[k]={id, full:full&&!bad?now:(have?.full||0), d}; fetched++; }
+    const c=chain(d, old); Object.assign(d, c.h); joins.push(c); }
+  if(got){ cache.px[k]={id, v:PXV, full:full&&!bad?now:(have?.full||0), d}; fetched++; }
   else if(have){ kept++; } else failedTok++;
 }
 // tokens no longer held are let go of after a while, so the file does not grow for ever
@@ -94,8 +96,13 @@ note('tokens with an outside price history: '+named.length+' of '+want.length+' 
 if(out.diag) note('outside prices against the records: '+out.diag.agree+' token(s) at their level, '+out.diag.rescaled+' brought to it');
 if(out.status==='ok'){
   note('index: '+(out.days||[]).length+' days shown; share of the value priced at both ends of a day: '+(out.cov!=null?Math.round(out.cov*100)+'%':'—')+'; record prices replaced as one-day spikes: '+out.misreads);
-  note('long test: '+(out.test?out.test.years.toFixed(1)+' years, '+Math.round(out.test.cov*100)+'% of the tokens covered':'not run (no price histories)'));
+  const g=out.test&&out.test.gaps;
+  note('long test: '+(out.test?out.test.years.toFixed(1)+' years, '+Math.round(out.test.cov*100)+'% of the tokens covered'
+    +(g?' · it starts once 80% of the mix has prices; histories that begin inside the '+YEARS+' years: '+g.late+' of '+g.of
+      +' · gap days bridged: '+g.bridged+' · days with under 80% of the mix priced: '+g.thin:''):'not run (no price histories)'));
 }
+for(const c of joins) note('a token\'s old contract: '+(c.how==='overlap'?c.added+' earlier days joined on the days both had'
+  :c.how==='next'?c.added+' earlier days joined where the old prices stop':'not joined (no old prices within a week of the new ones)'));
 const txt=JSON.stringify(out);
 const clean=!/"a":|"u":|"V":|"H":|"P":|"addr"|"wallet"/.test(txt) && !/0x[0-9a-f]{40}/i.test(txt);
 say(clean, 'the reading carries no amounts, addresses or token contracts');
