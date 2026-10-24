@@ -1728,6 +1728,7 @@
   .mo-heat{font:700 16px/1.25 var(--sans);color:var(--ink);margin-top:2px}
   .mo-side{font:600 11px var(--mono);letter-spacing:.08em;margin-top:2px}
   .mo-subl{font-size:11px;color:var(--ink-2);margin-top:3px}
+  .mo-old{font:600 11px/1 var(--sans);color:var(--status-warning);white-space:nowrap;letter-spacing:.02em}
   .mo-subl span{white-space:nowrap}
   .mo-strip{grid-column:1/-1;margin-top:6px}
   .mo-stripes{position:relative;display:grid;grid-template-columns:repeat(30,1fr);gap:2px;height:9px}
@@ -2030,7 +2031,7 @@
             <li><b>Reference point: the last top.</b> The latest climb that reached ▲5 and turned; the same for falls with the last bottom. Today's run is compared with it day by day, from their first day up.</li>
             <li>Fingerprint: pace (the last 3 days against their usual move), days up of the last 6, stretch above the 20-day average, speed-up (is the pace rising), breadth (how many of your tokens move the same way). Alike is how close the five are to the reference at the same stage.</li>
             <li>The long test runs today's mix of tokens through up to three years of their own daily prices (DefiLlama), from the first day most of the mix has prices, and counts each level, each signal and what followed. Outside prices are first brought to the level of your records.</li>
-            <li>A new level is shown once it reads the same twice in a row. Read every hour from the relay's day records; days in Budapest time.</li>
+            <li>A new level is shown once it reads the same twice in a row. Read every twenty minutes from the relay's day records, today's included at the prices of its latest pass; days in Budapest time.</li>
           </ul></div>
         <div class="mo-foot"><button type="button" class="tile-why" data-jump="momentum" data-anchor="moToc">↑ contents</button><button type="button" class="tile-why" id="moBackTile">↑ back to the tile</button></div>
       </div>
@@ -2633,7 +2634,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.15';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.16';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7652,7 +7653,7 @@ function renderOps(){
   });
 }
 
-/* ----- MOMENTUM: how fast your tokens and pools are moving (scripts/momentum.mjs, every hour) -----
+/* ----- MOMENTUM: how fast your tokens and pools are moving (scripts/momentum.mjs, every twenty minutes) -----
    The job reads the relay's day records and three years of the tokens' own prices and writes the
    reading sealed (momentum-<slug>.json); this draws it: the tile under the jump strip, the panel
    after PRIORITY, and a floating button back to it. The page measures nothing itself, so the tile,
@@ -7679,6 +7680,7 @@ const moWhen=t=>{ const day=x=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe
   const hm=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Budapest',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(t);
   return (d===day(Date.now())?'today':d===day(Date.now()-864e5)?'yesterday':new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Budapest',day:'numeric',month:'short'}).format(t))+' '+hm; };
 const moAgo=t=>{ const m=Math.round((Date.now()-t)/60e3); return m<2?'just now':m<120?m+' min ago':Math.round(m/60)+' h ago'; };
+const moOld=t=>{ const h=(Date.now()-t)/3600e3; return (h<10?h.toFixed(1).replace(/\.0$/,''):Math.round(h))+' h old'; };
 const moGo=(a,label)=>'<button type="button" class="tile-why" data-jump="momentum" data-anchor="'+a+'">'+label+'</button>';
 const moReduce=()=>!!(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches);
 const moOk=M=>!!(M&&M.status==='ok'&&M.now&&M.now.L!=null);
@@ -7746,12 +7748,15 @@ function moTile(M){
   const lv=$('#moTileLvl'); lv.classList.toggle('none',!ok); lv.style.color=ok&&L?moHex(L):'';
   lv.innerHTML=ok?'<span class="ar">'+moArrow(L)+'</span>'+Math.abs(L)+'<span class="of">/10</span>':'—';
   $('#moTileHeat').textContent=M===undefined?'Reading…':ok?moCap(moHeat(L)):M&&M.status==='short'?'Not enough history yet':'No reading yet';
+  /* the job reads again every twenty minutes; a reading over an hour old says so on the tile, so a
+     level from before a move is never taken for today's */
+  if(ok&&Date.now()-M.t>60*60e3) $('#moTileHeat').insertAdjacentHTML('beforeend',' <span class="mo-old" title="Read '+esc(moAgo(M.t))+'">· '+esc(moOld(M.t))+'</span>');
   const sd=$('#moTileSide'), side=ok?moSide(L):''; sd.hidden=!side; sd.textContent=side.toUpperCase(); sd.style.color=ok?moHex(L):'';
   const r=ok?M.now.read:null, ref=ok?M.ref:null;
   $('#moTileSub').innerHTML=ok?(r?'<span>'+r.upN+' of 6 days '+(up?'up':'down')+' ·</span> ':'')
       +(M.now.alike!=null&&ref?moGo('moSecClimb',M.now.alike+'% like the last '+(ref.kind==='top'?'top':'bottom')):'<span>'+moPct(M.now.move6)+' in 6 days</span>')
     : M&&M.status==='short'?esc(String(M.need))+' more day'+(M.need===1?'':'s')+' of records needed'
-    : M===null?'written every hour by the momentum job':'';
+    : M===null?'written every twenty minutes by the momentum job':'';
   const lead=ok?moLead(M):null;
   $('#moTileLead').innerHTML=lead?moGo('moSecTokens','led by '+esc(lead.s)+(lead.L!=null?' '+moLv(lead.L):'')):'';
   // the last 30 days, a stripe each, today at the right whatever the history's length
@@ -7825,7 +7830,7 @@ function moPanel(M){
   if(!ok){ empty.innerHTML=M===undefined?'Reading the momentum…'
       : M&&M.status==='short'?'Not enough history yet. A level needs 20 daily moves to measure against: <b>'+esc(String(M.need))+' more day'+(M.need===1?'':'s')+'</b> of the relay\'s day records.'
       : M&&M.status==='none'?'No day records with holdings yet. The relay writes one a day; the reading starts once there are enough.'
-      : 'No momentum reading yet. The momentum job writes one every hour; this panel fills in after the first.';
+      : 'No momentum reading yet. The momentum job writes one every twenty minutes; this panel fills in after the first.';
     return; }
   const L=M.now.L, up=M.now.dir>0, r=M.now.read, ref=M.ref, run=M.run||{}, word=up?'top':'bottom';
   moDial($('#moHeroDial'), L, {cx:210,cy:210,r:170,big:true}, ref?ref.peak:null, ref?ref.kind:null);
