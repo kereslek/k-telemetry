@@ -2013,7 +2013,7 @@
         <div class="mo-grid wide">
           <div class="mo-card" id="moSecDrivers"><div class="mo-sh"><span class="k">WHAT'S DRIVING IT · LAST 6 DAYS</span><button type="button" class="tile-why mo-up" data-jump="momentum" data-anchor="moToc" aria-label="Back to the momentum contents">↑</button><span class="d" id="moFallD"></span></div><div id="moFall"></div>
             <div class="mo-more"><span class="lab">SEE ALSO</span><button type="button" class="tile-why" data-jump="tokens" title="Each token you hold and its price move">TOKEN EXPOSURE ›</button><button type="button" class="tile-why" data-jump="census" title="What your pools earned and why">WHY YOUR FEES MOVED ›</button></div></div>
-          <div class="mo-card" id="moSecSignals"><div class="mo-sh"><span class="k">THE TWO SIGNALS</span><button type="button" class="tile-why mo-up" data-jump="momentum" data-anchor="moToc" aria-label="Back to the momentum contents">↑</button><span class="d">A level says how unusual the move is. The signal to act comes at the turn. The track record is the long test: today's mix of tokens run through three years of their own prices.</span></div>
+          <div class="mo-card" id="moSecSignals"><div class="mo-sh"><span class="k">THE TWO SIGNALS</span><button type="button" class="tile-why mo-up" data-jump="momentum" data-anchor="moToc" aria-label="Back to the momentum contents">↑</button><span class="d">A level says how unusual the move is. The signal to act comes at the turn. The track record is the long test: today's mix of tokens run through up to three years of their own prices.</span></div>
             <div class="mo-sigs"><div class="s" id="moSigSell"></div><div class="s" id="moSigBuy"></div></div>
             <div class="mo-more"><span class="lab">SEE ALSO</span><button type="button" class="tile-why" data-jump="playbook" title="What to do, and why">PLAYBOOK ›</button></div></div>
         </div>
@@ -2029,7 +2029,7 @@
             <li><b>A run</b> starts at ▲5 (or ▼5) and ends at the turn: the first 5% fall from its top, or the first 5% bounce off its bottom.</li>
             <li><b>Reference point: the last top.</b> The latest climb that reached ▲5 and turned; the same for falls with the last bottom. Today's run is compared with it day by day, from their first day up.</li>
             <li>Fingerprint: pace (the last 3 days against their usual move), days up of the last 6, stretch above the 20-day average, speed-up (is the pace rising), breadth (how many of your tokens move the same way). Alike is how close the five are to the reference at the same stage.</li>
-            <li>The long test runs today's mix of tokens through three years of their own daily prices (DefiLlama) and counts each level, each signal and what followed.</li>
+            <li>The long test runs today's mix of tokens through up to three years of their own daily prices (DefiLlama), from the first day most of the mix has prices, and counts each level, each signal and what followed. Outside prices are first brought to the level of your records.</li>
             <li>A new level is shown once it reads the same twice in a row. Read every hour from the relay's day records; days in Budapest time.</li>
           </ul></div>
         <div class="mo-foot"><button type="button" class="tile-why" data-jump="momentum" data-anchor="moToc">↑ contents</button><button type="button" class="tile-why" id="moBackTile">↑ back to the tile</button></div>
@@ -7682,6 +7682,7 @@ const moAgo=t=>{ const m=Math.round((Date.now()-t)/60e3); return m<2?'just now':
 const moGo=(a,label)=>'<button type="button" class="tile-why" data-jump="momentum" data-anchor="'+a+'">'+label+'</button>';
 const moReduce=()=>!!(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches);
 const moOk=M=>!!(M&&M.status==='ok'&&M.now&&M.now.L!=null);
+const moYrs=y=>y==null?'—':(y<2?y.toFixed(1):String(Math.round(y)))+' year'+(y<2&&y.toFixed(1)==='1.0'?'':'s');
 
 function loadMomentum(){
   const slug=activeProfile()?.slug||'main';
@@ -7950,11 +7951,11 @@ function moFall(M){
 function moSignals(M){
   const T=M.test, own=M.own||{};
   const mk=(id,sell)=>{ const W=240,H=118, pts=sell?[[12,96],[44,80],[76,58],[108,36],[134,22],[160,30],[184,42],[220,66]]:[[12,22],[44,38],[76,60],[108,82],[134,96],[160,88],[184,76],[220,52]];
-    const c=sell?'var(--r4)':'var(--f4)', tp=pts[4], sg=pts[6], st=T&&(sell?T.sell:T.buy), cnt=T?(sell?T.sells:T.buys):null, yrs=T?Math.round(T.years):null;
+    const c=sell?'var(--r4)':'var(--f4)', tp=pts[4], sg=pts[6], st=T&&(sell?T.sell:T.buy), cnt=T?(sell?T.sells:T.buys):null, yrs=T?moYrs(T.years):null;
     const rec=!T?'Long test: not run yet.'
-      :!st||!st.n?'Long test, '+yrs+' years: '+(cnt?cnt+' '+(sell?'sell':'buy')+' signal'+(cnt>1?'s':'')+', too recent to judge.':'no '+(sell?'sell':'buy')+' signal.')
-      :sell?'Long test, '+yrs+' years: <b>'+st.n+' sell signal'+(st.n>1?'s':'')+'</b>. In the 30 days after the turn the low was a median <b>'+moPct(st.lowMed)+'</b> from it; '+st.back+' of '+st.n+' went back above the top.'
-      :'Long test, '+yrs+' years: <b>'+st.n+' buy signal'+(st.n>1?'s':'')+'</b>. In the 30 days after the bounce the high was a median <b>'+moPct(st.highMed)+'</b> from it; '+st.back+' of '+st.n+' fell below the bottom again.';
+      :!st||!st.n?'Long test, '+yrs+': '+(cnt?cnt+' '+(sell?'sell':'buy')+' signal'+(cnt>1?'s':'')+', too recent to judge.':'no '+(sell?'sell':'buy')+' signal.')
+      :sell?'Long test, '+yrs+': <b>'+st.n+' sell signal'+(st.n>1?'s':'')+'</b>. In the 30 days after the turn the low was a median <b>'+moPct(st.lowMed)+'</b> from it; '+st.back+' of '+st.n+' went back above the top.'
+      :'Long test, '+yrs+': <b>'+st.n+' buy signal'+(st.n>1?'s':'')+'</b>. In the 30 days after the bounce the high was a median <b>'+moPct(st.highMed)+'</b> from it; '+st.back+' of '+st.n+' fell below the bottom again.';
     $(id).innerHTML='<b style="color:'+c+'">'+(sell?'▲ Sell signal':'▼ Buy signal')+'</b><div class="t">'+(sell?'After a climb of ▲6 or more: the first 5% fall from its top.':'After a fall of ▼6 or more that ends below where the last climb began: the first 5% bounce off the bottom.')+'</div>'
       +'<svg class="mo-chart" viewBox="0 0 '+W+' '+H+'" aria-hidden="true" style="margin-top:6px"><polyline points="'+pts.map(p=>p.join(',')).join(' ')+'" fill="none" stroke="var(--ink-2)" stroke-width="2" stroke-linejoin="round"/>'
       +'<circle cx="'+tp[0]+'" cy="'+tp[1]+'" r="4" fill="var(--ink-2)"/><text x="'+(tp[0]-8)+'" y="'+(sell?tp[1]-6:tp[1]+14)+'" text-anchor="end" fill="var(--muted)" font-size="10">'+(sell?'top':'bottom')+'</text>'
@@ -7988,12 +7989,12 @@ function moHeatChart(M){
   hit.addEventListener('pointermove',at); hit.addEventListener('pointerdown',at); hit.addEventListener('pointerleave',()=>{ cross.setAttribute('opacity',0); moTip.hide(); });
   host.append(svg); line.style.setProperty('--len',moLen(line)); moInView(host);
 }
-const moOften=(o,yrs)=>{ if(!o) return '—'; const r=o.perYear; if(!o.n) return 'not in '+Math.round(yrs)+' years';
-  return r>=45?'most weeks':r>=20?'every week or two':r>=10?'about monthly':r>=5?'every couple of months':r>=2.5?'a few times a year':r>=1.5?'about twice a year':r>=0.75?'about once a year':'once in '+Math.round(1/r)+' years'; };
+const moOften=(o,yrs)=>{ if(!o) return '—'; const r=o.perYear; if(!o.n) return 'not in '+moYrs(yrs);
+  return r>=45?'most weeks':r>=20?'every week or two':r>=10?'about monthly':r>=5?'every couple of months':r>=2.5?'a few times a year':r>=1.5?'about twice a year':r>=0.75?'about once a year':'once in '+Math.max(2,Math.round(1/r))+' years'; };
 function moLadder(M){
   const host=$('#moLadder'); if(!host) return;
   const T=M.test, L=M.now.L, ref=M.ref;
-  $('#moLadderD').textContent=T?'Ten steps each way. How often: how many runs a year reach each level in the long test ('+Math.round(T.years)+' years of today\'s mix).':'Ten steps each way. How often each comes is filled in by the long test once it has run.';
+  $('#moLadderD').textContent=T?'Ten steps each way. How often: how many runs a year reach each level in the long test ('+moYrs(T.years)+' of today\'s mix).':'Ten steps each way. How often each comes is filled in by the long test once it has run.';
   const rows=[]; for(let l=10;l>=-10;l--) rows.push(l);
   host.innerHTML=rows.map(l=>{ const A=Math.abs(l);
     return '<div class="mo-rung'+(l===L?' here':'')+'"><span class="n" style="background:'+(l?moHex(l):'var(--line)')+';'+(l?'':'color:var(--ink-2)')+'">'+moLv(l)+'</span>'

@@ -90,9 +90,10 @@ const note=m=>console.log('note  '+m);
 const withH=recs.filter(r=>Array.isArray(r.ps)||Array.isArray(r.w)).length;
 note('day records with holdings: '+withH+' of '+recs.length);
 note('reading: '+(out.status==='ok'?'a level today':out.status==='short'?'waiting for history ('+out.need+' more day(s) of records)':'none yet'));
-note('tokens with an outside price history: '+named.length+' of '+want.length+' · '+fetched+' refreshed, '+kept+' kept from the last run, '+failedTok+' not found ('+calls+' calls)');
+note('tokens with an outside price history: '+named.length+' of '+want.length+' ('+(want.length-named.length)+' no longer held: their days come from the records only) · '+fetched+' refreshed, '+kept+' kept from the last run, '+failedTok+' not found ('+calls+' calls)');
+if(out.diag) note('outside prices against the records: '+out.diag.agree+' token(s) at their level, '+out.diag.rescaled+' brought to it');
 if(out.status==='ok'){
-  note('index: '+(out.days||[]).length+' days shown; share of the value priced at both ends of a day: '+(out.cov!=null?Math.round(out.cov*100)+'%':'—')+'; record prices replaced as misreads: '+out.misreads);
+  note('index: '+(out.days||[]).length+' days shown; share of the value priced at both ends of a day: '+(out.cov!=null?Math.round(out.cov*100)+'%':'—')+'; record prices replaced as one-day spikes: '+out.misreads);
   note('long test: '+(out.test?out.test.years.toFixed(1)+' years, '+Math.round(out.test.cov*100)+'% of the tokens covered':'not run (no price histories)'));
 }
 const txt=JSON.stringify(out);

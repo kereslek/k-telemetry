@@ -45,6 +45,12 @@ ok(!same, 'with different holdings the index differs (the weights move), as it s
   ok(j>0 && g.days[j].filled && g.days.length===N, 'a missing day is filled by sharing the next day\'s move'); }
 { const h=holdingsOf(recsWith()[0]); ok(h.has('evm:native') && !h.has('evm:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') && Math.abs(h.get('evm:native').a-4)<1e-9, 'wrapped ETH in a pool and ETH in a wallet count as one token'); }
 
+// an outside history at twice the records' level (another contract, another quote) replaces nothing
+{ const x2={}; for(const [k,m] of Object.entries(ext)){ x2[k]={}; for(const [d,v] of Object.entries(m)) x2[k][d]=v*2*(1+0.04*Math.sin(dayNum(d))); }
+  const a=buildIndex(recsWith(), x2), b0=buildIndex(recsWith(), {});
+  ok(a.misreads===0 && a.rescaled>=1 && a.days.every((x,i)=>Math.abs(x.i/b0.days[i].i-1)<1e-9), 'an outside history at twice the records\' level is brought to it: nothing replaced, the index unchanged ('+a.rescaled+' rescaled)');
+  const o=analyze({recs:recsWith(), ext:x2, today:dayStr(D0+N-1)}), o0=analyze({recs:recsWith(), ext, today:dayStr(D0+N-1)});
+  ok(o.tok[0].L===o0.tok[0].L, 'a token\'s own level is the same whichever level its outside history sits at ('+o.tok[0].L+')'); }
 const vals=plain.days.map(x=>x.i), ds=plain.days.map(x=>x.d), lv=levels(vals);
 const at=d=>lv[ds.indexOf(d)].L;
 ok(lv.slice(0,23).every(x=>x.L==null) && lv[23].L!=null, 'no level until 20 daily moves are there to measure against');
