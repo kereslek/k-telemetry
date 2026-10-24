@@ -215,13 +215,16 @@ console.log('\n— gauges —');
   let disagree=0, alarming=0, marks=0, gapped=0;
   G.forEach((g,i)=>{ const drawn=g.fN!=null?g.fN:null, bar=g.fBar, d=bar!=null&&drawn!=null?Math.abs(drawn-Math.max(0,Math.min(1,bar))):0;
     if(g.inRange&&d>0.02) disagree++;
-    const nearEnd=g.inRange&&drawn!=null&&(drawn<0.15||drawn>0.85), roomy=g.down>w&&g.up>w; if(nearEnd&&roomy) alarming++;
+    /* the amber ends mark where a warnPct move reaches an edge: the needle is in one exactly when an edge is that close */
+    const span=Math.log(g.wide), z0=Math.min(0.5,-Math.log(1-w/100)/span), z1=Math.min(0.5,Math.log(1+w/100)/span);
+    const inZone=g.inRange&&drawn!=null&&(drawn<z0-0.005||drawn>1-z1+0.005), close=g.down<=w||g.up<=w;
+    if(g.inRange&&drawn!=null&&inZone!==close&&Math.abs(Math.min(g.down,g.up)-w)>0.5) alarming++;
     if(g.gap!=null){ gapped++; if(g.mark) marks++; }
     OK('card #'+(i+1)+': gauge reads '+(g.txt||'—')+' (needle at '+r(drawn)+') · the bar under it puts the price at '+r(bar)+' · the linear share of the price span would be '+r(g.lin)
       +' · '+(g.inRange?'a '+g.down.toFixed(1)+'% fall or a '+g.up.toFixed(1)+'% rise reaches an edge':'out of range')+' · '+g.sev+' · range '+g.wide.toFixed(g.wide<10?2:0)+'× wide'
-      +(g.inv?' · shown inverted':'')+(g.gap!=null?' · pool '+(g.gap>0?'+':'−')+Math.abs(g.gap).toFixed(1)+'% vs market: at the market price the gauge would read '+r(g.mLin)+' (bar '+r(g.mLog)+')':''));
+      +(g.inv?' · shown inverted':'')+(g.gap!=null?' · pool '+(g.gap>0?'+':'−')+Math.abs(g.gap).toFixed(1)+'% vs market: at the market price it would read '+r(g.mLog):''));
   });
-  ((disagree||alarming||marks<gapped)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the needle and the bar under it differ by more than 2 points · '+alarming+' reading within 15 points of an end while both edges are more than '+w+'% away'
+  ((disagree||alarming||marks<gapped)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the needle and the bar under it differ by more than 2 points · '+alarming+' where the amber end and a '+w+'% move to the edge disagree'
     +' · the market mark on '+marks+' of '+gapped+' pool(s) off the market');
   const D=P.dials, moOk=D.moL==null||D.mo.every(a=>a==null||Math.abs(a-D.moL*9)<0.6), gasOk=D.gasWant==null||D.gas==null||Math.abs(D.gas-D.gasWant)<0.6;
   (moOk?OK:WARN)('momentum dials: '+D.mo.filter(a=>a!=null).length+' drawn, needle '+(moOk?'at the reading\'s level':'NOT at the reading\'s level'));
