@@ -1,0 +1,32 @@
+# Momentum: how fast your tokens and pools are moving, every hour, from the relay's own day records
+# and three years of the tokens' daily prices. Feeds the dashboard's MOMENTUM tile and panel. Written
+# sealed (the reading, and the price file, whose token list would show what is held); the log is
+# public and carries pass/fail and counts only.
+name: momentum
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'   # every hour at :17
+permissions:
+  contents: write
+concurrency: { group: momentum, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/momentum.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+      - name: Commit
+        run: |
+          [ -f deck-r7k4x9/momentum-main.json ] || exit 0
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          git add deck-r7k4x9/momentum-main.json deck-r7k4x9/momentum-px-main.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "momentum $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1
