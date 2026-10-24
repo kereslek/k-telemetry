@@ -122,7 +122,7 @@ const P=await pg.evaluate(()=>{
   const k=(chain,addr)=>tokKey(chain,addr);
   const cards=[...state.positions.values()].map(p=>({k0:k(p.chain,p.chain==='sol'?p.mint0:p.token0), k1:k(p.chain,p.chain==='sol'?p.mint1:p.token1),
     u0:p.usd0, u1:p.usd1, w0:(p.amt0||0)*(p.usd0||0), w1:(p.amt1||0)*(p.usd1||0), inRange:!!p.inRange, chain:p.chain==='sol'?'Solana':'Ethereum'}));
-  let book=[]; try{ book=buildTokenBook().map(t=>({k:t.key, u:t.usd, idle:t.idle, pooled:t.pooled, v:t.value, inPool:t.legs.length>0})); }catch(e){}
+  let book=[]; try{ book=buildTokenBook().map(t=>({k:t.key, u:t.usd, idle:t.idle, pooled:t.pooled, total:t.total, v:t.value, inPool:t.legs.length>0})); }catch(e){}
   const H=state.history||[];
   return {mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
     tickers:(state.tickers||[]).map(t=>({sym:t.sym, ch:t.ch, usd:t.usd})), cards, book, histT:H.length?H[H.length-1].t:null, idleAt:state.idleAt||null};
@@ -163,6 +163,9 @@ const part=(name, src, asOf, expectMin, extra='')=>{
   ((off.length||!rows.length)?WARN:OK)('ticker strip (DefiLlama, written by the relay): prices from '+age(now-relay.t)+' ago · '+rows.length+' of '+P.tickers.length+' compared, '+off.length+' more than 2% off'
     +(rows.length?' (worst '+pct(rows.reduce((a,d)=>Math.abs(d)>Math.abs(a)?d:a,0))+')':'')); }
 part('position cards (read live on the page)', 'pageCards', null, 0);
+/* what it adds up to: the page's tokens at the page's prices against the same amounts at the market */
+{ let pv=0, mv=0; for(const x of P.book){ if(!(x.v>0)) continue; const t=T.get(x.k); pv+=x.v; mv+=t&&t.mkt>0&&!t.stable&&x.total>0?x.total*t.mkt:x.v; }
+  const d=mv>0?pv/mv-1:null; ((d!=null&&Math.abs(d)>0.005)?WARN:OK)('your tokens as the page values them (pools and wallets, NFTs aside): '+pct(d)+' against the same amounts at the market now'); }
 part('TOKEN EXPOSURE and the wallet list (the page\'s token book)', 'pageBook', null, 0,
   ' · '+ranked.filter(t=>t.walletOnly&&!t.stable&&t.share>=0.005).length+' token(s) held only in wallets: those keep the relay\'s wallet price');
 part('wallets in the relay file', 'relayWallets', idle.t||null, 20, idle.stale?' · HELD BACK: the last complete read'+(idle.staleWallets?' ('+idle.staleWallets+' wallet(s) did not answer)':'')+(idle.stalePx?' ('+idle.stalePx+' holding(s) unpriced)':''):'');
@@ -171,7 +174,7 @@ part('today\'s day record (momentum, daily totals)', 'record', rec&&rec.t||null,
 
 console.log('\n— parts that are drawn from a stored reading —');
 if(mo){ const a=now-(mo.t||0), live=mo.now&&mo.now.d===today;
-  ((a>90*60e3||!live)?WARN:OK)('momentum reading: written '+age(a)+' ago'+(mo.now?' · its last day '+(live?'is today':'is NOT today'):'')+' · the hourly job is the only thing that moves it'); }
+  ((a>90*60e3||!live)?WARN:OK)('momentum reading: written '+age(a)+' ago'+(mo.now?' · its last day '+(live?'is today':'is NOT today'):'')+' · the momentum job (every twenty minutes) is the only thing that moves it'); }
 else WARN('momentum reading: not readable');
 { const H=relay.history||[], L=H[H.length-1];
   ((L&&now-L.t<30*60e3)?OK:WARN)('portfolio history: newest point '+(L?age(now-L.t)+' old':'—')+' in the relay file · on the page '+(P.histT?age(now-P.histT)+' old':'—')); }
