@@ -1,0 +1,21 @@
+# Read-only: does every part of the dashboard follow the market? Each place the page takes a price
+# from is set against the market now (Coinbase, the busiest DEX pool, DefiLlama with its own time
+# stamp). The log is public: part names, ages, percentages and counts only. Run by hand.
+name: track-audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: node scripts/track-audit.mjs
+        env:
+          # opens the locked deck and its sealed files; the log carries no figure of yours
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
