@@ -124,7 +124,12 @@ const P=await pg.evaluate(()=>{
     u0:p.usd0, u1:p.usd1, w0:(p.amt0||0)*(p.usd0||0), w1:(p.amt1||0)*(p.usd1||0), inRange:!!p.inRange, chain:p.chain==='sol'?'Solana':'Ethereum'}));
   let book=[]; try{ book=buildTokenBook().map(t=>({k:t.key, u:t.usd, idle:t.idle, pooled:t.pooled, total:t.total, v:t.value, inPool:t.legs.length>0})); }catch(e){}
   const H=state.history||[];
-  return {mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
+  // the pools whose own price is off the market: the card says so, and PRIORITY flags the ones a trade back would pass through
+  const off=[...state.positions.values()].filter(p=>p.poolGap&&Math.abs(p.poolGap.pct)>2);
+  const gapRows=[...document.querySelectorAll('#actionBody .act-row')].filter(x=>/OFF THE MARKET/.test(x.innerText)).length;
+  const gaps={n:off.length, inRange:off.filter(p=>p.inRange).length, shown:document.querySelectorAll('#cards .card .pgap').length, rows:gapRows,
+    worst:off.length?Math.max(...off.map(p=>Math.abs(p.poolGap.pct))):null};
+  return {gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
     tickers:(state.tickers||[]).map(t=>({sym:t.sym, ch:t.ch, usd:t.usd})), cards, book, histT:H.length?H[H.length-1].t:null, idleAt:state.idleAt||null};
 });
 await b.close();
@@ -163,6 +168,8 @@ const part=(name, src, asOf, expectMin, extra='')=>{
   ((off.length||!rows.length)?WARN:OK)('ticker strip (DefiLlama, written by the relay): prices from '+age(now-relay.t)+' ago · '+rows.length+' of '+P.tickers.length+' compared, '+off.length+' more than 2% off'
     +(rows.length?' (worst '+pct(rows.reduce((a,d)=>Math.abs(d)>Math.abs(a)?d:a,0))+')':'')); }
 part('position cards (read live on the page)', 'pageCards', null, 0);
+{ const g=P.gaps||{}; ((g.shown===g.n&&g.rows>=g.inRange&&g.rows<=g.n)?OK:WARN)('pools whose own price is more than 2% off the market: '+(g.n||0)+' ('+(g.inRange||0)+' in range'
+    +(g.worst!=null?', the furthest '+g.worst.toFixed(1)+'% off':'')+') · the gap shown on '+(g.shown||0)+' card(s) · PRIORITY rows: '+(g.rows||0)); }
 /* what it adds up to: the page's tokens at the page's prices against the same amounts at the market */
 { let pv=0, mv=0; for(const x of P.book){ if(!(x.v>0)) continue; const t=T.get(x.k); pv+=x.v; mv+=t&&t.mkt>0&&!t.stable&&x.total>0?x.total*t.mkt:x.v; }
   const d=mv>0?pv/mv-1:null; ((d!=null&&Math.abs(d)>0.005)?WARN:OK)('your tokens as the page values them (pools and wallets, NFTs aside): '+pct(d)+' against the same amounts at the market now'); }
