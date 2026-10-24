@@ -222,14 +222,14 @@ try{
   (soleOk&&halfOk&&onOk?OK:FAIL)('token shares on made-up records: a sole LP whose pools’ records start on different days '+(soleOk?'takes 100%':'does NOT take 100%')+'; half of a pool carrying 15% of the trading '+(halfOk?'takes 7.5%':'does NOT take 7.5%')
     +'; a pool off the market today counts on the days it traded at it '+(onOk?'and only then':'— NOT as it should'));
 }catch(e){ FAIL('WHY FEES MOVED: '+String(e.message||e).slice(0,60)); }
-/* MOMENTUM: the hourly reading is fresh, and the tile, the panel and the floating button say what it
+/* MOMENTUM: the reading (every twenty minutes) is fresh, and the tile, the panel and the floating button say what it
    says. Pass or fail and counts only: never a level, a token or a date of yours. */
 try{
   const r0=await fetch(LIVE+'momentum-main.json?t='+Date.now());
   if(!r0.ok) WARN('momentum: no reading published yet');
   else {
     const M=openJ(await r0.json()), age=(Date.now()-M.t)/36e5;
-    (age<=3?OK:WARN)('momentum reading is '+age.toFixed(1)+' h old · '+(M.status==='ok'?'a level today':M.status==='short'?'waiting for history':'no reading')
+    (age<=1?OK:WARN)('momentum reading is '+age.toFixed(1)+' h old · '+(M.status==='ok'?'a level today':M.status==='short'?'waiting for history':'no reading')
       +(M.test?' · long test '+(M.test.years<2?M.test.years.toFixed(1):Math.round(M.test.years))+' years, '+Math.round(M.test.cov*100)+'% of the tokens covered':' · long test not run'));
     for(const w of [390,1440]){
       await pg.setViewportSize({width:w,height:w<500?844:900});

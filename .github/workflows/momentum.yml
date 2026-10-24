@@ -1,32 +1,63 @@
-# Momentum: how fast your tokens and pools are moving, every hour, from the relay's own day records
-# and three years of the tokens' daily prices. Feeds the dashboard's MOMENTUM tile and panel. Written
-# sealed (the reading, and the price file, whose token list would show what is held); the log is
-# public and carries pass/fail and counts only.
+# Momentum: how fast your tokens and pools are moving, from the relay's own day records and three
+# years of the tokens' daily prices. Feeds the dashboard's MOMENTUM tile and panel. Written sealed
+# (the reading, and the price file, whose token list would show what is held); the log is public
+# and carries pass/fail and counts only.
+#
+# One firing reads again every twenty minutes for five hours and twenty minutes, then starts the
+# next firing itself, the way the relay does. GitHub's own timer skipped most of an hourly schedule
+# on a busy day and the reading sat four hours old while the market fell; the timer below is only a
+# backstop that restarts the chain if it ever breaks.
 name: momentum
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 * * * *'   # every hour at :17
+    - cron: '17 */6 * * *'   # backstop only: the chain restarts itself
 permissions:
   contents: write
+  actions: write
 concurrency: { group: momentum, cancel-in-progress: false }
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
         with: { ref: gh-pages }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: node scripts/momentum.mjs
+      - name: Read, every twenty minutes
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
-      - name: Commit
         run: |
-          [ -f deck-r7k4x9/momentum-main.json ] || exit 0
           git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
-          git add deck-r7k4x9/momentum-main.json deck-r7k4x9/momentum-px-main.json
-          git diff --cached --quiet && exit 0
-          git commit -q -m "momentum $(date -u +%Y-%m-%dT%H:%MZ)"
-          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1
+          # A failing pass does not end the loop; the job fails only if every pass failed.
+          SPACING=1200
+          END=$(( $(date +%s) + 320*60 ))
+          ok=0; i=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            i=$((i+1)); start=$(date +%s)
+            echo "::group::pass $i"
+            git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
+            if node scripts/momentum.mjs; then
+              git add deck-r7k4x9/momentum-main.json deck-r7k4x9/momentum-px-main.json
+              if git diff --cached --quiet; then ok=$((ok+1)); else
+                git commit -q -m "momentum $(date -u +%Y-%m-%dT%H:%MZ)"
+                pushed=0
+                for k in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && { pushed=1; break; }; sleep $((k*5)); done
+                if [ "$pushed" = 1 ]; then ok=$((ok+1)); else echo "pass $i: could not push"; fi
+              fi
+            else
+              echo "pass $i failed (continuing)"
+            fi
+            echo "::endgroup::"
+            left=$(( SPACING - ($(date +%s) - start) )); [ "$left" -lt 60 ] && left=60
+            [ $(( $(date +%s) + left )) -lt "$END" ] && sleep $left || break
+          done
+          echo "$ok of $i passes written"
+          if [ "$ok" -eq 0 ]; then echo "every pass failed"; exit 1; fi
+      # The next firing is started by this one, not left to GitHub's timer.
+      - name: Start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run momentum.yml --ref gh-pages || echo "could not start the next run; the schedule will"

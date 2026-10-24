@@ -1,4 +1,4 @@
-/* Momentum: how fast your tokens and pools are moving, every hour.
+/* Momentum: how fast your tokens and pools are moving, read every twenty minutes.
 
    Read from the relay's own day records (deck-r7k4x9/daily-<slug>.json: what was held each day and
    at what prices), the tokens' daily prices for the last three years (DefiLlama, kept between runs
