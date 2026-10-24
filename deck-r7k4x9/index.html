@@ -432,6 +432,7 @@
   .metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;align-content:start}
   .m .k{font-size:9.5px;letter-spacing:.18em;color:var(--text-muted)}
   .m .v{font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;margin-top:2px}
+  .m .v .pgap{display:block;margin-top:3px;font-size:10px;letter-spacing:.02em;color:var(--status-warning);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .m .v.sm{font-size:12.5px}
   .m .v .up{color:var(--status-good)}
   .m .v .down{color:var(--status-critical)}
@@ -2634,7 +2635,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.16';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.17';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3415,15 +3416,20 @@ async function scanSol(){
     const scale=10**(d0-d1);
     const price=sqrtP*sqrtP*scale, priceLower=tickToPrice(pp.tickLower)*scale, priceUpper=tickToPrice(pp.tickUpper)*scale;
     let usd0=prices[pool.mint0]??null, usd1=prices[pool.mint1]??null;
-    /* Each pool prices its own tokens: SOL and the dollar stablecoins from the feed, the other
-       side (CPOOL) at this pool's rate against them — what the position could be swapped out at.
-       One feed price for CPOOL in every pool let a card gain value while its pool's CPOOL fell.
-       The relay values the same way, so the two agree. */
+    /* Both tokens at the market price (Jupiter, as the wallets are). With the market falling on
+       24 October, CPOOL in thin pools sat 3–17% above it, and valuing at each pool's own rate put
+       that gap into the cards, the totals and the history. The pool's rate for its non-reference
+       side is kept beside the market as poolGap: the card says how far off the pool is and
+       PRIORITY flags an in-range one. It values the token only when the market has no price for
+       it. The relay values the same way (marketFirstUsd), so the two agree. */
     const anc=m=>m===SOL_MINT||SOL_STABLE.has(m), a0=anc(pool.mint0), a1=anc(pool.mint1);
-    if(a0 && !a1 && usd0!=null && price>0) usd1=usd0/price;
-    else if(a1 && !a0 && usd1!=null) usd0=price*usd1;
+    let own=null;
+    if(a0 && !a1 && usd0!=null && price>0) own={side:1, usd:usd0/price, mkt:usd1};
+    else if(a1 && !a0 && usd1!=null) own={side:0, usd:price*usd1, mkt:usd0};
+    if(own && own.mkt==null){ if(own.side) usd1=own.usd; else usd0=own.usd; }
     if(usd0==null && usd1!=null) usd0=price*usd1;
     if(usd1==null && usd0!=null) usd1=usd0/price;
+    const poolGap=own&&own.mkt>0&&own.usd>0?{side:own.side, pool:own.usd, mkt:own.mkt, pct:(own.usd/own.mkt-1)*100}:null;
     const f0=Number(pp.feesOwed0)/10**d0, f1=Number(pp.feesOwed1)/10**d1;
     const valueUsd=(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null;
     const feesUsd=(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null;
@@ -3437,7 +3443,7 @@ async function scanSol(){
       id:'sol:'+pp.nftMint, chain:'sol', wallet:c.wallet, nftMint:pp.nftMint, poolId:pp.poolId, pda:c.pda,
       liq:String(pp.liquidity), mint0:pool.mint0, mint1:pool.mint1,
       m0:{symbol:m0.symbol}, m1:{symbol:m1.symbol}, d0, d1, tick, price, priceLower, priceUpper,
-      amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd,
+      amt0, amt1, f0, f1, usd0, usd1, valueUsd, feesUsd, poolGap,
       feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
       poolAprPct: rinfo?.apr ?? null,
       poolAprDay: rinfo?.aprDay ?? null, poolAprWeek: rinfo?.aprWeek ?? null, poolAprMonth: rinfo?.aprMonth ?? null,
@@ -7052,6 +7058,28 @@ function renderActions(){
         +(payback<1?'under a day':'≈'+payback.toFixed(1)+' days')+'. Collecting without redeploying gains you nothing.',
       when:payback<1?'<1d payback':'≈'+payback.toFixed(1)+'d payback'});
   }
+  /* A pool whose own price has not followed the market. The card values its token at the market,
+     but the pool still trades it at its own rate, so anyone can trade the pool back to the market
+     through your range, and that trade lands in your position. What it would take is the position
+     at market prices once the pool is traded to the market, against the position now; flagged when
+     the pool is more than 2% off and that trade would pass through the range. */
+  for(const p of ps){
+    const g=p.poolGap; if(!g||!(Math.abs(g.pct)>2)) continue;
+    const L=p.liq?Number(p.liq):null, Pm=p.usd0>0&&p.usd1>0?p.usd0/p.usd1:null;
+    const a=L>0&&Pm?amtsAt(L,p.price,p.priceLower,p.priceUpper,p.d0,p.d1):null, b=a?amtsAt(L,Pm,p.priceLower,p.priceUpper,p.d0,p.d1):null;
+    const cost=a&&b?(b.a0-a.a0)*p.usd0+(b.a1-a.a1)*p.usd1:null;
+    if(!p.inRange&&!(cost!=null&&cost<-1)) continue;
+    const sym=esc(String((g.side?p.m1:p.m0)?.symbol||'the token')), up=g.pct>0, big=Math.abs(g.pct)>=10, pct=Math.abs(g.pct).toFixed(1)+'%';
+    items.push({r:big?2:3.6, cls:big?'warn':'watch', tag:'OFF THE MARKET',
+      head:esc(pairName(p))+' '+linkRef(p)+' — this pool prices '+sym+' <b>'+(up?'+':'−')+pct+'</b> '+(up?'above':'below')+' the market',
+      sub:'The card values '+sym+' at the market ('+fmtUsd(g.mkt,g.mkt<1?6:2)+'); the pool still trades it at '+fmtUsd(g.pool,g.pool<1?6:2)+'. '
+        +(up?'Anyone can sell '+sym+' into your range at that premium, which would leave you holding more '+sym+', bought above the market'
+            :'Anyone can buy '+sym+' out of your range at that discount, which would leave you holding less '+sym+', sold below the market')
+        +(cost!=null&&cost<-1?': about <b>'+fmtUsd(-cost,0)+'</b> at today\'s prices, less the pool\'s fee on that trade.':'.')
+        +(p.inRange?'':' The range is out of the pool\'s price now, but the market sits inside it, so that trade would pass through it.')
+        +(isSoleLp(p)?' You are the only LP at this price, so all of it would land in your position.':''),
+      when:(up?'+':'−')+Math.abs(g.pct).toFixed(0)+'%'});
+  }
   /* A position is priced from the venue it trades on. When the same token also has an
      independent reference price, a wide gap is not a curiosity — it is the mark being set by
      a thin local market, and on a pool where you are the only LP it is your own quote. Say so
@@ -10294,7 +10322,12 @@ function renderCards(){
     const lo = inv ? 1/p.priceUpper : p.priceLower, up = inv ? 1/p.priceLower : p.priceUpper;
     const m=el('div','metrics');
     const mkm=(k,v,sm)=>{const x=el('div','m');x.append(el('div','k',k),el('div','v'+(sm?' sm':''),v));m.append(x);};
-    mkm('CURRENT PRICE', fmtPrice(showP(p.price))+' <span class="unit">'+unit+'</span>');
+    /* a pool whose own price is off the market says so under its price: the card values the token
+       at the market, and the gap is what a trader could work against the range */
+    const pg=p.poolGap&&Math.abs(p.poolGap.pct)>2?p.poolGap:null, pgSym=pg?esc(String((pg.side?p.m1:p.m0)?.symbol||'token')):'';
+    mkm('CURRENT PRICE', fmtPrice(showP(p.price))+' <span class="unit">'+unit+'</span>'
+      +(pg?'<span class="pgap" title="This pool trades '+pgSym+' at '+fmtUsd(pg.pool,pg.pool<1?6:2)+'; the market is '+fmtUsd(pg.mkt,pg.mkt<1?6:2)
+        +'. The card values it at the market.">this pool: '+pgSym+' '+(pg.pct>0?'+':'−')+Math.abs(pg.pct).toFixed(1)+'% vs market</span>':''));
     mkm('RANGE', fmtPrice(lo)+' – '+fmtPrice(up),true);
     mkm('POSITION VALUE', fmtUsd(p.valueUsd,0));
     mkm(isSol?'FEES OWED':'UNCLAIMED FEES', fmtUsd(p.feesUsd));
