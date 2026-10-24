@@ -121,7 +121,7 @@ await pg.waitForTimeout(8000);
 const P=await pg.evaluate(()=>{
   const k=(chain,addr)=>tokKey(chain,addr);
   const cards=[...state.positions.values()].map(p=>({k0:k(p.chain,p.chain==='sol'?p.mint0:p.token0), k1:k(p.chain,p.chain==='sol'?p.mint1:p.token1),
-    u0:p.usd0, u1:p.usd1, w0:(p.amt0||0)*(p.usd0||0), w1:(p.amt1||0)*(p.usd1||0)}));
+    u0:p.usd0, u1:p.usd1, w0:(p.amt0||0)*(p.usd0||0), w1:(p.amt1||0)*(p.usd1||0), inRange:!!p.inRange, chain:p.chain==='sol'?'Solana':'Ethereum'}));
   let book=[]; try{ book=buildTokenBook().map(t=>({k:t.key, u:t.usd, idle:t.idle, pooled:t.pooled, v:t.value, inPool:t.legs.length>0})); }catch(e){}
   const H=state.history||[];
   return {mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
@@ -132,7 +132,8 @@ console.log('\n— each part of the page against the market —');
 if(!scanned) FAIL('the page\'s first live scan did not finish within 4 minutes');
 (errs.length?WARN:OK)('page errors: '+(errs.length||'none'));
 (P.mode==='live'?OK:WARN)('the page is '+(P.mode==='live'?'live':'in '+P.mode+' mode')+(P.relayUsed?' · positions on at least one chain came from the relay file, not a live read':' · positions read live'));
-for(const c of P.cards){ const t0=T.get(c.k0), t1=T.get(c.k1); if(t0) put(t0,'pageCards',c.u0,c.w0); if(t1) put(t1,'pageCards',c.u1,c.w1); }
+for(const c of P.cards){ const t0=T.get(c.k0), t1=T.get(c.k1); if(t0) put(t0,'pageCards',c.u0,c.w0); if(t1) put(t1,'pageCards',c.u1,c.w1);
+  for(const [t,u,w] of [[t0,c.u0,c.w0],[t1,c.u1,c.w1]]) if(t&&u>0) (t.legs=t.legs||[]).push({u, w, inRange:c.inRange, chain:c.chain}); }
 for(const x of P.book){ const t=T.get(x.k); if(t){ put(t,'pageBook',x.u,x.v||0); if(!x.inPool) t.walletOnly=true; } }
 const TICK={SOL:'sol:native', LCX:'ethereum:0x8cd41041505885ef0ad3858181d66f17be8aae7e', CPOOL:'ethereum:0x66761fa41377003622aee3c7675fc7b5c1c2fac5'};
 const tickRows=P.tickers.map(x=>({t:T.get(TICK[x.sym])||(x.sym==='SOL'?{mkt:cb.SOL&&cb.SOL.px}:null), u:x.usd}));
@@ -185,6 +186,11 @@ if(flagged.length){ console.log('\n— tokens off the market, by rank (#1 is you
     const parts=['pageCards','pageBook','relayWallets','relayPools','record'].map(s=>{ const p=pxOf(t,s); return p>0?({pageCards:'cards',pageBook:'book',relayWallets:'relay wallets',relayPools:'relay pools',record:'record'})[s]+' '+pct(p/t.mkt-1):null; }).filter(Boolean);
     OK('#'+t.rank+' ('+(t.share>=0.1?'10% or more':t.share>=0.02?'2–10%':'under 2%')+' of the value'+(t.walletOnly?', wallets only':'')+'): market from '+t.mktFrom+(t.mktFrom==='DEX pool'?' (busiest pool deep enough)':'')
       +' · '+parts.join(' · ')+' · DefiLlama '+(t.ll>0?pct(t.ll/t.mkt-1)+', its price '+age(t.llAge)+' old':'has no price')+(t.lpFilled?' · priced from its pool in the relay':''));
+    /* each of your pools that holds it, largest first: what that pool prices it at, and whether the
+       position is in range (no pool is named or sized) */
+    if(t.legs&&t.legs.length) OK('   #'+t.rank+' in '+t.legs.length+' pool(s) of yours on '+[...new Set(t.legs.map(l=>l.chain))].join(' and ')+': '
+      +t.legs.sort((a,b)=>b.w-a.w).map(l=>pct(l.u/t.mkt-1)+(l.inRange?' in range':' out of range')).join(' · ')
+      +(t.chain==='sol'?' · its wallet price comes from Jupiter':' · its wallet price comes from DefiLlama'));
   } }
 
 console.log('\n'+fails+' fail, '+warns+' warn');
