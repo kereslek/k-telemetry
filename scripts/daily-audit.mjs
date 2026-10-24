@@ -253,6 +253,21 @@ try{
     await pg.evaluate(()=>scrollTo(0,0));
   }
 }catch(e){ FAIL('MOMENTUM: '+String(e.message||e).slice(0,60)); }
+/* RANGE POSITION gauges: the needle sits where the range bar under it puts the price (the same log
+   scale), and a pool off the market carries its market mark. Counts only. */
+try{
+  const g=await pg.evaluate(()=>{ let n=0, agree=0, gapped=0, marked=0;
+    for(const c of document.querySelectorAll('#cards .card')){
+      const svg=c.querySelector('.gaugebox svg'), nl=svg&&[...svg.querySelectorAll('line')].find(l=>l.getAttribute('stroke')==='#eaf7fa');
+      const rr=c.querySelector('.rangebar .rb-range'), cu=c.querySelector('.rangebar .rb-price'); if(!nl||!rr||!cu) continue;
+      const p=[...state.positions.values()].find(q=>String(q.id)===c.dataset.id); if(!p) continue; n++;
+      const fN=1-Math.atan2(+nl.getAttribute('y1')-+nl.getAttribute('y2'), +nl.getAttribute('x2')-+nl.getAttribute('x1'))/Math.PI;
+      const L=parseFloat(rr.style.left), W=parseFloat(rr.style.width), X=parseFloat(String(cu.style.left).replace('calc(',''));
+      const bar=Math.max(0,Math.min(1,(X-L)/W)); if(!p.inRange||Math.abs(fN-bar)<=0.02) agree++;
+      if(p.poolGap&&Math.abs(p.poolGap.pct)>2){ gapped++; if(svg.querySelector('.g-mkt')) marked++; } }
+    return {n, agree, gapped, marked}; });
+  ((g.agree===g.n&&g.marked===g.gapped)?OK:FAIL)('RANGE POSITION gauges: '+g.agree+' of '+g.n+' agree with the range bar under them · market mark on '+g.marked+' of '+g.gapped+' pool(s) off the market');
+}catch(e){ FAIL('RANGE POSITION gauges: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');
 /* the wallet list and the balances read from it, in counts per chain only */

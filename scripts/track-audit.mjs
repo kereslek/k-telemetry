@@ -142,7 +142,7 @@ const P=await pg.evaluate(()=>{
     const inv=getInv(p), dLo=inv?1/p.priceUpper:p.priceLower, dHi=inv?1/p.priceLower:p.priceUpper, dPr=inv?1/p.price:p.price;
     const lin=x=>(x-dLo)/(dHi-dLo), lg=x=>Math.log(x/dLo)/Math.log(dHi/dLo), e=dispEdge(p);
     const g=p.poolGap&&Math.abs(p.poolGap.pct)>2?p.poolGap:null, Pm=g&&p.usd0>0&&p.usd1>0?p.usd0/p.usd1:null, dPm=Pm?(inv?1/Pm:Pm):null;
-    return {v:p.valueUsd||0, txt, fN, fBar:L!=null&&W>0&&X!=null?(X-L)/W:null, lin:lin(dPr), log:lg(dPr), inRange:!!p.inRange,
+    return {v:p.valueUsd||0, txt, fN, mark:!!(svg&&svg.querySelector('.g-mkt')), fBar:L!=null&&W>0&&X!=null?(X-L)/W:null, lin:lin(dPr), log:lg(dPr), inRange:!!p.inRange,
       down:inv?(1-p.price/p.priceUpper)*100:p.dLow, up:inv?(p.price/p.priceLower-1)*100:p.dUp, sev:severityOf(p), inv, wide:dHi/dLo,
       gap:g?g.pct:null, mLin:dPm?lin(dPm):null, mLog:dPm?lg(dPm):null};
   }).filter(Boolean);
@@ -212,15 +212,17 @@ if(census&&census.t) OK('pool census (twice a day): '+age(now-census.t)+' old');
 /* ---------- the gauges: what each one shows, and why ---------- */
 console.log('\n— gauges —');
 { const G=(P.gauges||[]).slice().sort((a,b)=>b.v-a.v), r=x=>x==null||!isFinite(x)?'—':Math.round(x*100)+'%', w=P.dials.warn;
-  let disagree=0, alarming=0;
-  G.forEach((g,i)=>{ const drawn=g.fN!=null?g.fN:null, bar=g.fBar, d=bar!=null&&drawn!=null?Math.abs(Math.max(0,Math.min(1,g.lin))-bar):0;
-    if(g.inRange&&d>0.05) disagree++;
-    const nearEnd=g.inRange&&(Math.max(0,Math.min(1,g.lin))<0.15||g.lin>0.85), roomy=g.down>w&&g.up>w; if(nearEnd&&roomy) alarming++;
-    OK('card #'+(i+1)+': gauge reads '+(g.txt||'—')+' (needle at '+r(drawn)+', the linear share of the range) · the bar under it puts the price at '+r(bar)+' (log, the share of the move between the edges)'
+  let disagree=0, alarming=0, marks=0, gapped=0;
+  G.forEach((g,i)=>{ const drawn=g.fN!=null?g.fN:null, bar=g.fBar, d=bar!=null&&drawn!=null?Math.abs(drawn-Math.max(0,Math.min(1,bar))):0;
+    if(g.inRange&&d>0.02) disagree++;
+    const nearEnd=g.inRange&&drawn!=null&&(drawn<0.15||drawn>0.85), roomy=g.down>w&&g.up>w; if(nearEnd&&roomy) alarming++;
+    if(g.gap!=null){ gapped++; if(g.mark) marks++; }
+    OK('card #'+(i+1)+': gauge reads '+(g.txt||'—')+' (needle at '+r(drawn)+') · the bar under it puts the price at '+r(bar)+' · the linear share of the price span would be '+r(g.lin)
       +' · '+(g.inRange?'a '+g.down.toFixed(1)+'% fall or a '+g.up.toFixed(1)+'% rise reaches an edge':'out of range')+' · '+g.sev+' · range '+g.wide.toFixed(g.wide<10?2:0)+'× wide'
       +(g.inv?' · shown inverted':'')+(g.gap!=null?' · pool '+(g.gap>0?'+':'−')+Math.abs(g.gap).toFixed(1)+'% vs market: at the market price the gauge would read '+r(g.mLin)+' (bar '+r(g.mLog)+')':''));
   });
-  ((disagree||alarming)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the gauge and the bar under it differ by more than 5 points · '+alarming+' reading within 15 points of an end while both edges are more than '+w+'% away');
+  ((disagree||alarming||marks<gapped)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the needle and the bar under it differ by more than 2 points · '+alarming+' reading within 15 points of an end while both edges are more than '+w+'% away'
+    +' · the market mark on '+marks+' of '+gapped+' pool(s) off the market');
   const D=P.dials, moOk=D.moL==null||D.mo.every(a=>a==null||Math.abs(a-D.moL*9)<0.6), gasOk=D.gasWant==null||D.gas==null||Math.abs(D.gas-D.gasWant)<0.6;
   (moOk?OK:WARN)('momentum dials: '+D.mo.filter(a=>a!=null).length+' drawn, needle '+(moOk?'at the reading\'s level':'NOT at the reading\'s level'));
   (gasOk?OK:WARN)('gas gauge: needle '+(D.gas==null?'not drawn':gasOk?'at the gas reading':'NOT at the gas reading'));
