@@ -614,11 +614,10 @@ const TOKEN_PROG='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const SOL_MINT='So11111111111111111111111111111111111111112';
 const SOL_KNOWN={[SOL_MINT]:'SOL','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v':'USDC','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB':'USDT'};
-/* Each pool prices its own tokens. A pool pairs a reference token (SOL, ETH, BTC, a dollar
-   stablecoin), whose price comes from the feed, with a token that is valued at the pool's own
-   rate against it. CPOOL had been valued at one feed price in every pool, so a card could gain
-   value while its pool's own CPOOL price fell. Valuing at the pool's rate is what the position
-   could actually be swapped out at; the page does the same. */
+/* Ethereum pools price their own tokens. A pool pairs a reference token (ETH, BTC, a dollar
+   stablecoin), whose price comes from the feed, with a token valued at the pool's own rate against
+   it: what the position could be swapped out at; the page does the same. Solana pools value at the
+   market instead and keep the pool's rate beside it (marketFirstUsd, below). */
 const ANCHORS=new Set([SOL_MINT,'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
   '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','0xdac17f958d2ee523a2206206994597c13d831ec7',
   '0x6b175474e89094c44da98b954eedeac495271d0f','0x2260fac5e5542a773aa44fbcfedf7c193bc2c599']);
@@ -630,6 +629,23 @@ function poolOwnUsd(t0,t1,usd0,usd1,price){
   if(usd0==null&&usd1!=null) usd0=price*usd1;
   if(usd1==null&&usd0!=null&&price>0) usd1=usd0/price;
   return [usd0,usd1];
+}
+/* Solana pools value both tokens at the market price (Jupiter, as the wallets are). On 24 October,
+   with the market falling, CPOOL in thin pools sat 3–17% above it: nobody had traded them down, and
+   valuing at the pool's rate carried that gap into every card, total and the history. The pool's
+   own rate for its non-reference side now travels with the position as poolGap, so the page can
+   say by how much the pool is off (and flag an in-range one, which a trader can work the gap
+   against); it values the token only when the market has no price for it. */
+function marketFirstUsd(t0,t1,usd0,usd1,price){
+  const a0=isAnchorTok(t0), a1=isAnchorTok(t1); let own=null;
+  if(a0&&!a1&&usd0!=null&&price>0) own={side:1, usd:usd0/price, mkt:usd1};
+  else if(a1&&!a0&&usd1!=null) own={side:0, usd:price*usd1, mkt:usd0};
+  if(own&&own.mkt==null){ if(own.side) usd1=own.usd; else usd0=own.usd; }
+  if(usd0==null&&usd1!=null) usd0=price*usd1;
+  if(usd1==null&&usd0!=null&&price>0) usd1=usd0/price;
+  const gap=own&&own.mkt>0&&own.usd>0?{side:own.side, pool:Number(own.usd.toPrecision(8)), mkt:Number(own.mkt.toPrecision(8)),
+    pct:Math.round((own.usd/own.mkt-1)*1e4)/100}:null;
+  return [usd0,usd1,gap];
 }
 const B58A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const B58M=Object.fromEntries([...B58A].map((c,i)=>[c,i]));
@@ -778,7 +794,7 @@ async function fetchSolana(SOL_WALLETS){
       const amtA=ra/10**dA, amtB=rb/10**dB;
       const price=sp*sp*scale, priceLower=tickToPrice(op.tickLower)*scale, priceUpper=tickToPrice(op.tickUpper)*scale;
       let usdA=oPrices[w.mintA]??null, usdB=oPrices[w.mintB]??null;
-      [usdA,usdB]=poolOwnUsd(w.mintA,w.mintB,usdA,usdB,price);
+      let oGap=null; [usdA,usdB,oGap]=marketFirstUsd(w.mintA,w.mintB,usdA,usdB,price);
       let fRawA=op.feeOwedA, fRawB=op.feeOwedB;
       try{
         const loT=await orcaTick(op.whirlpool,w.tickSpacing,op.tickLower);
@@ -815,7 +831,7 @@ async function fetchSolana(SOL_WALLETS){
         mint0:w.mintA, mint1:w.mintB,
         liq:op.liquidity.toString(), poolLiq:w.liquidity!=null?w.liquidity.toString():null,
         m0:{symbol:oSyms[w.mintA]}, m1:{symbol:oSyms[w.mintB]}, d0:dA, d1:dB, tick, price, priceLower, priceUpper,
-        amt0:amtA, amt1:amtB, f0:fA, f1:fB, usd0:usdA, usd1:usdB,
+        amt0:amtA, amt1:amtB, f0:fA, f1:fB, usd0:usdA, usd1:usdB, poolGap:oGap,
         valueUsd:(usdA!=null&&usdB!=null)?amtA*usdA+amtB*usdB:null,
         feesUsd:(usdA!=null&&usdB!=null)?fA*usdA+fB*usdB:null,
         feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
@@ -904,7 +920,7 @@ async function fetchSolana(SOL_WALLETS){
     const amt0=ra0/10**d0, amt1=ra1/10**d1;
     const price=sp*sp*scale, priceLower=tickToPrice(pp.tickLower)*scale, priceUpper=tickToPrice(pp.tickUpper)*scale;
     let usd0=prices[pool.mint0]??null, usd1=prices[pool.mint1]??null;
-    [usd0,usd1]=poolOwnUsd(pool.mint0,pool.mint1,usd0,usd1,price);
+    let rGap=null; [usd0,usd1,rGap]=marketFirstUsd(pool.mint0,pool.mint1,usd0,usd1,price);
     const fRaw0=(found.find(z=>z.pp===pp)?.pending0) ?? pp.feesOwed0;
     const fRaw1=(found.find(z=>z.pp===pp)?.pending1) ?? pp.feesOwed1;
     const f0=Number(fRaw0)/10**d0, f1=Number(fRaw1)/10**d1;
@@ -955,7 +971,7 @@ async function fetchSolana(SOL_WALLETS){
       liq:pp.liquidity.toString(), poolLiq:pool.liquidity!=null?pool.liquidity.toString():null,
       poolTvlUsd:rinfo.tvl??null, poolVol24Usd:rinfo.vol24??null,
       m0:{symbol:symbols[pool.mint0]}, m1:{symbol:symbols[pool.mint1]}, mint0:pool.mint0, mint1:pool.mint1, d0, d1, tick, price, priceLower, priceUpper,
-      amt0, amt1, f0, f1, usd0, usd1,
+      amt0, amt1, f0, f1, usd0, usd1, poolGap:rGap,
       valueUsd:(usd0!=null&&usd1!=null)?amt0*usd0+amt1*usd1:null,
       feesUsd:(usd0!=null&&usd1!=null)?f0*usd0+f1*usd1:null,
       feesEverUsd:null, costUsd:null, roiPct:null, roiMode:'sol', feeAprPct:null,
