@@ -129,7 +129,27 @@ const P=await pg.evaluate(()=>{
   const gapRows=[...document.querySelectorAll('#actionBody .act-row')].filter(x=>/OFF THE MARKET/.test(x.innerText)).length;
   const gaps={n:off.length, inRange:off.filter(p=>p.inRange).length, shown:document.querySelectorAll('#cards .card .pgap').length, rows:gapRows,
     worst:off.length?Math.max(...off.map(p=>Math.abs(p.poolGap.pct))):null};
-  return {gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
+  /* every gauge as drawn: the card's RANGE POSITION dial (needle and figure), the range bar's cursor
+     under it, the move to each edge, and where the market price would put the needle for a pool
+     that is off the market; plus the momentum dials and the gas gauge */
+  const gauges=[...document.querySelectorAll('#cards .card')].map(c=>{
+    const p=[...state.positions.values()].find(q=>String(q.id)===c.dataset.id); if(!p) return null;
+    const svg=c.querySelector('.gaugebox svg'), txt=svg?(svg.querySelector('text')||{}).textContent:null;
+    const nl=svg?[...svg.querySelectorAll('line')].find(l=>l.getAttribute('stroke')==='#eaf7fa'):null;
+    const fN=nl?1-Math.atan2(+nl.getAttribute('y1')-+nl.getAttribute('y2'), +nl.getAttribute('x2')-+nl.getAttribute('x1'))/Math.PI:null;
+    const rr=c.querySelector('.rangebar .rb-range'), cu=c.querySelector('.rangebar .rb-price');
+    const L=rr?parseFloat(rr.style.left):null, W=rr?parseFloat(rr.style.width):null, X=cu?parseFloat(String(cu.style.left).replace('calc(','')):null;
+    const inv=getInv(p), dLo=inv?1/p.priceUpper:p.priceLower, dHi=inv?1/p.priceLower:p.priceUpper, dPr=inv?1/p.price:p.price;
+    const lin=x=>(x-dLo)/(dHi-dLo), lg=x=>Math.log(x/dLo)/Math.log(dHi/dLo), e=dispEdge(p);
+    const g=p.poolGap&&Math.abs(p.poolGap.pct)>2?p.poolGap:null, Pm=g&&p.usd0>0&&p.usd1>0?p.usd0/p.usd1:null, dPm=Pm?(inv?1/Pm:Pm):null;
+    return {v:p.valueUsd||0, txt, fN, fBar:L!=null&&W>0&&X!=null?(X-L)/W:null, lin:lin(dPr), log:lg(dPr), inRange:!!p.inRange,
+      down:inv?(1-p.price/p.priceUpper)*100:p.dLow, up:inv?(p.price/p.priceLower-1)*100:p.dUp, sev:severityOf(p), inv, wide:dHi/dLo,
+      gap:g?g.pct:null, mLin:dPm?lin(dPm):null, mLog:dPm?lg(dPm):null};
+  }).filter(Boolean);
+  const M=state.momentum, mo=['#moTileDial','#moHeroDial'].map(s=>{ const n=document.querySelector(s+' .mo-needle'); const m=n&&/rotate\((-?[\d.]+)deg\)/.exec(n.style.transform); return m?+m[1]:null; });
+  const gn=document.querySelector('#ggNeedle'), gm=gn&&/rotate\((-?[\d.]+)deg\)/.exec(gn.style.transform);
+  const dials={moL:M&&M.now?M.now.L:null, mo, gas:gm?+gm[1]:null, gasWant:state.gasGwei>0&&typeof gasFrac==='function'?gasFrac(state.gasGwei)*180-90:null, warn:cfg.warnPct};
+  return {gauges, dials, gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
     tickers:(state.tickers||[]).map(t=>({sym:t.sym, ch:t.ch, usd:t.usd})), cards, book, histT:H.length?H[H.length-1].t:null, idleAt:state.idleAt||null};
 });
 await b.close();
@@ -188,6 +208,23 @@ else WARN('momentum reading: not readable');
 if(relay.nfts&&relay.nfts.t) ((now-relay.nfts.t<3*3600e3)?OK:WARN)('NFT floors: read '+age(now-relay.nfts.t)+' ago');
 if(recon&&recon.t) OK('reconciled history (daily): rebuilt '+age(now-recon.t)+' ago');
 if(census&&census.t) OK('pool census (twice a day): '+age(now-census.t)+' old');
+
+/* ---------- the gauges: what each one shows, and why ---------- */
+console.log('\n— gauges —');
+{ const G=(P.gauges||[]).slice().sort((a,b)=>b.v-a.v), r=x=>x==null||!isFinite(x)?'—':Math.round(x*100)+'%', w=P.dials.warn;
+  let disagree=0, alarming=0;
+  G.forEach((g,i)=>{ const drawn=g.fN!=null?g.fN:null, bar=g.fBar, d=bar!=null&&drawn!=null?Math.abs(Math.max(0,Math.min(1,g.lin))-bar):0;
+    if(g.inRange&&d>0.05) disagree++;
+    const nearEnd=g.inRange&&(Math.max(0,Math.min(1,g.lin))<0.15||g.lin>0.85), roomy=g.down>w&&g.up>w; if(nearEnd&&roomy) alarming++;
+    OK('card #'+(i+1)+': gauge reads '+(g.txt||'—')+' (needle at '+r(drawn)+', the linear share of the range) · the bar under it puts the price at '+r(bar)+' (log, the share of the move between the edges)'
+      +' · '+(g.inRange?'a '+g.down.toFixed(1)+'% fall or a '+g.up.toFixed(1)+'% rise reaches an edge':'out of range')+' · '+g.sev+' · range '+g.wide.toFixed(g.wide<10?2:0)+'× wide'
+      +(g.inv?' · shown inverted':'')+(g.gap!=null?' · pool '+(g.gap>0?'+':'−')+Math.abs(g.gap).toFixed(1)+'% vs market: at the market price the gauge would read '+r(g.mLin)+' (bar '+r(g.mLog)+')':''));
+  });
+  ((disagree||alarming)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the gauge and the bar under it differ by more than 5 points · '+alarming+' reading within 15 points of an end while both edges are more than '+w+'% away');
+  const D=P.dials, moOk=D.moL==null||D.mo.every(a=>a==null||Math.abs(a-D.moL*9)<0.6), gasOk=D.gasWant==null||D.gas==null||Math.abs(D.gas-D.gasWant)<0.6;
+  (moOk?OK:WARN)('momentum dials: '+D.mo.filter(a=>a!=null).length+' drawn, needle '+(moOk?'at the reading\'s level':'NOT at the reading\'s level'));
+  (gasOk?OK:WARN)('gas gauge: needle '+(D.gas==null?'not drawn':gasOk?'at the gas reading':'NOT at the gas reading'));
+}
 
 /* the tokens behind any WARN above, by rank, with where the market price came from */
 const flagged=ranked.filter(t=>t.offIn&&t.offIn.length);
