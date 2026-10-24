@@ -1,7 +1,7 @@
 // Momentum on made-up day records: node scripts/momentum.test.mjs
 // Money in and out must not move the index, a misread price must not either, a steep climb must read
 // high and end in a sell signal at the turn, and the level shown must change only once it holds.
-import { buildIndex, levels, runs, analyze, holdingsOf, often, dayStr, dayNum } from './momentum-core.mjs';
+import { buildIndex, levels, runs, analyze, holdingsOf, often, bridge, chain, dayStr, dayNum } from './momentum-core.mjs';
 let fails=0; const ok=(c,m)=>{ if(!c) fails++; console.log((c?'ok    ':'FAIL  ')+m); };
 const near=(a,b,t=1e-9)=>Math.abs(a-b)<=t;
 
@@ -71,6 +71,21 @@ ok(out.tok.length===2 && out.tok[0].s==='TKA' && out.tok[0].L!=null, 'each token
 const sum=out.drv.parts.reduce((a,p)=>a+p[1],0);
 ok(Math.abs(sum-out.drv.all)<0.002, 'what drove the 6 days adds up to the move ('+(out.drv.all*100).toFixed(1)+'%)');
 ok(out.test && out.test.years>=3 && out.test.sells>=1 && out.test.often[6].n>=1, 'the long test runs today\'s mix through '+(out.test&&out.test.years)+' years and finds the made-up top ('+(out.test&&out.test.sells)+' sell signal(s))');
+// a few days the outside source missed, long ago, must not cut the long test short; a young token must
+{ const xg={...ext, 'evm:0xaaa':{...ext['evm:0xaaa']}}; for(const d of [dayStr(D0-500), dayStr(D0-499)]) delete xg['evm:0xaaa'][d];
+  const g=analyze({recs:recsWith(), ext:xg, today:ds[ds.length-1]});
+  ok(g.test && g.test.years>=3 && g.test.gaps.bridged===2 && g.test.gaps.late===0 && g.test.gaps.thin===0, 'two days missing from the main token\'s prices a year and a half back are bridged: the long test still runs '+(g.test&&g.test.years)+' years');
+  const xy={...ext, 'evm:0xaaa':Object.fromEntries(Object.entries(ext['evm:0xaaa']).filter(([d])=>d>=dayStr(D0+N-400)))};
+  const y=analyze({recs:recsWith(), ext:xy, today:ds[ds.length-1]});
+  ok(y.test && Math.abs(y.test.years-400/365.25)<0.02 && y.test.gaps.late===1, 'a token with only 400 days of prices, at most of the mix, starts the test then and is counted as late ('+(y.test&&y.test.years)+' years)'); }
+{ const h={[dayStr(D0)]:100, [dayStr(D0+3)]:133.1, [dayStr(D0+20)]:120}, b=bridge(h);
+  ok(b.added===2 && near(b.h[dayStr(D0+1)],110,1e-6) && near(b.h[dayStr(D0+2)],121,1e-6) && !b.h[dayStr(D0+10)], 'a two-day gap in a price history is bridged step by step, a gap of weeks is left open'); }
+{ const cur={}, old={}; for(let i=0;i<30;i++) cur[dayStr(D0+i)]=2*(1+i/100); for(let i=-60;i<5;i++) old[dayStr(D0+i)]=(1+i/100)/5;
+  const c=chain(cur, old); ok(c.how==='overlap' && c.added===60 && near(c.h[dayStr(D0-10)], 1.8, 1e-9), 'an old contract\'s prices carry a token\'s history back, joined on the days both have');
+  const o2={}; for(let i=-60;i<-3;i++) o2[dayStr(D0+i)]=(1+i/100)/5;
+  const c2=chain(cur, o2); ok(c2.how==='next' && c2.added===57 && near(c2.h[dayStr(D0-4)], 2, 1e-9), 'and where the old prices stop a few days before the new ones begin');
+  const o3={}; for(let i=-60;i<-20;i++) o3[dayStr(D0+i)]=1;
+  ok(chain(cur, o3).how===null && chain(cur, o3).h===cur, 'but not across a gap of weeks'); }
 const txt=JSON.stringify(out);
 ok(!/"a":|"u":|"V":|"H":|"P":|0xaaa/.test(txt) && /"v":1/.test(txt), 'the output carries no amounts, prices of holdings or token addresses (its own version field is fine)');
 

@@ -189,15 +189,46 @@ export function often(lv, days){
   return out;
 }
 
+/* An outside history as the long test reads it: a gap of up to a week is bridged geometrically, so a
+   day the source missed does not read as the token gone (and the test cut short at it). */
+export function bridge(h, maxGap=7){
+  const ds=Object.keys(h||{}).filter(d=>h[d]>0).sort(), out={}; let added=0;
+  for(let i=0;i<ds.length;i++){ out[ds[i]]=h[ds[i]];
+    const g=i+1<ds.length?dayNum(ds[i+1])-dayNum(ds[i]):0;
+    if(g>1&&g-1<=maxGap){ const step=Math.pow(h[ds[i+1]]/h[ds[i]], 1/g);
+      for(let q=1;q<g;q++){ out[dayStr(dayNum(ds[i])+q)]=h[ds[i]]*Math.pow(step,q); added++; } } }
+  return {h:out, added};
+}
+
+/* A token that moved to a new contract: the old contract's prices carry its history back. They are
+   joined on the days both have in the new history's first week (their median ratio), or, when the
+   old prices stop just before the new ones begin, at the last old day, if that is within a week. */
+export function chain(cur, old, maxGap=7){
+  const first=Object.keys(cur||{}).filter(d=>cur[d]>0).sort()[0];
+  if(!first||!old) return {h:cur, added:0, how:null};
+  const wk=dayStr(dayNum(first)+6), both=Object.keys(old).filter(d=>d>=first&&d<=wk&&cur[d]>0&&old[d]>0);
+  let k=null, how=null;
+  if(both.length){ k=median(both.map(d=>cur[d]/old[d])); how='overlap'; }
+  else { const last=Object.keys(old).filter(d=>d<first&&old[d]>0).sort().pop();
+    if(last&&dayNum(first)-dayNum(last)<=maxGap){ k=cur[first]/old[last]; how='next'; } }
+  if(!(k>0)) return {h:cur, added:0, how:null};
+  const h={...cur}; let added=0;
+  for(const [d,v] of Object.entries(old)) if(d<first&&v>0){ h[d]=v*k; added++; }
+  return {h, added, how};
+}
+
 /* The long test: today's mix of tokens held through years of their own daily prices. Tokens with no
-   price on a day count as cash that day, and how much of the mix was covered is said. */
+   price on a day count as cash that day, and how much of the mix was covered is said; begun is the
+   share of the mix whose history has started by then, which is what decides where the test begins. */
 export function mixTest(weights, ext, from, to){
-  const keys=Object.keys(weights).filter(k=>ext[k]), out={vals:[], ds:[], cov:[]};
+  const keys=Object.keys(weights).filter(k=>ext[k]), out={vals:[], ds:[], cov:[], begun:[]};
+  const first={}; for(const k of keys) first[k]=Object.keys(ext[k]).filter(d=>ext[k][d]>0).sort()[0];
   let S=100;
   for(let n=dayNum(from); n<=dayNum(to); n++){
-    const d=dayStr(n), p=dayStr(n-1); let r=0, c=0;
-    for(const k of keys){ const a=ext[k][p], b=ext[k][d]; if(a>0&&b>0&&Math.abs(Math.log(b/a))<Math.log(3)){ r+=weights[k]*(b/a-1); c+=weights[k]; } }
-    S*=1+r; out.vals.push(S); out.ds.push(d); out.cov.push(c);
+    const d=dayStr(n), p=dayStr(n-1); let r=0, c=0, b=0;
+    for(const k of keys){ if(first[k]&&first[k]<=p) b+=weights[k];
+      const a=ext[k][p], x=ext[k][d]; if(a>0&&x>0&&Math.abs(Math.log(x/a))<Math.log(3)){ r+=weights[k]*(x/a-1); c+=weights[k]; } }
+    S*=1+r; out.vals.push(S); out.ds.push(d); out.cov.push(c); out.begun.push(b);
   }
   return out;
 }
@@ -269,15 +300,21 @@ export function analyze({recs, ext={}, prev=null, today=null, mixYears=3}){
   const covered=Object.values(w).reduce((a,b)=>a+b,0), held=tokens.reduce((a,t)=>a+t.w,0);
   const extDays=Object.values(ext).flatMap(e=>Object.keys(e)).sort();
   if(covered>0 && extDays.length){
-    const to=today?dayStr(dayNum(today)-1):extDays[extDays.length-1], from=[dayStr(dayNum(to)-Math.round(mixYears*365.25)), extDays[0]].sort().pop();
-    const M0=mixTest(w, ext, from, to);
-    /* the test starts where at least 80% of the mix has prices: a token too young for the early years
-       would otherwise sit in them as cash and make those years look calmer than they were */
-    let s0=0; M0.cov.forEach((c,i)=>{ if(c<0.8*covered) s0=i+1; });
+    const to=today?dayStr(dayNum(today)-1):extDays[extDays.length-1], full=dayStr(dayNum(to)-Math.round(mixYears*365.25)), from=[full, extDays[0]].sort().pop();
+    /* gaps of up to a week are bridged, and the test starts on the first day at least 80% of the mix
+       has its history begun: a token too young for the early years would otherwise sit in them as
+       cash and make those years look calmer than they were. A day the source missed later on only
+       counts that token as cash for the day; it no longer moves the start. */
+    const xb={}; let bridged=0;
+    for(const k of Object.keys(w)){ xb[k]=bridge(ext[k]).h; bridged+=Object.keys(xb[k]).filter(d=>d>=from&&!(ext[k][d]>0)).length; }
+    const M0=mixTest(w, xb, from, to), lim=0.8*covered-1e-9;
+    let s0=M0.begun.findIndex(b=>b>=lim); if(s0<0) s0=M0.vals.length;
     const M={vals:M0.vals.slice(s0), ds:M0.ds.slice(s0)};
+    const gaps={of:Object.keys(w).length, late:Object.keys(w).filter(k=>Object.keys(xb[k]).sort()[0]>dayStr(dayNum(full)+2)).length,
+      bridged, thin:M0.cov.slice(s0).filter(c=>c<lim).length};
     if(M.vals.length>=120){
       const ml=levels(M.vals), mr=runs(M.vals, ml, M.ds);
-      test={from:M.ds[0], to, days:M.vals.length, years:r4(M.vals.length/365.25), cov:r4(held>0?covered/held:0), ...summarize(mr, M.vals), often:often(ml, M.vals.length)};
+      test={from:M.ds[0], to, days:M.vals.length, years:r4(M.vals.length/365.25), cov:r4(held>0?covered/held:0), gaps, ...summarize(mr, M.vals), often:often(ml, M.vals.length)};
       if(!ref){ const m=pick(mr,up); if(m) ref=mk(m, M.vals, M.ds, 'mix', ml); }
     }
   }
