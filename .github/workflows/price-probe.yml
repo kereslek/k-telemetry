@@ -4,6 +4,9 @@
 name: price-probe
 on:
   workflow_dispatch:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/price-probe.mjs', '.github/workflows/price-probe.yml']
 permissions:
   contents: read
 jobs:
