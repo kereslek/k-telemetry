@@ -2635,7 +2635,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.19';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.20';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7077,13 +7077,15 @@ function renderActions(){
      but the pool still trades it at its own rate, so anyone can trade the pool back to the market
      through your range, and that trade lands in your position. What it would take is the position
      at market prices once the pool is traded to the market, against the position now; flagged when
-     the pool is more than 2% off and that trade would pass through the range. */
+     the pool is more than 2% off and that trade would take something from the range. */
   for(const p of ps){
     const g=p.poolGap; if(!g||!(Math.abs(g.pct)>2)) continue;
     const L=p.liq?Number(p.liq):null, Pm=p.usd0>0&&p.usd1>0?p.usd0/p.usd1:null;
     const a=L>0&&Pm?amtsAt(L,p.price,p.priceLower,p.priceUpper,p.d0,p.d1):null, b=a?amtsAt(L,Pm,p.priceLower,p.priceUpper,p.d0,p.d1):null;
     const cost=a&&b?(b.a0-a.a0)*p.usd0+(b.a1-a.a1)*p.usd1:null;
-    if(!p.inRange&&!(cost!=null&&cost<-1)) continue;
+    /* only when that trade would take something from the range: a range resting at its edge with
+       the market beyond it is left alone by the trade back (it moves away), so it is not flagged */
+    if(cost!=null?!(cost<-1):!p.inRange) continue;
     const sym=esc(String((g.side?p.m1:p.m0)?.symbol||'the token')), up=g.pct>0, big=Math.abs(g.pct)>=10, pct=Math.abs(g.pct).toFixed(1)+'%';
     items.push({r:big?2:3.6, cls:big?'warn':'watch', tag:'OFF THE MARKET',
       head:esc(pairName(p))+' '+linkRef(p)+' — this pool prices '+sym+' <b>'+(up?'+':'−')+pct+'</b> '+(up?'above':'below')+' the market',

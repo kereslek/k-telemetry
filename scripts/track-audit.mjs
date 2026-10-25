@@ -188,7 +188,7 @@ const part=(name, src, asOf, expectMin, extra='')=>{
   ((off.length||!rows.length)?WARN:OK)('ticker strip (DefiLlama, written by the relay): prices from '+age(now-relay.t)+' ago · '+rows.length+' of '+P.tickers.length+' compared, '+off.length+' more than 2% off'
     +(rows.length?' (worst '+pct(rows.reduce((a,d)=>Math.abs(d)>Math.abs(a)?d:a,0))+')':'')); }
 part('position cards (read live on the page)', 'pageCards', null, 0);
-{ const g=P.gaps||{}; ((g.shown===g.n&&g.rows>=g.inRange&&g.rows<=g.n)?OK:WARN)('pools whose own price is more than 2% off the market: '+(g.n||0)+' ('+(g.inRange||0)+' in range'
+{ const g=P.gaps||{}; ((g.shown===g.n&&g.rows<=g.n)?OK:WARN)('pools whose own price is more than 2% off the market: '+(g.n||0)+' ('+(g.inRange||0)+' in range'
     +(g.worst!=null?', the furthest '+g.worst.toFixed(1)+'% off':'')+') · the gap shown on '+(g.shown||0)+' card(s) · PRIORITY rows: '+(g.rows||0)); }
 /* what it adds up to: the page's tokens at the page's prices against the same amounts at the market */
 { let pv=0, mv=0; for(const x of P.book){ if(!(x.v>0)) continue; const t=T.get(x.k); pv+=x.v; mv+=t&&t.mkt>0&&!t.stable&&x.total>0?x.total*t.mkt:x.v; }
