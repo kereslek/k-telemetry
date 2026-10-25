@@ -59,11 +59,13 @@ for attempt in 1 2 3; do
   git fetch -q origin gh-pages
   base=$(git merge-base HEAD origin/gh-pages)
   # Only what this pass never reads may be stepped over: the dashboard page, notes, the history
-  # job's own output, workflow files, and the audit and housekeeping scripts. Anything else — data,
-  # the generator and the modules it imports, the seed and restatement files it reads — means this
-  # pass's output may no longer be what the remote would produce, so it must be regenerated. (A
-  # code push used to cost a whole pass: twice in one evening the data went over an hour stale.)
-  SAFE='^(deck-r7k4x9/index\.html|.*\.md|deck-r7k4x9/(recon|pools)-[a-z0-9-]+\.json|\.github/workflows/[^/]+\.ya?ml|scripts/(daily-audit|click-audit|gap-audit|activity-audit|leak-check|prune-runs|reconcile-history|backfill-daily|sui-daily|pool-census|pool-probe|open-probe|pool-replay|replay-probe)\.mjs)$'
+  # job's own output, the momentum reading and its job, workflow files, and the audit and
+  # housekeeping scripts. Anything else — data, the generator and the modules it imports, the seed
+  # and restatement files it reads — means this pass's output may no longer be what the remote
+  # would produce, so it must be regenerated. (A code push used to cost a whole pass: twice in one
+  # evening the data went over an hour stale. The momentum job's push every twenty minutes cost
+  # about every other pass until its files were listed here.)
+  SAFE='^(deck-r7k4x9/index\.html|.*\.md|deck-r7k4x9/(recon|pools|momentum)-[a-z0-9-]+\.json|\.github/workflows/[^/]+\.ya?ml|scripts/(daily-audit|click-audit|gap-audit|activity-audit|leak-check|prune-runs|reconcile-history|backfill-daily|sui-daily|pool-census|pool-probe|open-probe|pool-replay|replay-probe|momentum|momentum-core|track-audit)\.mjs)$'
   if git diff --name-only "$base" origin/gh-pages | grep -qvE "$SAFE"; then
     echo "push lost a race to a change this pass depends on — the next pass will regenerate from the updated remote"
     exit 1
