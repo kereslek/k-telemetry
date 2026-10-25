@@ -647,6 +647,27 @@ function marketFirstUsd(t0,t1,usd0,usd1,price){
     pct:Math.round((own.usd/own.mkt-1)*1e4)/100}:null;
   return [usd0,usd1,gap];
 }
+/* Jupiter's reported price for a thin Solana token can stand well off the market. On 25 October
+   CPOOL read 5.5% above the exchanges (four of them agreeing to 0.2%), above even what selling it on
+   Solana would fetch, while DefiLlama, which follows the exchanges, read 0.7% above them. So a
+   Solana price more than 2% off DefiLlama's is taken from DefiLlama instead, when DefiLlama's is
+   under an hour old and confident; the rest stay on Jupiter. What was checked is published as
+   mktRef, so the page applies the same rule to its own live reads. */
+const solRef={};   // mint -> {p, t, c}: DefiLlama, this pass
+let solGuarded=0;
+async function solRefFor(mints){
+  const need=[...new Set(mints)].filter(m=>m&&!(m in solRef));
+  for(let i=0;i<need.length;i+=40){ const b=need.slice(i,i+40);
+    try{ const js=await getJson('https://coins.llama.fi/prices/current/'+b.map(m=>'solana:'+m).join(','),20000);
+      for(const m of b){ const c=js&&js.coins&&js.coins['solana:'+m]; solRef[m]=c&&c.price>0?{p:c.price, t:c.timestamp*1000, c:c.confidence??null}:null; } }
+    catch(e){ for(const m of b) solRef[m]=null; } }
+}
+function guardSol(map){   // mint -> Jupiter price, replaced in place where DefiLlama disagrees by more than 2%
+  for(const [m,v] of Object.entries(map)){ const r=solRef[m];
+    if(!(v>0)||!r||!(r.p>0)||Date.now()-r.t>3600e3||(r.c!=null&&r.c<0.9)) continue;
+    if(Math.abs(v/r.p-1)>0.02){ map[m]=r.p; solGuarded++; } }
+  return map;
+}
 const B58A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const B58M=Object.fromEntries([...B58A].map((c,i)=>[c,i]));
 function b58d(s){let n=0n;for(const c of s){n=n*58n+BigInt(B58M[c]);}const b=[];while(n>0n){b.unshift(Number(n&255n));n>>=8n;}for(const c of s){if(c==='1')b.unshift(0);else break;}return new Uint8Array(b);}
@@ -741,6 +762,7 @@ async function fetchSolana(SOL_WALLETS){
       const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+oMints.join(','));
       for(const m of oMints){ if(js[m]?.usdPrice!=null) oPrices[m]=Number(js[m].usdPrice); }
     }catch(e){ logErr('jup orca',e); }
+    await solRefFor(oMints); guardSol(oPrices);
     for(const m of oMints){
       if(SOL_KNOWN[m]){ oSyms[m]=SOL_KNOWN[m]; continue; }
       try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
@@ -899,6 +921,7 @@ async function fetchSolana(SOL_WALLETS){
     const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+mints.join(','));
     for(const m of mints){ if(js[m]?.usdPrice!=null) prices[m]=Number(js[m].usdPrice); }
   }catch(e){ logErr('jup',e); }
+  await solRefFor(mints); guardSol(prices);
   const symbols={};
   for(const m of mints){
     if(SOL_KNOWN[m]){ symbols[m]=SOL_KNOWN[m]; continue; }
@@ -1980,10 +2003,11 @@ const main=async()=>{
          rehearsal passes its SOL figure read 6.45, 6.79 and 7.17 against the feed's 6.40, 6.71
          and 7.26. The relay's own samples stand in only when Jupiter leaves the field out. */
       if(e && e.usdPrice!=null){
-        const usd=Number(e.usdPrice);
+        await solRefFor([CPOOL_SOL]); const jup=Number(e.usdPrice), usd=guardSol({[CPOOL_SOL]:jup})[CPOOL_SOL];
+        if(usd!==jup) e.priceChange24h=null;   // Jupiter's change is of its own price; the relay's samples stand in
         const own=tickChange('cpool:sol',usd);
         const jc=e.priceChange24h!=null ? Number(e.priceChange24h) : null;
-        push('CPOOL / USD (SOL)', usd, (jc!=null&&isFinite(jc)) ? jc : own, 'jupiter');
+        push('CPOOL / USD (SOL)', usd, (jc!=null&&isFinite(jc)) ? jc : own, usd!==jup?'llama-sol':'jupiter');
       }
     }catch(e){ logErr('quote cpool sol',e); }
     if(q.length) quotes=q;
@@ -3001,7 +3025,7 @@ const main=async()=>{
             if(sp.mint1===m && sp.usd1!=null){ pxMemo[m]=sp.usd1; return pxMemo[m]; }
           }
           try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+m, 12000);
-               if(js && js[m] && js[m].usdPrice!=null) pxMemo[m]=Number(js[m].usdPrice); }catch(e){}
+               if(js && js[m] && js[m].usdPrice!=null){ await solRefFor([m]); pxMemo[m]=guardSol({[m]:Number(js[m].usdPrice)})[m]; } }catch(e){}
           return pxMemo[m];
         };
         const monthStartSec=Math.floor(monthStart(monthKey)/1000);
@@ -3382,6 +3406,7 @@ const main=async()=>{
                for(const m of solMints.slice(i,i+80)) if(js[m]?.usdPrice!=null) jp[m]=Number(js[m].usdPrice); }
           catch(e){ logErr('jupBal',e); }
         }
+        await solRefFor(solMints); guardSol(jp);
       }
       // Resolve names/symbols for Solana mints. A wallet full of "AeXrLf…" is unreadable,
       // and for a token whose identity is in question the registered name is the fastest
@@ -4074,7 +4099,9 @@ const main=async()=>{
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
     const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
-      eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors] };
+      eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
+      mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
+    console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     writeJ(OUT+'/data-'+profile.slug+'.json', data);
     if(cfgProfile===CONFIG.profiles[0]) writeJ(OUT+'/data.json', data);

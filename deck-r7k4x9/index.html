@@ -2635,7 +2635,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.18';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.19';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3291,6 +3291,17 @@ async function solMeta(mints){
     }catch(e){ solTokenMeta.set(m,{symbol:m.slice(0,4)+'…'}); }
   }
 }
+/* Jupiter's reported price for a thin Solana token can stand well off the market (CPOOL read 5.5%
+   above the exchanges on 25 October). The relay checks every Solana price against DefiLlama, which
+   follows the exchanges, and publishes what it found (mktRef); a live Jupiter price more than 2% off
+   it is replaced by it here too, so the page and the relay value the same way. */
+function guardSolPx(px){
+  const R=state.mktRef; if(!R||!R.px||!(Date.now()-(R.t||0)<2*3600e3)) return px;
+  for(const [m,v] of Object.entries(px)){ const r=R.px[m];
+    if(!(v>0)||!r||!(r.p>0)||Date.now()-r.t>2*3600e3||(r.c!=null&&r.c<0.9)) continue;
+    if(Math.abs(v/r.p-1)>0.02) px[m]=r.p; }
+  return px;
+}
 async function solPrices(mints){
   try{
     const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+mints.join(','));
@@ -3324,6 +3335,7 @@ async function relaySolCatalog(){
     if(!r.ok) r=await lfetch('data.json?nc='+Date.now(),{cache:'no-store'});
     if(!r.ok) return null;
     const d=await r.json();
+    if(d&&d.mktRef) state.mktRef=d.mktRef;
     if(!Array.isArray(d.sol) || (Date.now()-d.t)>12*3600000) return null;
     return d.sol.filter(p=>p.pda&&p.nftMint&&p.wallet).map(p=>({wallet:p.wallet, mint:p.nftMint, pda:p.pda}));
   }catch(e){ return null; }
@@ -3402,7 +3414,7 @@ async function scanSol(){
   poolAccs.forEach((a,i)=>{ if(a) pools.set(poolIds[i], parsePoolState(b64ToBytes(a.data[0]))); else partial=true; });
   const mints=[...new Set([...pools.values()].flatMap(p=>[p.mint0,p.mint1]))];
   await solMeta(mints);
-  const prices=await solPrices(mints);
+  const prices=guardSolPx(await solPrices(mints));
   await raydiumPoolInfo(poolIds);
   const out=[];
   for(const {cat:c, pp} of found){
@@ -3910,6 +3922,7 @@ async function scanInner(isBoot){
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink = d.ink||null;
+          if(d.mktRef) state.mktRef = d.mktRef;
           if(d.chainStatus) state.chainStatus = d.chainStatus;
           if(!state.block) state.block = Number(d.block).toLocaleString();
           state.relayAt = d.t;
@@ -4655,7 +4668,8 @@ function renderHeader(){
         +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>':'';
     /* The relay's ordered quotes when it has them: two LCX contracts and CPOOL on each chain, each
        priced from its own market. An older payload has only the one-per-symbol list. */
-    const src={pool:'its own Uniswap pool × ETH/USD', jupiter:'Jupiter — the price every Solana position here is valued at', feed:'DefiLlama'};
+    const src={pool:'its own Uniswap pool × ETH/USD', jupiter:'Jupiter — the price every Solana position here is valued at', feed:'DefiLlama',
+      'llama-sol':'DefiLlama, the exchanges\' price — Jupiter\'s was more than 2% off it, so every Solana position here is valued at this'};
     const got=new Map();
     if(Array.isArray(state.quotes)&&state.quotes.length)
       state.quotes.forEach(q=>got.set(q.label,{usd:q.usd,chg:q.chg,tip:q.label+' · '+(src[q.src]||q.src||'')}));
@@ -12806,6 +12820,7 @@ async function init(){
       /* the wallet read and the monthly split come only from the relay; without them the first
          paint showed every holding as pooled and nothing idle until the first scan finished */
       if(d.idle){ state.idle=d.idle; state.idleAt=d.t||Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink=d.ink||null;
+      if(d.mktRef) state.mktRef=d.mktRef;
       if(d.catMtd) state.catMtd=d.catMtd;
       if(Array.isArray(d.catMonths)) state.catMonths=d.catMonths;
       const merged=[...(d.eth||[]),...(d.sol||[])].map(linifyRangePos);
