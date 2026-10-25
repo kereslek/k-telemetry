@@ -256,4 +256,7 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
 { const P=await j(PULSE+'/m?n=1440&k='+TOKEN);
   for(const l of ownSwapLines({posHist:fees.posHist, selfDone:fees.selfDone, selfPend:costs&&costs.selfPend, rec:positionsFrom(data),
     rows:(P&&Array.isArray(P.mins))?P.mins:[], start:START, now:Date.now(), normId})) console.log(l); }
-console.log('positions now: '+(data.eth||[]).length+' Ethereum, '+(data.sol||[]).length+' Solana · relay errors: '+((data.errors||[]).length));
+// the relay's errors by kind: the first word of each, letters only, as the relay's own log counts them
+{ const kinds={}; for(const e of data.errors||[]){ const k=(String(e).match(/^[A-Za-z]+/)||['other'])[0]; kinds[k]=(kinds[k]||0)+1; }
+  console.log('positions now: '+(data.eth||[]).length+' Ethereum, '+(data.sol||[]).length+' Solana · relay errors: '+((data.errors||[]).length)
+    +(Object.keys(kinds).length?' ('+Object.entries(kinds).map(([k,n])=>k+' \u00d7'+n).join(', ')+')':'')); }
