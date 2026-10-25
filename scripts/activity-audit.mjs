@@ -20,11 +20,13 @@ const [cfg,data,fees,costs,ledger,replay]=(await Promise.all(['config.json','dat
 const W=cfg.profiles.flatMap(p=>p.wallets||[]), WE=W.filter(x=>x.chain==='ethereum').map(x=>x.address.toLowerCase()), WS=W.filter(x=>x.chain==='solana').map(x=>x.address);
 // holdings-only wallets: the relay watches what they hold and does not sweep them for swaps
 const HOLD=new Set(W.filter(x=>x.role==='hold').map(x=>String(x.address).toLowerCase()));
+// the owner's exchange deposit addresses (sealed beside the wallets): a send there is the owner's money moving, not leaving
+const CX=cfg.profiles.flatMap(p=>p.cex||[]), CXE=new Set(CX.filter(x=>x.chain==='ethereum').map(x=>String(x.address).toLowerCase())), CXS=new Set(CX.filter(x=>x.chain==='solana').map(x=>x.address));
 // the relay writes an Ethereum log index in hex (…:0x12f), this audit in decimal (…:303)
 const normId=id=>String(id).replace(/:0x([0-9a-f]+)$/i,(_,h)=>':'+parseInt(h,16));
 const booked=new Set([...(fees.selfDone||[]), ...((costs.selfPend||[]).map(x=>x.id))].map(normId));
 const pendBack=new Map((costs.selfPend||[]).map(x=>[normId(x.id),x.back]));
-console.log('since',new Date(START).toISOString(),'· wallets: '+WE.length+' Ethereum, '+WS.length+' Solana · own-swap ids the relay has booked this month: '+booked.size);
+console.log('since',new Date(START).toISOString(),'· wallets: '+WE.length+' Ethereum, '+WS.length+' Solana · exchange deposit addresses: '+CX.length+' · own-swap ids the relay has booked this month: '+booked.size);
 // ---- own pools: open now, plus Ethereum positions closed this month (read back from the position manager)
 const ETH_RPC=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth'];
 async function ecall(to,data){ for(const u of ETH_RPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to,data},'latest']})}); if(r&&r.result) return r.result; } return null; }
@@ -38,7 +40,7 @@ for(const id of Object.keys(fees.closedPos||{}).filter(x=>/^\d+$/.test(x))){
 const ownSol=new Map((data.sol||[]).map(p=>[p.poolId,p.id.slice(0,12)+' '+(p.pairLabel||'')+' '+(p.feeLabel||'')]));
 console.log('own pools: '+ownEth.size+' Ethereum, '+(data.sol||[]).length+' Solana positions');
 
-const found=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, lastTx=0;
+const found=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
 const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822', XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; let solSeen=0, solMine=0;
 // ---- Ethereum
 const BS='https://eth.blockscout.com/api/v2', SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
@@ -56,13 +58,13 @@ for(const w of WE){
       ethSent++; const tops=new Set(((lg&&lg.items)||[]).map(x=>x.topics&&x.topics[0]));
       if(tops.has(SWAP_V3)) kinds.v3++; else if(tops.has(SWAP_V4)) kinds.v4++; else if(tops.has(SWAP_V2)) kinds.v2++; else if(tops.has(XFER)) kinds.transfer++; else kinds.other++;
       // ETH itself sent, not paid into a swap: a card top-up, an exchange deposit, a move between the deck's wallets
-      if(val&&!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2)) (WE.includes(to)?coin.own++:coin.out++);
+      if(val&&!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2)) (WE.includes(to)?coin.own++:CXE.has(to)?coin.cex++:coin.out++);
       lastTx=Math.max(lastTx, Date.parse(tx.timestamp)||0);
       // tokens sent to an address that is not one of the deck's: leaving the tracked wallets
       if(!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2))
         for(const x of ((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===XFER&&x.topics[2]&&!x.topics[3])){
           const from='0x'+String(x.topics[1]).slice(26).toLowerCase(), to='0x'+String(x.topics[2]).slice(26).toLowerCase();
-          if(from===w && !WE.includes(to)) extOut++; else if(from===w) intMove++; }
+          if(from===w && CXE.has(to)) cexOut++; else if(from===w && !WE.includes(to)) extOut++; else if(from===w) intMove++; }
       const sw=((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===SWAP_V3);
       for(const s of sw){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) { other.eth++; continue; }
@@ -93,7 +95,7 @@ for(const w of WE){
 // history-serving endpoints first: publicnode answers with only the last few hours of signatures
 const SR=[process.env.SOL_RPC_URL,'https://api.mainnet-beta.solana.com','https://rpc.solanatracker.io/public','https://solana.leorpc.com/?api_key=FREE','https://solana-rpc.publicnode.com'].filter(Boolean);
 async function srpc(method,params){ for(let k=0;k<3;k++) for(const u of SR){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})}); if(r&&r.result!==undefined) return r.result; await sleep(600);} return null; }
-const solPos=new Map(), solMove={own:0,out:0,other:0};
+const solPos=new Map(), solMove={own:0,cex:0,out:0,other:0};
 for(const w of WS){
   let before=null, done=false, seen=0, mine=0;
   while(!done){
@@ -117,12 +119,12 @@ for(const w of WS){
         const px=await srpc('getTransaction',[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]); await sleep(120);
         const owners=new Map(); const ak=px?px.transaction.message.accountKeys.map(k=>k.pubkey||k):[];
         for(const tb of [...((px&&px.meta.preTokenBalances)||[]),...((px&&px.meta.postTokenBalances)||[])]) if(tb.owner) owners.set(ak[tb.accountIndex],tb.owner);
-        let own=0, out=0;
+        let own=0, cx=0, out=0;
         for(const ins of (px?px.transaction.message.instructions:[])){ const pi=ins.parsed; if(!pi||!pi.info) continue;
           if(!/^(transfer|transferChecked|transferWithSeed)$/.test(pi.type)) continue;
           const dest=pi.info.destination, to=ins.program==='system'?dest:(owners.get(dest)||null);
-          if(to&&WS.includes(to)) own++; else out++; }
-        if(own&&!out) solMove.own++; else if(out) solMove.out++; else if(!px) solMove.other++; }
+          if(to&&WS.includes(to)) own++; else if(to&&CXS.has(to)) cx++; else out++; }
+        if(own&&!cx&&!out) solMove.own++; else if(cx&&!out) solMove.cex++; else if(out) solMove.out++; else if(!px) solMove.other++; }
       if(!logs.some(l=>/Instruction: Swap/i.test(l))) continue;
       const pools=[...ownSol.keys()].filter(p=>keys.includes(p));
       if(!pools.length){ other.sol++; continue; }
@@ -194,9 +196,9 @@ let drops=0, worst=0; for(let i=1;i<ticks.length;i++){ const d=ticks[i][1]-ticks
 { const fellT=fellBy(ticks.map(x=>x[1])), own=drops&&fellT<=takenAll+0.02;
   console.log((drops&&!own?'WARN ':'ok   ')+'month-to-date fee readings today: '+ticks.length+' · steps down: '+drops+(drops?' (largest '+(worst*100).toFixed(2)+'% of the total'+recovery(ticks.map(x=>x[1]))+')'
     +(own?' · no more than the own-swap fees taken out of income, as it should':' · MORE than the own-swap fees taken out'):'')); }
-console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets');
-console.log('ETH itself sent from the deck\u2019s wallets: '+coin.out+' to outside addresses, '+coin.own+' between its own wallets · arrived from outside: '+coin.in);
-console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' to its own wallets, '+solMove.out+' to outside addresses'+(solMove.other?', '+solMove.other+' unclear':''));
+console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets, '+cexOut+' to your exchange deposit addresses');
+console.log('ETH itself sent from the deck\u2019s wallets: '+coin.out+' to outside addresses, '+coin.own+' between its own wallets, '+coin.cex+' to your exchange deposit addresses · arrived from outside: '+coin.in);
+console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' to its own wallets, '+solMove.cex+' to your exchange deposit addresses, '+solMove.out+' to outside addresses'+(solMove.other?', '+solMove.other+' unclear':''));
 /* Solana positions the deck's wallets touched today: a harvest (or a withdrawal, which collects the
    fees with it) moves fees from unclaimed to collected, so the position's booked fee total must
    never fall, and the relay's harvest scan must have read past it without an error. */
