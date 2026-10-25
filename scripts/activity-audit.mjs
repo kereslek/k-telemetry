@@ -216,6 +216,11 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
       +' · fees owed now '+((p.feesUsd||0)>0?'above zero':'zero')+' · read after today\u2019s last transaction: '+(after?'yes':'not yet')); }
   if(!solPos.size) console.log('Solana positions touched today: 0'); }
 { const it=data.idle&&data.idle.t; console.log((lastTx&&it&&it<lastTx?'WARN ':'ok   ')+'wallet balances read after the latest of these transactions: '+(lastTx?(it&&it>=lastTx?'yes':'no'):'n/a')); }
+/* every Solana wallet in the config read by the relay: its holdings carry the wallet they came from,
+   so a wallet with nothing in the relay's file was never read or holds nothing at all (counts only) */
+{ const rows=(data.idle&&data.idle.rows)||[], has=new Set(rows.map(r=>String(r.wallet||'')));
+  const nS=WS.filter(w=>has.has(w)).length;
+  console.log((nS===WS.length?'ok   ':'note ')+'Solana wallets with holdings in the relay\u2019s file: '+nS+' of '+WS.length+(data.idle&&data.idle.stale?' (a held-back read: some wallets did not answer)':'')); }
 /* Ethereum positions: harvests, tokens added and withdrawn since START (from the position manager's
    own events), and whether each position's booked fee total ever fell — a harvest moves fees from
    unclaimed to collected, a top-up adds principal; neither may take fees away. */
