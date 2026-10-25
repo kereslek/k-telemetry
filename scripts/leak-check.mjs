@@ -13,10 +13,12 @@ const OUT='deck-r7k4x9';
 if(!String(process.env.DECK_PASSPHRASE||'').trim()){ console.log('DECK_PASSPHRASE is not set: nothing checked'); process.exit(1); }
 initLock(OUT);
 const cfg=readJ(OUT+'/config.json');
-const W=(cfg.profiles||[]).flatMap(p=>p.wallets||[]).map(w=>String(w.address||'').trim()).filter(a=>a.length>=26);
+// the owner's exchange deposit addresses (sealed beside the wallets) are as private as the wallets
+const CX=(cfg.profiles||[]).flatMap(p=>p.cex||[]).length;
+const W=(cfg.profiles||[]).flatMap(p=>[...(p.wallets||[]), ...(p.cex||[])]).map(w=>String(w.address||'').trim()).filter(a=>a.length>=26);
 const hex=[...new Set(W.filter(a=>/^0x[0-9a-f]{40}$/i.test(a)).map(a=>a.slice(2).toLowerCase()))];
 const other=[...new Set(W.filter(a=>!/^0x[0-9a-f]{40}$/i.test(a)))];
-console.log('wallet addresses searched for: '+(hex.length+other.length)+' ('+hex.length+' Ethereum-style, '+other.length+' other)');
+console.log('wallet addresses searched for: '+(hex.length+other.length)+' ('+hex.length+' Ethereum-style, '+other.length+' other; '+CX+' of them exchange deposit addresses)');
 if(!hex.length&&!other.length){ console.log('FAIL the wallet list opened empty'); process.exit(1); }
 const hits=s=>{ let n=0; const lo=s.toLowerCase(); for(const a of hex) if(lo.includes(a)) n++; for(const a of other) if(s.includes(a)) n++; return n; };
 const git=(...a)=>execFileSync('git',a,{maxBuffer:1<<30}).toString('utf8');
