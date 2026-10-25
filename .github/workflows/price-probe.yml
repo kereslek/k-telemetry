@@ -1,0 +1,17 @@
+# CPOOL's price venue by venue (exchanges, DefiLlama, Jupiter's price and its quotes both ways, the
+# pools on Solana and Ethereum), each against the exchanges' median. Public market data only; the log
+# carries percentages, venue names, counts and size buckets. Run by hand.
+name: price-probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/price-probe.mjs
