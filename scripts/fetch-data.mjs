@@ -6,7 +6,7 @@
 import { pathToFileURL } from 'node:url';
 import fs from 'fs';
 import { makeRpc, syncPositionLedger, valueDeposits, summarizeLedger } from './sol-history.mjs';
-import { initLock, lockOn, readJ, writeJ, isSealed, quietLogs, inboxOpen} from './lock.mjs';
+import { initLock, lockOn, readJ, writeJ, isSealed, quietLogs, inboxOpen, inboxPublic} from './lock.mjs';
 import { suiHoldings, tronHoldings, IKA_TYPE } from './alt-chains.mjs';
 import { scanNfts, nftSummary, openseaOn } from './nfts.mjs';
 const OUT='deck-r7k4x9';
@@ -1891,23 +1891,40 @@ const main=async()=>{
      changed from the dashboard (⚙ CONFIG → SAVE TO GITHUB seals it the same way). */
   try{ if(lockOn() && !isSealed(JSON.parse(fs.readFileSync(OUT+'/config.json','utf8')))) writeJ(OUT+'/config.json', CONFIG, JSON.stringify(CONFIG,null,2)+'\n'); }
   catch(e){ console.error('config seal', e.message); }
+  /* The inbox's public half, published beside the salt so someone without the passphrase can seal
+     an address to the deck. It can only seal, never open, so it is safe in the open like the salt. */
+  try{ if(lockOn()){ const f=OUT+'/lock.json', L=JSON.parse(fs.readFileSync(f,'utf8')), pub=inboxPublic();
+    if(L.inbox!==pub){ L.inbox=pub; fs.writeFileSync(f, JSON.stringify(L,null,1)+'\n'); } } }
+  catch(e){ console.error('inbox key', e.message); }
   /* Wallets handed in through the inbox (lock.mjs) by someone without the passphrase: checked,
      merged into the sealed wallet list, and the inbox emptied. Only well-formed addresses of a
      chain the deck reads get in; one already listed is not added twice. */
+  /* Exchange deposit addresses come the same way (`cex`) and are kept apart in the sealed config:
+     the owner's own account at an exchange, so a send there is the owner's money moving, not
+     leaving. Never read for holdings or swept for swaps: what the exchange holds is not on chain. */
   try{ const f=OUT+'/inbox.json';
     if(lockOn() && fs.existsSync(f)){
       const msg=JSON.parse(inboxOpen(JSON.parse(fs.readFileSync(f,'utf8'))));
       const pr=CONFIG.profiles.find(p=>p.slug===msg.profile)||CONFIG.profiles[0]; pr.wallets=pr.wallets||[];
       const ok={solana:/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, sui:/^0x[0-9a-f]{64}$/, tron:/^T[1-9A-HJ-NP-Za-km-z]{33}$/, ethereum:/^0x[0-9a-f]{40}$/};
-      let n=0, bad=0;
+      const norm=w=>w&&(w.chain==='solana'||w.chain==='tron'?String(w.address):String(w.address).toLowerCase());
+      const has=(list,w,addr)=>(list||[]).some(x=>x.chain===w.chain&&String(x.address).toLowerCase()===addr.toLowerCase());
+      let n=0, nx=0, bad=0;
       for(const w of msg.wallets||[]){
-        const addr=w&&(w.chain==='solana'||w.chain==='tron'?String(w.address):String(w.address).toLowerCase());
+        const addr=norm(w);
         if(!w||!ok[w.chain]||!ok[w.chain].test(addr)){ bad++; continue; }
-        if(pr.wallets.some(x=>x.chain===w.chain&&String(x.address).toLowerCase()===addr.toLowerCase())) continue;
+        if(has(pr.wallets,w,addr)) continue;
         pr.wallets.push({chain:w.chain, address:addr, ...(w.role==='hold'?{role:'hold'}:{})}); n++;
       }
+      for(const w of msg.cex||[]){
+        const addr=norm(w);
+        // a deck wallet named as an exchange's is refused: it would stop being one of the owner's wallets
+        if(!w||!ok[w.chain]||!ok[w.chain].test(addr)||has(pr.wallets,w,addr)){ bad++; continue; }
+        if(has(pr.cex,w,addr)) continue;
+        (pr.cex=pr.cex||[]).push({chain:w.chain, address:addr, ...(w.name?{name:String(w.name).slice(0,24)}:{})}); nx++;
+      }
       writeJ(OUT+'/config.json', CONFIG, JSON.stringify(CONFIG,null,2)+'\n'); fs.unlinkSync(f);
-      console.log('inbox: '+n+' wallet(s) added, '+bad+' refused');
+      console.log('inbox: '+n+' wallet(s) added, '+nx+' exchange address(es) added, '+bad+' refused');
     } }catch(e){ console.error('inbox', e.message); }
   /* the fee seeds and restatements beside this script name positions and their fees: sealed too */
   if(lockOn()) for(const f of fs.readdirSync(new URL('.', import.meta.url)).filter(f=>/^fee-.*\.json$/.test(f))){
