@@ -4,6 +4,8 @@
    fees from unclaimed to collected, it does not lose them). The deck is locked and this log is
    public: only counts and yes/no are printed, never a wallet, a transaction, a pool or an amount. */
 import crypto from 'node:crypto';
+import { positionsFrom } from '../worker/src/sampler.js';
+import { ownSwapLines } from './own-swap-check.mjs';
 const SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/', PASS=String(process.env.DECK_PASSPHRASE||'').trim();
 /* from START, or else from midnight Budapest today */
 const budMidnight=()=>{ const now=Date.now(), d=new Date(now).toLocaleString('sv-SE',{timeZone:'Europe/Budapest'}).slice(0,10);
@@ -12,7 +14,9 @@ const START=Date.parse(process.env.START||'')||budMidnight();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function j(u,opt){ for(let k=0;k<4;k++){ try{ const r=await fetch(u,{...opt,signal:AbortSignal.timeout(30000)}); if(r.ok) return await r.json(); }catch(e){} await sleep(1200*(k+1)); } return null; }
 const L=await j(SITE+'lock.json?t='+Date.now());
-const KEY=crypto.pbkdf2Sync(PASS, Buffer.from(L.salt,'base64'), L.iter, 64, 'sha256').subarray(0,32);
+// the deck key and, from the same derivation, the minute recorder's access token (never printed)
+const BITS=crypto.pbkdf2Sync(PASS, Buffer.from(L.salt,'base64'), L.iter, 64, 'sha256'), KEY=BITS.subarray(0,32), TOKEN=BITS.subarray(32).toString('hex');
+const PULSE='https://kt-pulse.kereslek.workers.dev';
 const open=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm',KEY,Buffer.from(e.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
   return JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')); };
 const t=Date.now();
@@ -235,6 +239,16 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
   for(const [id,pool] of [...(data.sol||[]).map(q=>[q.id,q.poolId]), ...(data.eth||[]).map(q=>[String(q.id),q.pool])]){
     const f=fellBy(hist.map(x=>x[1][id]).filter(v=>v!=null)); if(!(f>0.005)) continue;
     const k=String(pool||'').toLowerCase(), e2=poolFalls.get(k)||[0,0]; e2[0]+=f; e2[1]++; poolFalls.set(k,e2); } }
-for(const [pool,[fallSum,nPos]] of poolFalls){ const taken=takenBy.get(pool)||0, ok=taken>0&&Math.abs(fallSum-taken)<=Math.max(0.03,taken*0.05);
-  console.log((ok?'ok   ':'WARN ')+'a pool where '+nPos+' position(s)\u2019 fee totals fell: '+(taken>0?'the falls '+(ok?'match':'do NOT match')+' the own-swap fees taken out there (ratio '+(fallSum/taken).toFixed(2)+')':'no own-swap fee was taken out there, so fees were lost')); }
+// a pool with own swaps is checked with the recorder below; a fall anywhere else is fees lost
+for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) continue;
+  console.log('WARN a pool where '+nPos+' position(s)\u2019 fee totals fell with no own swap there: fees lost'); }
+/* Own swaps through the deck's own pools, checked with the minute recorder (own-swap-check.mjs): over
+   readings from before each swap to the one that took its fee back out, what the recorder measured
+   landing in the positions less how much their booked total rose is what was taken out, and it must
+   equal what the swaps paid in. The dips alone cannot say that on a busy day: other traders' fees land
+   in the same readings and fill them. The recorder's own position list and labels are used, and a
+   minute counts as read only when every one of its positions was read in it. */
+{ const P=await j(PULSE+'/m?n=1440&k='+TOKEN);
+  for(const l of ownSwapLines({posHist:fees.posHist, selfDone:fees.selfDone, selfPend:costs&&costs.selfPend, rec:positionsFrom(data),
+    rows:(P&&Array.isArray(P.mins))?P.mins:[], start:START, now:Date.now(), normId})) console.log(l); }
 console.log('positions now: '+(data.eth||[]).length+' Ethereum, '+(data.sol||[]).length+' Solana · relay errors: '+((data.errors||[]).length));
