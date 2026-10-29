@@ -3330,7 +3330,7 @@ const main=async()=>{
     // persistent portfolio history (value + cumulative pending fees), ~30 days at 15-min cadence
     const uiBuild=readUiBuild();
     let profileDaily=[], profilePxChg=null, tokenFlow=null, tokenSeries=null, stableSeries=null, stableOff=null;
-    let history=[], histPushed=false, totalDays=null;
+    let history=[], histPushed=false, totalDays=null, solPrio=null;
     try{ history=readJ(OUT+'/hist-'+profile.slug+'.json'); }catch(e){}
     {
       /* The daily record already refuses a degraded cycle; the fifteen-minute series did not, and
@@ -3338,13 +3338,26 @@ const main=async()=>{
          not a reading of anything — it is the shape of an outage — and every chart, day-change
          and drawdown figure drawn from the series inherits it. */
       const chainsOkForHist=Object.values(chainStatus).every(v=>v==='ok');
+      /* Solana's going rate to get a transaction through the deck's pools: per pool, the price per
+         compute unit (micro-lamports) that got a transaction writing that pool into each of the last
+         150 slots, its 90th percentile, and the busiest pool's kept. Solana prices congestion account
+         by account, and a reading with no accounts is zero in nearly every slot (gas-probe.mjs, 29 Oct),
+         so these are the accounts that matter: a harvest or re-range of the deck's writes to them. */
+      try{
+        const pools=[...new Set(solPositions.map(p=>p.poolId).filter(Boolean))].slice(0,12), per=[];
+        for(const pl of pools){ const r=await sol('getRecentPrioritizationFees',[[pl]]);
+          const v=Array.isArray(r)?r.map(x=>+x.prioritizationFee||0).sort((a,b)=>a-b):[];
+          if(v.length>=20) per.push(v[Math.min(v.length-1,Math.floor(0.9*v.length))]); }
+        if(per.length) solPrio={t:Date.now(), p90:Math.max(...per), pools:per.length};
+      }catch(e){ logErr('solPrio',e); }
       if(chainsOkForHist){
         const totV=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.valueUsd||0),0);
         const totF=[...evmPositions,...solPositions].reduce((s,p)=>s+(p.feesUsd||0),0);
         // g: gas price at this sample. Without a stored series there is nothing to call a gas
         // price high or low AGAINST, and a gauge with no distribution behind it is decoration.
+        // s: the same for Solana (micro-lamports per compute unit, solPrio above)
         history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100,
-                      g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null});
+                      g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null, s:solPrio?solPrio.p90:null});
         histPushed=true;
         if(history.length>3000) history=history.slice(-3000);
         writeJ(OUT+'/hist-'+profile.slug+'.json', history);
@@ -4115,7 +4128,7 @@ const main=async()=>{
       if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei,
+    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
     console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);
