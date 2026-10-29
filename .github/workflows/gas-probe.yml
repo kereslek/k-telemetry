@@ -1,0 +1,22 @@
+# Is the ETH gas meter right? Market data only (scripts/gas-probe.mjs): gas prices by endpoint, what
+# recent blocks paid, the deck's recorded gas readings as statistics, and the gas the public's own
+# Uniswap v3 position operations used. Runs on a push to its own files on the dev branch.
+name: gas-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/gas-probe.mjs', '.github/workflows/gas-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/gas-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
