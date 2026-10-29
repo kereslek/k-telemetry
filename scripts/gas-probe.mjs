@@ -93,3 +93,41 @@ for(const [who,list] of [['the page',PAGE],['the relay',RELAY]]){
     console.log('at '+f(typical)+' gwei and ETH $'+Math.round(eth)+': harvest '+usd(166e3)+' (the meter, at 130k gas: '+usd(130e3)+') · re-range '+usd(612e3)+' (the meter, at 520k: '+usd(520e3)+')'
       +' · at this week’s median gas the same re-range is $'+(612e3*0.055*eth/1e9).toFixed(2)); }
 }
+
+/* ---------- 5. Solana: the going rate to get in, and what Raydium position operations ask for ----------
+   Public reference accounts only (the busiest SOL/USDC pools), never the deck's. A transaction pays
+   5,000 lamports per signature plus its compute-unit limit times the price it offers per unit
+   (micro-lamports); getRecentPrioritizationFees gives, per slot of the last 150, the lowest price
+   that got a transaction writing those accounts in. */
+{ const SR=['https://solana-rpc.publicnode.com','https://api.mainnet-beta.solana.com'];
+  const srpc=async(m,p)=>{ for(const u of SR){ const r=await rpc(u,m,p); if(r!=null) return r; } return null; };
+  const P=(a,q)=>pctl(a,q);
+  const REF={'Raydium SOL/USDC (CLMM)':'8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj','Orca SOL/USDC':'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE'};
+  for(const [name,acct] of [...Object.entries(REF),['any transaction (no accounts)',null]]){
+    const r=await srpc('getRecentPrioritizationFees',[acct?[acct]:[]]);
+    if(!Array.isArray(r)||!r.length){ console.log('solana, '+name+': no answer'); continue; }
+    const v=r.map(x=>+x.prioritizationFee||0);
+    console.log('solana, '+name+': '+v.length+' slots · price to get in, micro-lamports per unit: median '+P(v,50)+', 75th '+P(v,75)+', 90th '+P(v,90)+' · slots at zero '+Math.round(v.filter(x=>!x).length/v.length*100)+'%');
+    await sleep(300); }
+  // Raydium CLMM: the compute-unit limit each kind of operation asks for, from its own recent transactions
+  const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', CB='ComputeBudget111111111111111111111111111111';
+  const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const b58=s=>{ let n=0n; for(const c of s) n=n*58n+BigInt(B58.indexOf(c)); const o=[]; while(n>0n){ o.unshift(Number(n&255n)); n>>=8n; } for(const c of s){ if(c==='1') o.unshift(0); else break; } return Uint8Array.from(o); };
+  const sigs=[]; let before=null;
+  for(let k=0;k<2;k++){ const r=await srpc('getSignaturesForAddress',[CLMM,{limit:100,...(before?{before}:{})}]); if(!r||!r.length) break; for(const s of r){ before=s.signature; if(!s.err) sigs.push(s.signature); } }
+  const by=new Map(); let read=0;
+  for(const s of sigs.slice(0,160)){
+    const tx=await srpc('getTransaction',[s,{encoding:'json',maxSupportedTransactionVersion:0}]); await sleep(120); if(!tx||!tx.meta) continue; read++;
+    const logs=(tx.meta.logMessages||[]).join('\n'), has=re=>re.test(logs);
+    const kind=has(/Instruction: OpenPosition/)?'open a position':has(/Instruction: ClosePosition/)?'close a position':has(/Instruction: DecreaseLiquidity/)?'harvest or withdraw (decrease)'
+      :has(/Instruction: IncreaseLiquidity/)?'add to a position':has(/Instruction: Swap/)?'swap through a CLMM pool':null; if(!kind) continue;
+    const keys=[...tx.transaction.message.accountKeys,...((tx.meta.loadedAddresses||{}).writable||[]),...((tx.meta.loadedAddresses||{}).readonly||[])];
+    let limit=null, price=0;
+    for(const ix of tx.transaction.message.instructions||[]){ if(keys[ix.programIdIndex]!==CB) continue; const d=b58(ix.data||'');
+      if(d[0]===2&&d.length>=5) limit=d[1]|(d[2]<<8)|(d[3]<<16)|(d[4]*2**24); if(d[0]===3&&d.length>=9){ let v=0n; for(let i=8;i>=1;i--) v=(v<<8n)|BigInt(d[i]); price=Number(v); } }
+    const e=by.get(kind)||{used:[],limit:[],price:[],sig:[]};
+    e.used.push(+tx.meta.computeUnitsConsumed||0); if(limit) e.limit.push(limit); e.price.push(price); e.sig.push((tx.transaction.signatures||[]).length); by.set(kind,e);
+  }
+  const K=x=>x==null?'—':Math.round(x/1000)+'k';
+  console.log('Raydium CLMM, '+read+' recent transactions: '+[...by.entries()].map(([k,e])=>k+': used '+K(P(e.used,50))+', limit asked '+K(P(e.limit,50))+' (n '+e.used.length+', '+e.limit.length+' set a limit) · price offered, median '+P(e.price,50)+' µL/unit · signatures '+P(e.sig,50)).join(' | '));
+}
