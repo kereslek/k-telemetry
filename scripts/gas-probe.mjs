@@ -77,3 +77,19 @@ for(const [who,list] of [['the page',PAGE],['the relay',RELAY]]){
   if(h) console.log('the meter’s harvest assumes 130k gas: measured median '+K(med(h)));
   if(w&&m) console.log('the meter’s re-range assumes 520k gas (withdraw, collect and open a new position): measured withdraw + open '+K(med(w)+med(m)));
 }
+
+/* ---------- 4. the spike, if there is one, and what the operations cost at this moment ---------- */
+{ const U='https://ethereum-rpc.publicnode.com';
+  const cb=await get('https://api.coinbase.com/v2/prices/ETH-USD/spot'), eth=cb&&cb.data?+cb.data.amount:null;
+  const h=await rpc(U,'eth_feeHistory',['0x400','latest',[]]), tip=await rpc(U,'eth_blockNumber');
+  if(h&&h.baseFeePerGas){ const b=h.baseFeePerGas.map(gw), n=b.length;
+    const firstHigh=b.findIndex(x=>x>=10), lastHigh=n-1-[...b].reverse().findIndex(x=>x>=10);
+    const ago=i=>Math.round((n-1-i)*12/60);
+    console.log('base fee over the last '+(n-1)+' blocks (about '+Math.round((n-1)*12/3600*10)/10+' h): lowest '+f(Math.min(...b))+' · median '+f(med(b))+' · highest '+f(Math.max(...b))+' gwei'
+      +(firstHigh>=0?' · above 10 gwei from about '+ago(firstHigh)+' min ago'+(lastHigh<n-1?' until about '+ago(lastHigh)+' min ago':' and still')+' ('+b.filter(x=>x>=10).length+' blocks)':' · never above 10 gwei'));
+    // the hour before, in steps of a quarter: where the climb began
+    const q=Math.floor((n-1)/12); console.log('base fee every '+Math.round(q*12/60)+' min, oldest first: '+Array.from({length:13},(_,i)=>f(b[Math.min(n-1,i*q)])).join(' → ')); }
+  if(eth&&typical){ const usd=g=>'$'+(g*typical*eth/1e9).toFixed(2);
+    console.log('at '+f(typical)+' gwei and ETH $'+Math.round(eth)+': harvest '+usd(166e3)+' (the meter, at 130k gas: '+usd(130e3)+') · re-range '+usd(612e3)+' (the meter, at 520k: '+usd(520e3)+')'
+      +' · at this week’s median gas the same re-range is $'+(612e3*0.055*eth/1e9).toFixed(2)); }
+}
