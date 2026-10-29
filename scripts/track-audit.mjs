@@ -131,7 +131,7 @@ const P=await pg.evaluate(()=>{
     worst:off.length?Math.max(...off.map(p=>Math.abs(p.poolGap.pct))):null};
   /* every gauge as drawn: the card's RANGE POSITION dial (needle and figure), the range bar's cursor
      under it, the move to each edge, and where the market price would put the needle for a pool
-     that is off the market; plus the momentum dials and the gas gauge */
+     that is off the market; plus the momentum dials and the NETWORK FEES tile */
   const gauges=[...document.querySelectorAll('#cards .card')].map(c=>{
     const p=[...state.positions.values()].find(q=>String(q.id)===c.dataset.id); if(!p) return null;
     const svg=c.querySelector('.gaugebox svg'), txt=svg?(svg.querySelector('text')||{}).textContent:null;
@@ -147,8 +147,18 @@ const P=await pg.evaluate(()=>{
       gap:g?g.pct:null, mLin:dPm?lin(dPm):null, mLog:dPm?lg(dPm):null};
   }).filter(Boolean);
   const M=state.momentum, mo=['#moTileDial','#moHeroDial'].map(s=>{ const n=document.querySelector(s+' .mo-needle'); const m=n&&/rotate\((-?[\d.]+)deg\)/.exec(n.style.transform); return m?+m[1]:null; });
-  const gn=document.querySelector('#ggNeedle'), gm=gn&&/rotate\((-?[\d.]+)deg\)/.exec(gn.style.transform);
-  const dials={moL:M&&M.now?M.now.L:null, mo, gas:gm?+gm[1]:null, gasWant:state.gasGwei>0&&typeof gasFrac==='function'?gasFrac(state.gasGwei)*180-90:null, warn:cfg.warnPct};
+  /* NETWORK FEES as drawn, against a fresh recalculation from the same readings, and its usual (the
+     median of the last 7 days of recorded readings) worked out again here, independently */
+  const fx=typeof feeChain!=='function'?null:['eth','sol'].map(ch=>{ const r=feeChain(ch), row=document.querySelector(ch==='eth'?'#fxEth':'#fxSol'), k=ch==='eth'?'g':'s';
+    const wk=(state.history||[]).filter(x=>x&&x.t>=Date.now()-7*864e5&&typeof x[k]==='number'&&(k==='s'?x[k]>=0:x[k]>0)).map(x=>x[k]).sort((a,b)=>a-b);
+    const shown=row?[row.querySelector('.usd').textContent,row.querySelector('.x').textContent,row.querySelector('.st').textContent].join('|'):null;
+    const want=[fmtFee(r.re), r.x!=null?fmtX(r.x):'\u2014', ({ok:'OK',hi:'PRICEY',wait:'WAIT'})[r.st]||'\u2014'].join('|');
+    return {ch, drawn:!!row, same:shown===want, spark:!!(row&&row.querySelector('svg .fx-line')), day:r.day.length, n:r.n, x:r.x, st:r.st,
+      // Solana's usual is often exactly zero (no priority needed), so the two are compared by difference, not ratio
+      medOk:r.med==null||(wk.length>0&&(m=>Math.abs(r.med-m)<=Math.max(0.01*Math.abs(m),1e-9))(wk[Math.min(wk.length-1,Math.floor(wk.length/2))])),
+      units:ch==='eth'&&r.re!=null&&state.gasGwei>0&&state.ethUsd?r.re/(state.gasGwei*state.ethUsd/1e9):null,
+      gwei:ch==='eth'?state.gasGwei:null, solAge:ch==='sol'&&state.solPrio?Date.now()-state.solPrio.t:null}; });
+  const dials={moL:M&&M.now?M.now.L:null, mo, warn:cfg.warnPct, fx};
   return {gauges, dials, gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
     tickers:(state.tickers||[]).map(t=>({sym:t.sym, ch:t.ch, usd:t.usd})), cards, book, histT:H.length?H[H.length-1].t:null, idleAt:state.idleAt||null};
 });
@@ -226,11 +236,36 @@ console.log('\n— gauges —');
   });
   ((disagree||alarming||marks<gapped)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the needle and the bar under it differ by more than 2 points · '+alarming+' where the amber end and a '+w+'% move to the edge disagree'
     +' · the market mark on '+marks+' of '+gapped+' pool(s) off the market');
-  const D=P.dials, moOk=D.moL==null||D.mo.every(a=>a==null||Math.abs(a-D.moL*9)<0.6), gasOk=D.gasWant==null||D.gas==null||Math.abs(D.gas-D.gasWant)<0.6;
+  const D=P.dials, moOk=D.moL==null||D.mo.every(a=>a==null||Math.abs(a-D.moL*9)<0.6);
   (moOk?OK:WARN)('momentum dials: '+D.mo.filter(a=>a!=null).length+' drawn, needle '+(moOk?'at the reading\'s level':'NOT at the reading\'s level'));
-  (gasOk?OK:WARN)('gas gauge: needle '+(D.gas==null?'not drawn':gasOk?'at the gas reading':'NOT at the gas reading'));
+  /* NETWORK FEES: what each row shows against the readings behind it; Ethereum's reading against what
+     the last 20 blocks charged (base fee, and base fee plus the 90th-percentile tip), read seconds apart */
+  if(!D.fx) WARN('network fees: the tile is not on the page');
+  else for(const f of D.fx){
+    const nm=f.ch==='eth'?'ETH':'SOL', why=[];
+    if(!f.drawn) why.push('row not drawn'); if(!f.same) why.push('what it shows is NOT what its readings give'); if(!f.medOk) why.push('its usual is NOT the median of the last 7 days');
+    if(f.day>=2&&!f.spark) why.push('no 24-hour line');
+    let mkt='';
+    if(f.ch==='eth'&&f.gwei>0){ const fh=await feeHist();
+      if(fh){ const inside=f.gwei>=fh.lo*0.9&&f.gwei<=fh.hi*1.1; if(!inside) why.push('the gas reading is outside what the last 20 blocks charged');
+        mkt=' · the page\u2019s gas reading '+(inside?'within':'OUTSIDE')+' what the last 20 blocks charged ('+(f.gwei/fh.typ>=1?'+':'\u2212')+Math.abs(Math.round((f.gwei/fh.typ-1)*100))+'% against a typical transaction)'; }
+      if(f.units!=null&&Math.abs(f.units/625000-1)>0.01) why.push('the re-range is not costed at 625k gas'); }
+    if(f.ch==='sol'&&!(f.solAge!=null&&f.solAge<3600e3)) why.push('the relay\u2019s Solana reading is '+(f.solAge==null?'missing':Math.round(f.solAge/60e3)+' min old'));
+    (why.length?WARN:OK)('network fees, '+nm+': '+(why.length?why.join('; '):'shows what its readings give')+(f.x!=null?' · '+(f.x>=100?Math.round(f.x):f.x.toFixed(1))+'\u00d7 usual, '+(f.st==='wait'?'WAIT':f.st==='hi'?'PRICEY':'OK')
+      :' · usual not known yet ('+f.n+' reading'+(f.n===1?'':'s')+' in 7 days; it needs 2 days)')+mkt+(f.ch==='sol'&&f.solAge!=null?' · the relay\u2019s reading '+Math.round(f.solAge/60e3)+' min old':'')); }
 }
 
+/* Ethereum: what the last 20 blocks charged, in gwei: the lowest base fee, and the highest base fee
+   plus the 90th-percentile tip, with a typical transaction (the newest base fee plus the median tip) */
+async function feeHist(){
+  for(const u of ['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth']){
+    try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(15000),
+        body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_feeHistory',params:['0x14','latest',[50,90]]})}); const j=r.ok?await r.json():null, h=j&&j.result;
+      if(!h||!h.baseFeePerGas) continue; const g=x=>Number(BigInt(x))/1e9, base=h.baseFeePerGas.map(g), tips=(h.reward||[]).map(x=>x.map(g));
+      const med=a=>{ const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]||0; };
+      return {lo:Math.min(...base), hi:Math.max(...base.slice(0,-1).map((b,i)=>b+((tips[i]||[])[1]||0)), base[base.length-1]), typ:base[base.length-1]+med(tips.map(x=>x[0]))}; }catch(e){} }
+  return null;
+}
 /* the tokens behind any WARN above, by rank, with where the market price came from */
 const flagged=ranked.filter(t=>t.offIn&&t.offIn.length);
 if(flagged.length){ console.log('\n— tokens off the market, by rank (#1 is your largest) —');

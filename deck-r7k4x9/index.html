@@ -115,35 +115,46 @@
   .px{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:7px 11px 8px;
       background:rgba(10,20,32,.6);border:1px solid var(--line);border-top:2px solid var(--line);font-family:var(--sans)}
   .px.tok{border-top-color:var(--accent-dim)}
-  .px.mkt.first,.px.gas{margin-left:10px}
+  .px.mkt.first,.px.fees{margin-left:10px}
   .px .k{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.06em;font-weight:600;color:var(--text-muted);white-space:nowrap;overflow:hidden}
   .px .k em{font-style:normal;font-size:8.5px;letter-spacing:.08em;line-height:1;padding:2px 4px;border:1px solid var(--line);color:var(--text-secondary);text-transform:uppercase}
   .px .v{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
   .px .chg{font-size:10.5px;font-weight:600}
-  .px.gas{display:grid;grid-template-columns:auto auto minmax(0,1fr);grid-template-areas:"g k num" "g band band" "sub sub sub";
-          align-items:center;gap:2px 8px}
-  .px.gas .gaswrap,.px.gas .gastxt{display:contents}
-  .gg-seg{fill:none;stroke-width:5;stroke-linecap:butt;opacity:.30}
-  .gg-a{stroke:var(--status-good)} .gg-b{stroke:var(--status-warning)}
-  .gg-c{stroke:var(--status-serious)} .gg-d{stroke:var(--status-critical)}
-  .gg-seg.on{opacity:1}
-  .gg-needle{stroke:var(--text-primary);stroke-width:2;stroke-linecap:round;
-             transform-box:view-box;transform-origin:38px 34px;transition:transform .5s cubic-bezier(.2,.8,.2,1)}
-  .gg-hub{fill:var(--text-primary)}
-  .gasgauge{grid-area:g;width:44px;height:23px;overflow:visible}
-  .px.gas>.k{grid-area:k}
-  .gasnum{grid-area:num;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .gasnum .unit{color:var(--text-muted);font-size:10.5px}
-  .gasband{grid-area:band;font-size:9px;letter-spacing:.06em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .gassub{grid-area:sub;font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* NETWORK FEES: a row per chain, what a re-range costs now against that chain's own usual */
+  .px.fees{gap:5px;cursor:pointer;grid-column:-2/-1}   /* the wide last slot, however many token tiles come first */
+  .px.fees:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+  .px.fees .k{justify-content:space-between}
+  .px.fees .k i{font-style:normal;font-weight:500;letter-spacing:.02em;color:var(--text-muted);opacity:.8;overflow:hidden;text-overflow:ellipsis}
+  .fx{display:grid;grid-template-columns:30px minmax(48px,120px) minmax(52px,1fr) 56px 40px;align-items:center;gap:0 8px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .fx .ch{font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--text-secondary)}
+  .fx svg{width:100%;max-width:120px;height:16px;display:block;overflow:visible}
+  .fx .usd{font-size:14px;text-align:right;color:var(--text-primary);white-space:nowrap}
+  .fx .x{font-size:10.5px;text-align:right;color:var(--text-muted);white-space:nowrap}
+  .fx .st{font:700 9.5px/1 var(--sans);letter-spacing:.1em;text-align:right;color:var(--text-muted)}
+  .fx[data-s=ok] .st{color:var(--status-good)}
+  .fx[data-s=hi] .st,.fx[data-s=hi] .x{color:var(--status-warning)}
+  .fx[data-s=wait] .st,.fx[data-s=wait] .x,.fx[data-s=wait] .usd{color:var(--status-critical)}
+  .fx-band{fill:var(--text-muted);opacity:.14}
+  .fx-med{stroke:var(--text-muted);stroke-dasharray:2 2;stroke-width:.6;opacity:.7}
+  .fx-line{fill:none;stroke:var(--text-secondary);stroke-width:1.1;opacity:.75}
+  .fx-hot,.fx-hot2{stroke:var(--status-warning);stroke-width:1.6;stroke-linecap:round} .fx-hot2{stroke:var(--status-critical)}
+  .fx-dot{fill:var(--accent)} .fx[data-s=hi] .fx-dot{fill:var(--status-warning)} .fx[data-s=wait] .fx-dot{fill:var(--status-critical)}
+  .fx-more{display:grid;grid-template-columns:30px repeat(3,minmax(0,64px)) 1fr;gap:2px 8px;border-top:1px solid var(--line);padding-top:6px;margin-top:2px;align-items:baseline}
+  .fx-more[hidden]{display:none}
+  .fx-more .h{font:600 8.5px/1.2 var(--sans);letter-spacing:.1em;color:var(--text-muted);text-align:right}
+  .fx-more .ch{font:600 10px/1.4 var(--sans);letter-spacing:.08em;color:var(--text-secondary)}
+  .fx-more .n{font-family:var(--mono);font-size:12px;text-align:right;color:var(--text-primary)}
+  .fx-more .why{grid-column:2/-1;font-size:10.5px;color:var(--text-muted);margin:-1px 0 3px}
   @media(min-width:761px) and (max-width:1399px){
     header{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"logo brand ctl" "stat stat stat" "px px px"}
     .hdr-stats{justify-self:start;justify-content:flex-start}
     .brand h1{font-size:14px;letter-spacing:.22em} .brand .sub{white-space:normal;line-height:1.5}
     /* tokens four across; SOL, ETH, BTC in the left half of row two, gas the right half */
     .hdr-px{grid-template-columns:repeat(12,minmax(0,1fr))}
-    .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.gas{grid-column:span 6}
-    .px.mkt.first,.px.gas{margin-left:0}
+    .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.fees{grid-column:span 6}
+    .px.mkt.first,.px.fees{margin-left:0}
+    /* the fees tile is wide here: its rows stay together, the title and its key side by side */
+    .fx{grid-template-columns:30px 120px 70px 56px 40px;justify-content:start} .px.fees .k{justify-content:flex-start;gap:12px}
   }  .act-size{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
   .cat-scroll{overflow-x:auto;margin-top:6px}
   /* fees by token */
@@ -740,11 +751,11 @@
     .hdr-segs #aprSeg{flex:1} .hdr-segs #aprSeg button{flex:1}
     .hdr-px{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
     .px{padding:6px 9px 7px;gap:3px}
-    .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.gas{grid-column:1/-1}
-    .px.mkt.first,.px.gas{margin-left:0}
+    .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.fees{grid-column:1/-1}
+    .px.mkt.first,.px.fees{margin-left:0}
     .px .v{font-size:13.5px} .px .chg{font-size:10px}
     .px.mkt .v{font-size:13px}
-    .gasnum{font-size:13.5px}    .hstat .v{font-size:12px}
+    .fx .usd{font-size:13.5px}    .hstat .v{font-size:12px}
     .hbtn{padding:6px 10px;font-size:9px}
     .seg button{padding:4px 7px;font-size:8.5px}
     main{padding:12px 10px 50px}
@@ -1919,23 +1930,14 @@
       <button class="hbtn" id="btnSettings" title="Config — wallets, endpoints, alerts" aria-label="Config"><span class="bi">⚙</span><span class="bt"> CONFIG</span></button>
     </div>
   </div>
-  <!-- price tiles: tokens in the token-exposure order, then the market, then gas. The prices are
-       filled by renderHeader into #hPx; the gas tile is static markup driven by renderGasGauge. -->
+  <!-- price tiles: tokens in the token-exposure order, then the market, then NETWORK FEES. The prices
+       are filled by renderHeader into #hPx; the fees tile is static markup driven by renderFees. -->
   <div class="hdr-px">
     <div id="hPx" style="display:contents"></div>
-    <div class="px gas" id="hGasStat" title="Cost to transact on Ethereum right now"><div class="k">ETH GAS</div>
-      <div class="gaswrap">
-        <svg class="gasgauge" viewBox="0 0 76 40" aria-hidden="true">
-          <path class="gg-seg gg-a" d="M10.0 34.0 A28 28 0 0 1 24.0 9.75"/>
-          <path class="gg-seg gg-b" d="M24.0 9.75 A28 28 0 0 1 43.79 6.61"/>
-          <path class="gg-seg gg-c" d="M43.79 6.61 A28 28 0 0 1 56.21 12.73"/>
-          <path class="gg-seg gg-d" d="M56.21 12.73 A28 28 0 0 1 66.0 34.0"/>
-          <line class="gg-needle" id="ggNeedle" x1="38" y1="34" x2="38" y2="10"/>
-          <circle class="gg-hub" cx="38" cy="34" r="2.6"/>
-        </svg>
-        <div class="gastxt"><div class="gasnum" id="hGasNum">—</div><div class="gasband" id="hGasBand">—</div></div>
-      </div>
-      <div class="gassub" id="hGasSub">—</div>
+    <div class="px fees" id="hFees" role="button" tabindex="0" aria-expanded="false" aria-controls="hFeesMore"><div class="k">NETWORK FEES<i>re-range now · × your usual</i></div>
+      <div class="fx" id="fxEth"><span class="ch">ETH</span><svg viewBox="0 0 120 16" aria-hidden="true"></svg><span class="usd">—</span><span class="x">—</span><span class="st">—</span></div>
+      <div class="fx" id="fxSol"><span class="ch">SOL</span><svg viewBox="0 0 120 16" aria-hidden="true"></svg><span class="usd">—</span><span class="x">—</span><span class="st">—</span></div>
+      <div class="fx-more" id="hFeesMore" hidden></div>
     </div>
   </div>
 </header>
@@ -2635,7 +2637,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.20';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.21';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3751,7 +3753,7 @@ function snapSave(){
       : idsNow(c);
     const solIds = keep('sol','solIds', !!state.solStale);
     const ethIds = keep('eth','ethIds', !!state.ethStale);
-    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei,
+    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei, solPrio:state.solPrio||null,
       block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth,
       tickers:state.tickers, quotes:state.quotes, btcUsdChg24:state.btcUsdChg24, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
@@ -3920,6 +3922,7 @@ async function scanInner(isBoot){
           if(d.btcUsd!=null) state.btcUsd = d.btcUsd;
           if(d.btcUsdChg24!=null) state.btcUsdChg24 = d.btcUsdChg24;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
+          if(d.solPrio) state.solPrio = d.solPrio;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink = d.ink||null;
           if(d.mktRef) state.mktRef = d.mktRef;
@@ -4053,7 +4056,7 @@ async function scanInner(isBoot){
     if(snap && Array.isArray(snap.ps) && snap.ps.length){
       state.positions=new Map(snap.ps.map(p=>{ p.cached=true; return [p.id,p]; }));
       state.ethUsd=state.ethUsd??snap.ethUsd; state.btcUsd=state.btcUsd??snap.btcUsd;
-      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block;
+      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block; state.solPrio=state.solPrio??snap.solPrio;
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
       state.feeMonth=state.feeMonth??snap.feeMonth;
       state.costMonth=state.costMonth??snap.costMonth;
@@ -4658,7 +4661,7 @@ function renderAll(){
   $('#alertCfgHint').textContent = 'WARN ≤ '+cfg.warnPct+'% · CRITICAL ≤ '+cfg.critPct+'% PRICE MOVE TO EXIT';
 }
 function renderHeader(){
-  renderGasGauge();
+  renderFees();
   const chip = c => c!=null ? ' <span style="font-size:10px;font-weight:600;color:var(--status-'+(c>=0?'good':'critical')+')">'
         +(c>=0?'▲':'▼')+Math.abs(c).toFixed(1)+'%</span>' : '';
   const px=$('#hPx');
@@ -5482,7 +5485,7 @@ function renderFlow(){
   strip.innerHTML='<span>⛽ ETH GAS <b>'+(state.gasGwei!=null?state.gasGwei.toFixed(2)+' gwei':'—')+'</b></span>'
     +'<span>HARVEST TX ≈ <b>'+(hc!=null?fmtUsd(hc):'—')+'</b></span>'
     +'<span>FULL RE-RANGE ≈ <b>'+(rcst!=null?fmtUsd(rcst):'—')+'</b></span>'
-    +'<span>SOLANA TX ≈ <b>$0.02</b></span>'
+    +'<span>SOLANA HARVEST ≈ <b>'+fmtFee(solOpUsd('harvest'))+'</b></span>'
     +(state.costMonth&&state.costMonth.txCount>0
       ? '<span>YOUR ACTUAL AVG ≈ <b>'+fmtUsd(((state.costMonth.gasUsd||0)+(state.costMonth.swapFeeUsd||0)-(state.costMonth.selfEvmUsd||0))/state.costMonth.txCount)
         +'</b> / op <span class="unit">(gas + swap fees, '+state.costMonth.txCount+' ops this month)</span></span>'
@@ -5646,7 +5649,7 @@ function compoundCostUsd(p){
      Solana, where a transaction is cents. Blending the two put a ~$5.80 price on a Solana
      round trip and produced the advice NOT to collect fees that cost about twenty cents to
      collect. Each chain is costed from its own numbers. */
-  if(p.chain==='sol') return SOL_TX_USD*2 + swapFee;
+  if(p.chain==='sol') return solOpUsd('harvest')*2 + swapFee;
   const cm=state.costMonth;
   const perOp=(cm&&cm.txCount>0)?(((cm.gasUsd||0)+(cm.swapFeeUsd||0)-(cm.selfEvmUsd||0))/cm.txCount):null;
   const ops=perOp!=null?perOp*3:null;                        // collect + rebalance swap + add
@@ -7579,69 +7582,112 @@ function initCosmos(){
 }
 
 /* ----- gas economics ----- */
-const HARVEST_GAS=130000, REBALANCE_GAS=520000;
+/* Gas each operation uses, measured on 29 Oct 2026 from Uniswap v3's position manager (medians of
+   about 650 recent public calls, gas-probe.mjs): a harvest (collect) about 175k, a re-range (withdraw
+   and collect, then open the new range) about 625k. The guesses before were 130k and 520k. */
+const HARVEST_GAS=175000, REBALANCE_GAS=625000;
 /* Collecting alone changes nothing — idle fees just move wallets. The action that pays is
    collect + redeposit, so that is the cost the compounding call must clear. */
-const COMPOUND_GAS=380000, SOL_TX_USD=0.02;
-/* ---- ETH gas gauge ----
-   Two questions, and they need different answers. "What does it cost right now" is a fact and
-   is always shown in dollars for the operation actually performed, not in gwei, because gwei
-   is not a price anyone pays. "Is that high or low" is a claim, and it is only made against
-   this deck's own recorded gas history. Until enough samples exist the panel says so rather
-   than inventing a percentile — the axis below is a stated scale, never a claim about typical. */
-const GAS_LO=0.1, GAS_HI=100;                       // gauge axis in gwei, log-spaced
-const GAS_BANDS=[[1,'VERY LOW','good'],[5,'LOW','good'],[15,'NORMAL','warning'],[40,'HIGH','serious'],[Infinity,'SEVERE','critical']];
-function gasFrac(g){
-  if(!(g>0)) return null;
-  const f=Math.log10(g/GAS_LO)/Math.log10(GAS_HI/GAS_LO);
-  return Math.max(0,Math.min(1,f));
+const COMPOUND_GAS=380000;
+/* Solana: a transaction pays 5,000 lamports a signature plus the compute units it asks for at the
+   price it offers per unit. Raydium's app asks 600k units for a position transaction (gas-probe.mjs);
+   a harvest is one transaction and one signature, a re-range two transactions and three signatures
+   (closing signs once, opening signs for the new position's NFT too). A new position's rent is a
+   deposit returned on close: not a fee, not counted. */
+const SOL_OPS={harvest:{sig:1, cu:600000}, rerange:{sig:3, cu:1200000}};
+const SOL_TX_USD=0.02;   // the old flat guess, used only until the relay has read Solana's going rate
+const solUsdNow=()=>{ const t=(state.tickers||[]).find(x=>x&&x.sym==='SOL'&&x.usd>0); return t?t.usd:null; };
+function solCostUsd(op, prio){ const u=solUsdNow(), o=SOL_OPS[op]; return (u&&o&&prio!=null)?(o.sig*5000+prio*o.cu/1e6)/1e9*u:null; }
+// a Solana operation's cost now: measured while the relay's reading is under an hour old, the old guess before
+function solOpUsd(op){ const P=state.solPrio, v=(P&&P.p90!=null&&Date.now()-P.t<3600e3)?solCostUsd(op,P.p90):null;
+  return v!=null?v:(op==='rerange'?0.05:SOL_TX_USD); }
+const fmtFee=v=>v==null?'—':v>=10?fmtUsd(v,0):v>=0.01?fmtUsd(v,2):v>=0.0005?'$'+v.toFixed(3):'<$0.001';
+const fmtX=x=>x>=100?Math.round(x).toLocaleString('en-US')+'×':x>=10?x.toFixed(0)+'×':x.toFixed(1)+'×';
+/* ---- NETWORK FEES ----
+   One question per chain: is now a good time to act? Each row: what a re-range costs right now, that
+   against the chain's own usual (the median of this deck's readings over the last 7 days, so the
+   scale calibrates itself: Ethereum's usual is now hundredths of a gwei, not the tens the old gauge
+   was drawn for), a 24-hour line and a word. WAIT only when it is both far above usual and real
+   money; a jump that still costs cents is OK. Tapped open: the harvest, the re-range and the usual
+   side by side, and since when it has been high. Ethereum's reading is the page's own, live;
+   Solana's is the relay's, at most a pass old (the busiest of your pools, fee-history.s). */
+const FEE_DAYS=7;
+function feeChain(ch){
+  const now=Date.now(), key=ch==='eth'?'g':'s';
+  const pts=(state.history||[]).filter(x=>x&&x.t>0&&typeof x[key]==='number'&&(key==='s'?x[key]>=0:x[key]>0))
+    .map(x=>[x.t,x[key]]).sort((a,b)=>a[0]-b[0]);
+  let cur=null, at=null;
+  if(ch==='eth'){ if(state.gasGwei>0){ cur=state.gasGwei; at=now; } }
+  else { const P=state.solPrio; if(P&&P.p90!=null&&now-P.t<3600e3){ cur=P.p90; at=P.t; } }
+  if(cur==null&&pts.length&&now-pts[pts.length-1][0]<3600e3){ [at,cur]=pts[pts.length-1]; }
+  const usd=(v,op)=>v==null?null:ch==='eth'?(state.ethUsd?(op==='harvest'?HARVEST_GAS:REBALANCE_GAS)*v*state.ethUsd/1e9:null):solCostUsd(op,v);
+  const wk=pts.filter(p=>p[0]>=now-FEE_DAYS*864e5), vals=wk.map(p=>p[1]).sort((a,b)=>a-b);
+  const q=f=>vals[Math.min(vals.length-1,Math.floor(f*vals.length))];
+  // two days of readings at least before "usual" means anything
+  const enough=vals.length>=48&&wk.length&&now-wk[0][0]>=2*864e5;
+  const med=enough?q(0.5):null, re=usd(cur,'rerange'), usual=usd(med,'rerange');
+  const x=re!=null&&usual>0?re/usual:null;
+  const st=x==null?'':(x>=10&&re>=5)?'wait':(x>=3&&re>=1)?'hi':'ok';
+  // the stretch at three times usual or more that is running now: since when, and which way it goes
+  let since=null, trend=null;
+  if(x!=null&&x>=3){ const hiAt=v=>usd(v,'rerange')>=3*usual; let i=pts.length; while(i>0&&hiAt(pts[i-1][1])) i--;
+    if(i<pts.length) since=pts[i][0];
+    const peak=Math.max(cur,...pts.slice(i).map(p=>p[1])), prev=pts.length>2?pts[pts.length-3][1]:null;
+    trend=cur<=0.6*peak?'easing':(prev!=null&&cur>=1.2*prev)?'rising':'holding'; }
+  const day=pts.filter(p=>p[0]>=now-864e5).map(p=>[p[0],usd(p[1],'rerange')]).filter(p=>p[1]!=null);
+  if(re!=null&&at!=null&&(!day.length||at>day[day.length-1][0])) day.push([at,re]);
+  return {ch, cur, med, re, hv:usd(cur,'harvest'), usual, x, st, since, trend, n:vals.length, day,
+          lo:enough?usd(q(0.1),'rerange'):null, hi:enough?usd(q(0.9),'rerange'):null};
 }
-function gasPercentile(g){
-  const h=(state.history||[]).map(x=>x&&x.g).filter(v=>typeof v==='number'&&v>0);
-  if(h.length<12) return {n:h.length,pct:null};
-  const below=h.filter(v=>v<g).length;
-  return {n:h.length,pct:below/h.length*100};
+/* 24 hours of the re-range cost, on a log scale: the band is the usual range (the middle 80% of the
+   7 days), the dashes the usual itself, the dot now. Only stretches far above usual take colour. */
+function feeSpark(r){
+  const W=120, H=16, d=r.day; if(d.length<2) return '';
+  const t0=Date.now()-864e5, X=t=>Math.max(0,Math.min(W-4,(t-t0)/864e5*(W-4)));
+  const vs=[...d.map(p=>p[1]), r.lo, r.hi].filter(v=>v>0); if(!vs.length) return '';
+  let mn=Math.min(...vs), mx=Math.max(...vs);
+  if(mx/mn<3){ const m=Math.sqrt(mx*mn); mn=m/1.8; mx=m*1.8; } else { mn/=1.4; mx*=1.4; }
+  const Y=v=>((H-1)-(H-2)*Math.log(Math.max(mn,v)/mn)/Math.log(mx/mn)).toFixed(1);
+  let g='';
+  if(r.lo>0&&r.hi>0) g+='<rect class="fx-band" x="0" y="'+Y(r.hi)+'" width="'+W+'" height="'+Math.max(0.8,Y(r.lo)-Y(r.hi)).toFixed(1)+'"/>';
+  if(r.usual>0) g+='<line class="fx-med" x1="0" x2="'+W+'" y1="'+Y(r.usual)+'" y2="'+Y(r.usual)+'"/>';
+  g+='<polyline class="fx-line" points="'+d.map(p=>X(p[0]).toFixed(1)+','+Y(p[1])).join(' ')+'"/>';
+  if(r.usual>0) for(let i=1;i<d.length;i++){ const m=Math.max(d[i-1][1],d[i][1]); if(m<3*r.usual) continue;
+    g+='<line class="'+(m>=10*r.usual?'fx-hot2':'fx-hot')+'" x1="'+X(d[i-1][0]).toFixed(1)+'" y1="'+Y(d[i-1][1])+'" x2="'+X(d[i][0]).toFixed(1)+'" y2="'+Y(d[i][1])+'"/>'; }
+  const L=d[d.length-1]; return g+'<circle class="fx-dot" cx="'+X(L[0]).toFixed(1)+'" cy="'+Y(L[1])+'" r="2.4"/>';
 }
-function renderGasGauge(){
-  const g=state.gasGwei, num=$('#hGasNum'), band=$('#hGasBand'), sub=$('#hGasSub'), needle=$('#ggNeedle');
-  if(!num) return;
-  const segs=['a','b','c','d'].map(c=>document.querySelector('.gg-'+c));
-  segs.forEach(x=>x&&x.classList.remove('on'));
-  if(g==null){
-    num.innerHTML='—'; band.textContent=''; sub.textContent='no gas reading';
-    if(needle) needle.style.transform='rotate(-90deg)';
-    return;
-  }
-  const f=gasFrac(g);
-  if(needle) needle.style.transform='rotate('+(f*180-90).toFixed(1)+'deg)';
-  const bi=g<1?0:g<5?1:g<15?2:3;
-  if(segs[bi]) segs[bi].classList.add('on');
-  const b=GAS_BANDS.find(x=>g<x[0]);
-  num.innerHTML=(g<1?g.toFixed(3):g<10?g.toFixed(2):g.toFixed(1))+'<span class="unit"> gwei</span>';
-  band.style.color='var(--status-'+b[2]+')';
-  // The number that decides anything: what an operation you actually perform costs today.
-  const rr=gasCostUsd(REBALANCE_GAS), hv=gasCostUsd(HARVEST_GAS);
-  sub.textContent = rr!=null ? ('re-range '+fmtUsd(rr)+' · harvest '+fmtUsd(hv)) : 'no ETH price for cost';
-  /* The relative reading belongs next to the word it qualifies, not tacked onto the cost line —
-     and while there is no recorded history it must say so rather than imply a ranking. */
-  const {n,pct}=gasPercentile(g);
-  /* pct is the share of past readings BELOW the current price, so a HIGH pct means gas is
-     expensive right now. Printing that as "cheaper than 83%" was exactly backwards, and wrong
-     in the direction that matters — it read as a green light at the top of the range. Say it
-     the way round that is true, and flip the phrasing at the midpoint so neither end reads as
-     a double negative. */
-  band.textContent = b[1] + (pct==null ? ''
-    : (pct<=50 ? ' · CHEAPER THAN '+(100-pct).toFixed(0)+'%' : ' · PRICIER THAN '+pct.toFixed(0)+'%'));
-  if(pct==null && n===0) sub.textContent += ' · building history';
-  const st=$('#hGasStat');
-  if(st) st.title='Ethereum gas is '+g.toFixed(3)+' gwei. A full re-range (~'+(REBALANCE_GAS/1000)+'k gas) costs about '
-    +(rr!=null?fmtUsd(rr):'—')+' at this price, a harvest (~'+(HARVEST_GAS/1000)+'k gas) about '+(hv!=null?fmtUsd(hv):'—')
-    +'. Gauge axis is '+GAS_LO+'–'+GAS_HI+' gwei on a log scale. '
-    +(pct==null?'Not enough recorded history yet to say whether this is high or low.'
-               :'Against this deck\'s own '+n+' recorded readings, '+pct.toFixed(0)+'% were cheaper than this and '
-                +(100-pct).toFixed(0)+'% dearer.')
-    +' Gas is only part of the cost — a rebalance also pays swap fees and price impact, usually the larger half.';
+function feeWhy(r){
+  if(r.re==null) return 'no reading yet';
+  if(r.x==null) return 'usual not known yet · '+r.n+' reading'+(r.n===1?'':'s')+' in the last '+FEE_DAYS+' days';
+  const sol=r.ch==='sol';
+  if(r.x>=3) return (sol?'your pools ':'')+(r.st==='wait'?'spiking':sol?'busier than usual':'pricier than usual')
+    +(r.since?' since '+fmtT(r.since,false):'')+(r.trend?', '+r.trend:'');
+  return r.x<=0.7?(sol?'your pools cheaper than usual':'cheaper than usual'):(sol?'your pools at their usual level':'at its usual level');
 }
+function feeTitle(r){
+  if(r.ch==='eth') return 'Ethereum: '+(r.cur!=null?(r.cur<1?r.cur.toFixed(3):r.cur.toFixed(1))+' gwei now':'no reading')
+    +(r.med!=null?', usually '+(r.med<1?r.med.toFixed(3):r.med.toFixed(1))+' gwei (median of the last '+FEE_DAYS+' days)':'')
+    +'. A re-range uses about '+REBALANCE_GAS/1000+'k gas and a harvest about '+HARVEST_GAS/1000+'k, measured from Uniswap v3’s own recent calls. Gas only: swap fees and price impact come on top.';
+  return 'Solana: '+(r.cur!=null?Math.round(r.cur).toLocaleString('en-US')+' micro-lamports per compute unit to get into your busiest pool now':'no reading yet')
+    +(r.med!=null?', usually '+Math.round(r.med).toLocaleString('en-US'):'')+' (the 90th percentile of the last 150 slots). A re-range is two transactions and three signatures, about 1.2M compute units at Raydium’s settings; a harvest one and one. A new position’s rent is a deposit returned on close, not counted.';
+}
+function renderFees(){
+  const word={ok:'OK',hi:'PRICEY',wait:'WAIT'}, R={eth:feeChain('eth'), sol:feeChain('sol')};
+  for(const [ch,id] of [['eth','#fxEth'],['sol','#fxSol']]){ const r=R[ch], row=$(id); if(!row) continue;
+    row.dataset.s=r.st; row.querySelector('svg').innerHTML=feeSpark(r);
+    row.querySelector('.usd').textContent=fmtFee(r.re); row.querySelector('.x').textContent=r.x!=null?fmtX(r.x):'—';
+    row.querySelector('.st').textContent=word[r.st]||'—'; row.title=feeTitle(r); }
+  const more=$('#hFeesMore');
+  if(more) more.innerHTML='<span></span><span class="h">HARVEST</span><span class="h">RE-RANGE</span><span class="h">USUAL</span><span></span>'
+    +['eth','sol'].map(ch=>{ const r=R[ch]; return '<span class="ch">'+ch.toUpperCase()+'</span><span class="n">'+fmtFee(r.hv)+'</span><span class="n">'+fmtFee(r.re)
+      +'</span><span class="n">'+fmtFee(r.usual)+'</span><span></span><span class="why">'+esc(feeWhy(r))+'</span>'; }).join('');
+}
+// tapped open or closed, remembered on this device
+{ const t=$('#hFees'), m=$('#hFeesMore');
+  if(t&&m){ const set=o=>{ m.hidden=!o; t.setAttribute('aria-expanded',String(o)); store.set('feesOpen',o); };
+    set(!!store.get('feesOpen',false));
+    t.addEventListener('click',()=>set(m.hidden));
+    t.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); set(m.hidden); } }); } }
 function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
 function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 
@@ -7662,14 +7708,14 @@ function renderOps(){
         +fmtPrice(lad.restPx)+'. Leave it.'});
     }
     else if(!p.inRange){
-      const rc = p.chain==='sol' ? 0.05 : gasCostUsd(REBALANCE_GAS);
+      const rc = p.chain==='sol' ? solOpUsd('rerange') : gasCostUsd(REBALANCE_GAS);
       const df = dailyFeeUsd(p);
       out.push({pri:'critical',ic:'⟳',msg:ref+' is <b>OUT OF RANGE — earning $0</b>. Full re-range costs ≈ <b>'+(rc!=null?fmtUsd(rc):'—')+'</b> (withdraw+collect+mint)'+(df!=null&&rc!=null&&df>0?' → paid back by fees in ≈ <b>'+Math.ceil(rc/df)+' days</b> at its recent rate':'')+'.'});
     }
     else if(sev==='serious'){ const de=dispEdge(p); out.push({pri:'serious',ic:'◆',msg:ref+' leaves its range on a <b>'+de.sign+de.pct.toFixed(1)+'% price move</b> ('+de.edge+' edge). Decide your rebalance trigger NOW, before it exits.'}); }
     else if(sev==='warning'){ const de=dispEdge(p); out.push({pri:'warning',ic:'▲',msg:ref+' is drifting toward its '+de.edge+' edge — goes idle after a '+de.sign+de.pct.toFixed(1)+'% move. Watch it this session.'}); }
     if(p.feesUsd!=null && p.feesUsd>0.5){
-      const cost = p.chain==='sol' ? 0.02 : gasCostUsd(HARVEST_GAS);
+      const cost = p.chain==='sol' ? solOpUsd('harvest') : gasCostUsd(HARVEST_GAS);
       const df = dailyFeeUsd(p);
       if(cost!=null){
         if(p.feesUsd >= 3*cost)
@@ -12842,6 +12888,7 @@ async function init(){
       if(d.quotes) state.quotes=d.quotes;
       if(d.btcUsd!=null) state.btcUsd=d.btcUsd;
       if(d.btcUsdChg24!=null) state.btcUsdChg24=d.btcUsdChg24;
+      if(d.solPrio) state.solPrio=d.solPrio;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
