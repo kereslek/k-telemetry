@@ -120,13 +120,13 @@
   .px .k em{font-style:normal;font-size:8.5px;letter-spacing:.08em;line-height:1;padding:2px 4px;border:1px solid var(--line);color:var(--text-secondary);text-transform:uppercase}
   .px .v{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
   .px .chg{font-size:10.5px;font-weight:600}
-  /* FEES: one quiet line, what a re-range costs now on each chain and a word. Tapped open: Ethereum's
-     next 24 hours and Solana against its floor; a spike opens it by itself */
-  .px.fees{gap:0;padding-top:8px;padding-bottom:8px;cursor:pointer;grid-column:-2/-1}   /* the wide last slot, however many token tiles come first */
+  /* RE-RANGE GAS: what a re-range costs in network fees now on each chain and a word (OK, PRICEY,
+     WAIT), under a title like the price tiles beside it. Tapped open: the cost now, Ethereum's next
+     24 hours, Solana against its base fee; a spike opens it by itself */
+  .px.fees{cursor:pointer;grid-column:-2/-1}   /* the wide last slot, however many token tiles come first */
   .px.fees:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
-  .fq{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;white-space:nowrap;min-width:0;line-height:16px}
-  .fq .fk{font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--text-muted)}
-  .fq .fa{margin-left:auto;color:var(--text-muted);font-size:13px}
+  .px.fees .k .fa{margin-left:auto;font-size:13px;line-height:10px;font-weight:400}
+  .fq{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;white-space:nowrap;min-width:0;line-height:18px}
   .fc{display:inline-flex;align-items:center;gap:6px}
   .fc i{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex:none}
   .fc b{font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--text-secondary)}
@@ -136,33 +136,37 @@
   .fc[data-s=hi] i{background:var(--status-warning)} .fc[data-s=hi] .fw{color:var(--status-warning)}
   .fc[data-s=wait] i{background:var(--status-critical);box-shadow:0 0 0 3px rgba(239,83,80,.22)}
   .fc[data-s=wait] .fv,.fc[data-s=wait] .fw{color:var(--status-critical)}
-  /* too narrow for one line (the last slot on big screens, the smallest phones): ETH over SOL, aligned */
+  /* too narrow for one row: ETH over SOL, aligned */
   .px.fees{container-type:inline-size}
-  @container (max-width:342px){
-    .fq{display:grid;grid-template-columns:auto 1fr auto;gap:5px 12px}
-    .fq .fk{grid-area:1/1/3/2} #fcEth{grid-area:1/2} #fcSol{grid-area:2/2} .fq .fa{grid-area:1/3/3/4}
+  @container (max-width:250px){
+    .fq{display:grid;grid-template-columns:max-content}
     .fc b{min-width:25px} .fc .fv{min-width:6.2ch}
   }
   .fx2{border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:5px;font-family:var(--sans);white-space:normal}
   .fx2[hidden]{display:none}
-  .fx2-h{font:600 9px/1.2 var(--sans);letter-spacing:.1em;color:var(--text-muted)}
+  .fx2-h{font:600 9px/1.2 var(--sans);letter-spacing:.1em;color:var(--text-muted);margin-top:2px}
   .fx2-h span{font-weight:500;letter-spacing:.02em;margin-left:6px;opacity:.85}
-  .fx2-bars{width:100%;max-width:420px;height:58px;display:block}
+  .fx2-t{font:600 9px/1 var(--sans);letter-spacing:.1em;color:var(--text-secondary);margin-right:3px}
+  .fx2-bars{width:100%;max-width:420px;height:70px;display:block}
   .fx2-bars .b-lo{fill:var(--status-good);opacity:.75} .fx2-bars .b-md{fill:var(--text-muted);opacity:.45} .fx2-bars .b-hi{fill:var(--status-warning);opacity:.7}
-  .fx2-bars text{fill:var(--text-muted);font:8px var(--sans)} .fx2-bars .b-win{stroke:var(--status-good);stroke-width:1.5}
+  .fx2-bars text{fill:var(--text-muted);font:8px var(--sans)} .fx2-bars text.b-pk{fill:var(--text-secondary)}
+  .fx2-bars .b-win{stroke:var(--status-good);stroke-width:1.5}
   .fx2-bars .b-now{fill:var(--text-primary);stroke:#07121c;stroke-width:1.5}
   .fx2-n{font-size:11px;color:var(--text-muted);line-height:1.45}
   .fx2-n b{color:var(--text-primary);font-family:var(--mono);font-weight:500;font-size:11.5px}
-  .fx2-n .g{color:var(--status-good);font-weight:600;white-space:nowrap}
+  .fx2-n .g{color:var(--status-good);font-weight:600;white-space:nowrap} .fx2-n .a{color:var(--status-warning);font-weight:600;white-space:nowrap}
   .fx2-alert{font-size:12px;color:var(--status-critical);line-height:1.45} .fx2-alert b{font-family:var(--mono);font-weight:600}
   .fx2-sol{font-size:11px;color:var(--text-muted);line-height:1.45;border-top:1px dashed var(--line);padding-top:6px;margin-top:2px}
   .fx2-sol b{color:var(--text-primary);font-family:var(--mono);font-weight:500}
-  /* wide screens: opened, it drops down over the page instead of stretching the header, above the jump bar */
+  .fx2-f{font-size:10.5px;color:var(--text-muted);opacity:.8;line-height:1.4}
+  .fx2 .nw{white-space:nowrap}
+  /* wide screens: opened, it drops down over the page instead of stretching the header, above the jump
+     bar; lined up with the tile's right edge and at least 380 px wide, so it reads in the narrow last slot */
   header.fees-open{z-index:60}
   @media(min-width:761px){
     .px.fees{position:relative}
-    .px.fees .fx2{position:absolute;left:-1px;right:-1px;top:100%;margin-top:0;z-index:20;background:#07121c;
-      border:1px solid var(--line);border-top:0;padding:8px 11px 10px;box-shadow:0 14px 30px rgba(0,0,0,.55)}
+    .px.fees .fx2{position:absolute;right:-1px;top:100%;width:calc(100% + 2px);min-width:380px;box-sizing:border-box;margin-top:0;z-index:20;
+      background:#07121c;border:1px solid var(--line);padding:8px 11px 10px;box-shadow:0 14px 30px rgba(0,0,0,.55)}
   }
   @media(min-width:761px) and (max-width:1399px){
     header{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"logo brand ctl" "stat stat stat" "px px px"}
@@ -1951,11 +1955,11 @@
        are filled by renderHeader into #hPx; the fees tile is static markup driven by renderFees. -->
   <div class="hdr-px">
     <div id="hPx" style="display:contents"></div>
-    <div class="px fees" id="hFees" role="button" tabindex="0" aria-expanded="false" aria-controls="hFeesMore">
-      <div class="fq"><span class="fk">FEES</span>
+    <div class="px fees" id="hFees" role="button" tabindex="0" aria-expanded="false" aria-controls="hFeesMore" title="What a re-range costs in network fees now. Tap for the next 24 hours.">
+      <div class="k">RE-RANGE GAS<span class="fa" aria-hidden="true">›</span></div>
+      <div class="fq">
         <span class="fc" id="fcEth" data-s=""><i></i><b>ETH</b><span class="fv">—</span><span class="fw">—</span></span>
-        <span class="fc" id="fcSol" data-s=""><i></i><b>SOL</b><span class="fv">—</span><span class="fw">—</span></span>
-        <span class="fa" aria-hidden="true">›</span></div>
+        <span class="fc" id="fcSol" data-s=""><i></i><b>SOL</b><span class="fv">—</span><span class="fw">—</span></span></div>
       <div class="fx2" id="hFeesMore" hidden></div>
     </div>
   </div>
@@ -2656,7 +2660,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.22';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.23';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7623,15 +7627,17 @@ function solOpUsd(op){ const P=state.solPrio, v=(P&&P.p90!=null&&Date.now()-P.t<
 const fmtFee=v=>v==null?'—':v>=10?fmtUsd(v,0):v>=0.01?fmtUsd(v,2):v>=0.0005?'$'+v.toFixed(3):'<$0.001';
 const fmtX=x=>x>=100?Math.round(x).toLocaleString('en-US')+'×':x>=10?x.toFixed(0)+'×':x.toFixed(1)+'×';
 /* ---- NETWORK FEES ----
-   Quiet most of the time: one line, what a re-range costs now on each chain and a word. Ethereum is
-   judged against its usual for this hour of the day, because its gas runs on a daily rhythm (over the
-   last two weeks cheapest overnight and dearest late afternoon Budapest, about six times apart), so an
-   evening reading is not a high one. Solana against its floor, the signature fees with no priority,
-   so it means something from its first reading. Tapped open: the next 24 hours, each hour at its
-   usual cost, with the cheapest stretch marked. A spike opens it by itself: how far above usual,
-   since when, which way it is going, and how long spikes here have lasted; closed during one, it
-   stays closed until the next. Ethereum's reading is the page's own, live; Solana's is the relay's,
-   at most a pass old; both histories are the relay's (g and s in its history, one a pass). */
+   Quiet most of the time: one line, RE-RANGE GAS, what a re-range costs in network fees now on each
+   chain and a word: OK, PRICEY or WAIT. Ethereum is judged against its usual for this hour of the day,
+   because its gas runs on a daily rhythm (over the last two weeks lowest overnight and highest late
+   afternoon Budapest, about six times apart), so an evening reading is not a high one. Solana against
+   its base fee, the signature fees alone, so it means something from its first reading. The words
+   need real money too: PRICEY from $1 a re-range, WAIT from $5, so cents never raise one. Tapped open:
+   the cost now, then the next 24 hours, each hour at its usual cost, the low stretch and the peak
+   marked. A spike opens it by itself: how far above usual, since when, which way it is going, and how
+   long spikes here have lasted; closed during one, it stays closed until the next. Ethereum's reading
+   is the page's own, live; Solana's is the relay's, at most a pass old; both histories are the relay's
+   (g and s in its history, one a pass). */
 const FEE_DAYS=14;
 const feeHourFmt=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hour:'2-digit',hourCycle:'h23'}), feeHourC=new Map();
 // the Budapest hour of a moment; Budapest is whole hours off UTC, so each UTC hour is worked out once
@@ -7654,19 +7660,21 @@ function feeModel(ch){
     const by=Array.from({length:24},()=>[]); for(const p of pts) by[feeHour(p[0])].push(p[1]);
     const all=qMed(pts.map(p=>p[1])), hour=by.map(a=>a.length>=6?qMed(a):null), usualAt=t=>hour[feeHour(t)]??all;
     m.usualG=cur!=null?usualAt(at):null; m.usual=usd(m.usualG,'rerange'); m.x=cur!=null&&m.usualG>0?cur/m.usualG:null;
-    // the next 24 hours at their usual; the cheapest stretch is the longest run within 30% of the lowest
+    // the next 24 hours at their usual; the low stretch is the longest run within 30% of the lowest hour
     const h0=feeHour(now), next=Array.from({length:24},(_,i)=>{ const h=(h0+i)%24; return {h, usd:usd(hour[h],'rerange')}; });
     const vals=next.map(x=>x.usd).filter(v=>v>0); m.lo=vals.length?Math.min(...vals):null; m.next=next;
     let best=null, run=null;
     next.forEach((x,i)=>{ if(m.lo!=null&&x.usd>0&&x.usd<=1.3*m.lo){ run=run?{a:run.a,b:i}:{a:i,b:i}; if(!best||run.b-run.a>best.b-best.a) best=run; } else run=null; });
     m.cheap=best&&{a:best.a, b:best.b, from:next[best.a].h, to:(next[best.b].h+1)%24, usd:qMed(next.slice(best.a,best.b+1).map(x=>x.usd))};
+    const pi=next.reduce((b,x,i)=>(x.usd||0)>(next[b].usd||0)?i:b,0);   // the peak: the hour whose usual is highest
+    m.peak=m.lo!=null?{i:pi, h:next[pi].h, usd:next[pi].usd}:null;
     // spikes: stretches at ten times their hour's usual or more; one still running is not counted as faded
     const runs=[]; let r=null;
     for(const p of pts){ if(p[1]>=10*usualAt(p[0])) r=r?{a:r.a,b:p[0]}:{a:p[0],b:p[0]}; else if(r){ runs.push(r); r=null; } }
     m.spikes=runs.map(x=>(x.b-x.a)/60e3+7);   // a reading stands for the seven minutes until the next
     high=p=>p[1]>=3*usualAt(p[0]);
   } else {
-    // the floor: the signature fees alone, what a re-range costs with no priority at all
+    // the base fee: the signature fees alone, what a re-range costs with no priority at all
     m.usual=usd(0,'rerange'); m.x=m.re!=null&&m.usual>0?m.re/m.usual:null;
     const day=pts.filter(p=>p[0]>=now-864e5); m.dayN=day.length; m.dayPaid=day.filter(p=>p[1]>0).length;
     high=p=>{ const c=usd(p[1],'rerange'); return c!=null&&m.usual>0&&c>=3*m.usual; };
@@ -7678,25 +7686,30 @@ function feeModel(ch){
     const peak=Math.max(cur,...pts.slice(i).map(p=>p[1])), prev=pts.length>2?pts[pts.length-3][1]:null;
     m.trend=cur<=0.6*peak?'easing':(prev!=null&&cur>=1.2*prev)?'rising':'holding'; }
   m.st=m.x==null?'':(m.x>=10&&m.re>=5)?'wait':(m.x>=3&&m.re>=1)?'hi':'ok';
-  m.word=m.x==null?'—':(ch==='sol'&&m.st==='ok')?(m.x<=1.5?'floor':'busy'):({ok:'fine',hi:'pricey',wait:'wait'})[m.st];
+  m.word=m.x==null?'—':({ok:'ok',hi:'pricey',wait:'wait'})[m.st];
   return m;
 }
-/* the next 24 hours as bars, each hour at its usual re-range cost: the cheapest stretch green and
-   underlined, the dearest hours amber, the dot what it costs now (an arrow at the top when it is
-   more than twice the dearest hour, so a spike cannot flatten the day's shape) */
+/* the next 24 hours as bars, each hour at its usual re-range cost: the low stretch green and
+   underlined, the dearest hours amber, the peak's cost over its bar so the bars have a scale, clock
+   hours under them, and the dot what it costs now (an arrow at the top when it is more than twice
+   the peak, so a spike cannot flatten the day's shape) */
 function feeBars(m){
-  const W=240, H=34, bw=W/24, bmax=Math.max(...m.next.map(x=>x.usd||0)), top=Math.max(bmax, Math.min(m.re||0, 2*bmax))*1.08;
+  const W=240, T=10, H=34, bw=W/24, bmax=m.peak?m.peak.usd:0, top=Math.max(bmax, Math.min(m.re||0, 2*bmax))*1.08;
   if(!(top>0)) return '';
-  const Y=v=>H-v/top*H; let g='';
+  const Y=v=>T+H-v/top*H;
+  const lab=(x,y,t,cls)=>{ const a=x<12?'start':x>W-12?'end':'middle';
+    return '<text'+(cls?' class="'+cls+'"':'')+' x="'+(a==='start'?1:a==='end'?W-1:x).toFixed(1)+'" y="'+y.toFixed(1)+'" text-anchor="'+a+'">'+t+'</text>'; };
+  let g='';
   m.next.forEach((x,i)=>{
     if(x.usd>0){ const c=m.cheap&&i>=m.cheap.a&&i<=m.cheap.b?'b-lo':x.usd>=2.5*m.lo?'b-hi':'b-md';
-      g+='<rect class="'+c+'" x="'+(i*bw+1).toFixed(1)+'" y="'+Y(x.usd).toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+(H-Y(x.usd)).toFixed(1)+'"/>'; }
-    if(i===0) g+='<text x="1" y="44" text-anchor="start">now</text>';
-    else if(i>=2&&x.h%6===1) g+='<text x="'+(i*bw+bw/2).toFixed(1)+'" y="44" text-anchor="middle">'+String(x.h).padStart(2,'0')+'</text>'; });
-  if(m.cheap) g+='<line class="b-win" x1="'+(m.cheap.a*bw).toFixed(1)+'" x2="'+((m.cheap.b+1)*bw).toFixed(1)+'" y1="'+(H+1.5)+'" y2="'+(H+1.5)+'"/>';
-  const cx=bw/2;
-  if(m.re>0) g+=m.re<=top?'<circle class="b-now" cx="'+cx.toFixed(1)+'" cy="'+Y(m.re).toFixed(1)+'" r="3"/>'
-    :'<path class="b-now" d="M'+(cx-3.5).toFixed(1)+' 6.5L'+cx.toFixed(1)+' 0.5L'+(cx+3.5).toFixed(1)+' 6.5Z"/>';
+      g+='<rect class="'+c+'" x="'+(i*bw+1).toFixed(1)+'" y="'+Y(x.usd).toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+(T+H-Y(x.usd)).toFixed(1)+'"/>'; }
+    if(i===0) g+=lab(0,T+H+10,'now');
+    else if(i>=2&&x.h%6===0) g+=lab(i*bw+bw/2,T+H+10,feeHH(x.h)); });
+  if(m.cheap) g+='<line class="b-win" x1="'+(m.cheap.a*bw).toFixed(1)+'" x2="'+((m.cheap.b+1)*bw).toFixed(1)+'" y1="'+(T+H+1.5)+'" y2="'+(T+H+1.5)+'"/>';
+  const cx=bw/2, off=m.re>top;
+  if(m.re>0) g+=!off?'<circle class="b-now" cx="'+cx.toFixed(1)+'" cy="'+Y(m.re).toFixed(1)+'" r="3"/>'
+    :'<path class="b-now" d="M'+(cx-3.5).toFixed(1)+' '+(T-3.5)+'L'+cx.toFixed(1)+' '+(T-9.5)+'L'+(cx+3.5).toFixed(1)+' '+(T-3.5)+'Z"/>';
+  if(m.peak&&!(off&&m.peak.i<=1)) g+=lab(m.peak.i*bw+bw/2, Y(bmax)-2.5, fmtFee(bmax), 'b-pk');
   return g;
 }
 function feeSpikeLine(m){
@@ -7709,7 +7722,7 @@ function feeTitle(m){
     +(m.usualG!=null?', usually '+(m.usualG<1?m.usualG.toFixed(3):m.usualG.toFixed(1))+' gwei at this hour (the median of the last '+FEE_DAYS+' days)':'')
     +'. A re-range uses about '+REBALANCE_GAS/1000+'k gas and a harvest about '+HARVEST_GAS/1000+'k, measured from Uniswap v3’s own recent calls.';
   return 'Solana: '+(m.cur!=null?Math.round(m.cur).toLocaleString('en-US')+' micro-lamports per compute unit to get into your busiest pool now (the 90th percentile of the last 150 slots)':'no reading yet')
-    +'. The floor is the signature fees alone. A re-range is two transactions and three signatures, about 1.2M compute units at Raydium’s settings. A new position’s rent is a deposit returned on close, not counted.';
+    +'. The base fee is the signature fees alone. A re-range is two transactions and three signatures, about 1.2M compute units at Raydium’s settings. A new position’s rent is a deposit returned on close, not counted.';
 }
 let feeWaitKey=null;   // the spike showing now, if any: closed by hand during it, the panel stays closed until a different one
 function renderFees(){
@@ -7718,24 +7731,31 @@ function renderFees(){
   for(const [m,id] of [[E,'#fcEth'],[S,'#fcSol']]){ const c=$(id); if(!c) continue;
     c.dataset.s=m.st; c.querySelector('.fv').textContent=fmtFee(m.re); c.querySelector('.fw').textContent=m.word; c.title=feeTitle(m); }
   const W=[E,S].find(m=>m.st==='wait'); let h='';
+  // each label kept with its figure, so a narrow screen never strands one on a line of its own
+  const nowLine=(m,usualTxt)=>'<div class="fx2-n"><span class="fx2-t">'+m.ch.toUpperCase()+' NOW</span> <span class="nw">re-range <b>'+fmtFee(m.re)+'</b></span> · <span class="nw">harvest <b>'+fmtFee(m.hv)+'</b></span>'
+    +(m.usual!=null?' · <span class="nw">'+usualTxt+' <b>'+fmtFee(m.usual)+'</b></span>':'')+'</div>';
   if(W){
     const eth=W.ch==='eth';
-    h+='<div class="fx2-alert">'+(eth?'ETH gas is <b>'+fmtX(W.x)+'</b> its usual for this hour':'SOL is <b>'+fmtX(W.x)+'</b> its floor')
-      +(W.since?' · spiking since '+fmtT(W.since,false):' · spiking now')+(W.trend?', '+W.trend:'')+'</div>';
+    h+='<div class="fx2-alert">'+(eth?'ETH gas is <b>'+fmtX(W.x)+'</b> its usual for this hour':'SOL is <b>'+fmtX(W.x)+'</b> its base fee')
+      +' · <span class="nw">'+(W.since?'spiking since '+fmtT(W.since,false):'spiking now')+(W.trend?', '+W.trend:'')+'</span></div>';
     if(eth) h+='<div class="fx2-n">'+esc(feeSpikeLine(W))+'</div>';
-    h+='<div class="fx2-n">harvest <b>'+fmtFee(W.hv)+'</b> · re-range <b>'+fmtFee(W.re)+'</b> · '+(eth?'usual at this hour':'floor')+' <b>'+fmtFee(W.usual)+'</b></div>';
+    h+=nowLine(W, eth?'usual at this hour':'base fee');
   } else {
-    if(E.lo!=null) h+='<div class="fx2-h">ETH · NEXT 24 HOURS<span>typical cost by hour over the last 2 weeks</span></div>'
-      +'<svg class="fx2-bars" viewBox="0 0 240 46" preserveAspectRatio="xMinYMid meet" aria-hidden="true">'+feeBars(E)+'</svg>'
-      +'<div class="fx2-n">now <b>'+fmtFee(E.re)+'</b> · usual at this hour <b>'+fmtFee(E.usual)+'</b>'
-      +(E.cheap?(E.cheap.a===0?' · <span class="g">now is in the cheapest stretch</span>, until '+feeHH(E.cheap.to)
-        :' · <span class="g">cheapest '+feeHH(E.cheap.from)+'–'+feeHH(E.cheap.to)+'</span>, about <b>'+fmtFee(E.cheap.usd)+'</b>'):'')+'</div>';
-    h+='<div class="fx2-n">harvest <b>'+fmtFee(E.hv)+'</b> · re-range <b>'+fmtFee(E.re)+'</b> · gas only: swap fees and price impact come on top</div>';
-    const day=S.dayN>=10?(S.dayPaid?' A priority fee was needed in '+Math.round(S.dayPaid/S.dayN*100)+'% of the last 24 hours’ readings.'
-      :' Your pools needed no priority fee in the last 24 hours.'):'';
-    h+='<div class="fx2-sol">SOL · '+(S.cur==null?(S.n?'no reading in the last hour':'no reading yet: the relay reads your pools each pass')
+    h+=nowLine(E,'usual at this hour');
+    if(E.lo!=null){
+      h+='<div class="fx2-h">NEXT 24 HOURS<span>typical re-range cost by hour, last 2 weeks</span></div>'
+        +'<svg class="fx2-bars" viewBox="0 0 240 56" preserveAspectRatio="xMinYMid meet" aria-hidden="true">'+feeBars(E)+'</svg>';
+      const low=E.cheap?(E.cheap.a===0?'<span class="g">low now</span>, until '+feeHH(E.cheap.to):'<span class="g">low '+feeHH(E.cheap.from)+'–'+feeHH(E.cheap.to)+'</span>')
+        +', <span class="nw">about <b>'+fmtFee(E.cheap.usd)+'</b></span>':'';
+      const peak=E.peak?'<span class="'+(E.peak.usd>=2.5*E.lo?'a':'')+'">peak around '+feeHH(E.peak.h)+'</span>'+(E.peak.usd<1?' · <span class="nw">even the peak is under $1</span>':''):'';
+      h+='<div class="fx2-n">'+[low,peak].filter(Boolean).join(' · ')+'</div>';
+    }
+    const day=S.dayN>=10?(S.dayPaid?'a priority fee was needed in '+Math.round(S.dayPaid/S.dayN*100)+'% of the last 24 hours’ readings'
+      :'no priority fee needed in the last 24 hours'):'';
+    h+='<div class="fx2-sol"><span class="fx2-t">SOL NOW</span> '+(S.cur==null?(S.n?'no reading in the last hour':'no reading yet: the relay reads your pools each pass')
       :S.re==null?'no SOL price yet'
-      :'<b>'+fmtFee(S.re)+'</b> a re-range'+(S.x<=1.05?': the fixed floor.':S.x<=1.5?', about the floor.':', '+fmtX(S.x)+' the floor: your pools need a priority fee to get in quickly.')+day)+'</div>';
+      :'<span class="nw">re-range <b>'+fmtFee(S.re)+'</b></span>'+(S.x<=1.05?', the base fee only':', '+fmtX(S.x)+' the base fee: a priority fee gets it in quickly')+(day?' · '+day:''))+'</div>';
+    h+='<div class="fx2-f">Network fees only: swap fees and price impact come on top.</div>';
   }
   more.innerHTML=h;
   // a spike opens it by itself; closed by hand during one, it stays closed until the next
