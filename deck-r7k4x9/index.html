@@ -120,31 +120,50 @@
   .px .k em{font-style:normal;font-size:8.5px;letter-spacing:.08em;line-height:1;padding:2px 4px;border:1px solid var(--line);color:var(--text-secondary);text-transform:uppercase}
   .px .v{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
   .px .chg{font-size:10.5px;font-weight:600}
-  /* NETWORK FEES: a row per chain, what a re-range costs now against that chain's own usual */
-  .px.fees{gap:5px;cursor:pointer;grid-column:-2/-1}   /* the wide last slot, however many token tiles come first */
+  /* FEES: one quiet line, what a re-range costs now on each chain and a word. Tapped open: Ethereum's
+     next 24 hours and Solana against its floor; a spike opens it by itself */
+  .px.fees{gap:0;padding-top:8px;padding-bottom:8px;cursor:pointer;grid-column:-2/-1}   /* the wide last slot, however many token tiles come first */
   .px.fees:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
-  .px.fees .k{justify-content:space-between}
-  .px.fees .k i{font-style:normal;font-weight:500;letter-spacing:.02em;color:var(--text-muted);opacity:.8;overflow:hidden;text-overflow:ellipsis}
-  .fx{display:grid;grid-template-columns:30px minmax(48px,120px) minmax(52px,1fr) 56px 40px;align-items:center;gap:0 8px;font-family:var(--mono);font-variant-numeric:tabular-nums}
-  .fx .ch{font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--text-secondary)}
-  .fx svg{width:100%;max-width:120px;height:16px;display:block;overflow:visible}
-  .fx .usd{font-size:14px;text-align:right;color:var(--text-primary);white-space:nowrap}
-  .fx .x{font-size:10.5px;text-align:right;color:var(--text-muted);white-space:nowrap}
-  .fx .st{font:700 9.5px/1 var(--sans);letter-spacing:.1em;text-align:right;color:var(--text-muted)}
-  .fx[data-s=ok] .st{color:var(--status-good)}
-  .fx[data-s=hi] .st,.fx[data-s=hi] .x{color:var(--status-warning)}
-  .fx[data-s=wait] .st,.fx[data-s=wait] .x,.fx[data-s=wait] .usd{color:var(--status-critical)}
-  .fx-band{fill:var(--text-muted);opacity:.14}
-  .fx-med{stroke:var(--text-muted);stroke-dasharray:2 2;stroke-width:.6;opacity:.7}
-  .fx-line{fill:none;stroke:var(--text-secondary);stroke-width:1.1;opacity:.75}
-  .fx-hot,.fx-hot2{stroke:var(--status-warning);stroke-width:1.6;stroke-linecap:round} .fx-hot2{stroke:var(--status-critical)}
-  .fx-dot{fill:var(--accent)} .fx[data-s=hi] .fx-dot{fill:var(--status-warning)} .fx[data-s=wait] .fx-dot{fill:var(--status-critical)}
-  .fx-more{display:grid;grid-template-columns:30px repeat(3,minmax(0,64px)) 1fr;gap:2px 8px;border-top:1px solid var(--line);padding-top:6px;margin-top:2px;align-items:baseline}
-  .fx-more[hidden]{display:none}
-  .fx-more .h{font:600 8.5px/1.2 var(--sans);letter-spacing:.1em;color:var(--text-muted);text-align:right}
-  .fx-more .ch{font:600 10px/1.4 var(--sans);letter-spacing:.08em;color:var(--text-secondary)}
-  .fx-more .n{font-family:var(--mono);font-size:12px;text-align:right;color:var(--text-primary)}
-  .fx-more .why{grid-column:2/-1;font-size:10.5px;color:var(--text-muted);margin:-1px 0 3px}
+  .fq{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;white-space:nowrap;min-width:0;line-height:16px}
+  .fq .fk{font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--text-muted)}
+  .fq .fa{margin-left:auto;color:var(--text-muted);font-size:13px}
+  .fc{display:inline-flex;align-items:center;gap:6px}
+  .fc i{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex:none}
+  .fc b{font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--text-secondary)}
+  .fc .fv{font:500 14px/1 var(--mono);color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .fc .fw{font:700 9.5px/1 var(--sans);letter-spacing:.09em;color:var(--text-muted);text-transform:uppercase}
+  .fc[data-s=ok] i{background:var(--status-good)} .fc[data-s=ok] .fw{color:var(--status-good)}
+  .fc[data-s=hi] i{background:var(--status-warning)} .fc[data-s=hi] .fw{color:var(--status-warning)}
+  .fc[data-s=wait] i{background:var(--status-critical);box-shadow:0 0 0 3px rgba(239,83,80,.22)}
+  .fc[data-s=wait] .fv,.fc[data-s=wait] .fw{color:var(--status-critical)}
+  /* too narrow for one line (the last slot on big screens, the smallest phones): ETH over SOL, aligned */
+  .px.fees{container-type:inline-size}
+  @container (max-width:342px){
+    .fq{display:grid;grid-template-columns:auto 1fr auto;gap:5px 12px}
+    .fq .fk{grid-area:1/1/3/2} #fcEth{grid-area:1/2} #fcSol{grid-area:2/2} .fq .fa{grid-area:1/3/3/4}
+    .fc b{min-width:25px} .fc .fv{min-width:6.2ch}
+  }
+  .fx2{border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:5px;font-family:var(--sans);white-space:normal}
+  .fx2[hidden]{display:none}
+  .fx2-h{font:600 9px/1.2 var(--sans);letter-spacing:.1em;color:var(--text-muted)}
+  .fx2-h span{font-weight:500;letter-spacing:.02em;margin-left:6px;opacity:.85}
+  .fx2-bars{width:100%;max-width:420px;height:58px;display:block}
+  .fx2-bars .b-lo{fill:var(--status-good);opacity:.75} .fx2-bars .b-md{fill:var(--text-muted);opacity:.45} .fx2-bars .b-hi{fill:var(--status-warning);opacity:.7}
+  .fx2-bars text{fill:var(--text-muted);font:8px var(--sans)} .fx2-bars .b-win{stroke:var(--status-good);stroke-width:1.5}
+  .fx2-bars .b-now{fill:var(--text-primary);stroke:#07121c;stroke-width:1.5}
+  .fx2-n{font-size:11px;color:var(--text-muted);line-height:1.45}
+  .fx2-n b{color:var(--text-primary);font-family:var(--mono);font-weight:500;font-size:11.5px}
+  .fx2-n .g{color:var(--status-good);font-weight:600;white-space:nowrap}
+  .fx2-alert{font-size:12px;color:var(--status-critical);line-height:1.45} .fx2-alert b{font-family:var(--mono);font-weight:600}
+  .fx2-sol{font-size:11px;color:var(--text-muted);line-height:1.45;border-top:1px dashed var(--line);padding-top:6px;margin-top:2px}
+  .fx2-sol b{color:var(--text-primary);font-family:var(--mono);font-weight:500}
+  /* wide screens: opened, it drops down over the page instead of stretching the header, above the jump bar */
+  header.fees-open{z-index:60}
+  @media(min-width:761px){
+    .px.fees{position:relative}
+    .px.fees .fx2{position:absolute;left:-1px;right:-1px;top:100%;margin-top:0;z-index:20;background:#07121c;
+      border:1px solid var(--line);border-top:0;padding:8px 11px 10px;box-shadow:0 14px 30px rgba(0,0,0,.55)}
+  }
   @media(min-width:761px) and (max-width:1399px){
     header{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"logo brand ctl" "stat stat stat" "px px px"}
     .hdr-stats{justify-self:start;justify-content:flex-start}
@@ -153,8 +172,6 @@
     .hdr-px{grid-template-columns:repeat(12,minmax(0,1fr))}
     .px.tok{grid-column:span 3} .px.mkt{grid-column:span 2} .px.fees{grid-column:span 6}
     .px.mkt.first,.px.fees{margin-left:0}
-    /* the fees tile is wide here: its rows stay together, the title and its key side by side */
-    .fx{grid-template-columns:30px 120px 70px 56px 40px;justify-content:start} .px.fees .k{justify-content:flex-start;gap:12px}
   }  .act-size{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
   .cat-scroll{overflow-x:auto;margin-top:6px}
   /* fees by token */
@@ -755,7 +772,7 @@
     .px.mkt.first,.px.fees{margin-left:0}
     .px .v{font-size:13.5px} .px .chg{font-size:10px}
     .px.mkt .v{font-size:13px}
-    .fx .usd{font-size:13.5px}    .hstat .v{font-size:12px}
+    .fc .fv{font-size:13.5px}    .hstat .v{font-size:12px}
     .hbtn{padding:6px 10px;font-size:9px}
     .seg button{padding:4px 7px;font-size:8.5px}
     main{padding:12px 10px 50px}
@@ -1930,14 +1947,16 @@
       <button class="hbtn" id="btnSettings" title="Config — wallets, endpoints, alerts" aria-label="Config"><span class="bi">⚙</span><span class="bt"> CONFIG</span></button>
     </div>
   </div>
-  <!-- price tiles: tokens in the token-exposure order, then the market, then NETWORK FEES. The prices
+  <!-- price tiles: tokens in the token-exposure order, then the market, then the FEES line. The prices
        are filled by renderHeader into #hPx; the fees tile is static markup driven by renderFees. -->
   <div class="hdr-px">
     <div id="hPx" style="display:contents"></div>
-    <div class="px fees" id="hFees" role="button" tabindex="0" aria-expanded="false" aria-controls="hFeesMore"><div class="k">NETWORK FEES<i>re-range now · × your usual</i></div>
-      <div class="fx" id="fxEth"><span class="ch">ETH</span><svg viewBox="0 0 120 16" aria-hidden="true"></svg><span class="usd">—</span><span class="x">—</span><span class="st">—</span></div>
-      <div class="fx" id="fxSol"><span class="ch">SOL</span><svg viewBox="0 0 120 16" aria-hidden="true"></svg><span class="usd">—</span><span class="x">—</span><span class="st">—</span></div>
-      <div class="fx-more" id="hFeesMore" hidden></div>
+    <div class="px fees" id="hFees" role="button" tabindex="0" aria-expanded="false" aria-controls="hFeesMore">
+      <div class="fq"><span class="fk">FEES</span>
+        <span class="fc" id="fcEth" data-s=""><i></i><b>ETH</b><span class="fv">—</span><span class="fw">—</span></span>
+        <span class="fc" id="fcSol" data-s=""><i></i><b>SOL</b><span class="fv">—</span><span class="fw">—</span></span>
+        <span class="fa" aria-hidden="true">›</span></div>
+      <div class="fx2" id="hFeesMore" hidden></div>
     </div>
   </div>
 </header>
@@ -2637,7 +2656,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.21';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.22';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7604,90 +7623,139 @@ function solOpUsd(op){ const P=state.solPrio, v=(P&&P.p90!=null&&Date.now()-P.t<
 const fmtFee=v=>v==null?'—':v>=10?fmtUsd(v,0):v>=0.01?fmtUsd(v,2):v>=0.0005?'$'+v.toFixed(3):'<$0.001';
 const fmtX=x=>x>=100?Math.round(x).toLocaleString('en-US')+'×':x>=10?x.toFixed(0)+'×':x.toFixed(1)+'×';
 /* ---- NETWORK FEES ----
-   One question per chain: is now a good time to act? Each row: what a re-range costs right now, that
-   against the chain's own usual (the median of this deck's readings over the last 7 days, so the
-   scale calibrates itself: Ethereum's usual is now hundredths of a gwei, not the tens the old gauge
-   was drawn for), a 24-hour line and a word. WAIT only when it is both far above usual and real
-   money; a jump that still costs cents is OK. Tapped open: the harvest, the re-range and the usual
-   side by side, and since when it has been high. Ethereum's reading is the page's own, live;
-   Solana's is the relay's, at most a pass old (the busiest of your pools, fee-history.s). */
-const FEE_DAYS=7;
-function feeChain(ch){
+   Quiet most of the time: one line, what a re-range costs now on each chain and a word. Ethereum is
+   judged against its usual for this hour of the day, because its gas runs on a daily rhythm (over the
+   last two weeks cheapest overnight and dearest late afternoon Budapest, about six times apart), so an
+   evening reading is not a high one. Solana against its floor, the signature fees with no priority,
+   so it means something from its first reading. Tapped open: the next 24 hours, each hour at its
+   usual cost, with the cheapest stretch marked. A spike opens it by itself: how far above usual,
+   since when, which way it is going, and how long spikes here have lasted; closed during one, it
+   stays closed until the next. Ethereum's reading is the page's own, live; Solana's is the relay's,
+   at most a pass old; both histories are the relay's (g and s in its history, one a pass). */
+const FEE_DAYS=14;
+const feeHourFmt=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hour:'2-digit',hourCycle:'h23'}), feeHourC=new Map();
+// the Budapest hour of a moment; Budapest is whole hours off UTC, so each UTC hour is worked out once
+const feeHour=t=>{ const k=Math.floor(t/3600e3); let h=feeHourC.get(k); if(h==null){ h=+feeHourFmt.format(new Date(k*3600e3)); feeHourC.set(k,h); } return h; };
+const feeHH=h=>String(h).padStart(2,'0')+':00';
+const qMed=a=>{ const s=[...a].sort((x,y)=>x-y); return s.length?s[Math.floor(s.length/2)]:null; };
+function feeModel(ch){
   const now=Date.now(), key=ch==='eth'?'g':'s';
-  const pts=(state.history||[]).filter(x=>x&&x.t>0&&typeof x[key]==='number'&&(key==='s'?x[key]>=0:x[key]>0))
+  const pts=(state.history||[]).filter(x=>x&&x.t>=now-FEE_DAYS*864e5&&typeof x[key]==='number'&&(key==='s'?x[key]>=0:x[key]>0))
     .map(x=>[x.t,x[key]]).sort((a,b)=>a[0]-b[0]);
   let cur=null, at=null;
   if(ch==='eth'){ if(state.gasGwei>0){ cur=state.gasGwei; at=now; } }
   else { const P=state.solPrio; if(P&&P.p90!=null&&now-P.t<3600e3){ cur=P.p90; at=P.t; } }
-  if(cur==null&&pts.length&&now-pts[pts.length-1][0]<3600e3){ [at,cur]=pts[pts.length-1]; }
+  if(cur==null&&pts.length&&now-pts[pts.length-1][0]<3600e3) [at,cur]=pts[pts.length-1];
   const usd=(v,op)=>v==null?null:ch==='eth'?(state.ethUsd?(op==='harvest'?HARVEST_GAS:REBALANCE_GAS)*v*state.ethUsd/1e9:null):solCostUsd(op,v);
-  const wk=pts.filter(p=>p[0]>=now-FEE_DAYS*864e5), vals=wk.map(p=>p[1]).sort((a,b)=>a-b);
-  const q=f=>vals[Math.min(vals.length-1,Math.floor(f*vals.length))];
-  // two days of readings at least before "usual" means anything
-  const enough=vals.length>=48&&wk.length&&now-wk[0][0]>=2*864e5;
-  const med=enough?q(0.5):null, re=usd(cur,'rerange'), usual=usd(med,'rerange');
-  const x=re!=null&&usual>0?re/usual:null;
-  const st=x==null?'':(x>=10&&re>=5)?'wait':(x>=3&&re>=1)?'hi':'ok';
-  // the stretch at three times usual or more that is running now: since when, and which way it goes
-  let since=null, trend=null;
-  if(x!=null&&x>=3){ const hiAt=v=>usd(v,'rerange')>=3*usual; let i=pts.length; while(i>0&&hiAt(pts[i-1][1])) i--;
-    if(i<pts.length) since=pts[i][0];
+  const m={ch, cur, at, re:usd(cur,'rerange'), hv:usd(cur,'harvest'), n:pts.length, x:null};
+  let high;   // a reading at three times its usual or more
+  if(ch==='eth'){
+    // each hour's usual: the median of that hour's readings over two weeks (six at least), else all of them
+    const by=Array.from({length:24},()=>[]); for(const p of pts) by[feeHour(p[0])].push(p[1]);
+    const all=qMed(pts.map(p=>p[1])), hour=by.map(a=>a.length>=6?qMed(a):null), usualAt=t=>hour[feeHour(t)]??all;
+    m.usualG=cur!=null?usualAt(at):null; m.usual=usd(m.usualG,'rerange'); m.x=cur!=null&&m.usualG>0?cur/m.usualG:null;
+    // the next 24 hours at their usual; the cheapest stretch is the longest run within 30% of the lowest
+    const h0=feeHour(now), next=Array.from({length:24},(_,i)=>{ const h=(h0+i)%24; return {h, usd:usd(hour[h],'rerange')}; });
+    const vals=next.map(x=>x.usd).filter(v=>v>0); m.lo=vals.length?Math.min(...vals):null; m.next=next;
+    let best=null, run=null;
+    next.forEach((x,i)=>{ if(m.lo!=null&&x.usd>0&&x.usd<=1.3*m.lo){ run=run?{a:run.a,b:i}:{a:i,b:i}; if(!best||run.b-run.a>best.b-best.a) best=run; } else run=null; });
+    m.cheap=best&&{a:best.a, b:best.b, from:next[best.a].h, to:(next[best.b].h+1)%24, usd:qMed(next.slice(best.a,best.b+1).map(x=>x.usd))};
+    // spikes: stretches at ten times their hour's usual or more; one still running is not counted as faded
+    const runs=[]; let r=null;
+    for(const p of pts){ if(p[1]>=10*usualAt(p[0])) r=r?{a:r.a,b:p[0]}:{a:p[0],b:p[0]}; else if(r){ runs.push(r); r=null; } }
+    m.spikes=runs.map(x=>(x.b-x.a)/60e3+7);   // a reading stands for the seven minutes until the next
+    high=p=>p[1]>=3*usualAt(p[0]);
+  } else {
+    // the floor: the signature fees alone, what a re-range costs with no priority at all
+    m.usual=usd(0,'rerange'); m.x=m.re!=null&&m.usual>0?m.re/m.usual:null;
+    const day=pts.filter(p=>p[0]>=now-864e5); m.dayN=day.length; m.dayPaid=day.filter(p=>p[1]>0).length;
+    high=p=>{ const c=usd(p[1],'rerange'); return c!=null&&m.usual>0&&c>=3*m.usual; };
+  }
+  // high now: since the first of the high readings in a row up to now, and which way it is going
+  if(m.x!=null&&m.x>=3){ let i=pts.length; while(i>0&&high(pts[i-1])) i--;
+    m.since=i<pts.length?pts[i][0]:null;
+    m.calm=i>0?pts[i-1][0]:0;   // the last ordinary reading before it: the same for as long as this stretch lasts
     const peak=Math.max(cur,...pts.slice(i).map(p=>p[1])), prev=pts.length>2?pts[pts.length-3][1]:null;
-    trend=cur<=0.6*peak?'easing':(prev!=null&&cur>=1.2*prev)?'rising':'holding'; }
-  const day=pts.filter(p=>p[0]>=now-864e5).map(p=>[p[0],usd(p[1],'rerange')]).filter(p=>p[1]!=null);
-  if(re!=null&&at!=null&&(!day.length||at>day[day.length-1][0])) day.push([at,re]);
-  return {ch, cur, med, re, hv:usd(cur,'harvest'), usual, x, st, since, trend, n:vals.length, day,
-          lo:enough?usd(q(0.1),'rerange'):null, hi:enough?usd(q(0.9),'rerange'):null};
+    m.trend=cur<=0.6*peak?'easing':(prev!=null&&cur>=1.2*prev)?'rising':'holding'; }
+  m.st=m.x==null?'':(m.x>=10&&m.re>=5)?'wait':(m.x>=3&&m.re>=1)?'hi':'ok';
+  m.word=m.x==null?'—':(ch==='sol'&&m.st==='ok')?(m.x<=1.5?'floor':'busy'):({ok:'fine',hi:'pricey',wait:'wait'})[m.st];
+  return m;
 }
-/* 24 hours of the re-range cost, on a log scale: the band is the usual range (the middle 80% of the
-   7 days), the dashes the usual itself, the dot now. Only stretches far above usual take colour. */
-function feeSpark(r){
-  const W=120, H=16, d=r.day; if(d.length<2) return '';
-  const t0=Date.now()-864e5, X=t=>Math.max(0,Math.min(W-4,(t-t0)/864e5*(W-4)));
-  const vs=[...d.map(p=>p[1]), r.lo, r.hi].filter(v=>v>0); if(!vs.length) return '';
-  let mn=Math.min(...vs), mx=Math.max(...vs);
-  if(mx/mn<3){ const m=Math.sqrt(mx*mn); mn=m/1.8; mx=m*1.8; } else { mn/=1.4; mx*=1.4; }
-  const Y=v=>((H-1)-(H-2)*Math.log(Math.max(mn,v)/mn)/Math.log(mx/mn)).toFixed(1);
-  let g='';
-  if(r.lo>0&&r.hi>0) g+='<rect class="fx-band" x="0" y="'+Y(r.hi)+'" width="'+W+'" height="'+Math.max(0.8,Y(r.lo)-Y(r.hi)).toFixed(1)+'"/>';
-  if(r.usual>0) g+='<line class="fx-med" x1="0" x2="'+W+'" y1="'+Y(r.usual)+'" y2="'+Y(r.usual)+'"/>';
-  g+='<polyline class="fx-line" points="'+d.map(p=>X(p[0]).toFixed(1)+','+Y(p[1])).join(' ')+'"/>';
-  if(r.usual>0) for(let i=1;i<d.length;i++){ const m=Math.max(d[i-1][1],d[i][1]); if(m<3*r.usual) continue;
-    g+='<line class="'+(m>=10*r.usual?'fx-hot2':'fx-hot')+'" x1="'+X(d[i-1][0]).toFixed(1)+'" y1="'+Y(d[i-1][1])+'" x2="'+X(d[i][0]).toFixed(1)+'" y2="'+Y(d[i][1])+'"/>'; }
-  const L=d[d.length-1]; return g+'<circle class="fx-dot" cx="'+X(L[0]).toFixed(1)+'" cy="'+Y(L[1])+'" r="2.4"/>';
+/* the next 24 hours as bars, each hour at its usual re-range cost: the cheapest stretch green and
+   underlined, the dearest hours amber, the dot what it costs now (an arrow at the top when it is
+   more than twice the dearest hour, so a spike cannot flatten the day's shape) */
+function feeBars(m){
+  const W=240, H=34, bw=W/24, bmax=Math.max(...m.next.map(x=>x.usd||0)), top=Math.max(bmax, Math.min(m.re||0, 2*bmax))*1.08;
+  if(!(top>0)) return '';
+  const Y=v=>H-v/top*H; let g='';
+  m.next.forEach((x,i)=>{
+    if(x.usd>0){ const c=m.cheap&&i>=m.cheap.a&&i<=m.cheap.b?'b-lo':x.usd>=2.5*m.lo?'b-hi':'b-md';
+      g+='<rect class="'+c+'" x="'+(i*bw+1).toFixed(1)+'" y="'+Y(x.usd).toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+(H-Y(x.usd)).toFixed(1)+'"/>'; }
+    if(i===0) g+='<text x="1" y="44" text-anchor="start">now</text>';
+    else if(i>=2&&x.h%6===1) g+='<text x="'+(i*bw+bw/2).toFixed(1)+'" y="44" text-anchor="middle">'+String(x.h).padStart(2,'0')+'</text>'; });
+  if(m.cheap) g+='<line class="b-win" x1="'+(m.cheap.a*bw).toFixed(1)+'" x2="'+((m.cheap.b+1)*bw).toFixed(1)+'" y1="'+(H+1.5)+'" y2="'+(H+1.5)+'"/>';
+  const cx=bw/2;
+  if(m.re>0) g+=m.re<=top?'<circle class="b-now" cx="'+cx.toFixed(1)+'" cy="'+Y(m.re).toFixed(1)+'" r="3"/>'
+    :'<path class="b-now" d="M'+(cx-3.5).toFixed(1)+' 6.5L'+cx.toFixed(1)+' 0.5L'+(cx+3.5).toFixed(1)+' 6.5Z"/>';
+  return g;
 }
-function feeWhy(r){
-  if(r.re==null) return 'no reading yet';
-  if(r.x==null) return 'usual not known yet · '+r.n+' reading'+(r.n===1?'':'s')+' in the last '+FEE_DAYS+' days';
-  const sol=r.ch==='sol';
-  if(r.x>=3) return (sol?'your pools ':'')+(r.st==='wait'?'spiking':sol?'busier than usual':'pricier than usual')
-    +(r.since?' since '+fmtT(r.since,false):'')+(r.trend?', '+r.trend:'');
-  return r.x<=0.7?(sol?'your pools cheaper than usual':'cheaper than usual'):(sol?'your pools at their usual level':'at its usual level');
+function feeSpikeLine(m){
+  const s=m.spikes||[], L=s.length?Math.max(...s):0;
+  if(s.length<3) return 'Spikes like this have been rare here: '+s.length+' in the last two weeks.';
+  return 'Spikes here usually fade within '+Math.round(qMed(s))+' min: '+s.length+' in the last two weeks, the longest '+(L>=90?(L/60).toFixed(L>=600?0:1)+' hours':Math.round(L)+' min')+'.';
 }
-function feeTitle(r){
-  if(r.ch==='eth') return 'Ethereum: '+(r.cur!=null?(r.cur<1?r.cur.toFixed(3):r.cur.toFixed(1))+' gwei now':'no reading')
-    +(r.med!=null?', usually '+(r.med<1?r.med.toFixed(3):r.med.toFixed(1))+' gwei (median of the last '+FEE_DAYS+' days)':'')
-    +'. A re-range uses about '+REBALANCE_GAS/1000+'k gas and a harvest about '+HARVEST_GAS/1000+'k, measured from Uniswap v3’s own recent calls. Gas only: swap fees and price impact come on top.';
-  return 'Solana: '+(r.cur!=null?Math.round(r.cur).toLocaleString('en-US')+' micro-lamports per compute unit to get into your busiest pool now':'no reading yet')
-    +(r.med!=null?', usually '+Math.round(r.med).toLocaleString('en-US'):'')+' (the 90th percentile of the last 150 slots). A re-range is two transactions and three signatures, about 1.2M compute units at Raydium’s settings; a harvest one and one. A new position’s rent is a deposit returned on close, not counted.';
+function feeTitle(m){
+  if(m.ch==='eth') return 'Ethereum: '+(m.cur!=null?(m.cur<1?m.cur.toFixed(3):m.cur.toFixed(1))+' gwei now':'no reading')
+    +(m.usualG!=null?', usually '+(m.usualG<1?m.usualG.toFixed(3):m.usualG.toFixed(1))+' gwei at this hour (the median of the last '+FEE_DAYS+' days)':'')
+    +'. A re-range uses about '+REBALANCE_GAS/1000+'k gas and a harvest about '+HARVEST_GAS/1000+'k, measured from Uniswap v3’s own recent calls.';
+  return 'Solana: '+(m.cur!=null?Math.round(m.cur).toLocaleString('en-US')+' micro-lamports per compute unit to get into your busiest pool now (the 90th percentile of the last 150 slots)':'no reading yet')
+    +'. The floor is the signature fees alone. A re-range is two transactions and three signatures, about 1.2M compute units at Raydium’s settings. A new position’s rent is a deposit returned on close, not counted.';
 }
+let feeWaitKey=null;   // the spike showing now, if any: closed by hand during it, the panel stays closed until a different one
 function renderFees(){
-  const word={ok:'OK',hi:'PRICEY',wait:'WAIT'}, R={eth:feeChain('eth'), sol:feeChain('sol')};
-  for(const [ch,id] of [['eth','#fxEth'],['sol','#fxSol']]){ const r=R[ch], row=$(id); if(!row) continue;
-    row.dataset.s=r.st; row.querySelector('svg').innerHTML=feeSpark(r);
-    row.querySelector('.usd').textContent=fmtFee(r.re); row.querySelector('.x').textContent=r.x!=null?fmtX(r.x):'—';
-    row.querySelector('.st').textContent=word[r.st]||'—'; row.title=feeTitle(r); }
-  const more=$('#hFeesMore');
-  if(more) more.innerHTML='<span></span><span class="h">HARVEST</span><span class="h">RE-RANGE</span><span class="h">USUAL</span><span></span>'
-    +['eth','sol'].map(ch=>{ const r=R[ch]; return '<span class="ch">'+ch.toUpperCase()+'</span><span class="n">'+fmtFee(r.hv)+'</span><span class="n">'+fmtFee(r.re)
-      +'</span><span class="n">'+fmtFee(r.usual)+'</span><span></span><span class="why">'+esc(feeWhy(r))+'</span>'; }).join('');
+  const more=$('#hFeesMore'); if(!more) return;
+  const E=feeModel('eth'), S=feeModel('sol');
+  for(const [m,id] of [[E,'#fcEth'],[S,'#fcSol']]){ const c=$(id); if(!c) continue;
+    c.dataset.s=m.st; c.querySelector('.fv').textContent=fmtFee(m.re); c.querySelector('.fw').textContent=m.word; c.title=feeTitle(m); }
+  const W=[E,S].find(m=>m.st==='wait'); let h='';
+  if(W){
+    const eth=W.ch==='eth';
+    h+='<div class="fx2-alert">'+(eth?'ETH gas is <b>'+fmtX(W.x)+'</b> its usual for this hour':'SOL is <b>'+fmtX(W.x)+'</b> its floor')
+      +(W.since?' · spiking since '+fmtT(W.since,false):' · spiking now')+(W.trend?', '+W.trend:'')+'</div>';
+    if(eth) h+='<div class="fx2-n">'+esc(feeSpikeLine(W))+'</div>';
+    h+='<div class="fx2-n">harvest <b>'+fmtFee(W.hv)+'</b> · re-range <b>'+fmtFee(W.re)+'</b> · '+(eth?'usual at this hour':'floor')+' <b>'+fmtFee(W.usual)+'</b></div>';
+  } else {
+    if(E.lo!=null) h+='<div class="fx2-h">ETH · NEXT 24 HOURS<span>typical cost by hour over the last 2 weeks</span></div>'
+      +'<svg class="fx2-bars" viewBox="0 0 240 46" preserveAspectRatio="xMinYMid meet" aria-hidden="true">'+feeBars(E)+'</svg>'
+      +'<div class="fx2-n">now <b>'+fmtFee(E.re)+'</b> · usual at this hour <b>'+fmtFee(E.usual)+'</b>'
+      +(E.cheap?(E.cheap.a===0?' · <span class="g">now is in the cheapest stretch</span>, until '+feeHH(E.cheap.to)
+        :' · <span class="g">cheapest '+feeHH(E.cheap.from)+'–'+feeHH(E.cheap.to)+'</span>, about <b>'+fmtFee(E.cheap.usd)+'</b>'):'')+'</div>';
+    h+='<div class="fx2-n">harvest <b>'+fmtFee(E.hv)+'</b> · re-range <b>'+fmtFee(E.re)+'</b> · gas only: swap fees and price impact come on top</div>';
+    const day=S.dayN>=10?(S.dayPaid?' A priority fee was needed in '+Math.round(S.dayPaid/S.dayN*100)+'% of the last 24 hours’ readings.'
+      :' Your pools needed no priority fee in the last 24 hours.'):'';
+    h+='<div class="fx2-sol">SOL · '+(S.cur==null?(S.n?'no reading in the last hour':'no reading yet: the relay reads your pools each pass')
+      :S.re==null?'no SOL price yet'
+      :'<b>'+fmtFee(S.re)+'</b> a re-range'+(S.x<=1.05?': the fixed floor.':S.x<=1.5?', about the floor.':', '+fmtX(S.x)+' the floor: your pools need a priority fee to get in quickly.')+day)+'</div>';
+  }
+  more.innerHTML=h;
+  // a spike opens it by itself; closed by hand during one, it stays closed until the next
+  feeWaitKey=W?W.ch+':'+W.calm:null;
+  feesSet(!!store.get('feesOpen',false)||(feeWaitKey!=null&&store.get('feesShut',null)!==feeWaitKey), false);
 }
-// tapped open or closed, remembered on this device
-{ const t=$('#hFees'), m=$('#hFeesMore');
-  if(t&&m){ const set=o=>{ m.hidden=!o; t.setAttribute('aria-expanded',String(o)); store.set('feesOpen',o); };
-    set(!!store.get('feesOpen',false));
-    t.addEventListener('click',()=>set(m.hidden));
-    t.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); set(m.hidden); } }); } }
+function feesSet(open, byHand){
+  const t=$('#hFees'), m=$('#hFeesMore'); if(!t||!m) return;
+  m.hidden=!open; t.setAttribute('aria-expanded',String(open));
+  const a=t.querySelector('.fa'); if(a) a.textContent=open?'⌄':'›';
+  const hd=t.closest('header'); if(hd) hd.classList.toggle('fees-open',open);   // over the jump bar while open on wide screens
+  if(byHand){ store.set('feesOpen',open); store.set('feesShut',open?null:feeWaitKey); }
+}
+{ const t=$('#hFees'), flip=()=>feesSet($('#hFeesMore').hidden, true);
+  if(t){ t.addEventListener('click',flip);
+    t.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); flip(); } });
+    // on wide screens it drops down over the page: a click anywhere else, or Escape, puts it away
+    const wide=()=>matchMedia('(min-width:761px)').matches, isOpen=()=>!$('#hFeesMore').hidden;
+    document.addEventListener('click',e=>{ if(isOpen()&&wide()&&!t.contains(e.target)) feesSet(false,true); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&isOpen()&&wide()) feesSet(false,true); }); } }
 function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
 function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 

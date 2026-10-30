@@ -131,7 +131,7 @@ const P=await pg.evaluate(()=>{
     worst:off.length?Math.max(...off.map(p=>Math.abs(p.poolGap.pct))):null};
   /* every gauge as drawn: the card's RANGE POSITION dial (needle and figure), the range bar's cursor
      under it, the move to each edge, and where the market price would put the needle for a pool
-     that is off the market; plus the momentum dials and the NETWORK FEES tile */
+     that is off the market; plus the momentum dials and the FEES line */
   const gauges=[...document.querySelectorAll('#cards .card')].map(c=>{
     const p=[...state.positions.values()].find(q=>String(q.id)===c.dataset.id); if(!p) return null;
     const svg=c.querySelector('.gaugebox svg'), txt=svg?(svg.querySelector('text')||{}).textContent:null;
@@ -147,17 +147,30 @@ const P=await pg.evaluate(()=>{
       gap:g?g.pct:null, mLin:dPm?lin(dPm):null, mLog:dPm?lg(dPm):null};
   }).filter(Boolean);
   const M=state.momentum, mo=['#moTileDial','#moHeroDial'].map(s=>{ const n=document.querySelector(s+' .mo-needle'); const m=n&&/rotate\((-?[\d.]+)deg\)/.exec(n.style.transform); return m?+m[1]:null; });
-  /* NETWORK FEES as drawn, against a fresh recalculation from the same readings, and its usual (the
-     median of the last 7 days of recorded readings) worked out again here, independently */
-  const fx=typeof feeChain!=='function'?null:['eth','sol'].map(ch=>{ const r=feeChain(ch), row=document.querySelector(ch==='eth'?'#fxEth':'#fxSol'), k=ch==='eth'?'g':'s';
-    const wk=(state.history||[]).filter(x=>x&&x.t>=Date.now()-7*864e5&&typeof x[k]==='number'&&(k==='s'?x[k]>=0:x[k]>0)).map(x=>x[k]).sort((a,b)=>a-b);
-    const shown=row?[row.querySelector('.usd').textContent,row.querySelector('.x').textContent,row.querySelector('.st').textContent].join('|'):null;
-    const want=[fmtFee(r.re), r.x!=null?fmtX(r.x):'\u2014', ({ok:'OK',hi:'PRICEY',wait:'WAIT'})[r.st]||'\u2014'].join('|');
-    return {ch, drawn:!!row, same:shown===want, spark:!!(row&&row.querySelector('svg .fx-line')), day:r.day.length, n:r.n, x:r.x, st:r.st,
-      // Solana's usual is often exactly zero (no priority needed), so the two are compared by difference, not ratio
-      medOk:r.med==null||(wk.length>0&&(m=>Math.abs(r.med-m)<=Math.max(0.01*Math.abs(m),1e-9))(wk[Math.min(wk.length-1,Math.floor(wk.length/2))])),
-      units:ch==='eth'&&r.re!=null&&state.gasGwei>0&&state.ethUsd?r.re/(state.gasGwei*state.ethUsd/1e9):null,
-      gwei:ch==='eth'?state.gasGwei:null, solAge:ch==='sol'&&state.solPrio?Date.now()-state.solPrio.t:null}; });
+  /* FEES as drawn, against the page's own model run again on the same readings, with the parts that
+     matter worked out here independently: Ethereum's usual for this hour (the median of that Budapest
+     hour's readings over 14 days, six at least, else all of them), the cheapest stretch of the next 24
+     hours, and Solana's floor (three signatures at 5,000 lamports) */
+  const fx=typeof feeModel!=='function'?null:(()=>{
+    const E=feeModel('eth'), S=feeModel('sol'), now=Date.now(), H=state.history||[];
+    const hf=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Budapest',hour:'numeric',hourCycle:'h23'});
+    const bh=t=>+hf.formatToParts(new Date(t)).find(p=>p.type==='hour').value;
+    const md=a=>{ const s=[...a].sort((x,y)=>x-y); return s.length?s[Math.floor(s.length/2)]:null; };
+    const g=H.filter(x=>x&&x.t>=now-14*864e5&&typeof x.g==='number'&&x.g>0), by=Array.from({length:24},()=>[]); for(const x of g) by[bh(x.t)].push(x.g);
+    const hu=by.map(a=>a.length>=6?md(a):null), h0=bh(now), usualG=hu[h0]??md(g.map(x=>x.g));
+    const nx=Array.from({length:24},(_,i)=>hu[(h0+i)%24]), have=nx.filter(v=>v>0), lo=have.length?Math.min(...have):null;
+    let best=null, run=null; nx.forEach((v,i)=>{ if(lo!=null&&v>0&&v<=1.3*lo){ run=run?[run[0],i]:[i,i]; if(!best||run[1]-run[0]>best[1]-best[0]) best=run; } else run=null; });
+    const chip=id=>{ const c=document.getElementById(id); return c?c.querySelector('.fv').textContent+'|'+c.querySelector('.fw').textContent:null; };
+    const more=document.getElementById('hFeesMore'), wait=[E,S].some(m=>m.st==='wait'), per=state.gasGwei>0&&state.ethUsd?state.gasGwei*state.ethUsd/1e9:null;
+    return {wait, open:more?!more.hidden:null, alert:!!(more&&more.querySelector('.fx2-alert')),
+      eth:{shown:chip('fcEth'), want:fmtFee(E.re)+'|'+E.word, st:E.st, x:E.x, n:E.n, gwei:state.gasGwei,
+        usualOk:E.usualG==null?usualG==null:usualG!=null&&Math.abs(E.usualG-usualG)<=1e-9, hours:have.length,
+        cheapOk:best?!!E.cheap&&E.cheap.a===best[0]&&E.cheap.b===best[1]:!E.cheap, cheapLen:best?best[1]-best[0]+1:null,
+        bars:more?more.querySelectorAll('svg.fx2-bars rect').length:null, barsWant:!wait&&state.ethUsd>0?have.length:0,
+        units:E.re!=null&&per?E.re/per:null, unitsHv:E.hv!=null&&per?E.hv/per:null},
+      sol:{shown:chip('fcSol'), want:fmtFee(S.re)+'|'+S.word, st:S.st, x:S.x, dayN:S.dayN, dayPaid:S.dayPaid,
+        floorOk:S.usual==null||Math.abs(S.usual-15000/1e9*(solUsdNow()||0))<1e-12, age:state.solPrio?now-state.solPrio.t:null}};
+  })();
   const dials={moL:M&&M.now?M.now.L:null, mo, warn:cfg.warnPct, fx};
   return {gauges, dials, gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
     tickers:(state.tickers||[]).map(t=>({sym:t.sym, ch:t.ch, usd:t.usd})), cards, book, histT:H.length?H[H.length-1].t:null, idleAt:state.idleAt||null};
@@ -238,21 +251,36 @@ console.log('\n— gauges —');
     +' · the market mark on '+marks+' of '+gapped+' pool(s) off the market');
   const D=P.dials, moOk=D.moL==null||D.mo.every(a=>a==null||Math.abs(a-D.moL*9)<0.6);
   (moOk?OK:WARN)('momentum dials: '+D.mo.filter(a=>a!=null).length+' drawn, needle '+(moOk?'at the reading\'s level':'NOT at the reading\'s level'));
-  /* NETWORK FEES: what each row shows against the readings behind it; Ethereum's reading against what
-     the last 20 blocks charged (base fee, and base fee plus the 90th-percentile tip), read seconds apart */
-  if(!D.fx) WARN('network fees: the tile is not on the page');
-  else for(const f of D.fx){
-    const nm=f.ch==='eth'?'ETH':'SOL', why=[];
-    if(!f.drawn) why.push('row not drawn'); if(!f.same) why.push('what it shows is NOT what its readings give'); if(!f.medOk) why.push('its usual is NOT the median of the last 7 days');
-    if(f.day>=2&&!f.spark) why.push('no 24-hour line');
-    let mkt='';
-    if(f.ch==='eth'&&f.gwei>0){ const fh=await feeHist();
-      if(fh){ const inside=f.gwei>=fh.lo*0.9&&f.gwei<=fh.hi*1.1; if(!inside) why.push('the gas reading is outside what the last 20 blocks charged');
-        mkt=' · the page\u2019s gas reading '+(inside?'within':'OUTSIDE')+' what the last 20 blocks charged ('+(f.gwei/fh.typ>=1?'+':'\u2212')+Math.abs(Math.round((f.gwei/fh.typ-1)*100))+'% against a typical transaction)'; }
-      if(f.units!=null&&Math.abs(f.units/625000-1)>0.01) why.push('the re-range is not costed at 625k gas'); }
-    if(f.ch==='sol'&&!(f.solAge!=null&&f.solAge<3600e3)) why.push('the relay\u2019s Solana reading is '+(f.solAge==null?'missing':Math.round(f.solAge/60e3)+' min old'));
-    (why.length?WARN:OK)('network fees, '+nm+': '+(why.length?why.join('; '):'shows what its readings give')+(f.x!=null?' · '+(f.x>=100?Math.round(f.x):f.x.toFixed(1))+'\u00d7 usual, '+(f.st==='wait'?'WAIT':f.st==='hi'?'PRICEY':'OK')
-      :' · usual not known yet ('+f.n+' reading'+(f.n===1?'':'s')+' in 7 days; it needs 2 days)')+mkt+(f.ch==='sol'&&f.solAge!=null?' · the relay\u2019s reading '+Math.round(f.solAge/60e3)+' min old':'')); }
+  /* FEES: what the line shows against the page's model on the same readings, with the usual and the
+     cheapest stretch worked out again above, and Ethereum's reading against what the last 20 blocks
+     charged (base fee, and base fee plus the 90th-percentile tip), read seconds apart. Ratios, counts
+     and hours only: no amounts */
+  if(!D.fx) WARN('fees: the FEES line is not on the page');
+  else { const e=D.fx.eth, s=D.fx.sol, word=st=>({ok:'FINE',hi:'PRICEY',wait:'WAIT'})[st]||'no usual yet';
+    let why=[], mkt='';
+    if(e.shown==null) why.push('not drawn'); else if(e.shown!==e.want) why.push('what it shows is NOT what its readings give');
+    if(!e.usualOk) why.push('its usual for this hour is NOT the median of that hour\u2019s readings');
+    if(!e.cheapOk) why.push('the cheapest stretch is NOT the one worked out here');
+    if(e.bars!==e.barsWant) why.push(e.bars+' bars where '+e.barsWant+' were due');
+    if(e.gwei>0){ const fh=await feeHist();
+      if(fh){ const inside=e.gwei>=fh.lo*0.9&&e.gwei<=fh.hi*1.1; if(!inside) why.push('the gas reading is outside what the last 20 blocks charged');
+        mkt=' · the page\u2019s gas reading '+(inside?'within':'OUTSIDE')+' what the last 20 blocks charged ('+(e.gwei/fh.typ>=1?'+':'\u2212')+Math.abs(Math.round((e.gwei/fh.typ-1)*100))+'% against a typical transaction)'; }
+      if(e.units!=null&&Math.abs(e.units/625000-1)>0.01) why.push('a re-range is not costed at 625k gas');
+      if(e.unitsHv!=null&&Math.abs(e.unitsHv/175000-1)>0.01) why.push('a harvest is not costed at 175k gas'); }
+    (why.length?WARN:OK)('fees, ETH: '+(why.length?why.join('; '):'shows what its readings give; its usual for this hour and the cheapest stretch match the ones worked out here')
+      +(e.x!=null?' · '+(e.x>=100?Math.round(e.x):e.x.toFixed(1))+'\u00d7 its usual for this hour, '+word(e.st):' · no usual yet ('+e.n+' readings)')
+      +' · '+e.hours+' of 24 hours with a usual'+(e.cheapLen?' · cheapest stretch '+e.cheapLen+' h':'')+(e.barsWant?' · '+e.bars+' bars':'')+mkt);
+    why=[];
+    if(s.shown==null) why.push('not drawn'); else if(s.shown!==s.want) why.push('what it shows is NOT what its readings give');
+    if(!s.floorOk) why.push('its floor is NOT three signatures at 5,000 lamports');
+    if(!(s.age!=null&&s.age<3600e3)) why.push('the relay\u2019s Solana reading is '+(s.age==null?'missing':Math.round(s.age/60e3)+' min old'));
+    (why.length?WARN:OK)('fees, SOL: '+(why.length?why.join('; '):'shows what its readings give, against its floor')
+      +(s.x!=null?' · '+s.x.toFixed(2)+'\u00d7 its floor, '+(s.st==='ok'?(s.x<=1.5?'FLOOR':'BUSY'):word(s.st)):'')
+      +(s.dayN?' · a priority fee needed in '+Math.round(s.dayPaid/s.dayN*100)+'% of the last 24 hours\u2019 '+s.dayN+' readings':'')
+      +(s.age!=null?' · the relay\u2019s reading '+Math.round(s.age/60e3)+' min old':''));
+    const pOk=D.fx.wait?(D.fx.open&&D.fx.alert):!D.fx.open;
+    (pOk?OK:WARN)('fees panel: '+(D.fx.wait?(D.fx.open?'a spike now: it opened by itself':'a spike now, and it did NOT open by itself')
+      :(D.fx.open?'open with no spike and nothing remembered: it should be closed':'closed, no spike now'))); }
 }
 
 /* Ethereum: what the last 20 blocks charged, in gwei: the lowest base fee, and the highest base fee
