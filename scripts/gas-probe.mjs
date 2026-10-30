@@ -131,3 +131,26 @@ for(const [who,list] of [['the page',PAGE],['the relay',RELAY]]){
   const K=x=>x==null?'—':Math.round(x/1000)+'k';
   console.log('Raydium CLMM, '+read+' recent transactions: '+[...by.entries()].map(([k,e])=>k+': used '+K(P(e.used,50))+', limit asked '+K(P(e.limit,50))+' (n '+e.used.length+', '+e.limit.length+' set a limit) · price offered, median '+P(e.price,50)+' µL/unit · signatures '+P(e.sig,50)).join(' | '));
 }
+
+/* ---------- 6. the deck's own readings by hour of day (Budapest), and its spikes ----------
+   Market data only (gas prices and Solana's going rate as statistics); nothing of the owner's. */
+{ const PASS=String(process.env.DECK_PASSPHRASE||'').trim(), SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/';
+  const L=PASS?await get(SITE+'lock.json?t='+Date.now()):null, D=L?await get(SITE+'data-main.json?t='+Date.now()):null;
+  let H=null; if(L&&D&&D.lock===1){ try{ const K=crypto.pbkdf2Sync(PASS,Buffer.from(L.salt,'base64'),L.iter,64,'sha256').subarray(0,32), all=Buffer.from(D.ct,'base64');
+    const d=crypto.createDecipheriv('aes-256-gcm',K,Buffer.from(D.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
+    H=JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')).history||null; }catch(e){} }
+  const hr=t=>+new Date(t).toLocaleString('en-GB',{timeZone:'Europe/Budapest',hour:'2-digit',hour12:false}).slice(0,2);
+  for(const [k,name] of [['g','ETH gas (gwei)'],['s','SOL going rate (µL/unit)']]){
+    const pts=(H||[]).filter(x=>x&&typeof x[k]==='number'&&(k==='s'?x[k]>=0:x[k]>0));
+    if(!pts.length){ console.log(name+': no readings'); continue; }
+    const days=(pts[pts.length-1].t-pts[0].t)/864e5, med=pctl(pts.map(x=>x[k]),50);
+    const by=Array.from({length:24},(_,h)=>med2(pts.filter(x=>hr(x.t)===h).map(x=>x[k])));
+    function med2(a){ return a.length?pctl(a,50):null; }
+    const ok=by.filter(v=>v!=null), lo=Math.min(...ok), hi=Math.max(...ok);
+    console.log(name+': '+pts.length+' readings over '+days.toFixed(1)+' days · median '+f(med)+' · by hour (Budapest), medians: '+by.map((v,h)=>String(h).padStart(2,'0')+' '+f(v)).join(' · ')
+      +' · cheapest hour '+String(by.indexOf(lo)).padStart(2,'0')+':00, dearest '+String(by.indexOf(hi)).padStart(2,'0')+':00 ('+(lo>0?(hi/lo).toFixed(1)+'× apart':'—')+')');
+    // spikes: runs of readings at 10x the median or more
+    if(med>0){ let runs=[], cur=null; for(const x of pts){ if(x[k]>=10*med){ if(!cur) cur={a:x.t,b:x.t,peak:x[k]}; else { cur.b=x.t; cur.peak=Math.max(cur.peak,x[k]); } } else if(cur){ runs.push(cur); cur=null; } } if(cur) runs.push(cur);
+      console.log('   stretches at 10× the median or more: '+runs.length+(runs.length?' · lasting '+runs.map(r=>Math.round((r.b-r.a)/60e3+7)+' min (peak '+Math.round(r.peak/med)+'×)').join(', '):'')); }
+  }
+}
