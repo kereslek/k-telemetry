@@ -107,8 +107,16 @@ async function readRoute(R, io, prev){
   if(r.checks.supply===false) r.why.push('more CPOOL on Solana than is locked on Ethereum');
 
   /* crossings: LayerZero Scan's newest messages for the adapter, the latest delivered each way checked on both chains */
-  const lz=await safe(()=>io.get('https://scan.layerzero-api.com/v1/messages/oapp/'+R.eidFrom+'/'+R.adapter+'?limit=100'));
-  const items=lz&&(Array.isArray(lz.data)?lz.data:Array.isArray(lz.messages)?lz.messages:null);
+  /* newest first, a page of 100 at a time, until the page reaches past 30 days (three pages at most) */
+  const base='https://scan.layerzero-api.com/v1/messages/oapp/'+R.eidFrom+'/'+R.adapter+'?limit=100';
+  let items=null, more=null;
+  for(let pg=0;pg<3;pg++){
+    const lz=await safe(()=>io.get(base+(more?'&nextToken='+encodeURIComponent(more):'')));
+    const got=lz&&(Array.isArray(lz.data)?lz.data:Array.isArray(lz.messages)?lz.messages:null); if(!got) break;
+    items=(items||[]).concat(got);
+    more=lz.nextToken||(lz.pagination&&lz.pagination.nextToken)||null;
+    const oldest=Math.min(...got.map(m=>Date.parse(m.created||'')||now));
+    if(!more||oldest<now-30*864e5||got.length<100) break; }
   r.lz=items?{n:items.length}:null;
   const P=prev&&prev.last||{};
   r.last={in:P.in||null, out:P.out||null};          // a crossing verified earlier stands until a newer one is verified
@@ -117,7 +125,7 @@ async function readRoute(R, io, prev){
     const dir=(a,b)=>M.filter(x=>x.src===a&&x.dst===b);
     const toSol=dir(R.eidFrom,R.eidTo), back=dir(R.eidTo,R.eidFrom), all=[...toSol,...back];
     const oldest=Math.min(...M.map(x=>x.created||now));
-    r.n30={to:toSol.filter(x=>x.created>=win).length, back:back.filter(x=>x.created>=win).length, partial:M.length>=100&&oldest>win};
+    r.n30={to:toSol.filter(x=>x.created>=win).length, back:back.filter(x=>x.created>=win).length, partial:oldest>win&&items.length%100===0};
     r.waiting=all.filter(x=>!/DELIVERED/.test(x.st)&&x.created&&x.created<now-30*60e3).length;
     const pickLast=L=>L.filter(x=>/DELIVERED/.test(x.st)).sort((a,b)=>(b.created||0)-(a.created||0))[0]||null;
     const verify=async(m,way)=>{ if(!m||!m.guid||!m.srcTx||!m.dstTx) return null;
@@ -128,7 +136,8 @@ async function readRoute(R, io, prev){
         &&String(l.topics[0]).toLowerCase()===(way==='in'?TOPIC.sent:TOPIC.recv));
       if(!lg) return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'no matching Ethereum event'};
       const eid=Number(word(lg.data,0)), amt=word(lg.data,way==='in'?2:1);
-      const tx=await safe(()=>io.sol('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}]));
+      const getTx=()=>safe(()=>io.sol('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}]));
+      let tx=await getTx(); if(!tx){ await new Promise(f=>setTimeout(f,1500)); tx=await getTx(); }   // public nodes drop some reads
       if(!tx) return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'Solana transaction not read'};
       const mv=tokenMoves(tx,R.mint), want=amt/k, ok=eid===R.eidTo&&(tx.meta&&!tx.meta.err)&&(way==='in'?mv.mint:mv.burn).some(a=>a===want);
       const bt=tx.blockTime?tx.blockTime*1000:null;
@@ -163,7 +172,7 @@ async function readRoute(R, io, prev){
   const C=r.checks, any=[C.peerEth,C.peerSol,C.send,C.recv,C.paused,C.minter];
   const lastT=Math.max(r.last.in&&r.last.in.verified?r.last.in.t||0:0, r.last.out&&r.last.out.verified?r.last.out.t||0:0)||null;
   r.lastT=lastT;
-  if(C.minter===false) r.state='changed';
+  if(C.minter===false||C.supply===false) r.state='changed';      // the bridge is not what it was: never shown as open
   else if(C.peerEth===false||C.peerSol===false||C.send===false||C.recv===false||C.paused===true) r.state='closed';
   else if(any.some(x=>x==null)) r.state=null;
   else r.state=lastT&&now-lastT<3*864e5?'open':'quiet';

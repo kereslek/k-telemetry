@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [claude/new-session-argqhq]
-    paths: ['scripts/bridge-probe.mjs', '.github/workflows/bridge-probe.yml']
+    paths: ['scripts/bridge-probe.mjs', 'scripts/bridge.mjs', 'scripts/bridge.test.mjs', '.github/workflows/bridge-probe.yml']
 permissions:
   contents: read
 jobs:
@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      # the relay's reader on made-up chains first: a broken reader is caught before it reads anything real
+      - run: node scripts/bridge.test.mjs
       - run: node scripts/bridge-probe.mjs
         env:
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}   # optional, faster Solana reads; never printed
