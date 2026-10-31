@@ -133,6 +133,14 @@ async function evm(chainKey,method,params){
   throw last;
 }
 const evmCall=(ck,to,data,block='latest',from)=>evm(ck,'eth_call',[{to,data,...(from?{from}:{})},block]);
+/* the first endpoint that has it: a pruned node answers "nothing" for an older receipt or block, which is not
+   "there is none" (the bridge check's last crossing to Solana went unverified on exactly that) */
+async function evmAny(chainKey,method,params){
+  for(const url of CHAINS[chainKey].rpcs){
+    try{ const js=await post(url,{jsonrpc:'2.0',id:rpcId++,method,params}); if(!js.error&&js.result!=null) return js.result; }catch(e){}
+  }
+  return null;
+}
 const eth=(method,params)=>evm('ethereum',method,params);
 const ethCall=(to,data,block='latest',from)=>evmCall('ethereum',to,data,block,from);
 const solLive=makeRpc(SOL_LIVE,{timeout:20000});
@@ -1962,9 +1970,9 @@ const main=async()=>{
   let bridge=(blockCache.bridge&&blockCache.bridge.out)||null;
   if(!bridge||Date.now()-(blockCache.bridge.at||0)>=25*60e3){
     try{
-      /* a crossing's status is asked of the archive list: the first live node keeps no older statuses and
-         answers "nothing", which the reader would take as final */
-      const nb=await Promise.race([readBridge({eth, sol:(m,p)=>m==='getSignatureStatuses'?solArchive(m,p):sol(m,p), get:u=>getJson(u,15000)}, bridge),
+      /* a crossing's receipt and block are asked until a node has them, and its Solana status of the archive list:
+         the first node of each keeps nothing older and answers "nothing", which the reader would take as final */
+      const nb=await Promise.race([readBridge({eth:(m,p)=>m==='eth_getTransactionReceipt'||m==='eth_getBlockByNumber'?evmAny('ethereum',m,p):eth(m,p), sol:(m,p)=>m==='getSignatureStatuses'?solArchive(m,p):sol(m,p), get:u=>getJson(u,15000)}, bridge),
         new Promise((_,no)=>setTimeout(()=>no(new Error('bridge read over 60 s')),60000))]);
       if(nb&&Array.isArray(nb.routes)){ bridge=nb; blockCache.bridge={at:Date.now(), out:nb}; }
     }catch(e){ logErr('bridge',e); blockCache.bridge={...(blockCache.bridge||{}), at:Date.now()-15*60e3}; }
