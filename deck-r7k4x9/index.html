@@ -141,6 +141,37 @@
   .gbox b.hi{color:var(--status-warning)} .gbox b.wait,.gbox .warn{color:var(--status-critical)}
   .gbox .nw{white-space:nowrap}
   header.gas-open{z-index:60}
+  /* BRIDGE: is CPOOL's Ethereum ⇄ Solana bridge open, and when did something last cross it (seen on
+     both chains). A chip on each Solana CPOOL card, a light beside the LIVE status, and a link in
+     FEE INCOME · LAST 24H; each opens the same small box with the evidence. */
+  .brg{position:relative;display:inline-flex;align-items:center;gap:5px;padding:2px 7px 2px 6px;border:1px solid var(--line);
+    font:600 9.5px/1.2 var(--sans);letter-spacing:.1em;color:var(--text-secondary);cursor:pointer;white-space:nowrap;background:rgba(255,255,255,.02)}
+  .brg b{font-weight:700;color:var(--text-primary)} .brg em{font:500 10px/1 var(--mono);font-style:normal;color:var(--text-muted);letter-spacing:0}
+  .brg[data-bs=closed]{border-color:var(--status-critical)} .brg[data-bs=closed] b{color:var(--status-critical)} .brg[data-bs=quiet] b{color:var(--status-warning)}
+  .bled{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex:none}
+  [data-bs=open] .bled{background:var(--status-good);box-shadow:0 0 6px var(--status-good)}
+  [data-bs=quiet] .bled{background:var(--status-warning);box-shadow:0 0 6px var(--status-warning)}
+  [data-bs=closed] .bled{background:var(--status-critical);box-shadow:0 0 6px var(--status-critical)}
+  .bmini{position:relative;display:inline-flex;align-items:center;gap:5px;margin-left:4px;padding:0 0 0 9px;border:0;border-left:1px solid var(--line);
+    background:none;font:600 10px/1.2 var(--sans);letter-spacing:.08em;color:var(--text-secondary);cursor:pointer;white-space:nowrap}
+  .bmini::after{content:"";position:absolute;inset:-8px -6px}
+  .bmini[data-bs=closed]{color:var(--status-critical)}
+  .brg:focus-visible,.bmini:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+  .br-link .brl-line{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;font:500 11px/1.35 var(--sans);color:var(--text-secondary);letter-spacing:0}
+  .br-link .brl-line b{color:var(--text-primary);font-weight:600;letter-spacing:.06em}
+  .br-link[data-bs=closed] .brl-line b{color:var(--status-critical)} .br-link[data-bs=quiet] .brl-line b{color:var(--status-warning)}
+  .bbox{position:absolute;left:-1px;top:calc(100% + 5px);z-index:40;width:max-content;max-width:min(300px,calc(100vw - 20px));box-sizing:border-box;
+    background:#07121c;border:1px solid var(--line);box-shadow:0 10px 24px rgba(0,0,0,.55);padding:8px 11px;cursor:default;
+    font:11px/1.55 var(--sans);color:var(--text-muted);white-space:normal;text-align:left;letter-spacing:0;text-transform:none}
+  .bbox .t{display:block;font:600 9px/1 var(--sans);letter-spacing:.1em;color:var(--text-secondary);margin-bottom:6px}
+  .bbox .t i{font-style:normal;font-weight:500;letter-spacing:.02em;opacity:.8}
+  .bbox b{color:var(--text-primary);font-family:var(--mono);font-weight:500}
+  .bbox .sub{font:600 8.5px/1 var(--sans);letter-spacing:.1em;color:var(--text-secondary);margin:7px 0 3px}
+  .bbox .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;white-space:nowrap}
+  .bbox .bok{color:var(--status-good)} .bbox .bamb{color:var(--status-warning)} .bbox .bbad{color:var(--status-critical)} .bbox .bdim{opacity:.75}
+  .bbox a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent);margin-left:6px}
+  .bbox .next{margin-top:6px;padding-top:5px;border-top:1px solid var(--line-soft);opacity:.85}
+  header.bridge-open{z-index:60}
   /* small phones: a smaller dial, so the title and the dial share the row without crowding */
   @media(max-width:400px){ .gdial{width:24px;height:14px;margin:-2px 0 -2px auto} }
   @media(max-width:360px){ .px[data-gch] .k{gap:3px} .gdial{width:22px;height:13px} }
@@ -1912,7 +1943,7 @@
   </div>
   <div class="hdr-stats">
     <div class="hstat"><div class="k" id="hClockLabel">CET</div><div class="v" id="hClock">—</div></div>
-    <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span></div>
+    <div class="conn"><span class="led" id="connLed"></span><span class="label" id="connLabel">CONNECTING</span><button type="button" class="bmini" id="hBridge" aria-expanded="false" hidden></button></div>
     <div class="hstat" title="Timestamp of the data currently on screen — everything you see is from this moment"><div class="k">DATA AS OF</div><div class="v" id="hDataTs">—</div></div>
     <div class="hstat"><div class="k" id="hCdLabel">NEXT SCAN</div><div class="v" id="hCountdown">—<span class="unit">s</span></div></div>
   </div>
@@ -2629,7 +2660,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.25';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.26';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3745,7 +3776,7 @@ function snapSave(){
       : idsNow(c);
     const solIds = keep('sol','solIds', !!state.solStale);
     const ethIds = keep('eth','ethIds', !!state.ethStale);
-    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei, solPrio:state.solPrio||null, btcFee:state.btcFee||null,
+    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei, solPrio:state.solPrio||null, btcFee:state.btcFee||null, bridge:state.bridge||null,
       block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth,
       tickers:state.tickers, quotes:state.quotes, btcUsdChg24:state.btcUsdChg24, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
@@ -3916,6 +3947,7 @@ async function scanInner(isBoot){
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.solPrio) state.solPrio = d.solPrio;
           if(d.btcFee) state.btcFee = d.btcFee;
+          if(d.bridge) state.bridge = d.bridge;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink = d.ink||null;
           if(d.mktRef) state.mktRef = d.mktRef;
@@ -4049,7 +4081,7 @@ async function scanInner(isBoot){
     if(snap && Array.isArray(snap.ps) && snap.ps.length){
       state.positions=new Map(snap.ps.map(p=>{ p.cached=true; return [p.id,p]; }));
       state.ethUsd=state.ethUsd??snap.ethUsd; state.btcUsd=state.btcUsd??snap.btcUsd;
-      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block; state.solPrio=state.solPrio??snap.solPrio; state.btcFee=state.btcFee??snap.btcFee;
+      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block; state.solPrio=state.solPrio??snap.solPrio; state.btcFee=state.btcFee??snap.btcFee; state.bridge=state.bridge??snap.bridge;
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
       state.feeMonth=state.feeMonth??snap.feeMonth;
       state.costMonth=state.costMonth??snap.costMonth;
@@ -4603,6 +4635,7 @@ function renderAll(){
     try{ f(); }catch(e){ console.error(f.name, e); try{ log('warning', f.name+' could not render: '+esc(String(e&&e.message||e).slice(0,120))); }catch(_){} }
   }
   if(!$('#quickNav').children.length) buildQuickNav();
+  try{ if(brOpen) bridgeShow(brOpen); }catch(e){}   // an open bridge box drawn again with the fresh figures
   setTimeout(afterRender,0);
   // partial-data ribbon: some chains down, rest still current
   {
@@ -4685,6 +4718,7 @@ function renderHeader(){
     px.innerHTML=tok.map(l=>cell(l,'tok')).join('')+MKT.map((l,i)=>cell(l,'mkt'+(i?'':' first'))).join('');
     px.parentElement.style.setProperty('--pxn', tok.length+MKT.length);
     if(gasOpen) gasShow(gasOpen);   // an open box drawn again with the fresh figures
+    renderBridgeMini();
     if(typeof gapDecorate==='function') gapDecorate();
   }
 }
@@ -4863,7 +4897,7 @@ function renderTiles(){
          (parts.length?'<span class="unit">'+parts.join('&nbsp; · &nbsp;')+'</span><br>':'')
          +(hrs<23.5?'<span class="unit">over the last '+hrs.toFixed(0)+'h — the record is still filling</span><br>':'')
          +'≈ <b>'+fmtUsd(tot/hrs*24*7,0)+'</b>/wk · <b>'+fmtUsd(tot/hrs*24*30.44,0)+'</b>/mo if the last 24h repeat'
-         +feePulseLink()+feePulseLink24()+feePulseLink60());
+         +feePulseLink()+feePulseLink24()+feePulseLink60()+bridgeLink());
     } else {
     const dayOf = p => { const a=aprOfWin(p,'d1').v, base=p.valueUsd||p.costUsd;
                          return (a!=null&&base)? a/100*base/365 : null; };
@@ -4881,7 +4915,7 @@ function renderTiles(){
              +(noData?'&nbsp; · &nbsp;'+noData+' position'+(noData>1?'s':'')+' without 24H data':'')+'</span><br>':'')
           +'<span class="unit">estimated from each position\'s 24h fee rate (Solana: the pool\'s) until the ledger\'s 24h record arrives</span><br>'
           +'≈ <b>'+fmtUsd(perDay*7,0)+'</b>/wk · <b>'+fmtUsd(perDay*30.44,0)+'</b>/mo if today\'s rate holds'
-         +feePulseLink()+feePulseLink24()+feePulseLink60());
+         +feePulseLink()+feePulseLink24()+feePulseLink60()+bridgeLink());
     } }
   { /* "Portfolio" here is every open LP position, Ethereum and Solana — not wallet tokens. The big
        number is each position's own fee APR over the header window, weighted by what it is worth
@@ -7723,6 +7757,136 @@ document.addEventListener('keydown',e=>{
   const t=e.target instanceof Element?e.target.closest('#hPx .px[data-gch]'):null;
   if(t&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); gasShow(gasOpen===t.dataset.gch?null:t.dataset.gch); }
   else if(e.key==='Escape'&&gasOpen) gasShow(null); });
+/* ---- BRIDGE ----
+   CPOOL's Ethereum ⇄ Solana bridge (Clearpool's own, on LayerZero): is it open, and when did
+   something last cross it. The relay reads it from both chains about every half hour
+   (scripts/bridge.mjs): the route's configuration on each side, LayerZero Scan's newest messages,
+   and the last crossing each way checked on both chains (the same message and amount leaving one
+   and arriving on the other). Shown as a chip on each Solana CPOOL card, a light beside the LIVE
+   status and a link in FEE INCOME · LAST 24H; each opens the same small box, with links to both
+   explorers. Never a guess: before the first reading nothing is shown, and a reading older than
+   three hours shows "—". */
+const BRIDGE_STALE=3*3600e3, BR_WORD={open:'OPEN',quiet:'QUIET',closed:'CLOSED'};
+function bridgeRoute(){
+  const B=state.bridge, r=B&&Array.isArray(B.routes)?B.routes.find(x=>x&&x.id==='eth-sol'):null;
+  if(!r) return null;
+  const age=Date.now()-(B.t||0), st=age>BRIDGE_STALE||r.state==='changed'?null:(BR_WORD[r.state]?r.state:null);
+  return {...r, t:B.t, age, st};
+}
+const brAgo=t=>{ if(!t) return null; const m=Math.max(0,(Date.now()-t)/60e3); return m<90?Math.max(1,Math.round(m))+'m':m<48*60?Math.round(m/60)+'h':Math.round(m/1440)+'d'; };
+const brAgoLong=t=>{ if(!t) return '—'; const m=Math.max(0,(Date.now()-t)/60e3); return m<90?Math.max(1,Math.round(m))+' min ago':m<48*60?(m/60).toFixed(1)+' h ago':(m/1440).toFixed(1)+' d ago'; };
+const brWhen=t=>{ if(!t) return ''; const d=new Date(t), today=new Date().toLocaleDateString('en-GB',{timeZone:TZ});
+  return (d.toLocaleDateString('en-GB',{timeZone:TZ})===today?'':d.toLocaleDateString('en-GB',{timeZone:TZ,weekday:'short'})+' ')+fmtT(t,false); };
+const BR_MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];   // the page's own month names (the locale's "Sept" is not)
+const brDay=t=>{ const [d,m]=new Date(t).toLocaleDateString('en-GB',{timeZone:TZ,day:'numeric',month:'numeric'}).split('/'); return (+d)+' '+BR_MN[(+m||1)-1]; };
+const brM=v=>v==null?'—':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':v.toFixed(0);
+/* what one line says when shut, quiet or unknown */
+function brLabel(r){
+  if(!r) return 'CPOOL bridge: no reading yet';
+  if(r.st==='open') return 'CPOOL bridge Ethereum ⇄ Solana: open · last verified crossing '+brAgoLong(r.lastT);
+  if(r.st==='quiet') return 'CPOOL bridge Ethereum ⇄ Solana: open, but nothing has crossed since '+(r.lastT?brAgoLong(r.lastT).replace(' ago',''):'the last 3 days')+' ago';
+  if(r.st==='closed') return 'CPOOL bridge Ethereum ⇄ Solana: CLOSED · '+((r.why||[]).join('; ')||'shut on chain');
+  return 'CPOOL bridge: '+(r.age>BRIDGE_STALE?'not checked for '+brAgoLong(r.t).replace(' ago',''):((r.why||[]).join('; ')||'some checks could not be read'));
+}
+function bridgeChip(cardId){
+  const r=bridgeRoute(); if(!r) return '';
+  const ago=r.st==='open'||r.st==='quiet'?brAgo(r.lastT):null, lab=brLabel(r)+'. Tap for the evidence.';
+  return '<span class="brg" data-bcard="'+esc(String(cardId))+'" data-bs="'+(r.st||'unk')+'" role="button" tabindex="0" aria-expanded="false" title="'+esc(lab)+'" aria-label="'+esc(lab)+'">'
+    +'<i class="bled"></i>BRIDGE <b>'+(r.st?BR_WORD[r.st]:'—')+'</b>'+(ago?'<em>'+ago+'</em>':'')+'</span>';
+}
+/* the link in FEE INCOME · LAST 24H: the bridge carries the arbitrage that brings trades to the Solana pools */
+function bridgeLink(){
+  const r=bridgeRoute(); if(!r) return '';
+  const lab=brLabel(r);
+  return '<button type="button" class="fp-link br-link" data-bs="'+(r.st||'unk')+'" aria-label="'+esc(lab+'. Open the bridge check.')+'">'
+    +'<span class="fpl-head"><span>CPOOL BRIDGE</span><i>›</i></span>'
+    +'<span class="brl-line"><i class="bled"></i><b>'+(r.st?BR_WORD[r.st]:'—')+'</b><span>'
+    +(r.st==='open'?'last crossing '+brAgo(r.lastT)+' ago':r.st==='quiet'?'nothing crossed for '+brAgo(r.lastT):r.st==='closed'?esc((r.why||[])[0]||'shut on chain'):'not checked recently')
+    +'</span></span></button>';
+}
+function brHistory(r){
+  const H=(r.hist||[]).filter(x=>x&&x.t).sort((a,b)=>a.t-b.t); if(!H.length) return '';
+  const cur=H[H.length-1];
+  if(cur.open){ let i=H.length-1; while(i>0&&H[i-1].open) i--; const from=H[i], shut=i>0?H[i-1]:null;
+    return 'route: open since <b>'+brDay(from.t)+'</b>'+(shut?' <span class="bdim">(shut '+brDay(shut.t)+' – '+brDay(from.t)+')</span>':''); }
+  return 'route: <span class="bbad">shut since '+brDay(cur.t)+'</span>';
+}
+function brLinks(way,x){
+  const evm=way==='in'?x.src:x.dst, sol=way==='in'?x.dst:x.src, ok=s=>typeof s==='string'&&s.length>20;
+  return (ok(evm)?'<a href="https://etherscan.io/tx/'+encodeURIComponent(evm)+'" target="_blank" rel="noopener noreferrer">ETH ↗</a>':'')
+    +(ok(sol)?'<a href="https://solscan.io/tx/'+encodeURIComponent(sol)+'" target="_blank" rel="noopener noreferrer">SOL ↗</a>':'');
+}
+function bridgeBox(p){
+  const r=bridgeRoute(); if(!r) return '';
+  const L=['<span class="t">BRIDGE · CPOOL <i>Ethereum ⇄ Solana · LayerZero</i></span>'];
+  if(r.age>BRIDGE_STALE) L.push('<span class="bdim">— not checked for '+brAgoLong(r.t).replace(' ago','')+' (the relay reads it every half hour)</span>');
+  else if(r.st==='open') L.push('<span class="bok">● OPEN</span> — both sides linked, nothing blocked or paused');
+  else if(r.st==='quiet') L.push('<span class="bamb">● OPEN, QUIET</span> — nothing has crossed for '+brAgoLong(r.lastT).replace(' ago',''));
+  else if(r.st==='closed') L.push('<span class="bbad">● CLOSED</span> — '+esc((r.why||[]).join('; ')||'shut on chain'));
+  else L.push('<span class="bdim">— '+esc((r.why||[]).join('; ')||'some checks could not be read this time')+'</span>');
+  L.push('<div class="sub">LAST VERIFIED CROSSING</div>');
+  for(const [k,lab] of [['in','ETH → SOL'],['out','SOL → ETH']]){ const x=r.last&&r.last[k];
+    L.push('<div class="row"><span>'+lab+' '+(x&&x.t?'<b>'+brAgoLong(x.t)+'</b> <span class="bdim">'+brWhen(x.t)+'</span>'+(x.verified?'':' <span class="bamb">unverified</span>'):'<b>—</b>')+'</span>'
+      +'<span>'+(x?brLinks(k,x):'')+'</span></div>'); }
+  if(r.n30){ const pl=r.n30.partial?'+':'';
+    L.push('<div class="sub">LAST 30 DAYS</div><div><b>'+r.n30.to+pl+'</b> to Solana · <b>'+r.n30.back+pl+'</b> back · '
+      +(r.waiting?'<span class="bamb">'+r.waiting+' waiting over 30 min</span>':'none stuck')+'</div>'); }
+  const h=brHistory(r); if(h) L.push('<div>'+h+'</div>');
+  if(p&&p.poolGap&&isFinite(p.poolGap.pct)) L.push('<div>price gap: this pool <b>'+(p.poolGap.pct>=0?'+':'−')+Math.abs(p.poolGap.pct).toFixed(1)+'%</b> vs Ethereum</div>');
+  if(r.supply&&r.supply.sol!=null&&r.supply.locked!=null)
+    L.push('<div>supply: <b>'+brM(r.supply.sol)+'</b> on Solana, covered by <b>'+brM(r.supply.locked)+'</b> locked '
+      +(r.checks&&r.checks.supply===true?'<span class="bok">✓</span>':r.checks&&r.checks.supply===false?'<span class="bbad">✗ not covered</span>':'')+'</div>');
+  L.push('<div class="next">checked '+brWhen(r.t)+' · XRPL (CLEAR): not live yet</div>');
+  return '<div class="bbox" role="dialog" aria-label="CPOOL bridge check">'+L.map((x,i)=>i&&!x.startsWith('<div')?'<div>'+x+'</div>':x).join('')+'</div>';
+}
+/* the header light */
+function renderBridgeMini(){
+  const b=$('#hBridge'); if(!b) return; const r=bridgeRoute();
+  if(!r){ b.hidden=true; return; }
+  b.hidden=false; b.dataset.bs=r.st||'unk';
+  const lab=brLabel(r)+'. Tap for the check.'; b.title=lab; b.setAttribute('aria-label',lab);
+  b.innerHTML='<i class="bled"></i>BRIDGE';
+}
+/* one box open at a time: under a card's chip ('card:<id>'), the header light ('hdr') or the
+   fee link ('fee'); drawn again with fresh figures whenever the page is, put away by a second tap,
+   a tap anywhere else, or Escape */
+let brOpen=null;
+function bridgeShow(key){
+  brOpen=key||null;
+  document.querySelectorAll('.bbox').forEach(x=>x.remove());
+  document.querySelectorAll('.brg,#hBridge,.br-link').forEach(x=>x.setAttribute('aria-expanded','false'));
+  const hd=document.querySelector('header'); if(hd) hd.classList.toggle('bridge-open', brOpen==='hdr');
+  if(!brOpen) return;
+  let anchor=null, p=null;
+  if(brOpen==='hdr') anchor=$('#hBridge');
+  else if(brOpen==='fee') anchor=document.querySelector('.br-link');
+  else { const id=brOpen.slice(5); anchor=document.querySelector('.card[data-id="'+CSS.escape(id)+'"] .brg'); p=state.positions&&state.positions.get?state.positions.get(id)||state.positions.get(+id):null; }
+  if(!anchor||anchor.hidden){ brOpen=null; return; }
+  anchor.setAttribute('aria-expanded','true');
+  anchor.insertAdjacentHTML('beforeend', bridgeBox(p));
+  const bx=anchor.querySelector('.bbox'); if(!bx) return;
+  const over=bx.getBoundingClientRect().right-(document.documentElement.clientWidth-8);
+  if(over>0) bx.style.left=(-1-over)+'px';   // kept on the screen
+}
+/* from the header light or the fee link: to the Solana CPOOL card, its box opened there */
+function bridgeGo(from){
+  const chip=document.querySelector('.card .brg[data-bcard]');
+  if(chip){ const id=chip.dataset.bcard; goToCard(id); bridgeShow('card:'+id); }
+  else bridgeShow(brOpen===from?null:from);
+}
+document.addEventListener('click',e=>{
+  const t=e.target instanceof Element?e.target:null; if(!t) return;
+  if(t.closest('.bbox')) return;                   // its links open; the box stays
+  const chip=t.closest('.brg[data-bcard]'), mini=t.closest('#hBridge'), link=t.closest('.br-link');
+  if(chip){ const k='card:'+chip.dataset.bcard; bridgeShow(brOpen===k?null:k); return; }
+  if(mini||link){ bridgeGo(mini?'hdr':'fee'); return; }
+  if(brOpen) bridgeShow(null);
+});
+document.addEventListener('keydown',e=>{
+  const t=e.target instanceof Element?e.target.closest('.brg[data-bcard]'):null;
+  if(t&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); const k='card:'+t.dataset.bcard; bridgeShow(brOpen===k?null:k); }
+  else if(e.key==='Escape'&&brOpen) bridgeShow(null);
+});
 function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
 function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 
@@ -10405,6 +10569,8 @@ function renderCards(){
     const link=el('a','clink',linkTxt);
     link.href = isSol ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
     link.target='_blank'; link.rel='noopener';
+    /* the bridge that brings arbitrage to a Solana CPOOL pool: open or not, and its last crossing */
+    if(isSol&&[p.m0,p.m1].some(m=>m&&String(m.symbol).toUpperCase()==='CPOOL')) head.insertAdjacentHTML('beforeend', bridgeChip(p.id));
     head.append(link);
     head.append(el('span','chip '+SEV_CHIP[sev],'<span class="ic">'+SEV_ICON[sev]+'</span>'+SEV_LABEL[sev]));
     card.append(head);
@@ -12925,6 +13091,7 @@ async function init(){
       if(d.btcUsdChg24!=null) state.btcUsdChg24=d.btcUsdChg24;
       if(d.solPrio) state.solPrio=d.solPrio;
       if(d.btcFee) state.btcFee=d.btcFee;
+      if(d.bridge) state.bridge=d.bridge;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
       if(d.chainStatus) state.chainStatus=d.chainStatus;

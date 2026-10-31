@@ -188,6 +188,8 @@ const P=await pg.evaluate(()=>{
   return {gauges, dials, gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
     tickers:(state.tickers||[]).map(t=>({sym:t.sym, ch:t.ch, usd:t.usd})), cards, book, histT:H.length?H[H.length-1].t:null, idleAt:state.idleAt||null};
 });
+/* the bridge check as the page shows it, read before the browser closes (judged further down) */
+const BRP=await bridgePage(pg).catch(()=>null);
 await b.close();
 console.log('\n— each part of the page against the market —');
 if(!scanned) FAIL('the page\'s first live scan did not finish within 4 minutes');
@@ -316,6 +318,127 @@ console.log('\n— gauges —');
       +(c?' · '+c.hours+' of 24 hours with a usual'+(c.cheapLen?' · lowest stretch '+c.cheapLen+' h':'')
         +(c.age!=null?' · the relay\u2019s reading '+Math.round(c.age/60e3)+' min old ('+c.src+')':''):'')+mp); }
 }
+
+/* CPOOL's Ethereum ⇄ Solana bridge: the page against the chains and LayerZero, read again here */
+if(scanned){ console.log('\n— the CPOOL bridge, Ethereum ⇄ Solana —');
+  const I=await bridgeIndep().catch(()=>({open:null, why:[], lz:null, supply:null, since:null})), V=bridgeVerdict(BRP, I, relay&&relay.bridge, Date.now());
+  (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the header light, the fee link and the card chip agree; the check opens and closes; both jumps land on the card with it open; '
+    +'the state, the last crossings, the 30-day counts, the supply and the open-since date match what was read here from the chains and LayerZero')+(V.info.length?' · '+V.info.join(' · '):'')); }
+/* BRIDGE-AUDIT-START */
+/* CPOOL's Ethereum ⇄ Solana bridge (v40.26): what the page shows (the header light, the fee link, the
+   chip on each Solana CPOOL card and its check) against the same facts read again here, independently
+   of the relay: both sides' configuration from the chains, LayerZero Scan's newest messages, and the
+   route's on-chain history. States, ages, dates and counts only. */
+const BR={adapter:'0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992', tokenEth:'0x66761fa41377003622aee3c7675fc7b5c1c2fac5', ep:'0x1a44076050125825900e736c501f859c50fe728c',
+  mint:'AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg', store:'BCtWmFRmrRB7WqjdX3FXK34TybwKu89Uzqne1ZbdYogb', program:'8hQ8mxZZGPNLAAyTCQ8ButyfqjW5isUBBJWYXbFYxiMv',
+  peerAcc:'EpXzwJuGhRKJTmXXYhQvxPddsKVGG5GTTnQZmPJC8xzP', peerTopic:'0x238399d427b947898edb290f5ff0f9109849b1c3ba196a42e35f00c50a54b98b'};
+const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const b58dec=s=>{ let n=0n; for(const c of s) n=n*58n+BigInt(B58.indexOf(c)); const b=[]; while(n>0n){ b.unshift(Number(n&255n)); n>>=8n; } for(const c of s){ if(c==='1') b.unshift(0); else break; } return Uint8Array.from(b); };
+async function rpcE(method,params){ for(const u of ['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://eth.blockscout.com/api/eth-rpc']){
+  try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+    const j=r.ok?await r.json():null; if(j&&j.result!==undefined&&!j.error) return j.result; }catch(e){} } return null; }
+async function rpcS(method,params){ for(const u of ['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com']) for(let k=0;k<3;k++){
+  try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(20000),body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+    const j=r.ok?await r.json():null; if(j&&j.result!==undefined&&!j.error) return j.result; }catch(e){} await new Promise(f=>setTimeout(f,800*(k+1))); } return null; }
+/* the source transaction of a LayerZero Scan message, found by shape (its field names are not documented in full) */
+function lzSrcTx(m){ const out=[]; const walk=(o,p)=>{ if(o==null) return; if(typeof o==='string'){ out.push([p.toLowerCase(),o]); return; } if(typeof o==='object') for(const [k,v] of Object.entries(o)) walk(v,p+'.'+k); };
+  walk(m,''); const g=String(m.guid||'').toLowerCase();
+  const hit=out.find(([p,v])=>/source/.test(p)&&/hash$/.test(p)&&!/(block|payload|message)hash$/.test(p)&&((/^0x[0-9a-f]{64}$/i.test(v)&&v.toLowerCase()!==g)||/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(v)))
+    ||out.find(([p,v])=>/source/.test(p)&&/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(v));
+  return hit?hit[1]:null; }
+/* the newest PeerSet for Solana in the adapter's logs (Blockscout, newest first): when the route last opened or closed */
+async function lastPeerSet(){ let next=null;
+  for(let pg=0;pg<40;pg++){ const r=await get('https://eth.blockscout.com/api/v2/addresses/'+BR.adapter+'/logs'+(next?'?'+new URLSearchParams(next).toString():'')); if(!r||!Array.isArray(r.items)) return null;
+    const ev=r.items.filter(l=>l.topics&&String(l.topics[0]).toLowerCase()===BR.peerTopic&&parseInt(String(l.data).slice(2,66),16)===30168)
+      .sort((a,b)=>(+b.block_number-+a.block_number)||((+b.index||0)-(+a.index||0)))[0];
+    if(ev){ const bk=await rpcE('eth_getBlockByNumber',['0x'+(+ev.block_number).toString(16),false]); return bk?{t:parseInt(bk.timestamp,16)*1000, open:!/^0*$/.test(String(ev.data).slice(66,130))}:null; }
+    if(!r.next_page_params) return null; next=r.next_page_params; await new Promise(f=>setTimeout(f,250)); }
+  return null; }
+async function bridgeIndep(){
+  const I={open:null, why:[], supply:null, lz:null, since:null};
+  const w=(h,i)=>{ const s=String(h||'').replace(/^0x/,'').slice(64*i,64*(i+1)); return s.length===64?BigInt('0x'+s):null; };
+  const a20=h=>h&&String(h).length>=66?String(h).replace(/^0x/,'').slice(24,64).toLowerCase():null;
+  const p32=a=>a.toLowerCase().replace(/^0x/,'').padStart(64,'0'), u32=n=>n.toString(16).padStart(64,'0'), ec=(to,data)=>rpcE('eth_call',[{to,data},'latest']);
+  const peer=await ec(BR.adapter,'0xbb0b6a53'+u32(30168)), blk=await ec(BR.ep,'0x73318091'), sl=await ec(BR.ep,'0xb96a277f'+p32(BR.adapter)+u32(30168)),
+    rl=await ec(BR.ep,'0x402f8468'+p32(BR.adapter)+u32(30168)), bal=await ec(BR.tokenEth,'0x70a08231'+p32(BR.adapter));
+  const mi=await rpcS('getAccountInfo',[BR.mint,{encoding:'jsonParsed'}]), st=await rpcS('getAccountInfo',[BR.store,{encoding:'base64'}]), pa=await rpcS('getAccountInfo',[BR.peerAcc,{encoding:'base64'}]);
+  const info=mi&&mi.value&&mi.value.data&&mi.value.data.parsed&&mi.value.data.parsed.info;
+  const sd=st&&st.value&&st.value.owner===BR.program?Buffer.from(st.value.data[0],'base64'):null, pd=pa&&pa.value&&pa.value.owner===BR.program?Buffer.from(pa.value.data[0],'base64'):null;
+  const F={peerEth:peer==null?null:w(peer,0)===BigInt('0x'+Buffer.from(b58dec(BR.store)).toString('hex')), send:sl&&blk?a20(sl)!==a20(blk):null, recv:rl&&blk?a20(rl)!==a20(blk):null,
+    notPaused:sd?sd[156]===0:null, peerSol:pd?pd.subarray(8,40).toString('hex')===p32(BR.adapter):null, minter:info?info.mintAuthority===BR.store:null};
+  if(Object.values(F).every(v=>v!=null)){ I.open=Object.values(F).every(Boolean); for(const [k,v] of Object.entries(F)) if(!v) I.why.push(k); }
+  if(info&&bal) I.supply={sol:Number(BigInt(info.supply))/10**info.decimals, locked:Number(w(bal,0)/10n**12n)/1e6};
+  const lz=await get('https://scan.layerzero-api.com/v1/messages/oapp/30101/'+BR.adapter+'?limit=100'), items=lz&&Array.isArray(lz.data)?lz.data:null;
+  if(items){ const M=items.map(m=>({src:+(m.pathway&&m.pathway.srcEid), dst:+(m.pathway&&m.pathway.dstEid), st:String(m.status&&(m.status.name||m.status)||''), t:Date.parse(m.created||'')||null, tx:lzSrcTx(m)}));
+    const del=M.filter(x=>/DELIVERED/i.test(x.st)), last=(a,b)=>del.filter(x=>x.src===a&&x.dst===b).sort((p,q)=>q.t-p.t)[0]||null, win=Date.now()-30*864e5;
+    I.lz={bySrc:new Map(M.filter(x=>x.tx).map(x=>[String(x.tx),x])), lastIn:last(30101,30168), lastOut:last(30168,30101), full:M.length<100||Math.min(...M.map(x=>x.t||Date.now()))<win,
+      n30:{to:M.filter(x=>x.src===30101&&x.dst===30168&&x.t>=win).length, back:M.filter(x=>x.src===30168&&x.dst===30101&&x.t>=win).length}}; }
+  I.since=await lastPeerSet();
+  return I; }
+/* what the page shows, read in the open browser before it closes */
+async function bridgePage(pg){
+  const P=await pg.evaluate(()=>{
+    if(typeof bridgeRoute!=='function') return {missing:true};
+    const r=bridgeRoute(), B=state.bridge, rt=B&&Array.isArray(B.routes)?B.routes.find(x=>x&&x.id==='eth-sol'):null;
+    const sol=[...state.positions.values()].filter(p=>p.chain==='sol'&&[p.m0,p.m1].some(m=>m&&String(m.symbol).toUpperCase()==='CPOOL')).map(p=>String(p.id));
+    const chips=[...document.querySelectorAll('#cards .card .brg')].map(c=>({bs:c.dataset.bs, card:c.dataset.bcard}));
+    const l=document.getElementById('hBridge'), f=document.querySelector('.br-link');
+    const x=k=>{ const v=rt&&rt.last&&rt.last[k]; return v?{t:v.t, src:v.src, dst:v.dst, v:!!v.verified}:null; };
+    return {t:B?B.t:null, st:r?r.st||'unk':null, sol, chips, light:l&&!l.hidden?l.dataset.bs:null, link:f?f.dataset.bs:null,
+      raw:rt?{state:rt.state||null, n30:rt.n30||null, lastT:rt.lastT||null, supply:rt.supply||null, last:{in:x('in'), out:x('out')}, hist:(rt.hist||[]).map(h=>({t:h.t, open:!!h.open}))}:null}; });
+  if(P.missing||!P.raw) return P;
+  P.box=await pg.evaluate(()=>{ const c=document.querySelector('#cards .card .brg'); if(!c) return null;
+    c.click(); const bx=c.querySelector('.bbox'), txt=bx?bx.innerText.replace(/\s+/g,' ').trim():null, links=bx?[...bx.querySelectorAll('a')].map(a=>({h:a.href, t:a.target})):[];
+    c.click(); return {txt, links, closed:!c.querySelector('.bbox')}; });
+  const jump=async sel=>{
+    const there=await pg.evaluate(s=>{ for(const x of [window,document]) x.dispatchEvent(new WheelEvent('wheel',{bubbles:true})); const e=document.querySelector(s);
+      if(!e||e.hidden||!e.getClientRects().length) return false; e.scrollIntoView({block:'center'}); return true; }, sel);
+    if(!there) return null; await pg.waitForTimeout(500); await pg.click(sel); await pg.waitForTimeout(3000);
+    const r=await pg.evaluate(()=>{ const bx=document.querySelector('.bbox'), card=bx&&bx.closest('.card');
+      return {open:!!bx, onCard:!!card, top:card?card.getBoundingClientRect().top:null, nav:parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34}; });
+    await pg.keyboard.press('Escape'); await pg.waitForTimeout(150); return r; };
+  P.fromLight=await jump('#hBridge'); P.fromLink=await jump('.br-link');
+  return P; }
+/* the verdict: one list of what disagrees, and what was seen */
+function bridgeVerdict(P, I, relayB, nowMs){
+  const why=[], info=[];
+  if(!P||P.missing) return {why:['the page has no bridge check'], info};
+  if(!P.raw) return {why:relayB?['the relay published a bridge reading the page does not show']:[], info:[relayB?'':'no bridge reading published yet'].filter(Boolean)};
+  if(relayB&&relayB.t!==P.t) why.push('the page shows a different bridge reading than the relay published');
+  const ageMs=nowMs-(P.t||0); info.push('reading '+age(ageMs)+' old');
+  if(ageMs>90*60e3) why.push('the reading is '+age(ageMs)+' old (the relay reads it every half hour)');
+  if(P.light!==P.st) why.push('the header light shows '+(P.light||'nothing')+', not '+P.st);
+  if(P.link!==P.st) why.push('the fee link shows '+(P.link||'nothing')+', not '+P.st);
+  if(P.chips.some(c=>c.bs!==P.st)) why.push('a card chip shows a different state');
+  const on=new Set(P.chips.map(c=>c.card)); if(P.sol.length!==on.size||P.sol.some(id=>!on.has(id))) why.push('the chip is not on exactly the Solana CPOOL cards');
+  info.push('page: '+P.st);
+  if(I.open==null) info.push('the chains’ configuration could not all be read here');
+  else { const pageOpen=P.raw.state==='open'||P.raw.state==='quiet'; if(I.open!==pageOpen) why.push('the page says '+(P.raw.state||'unknown')+' but the chains read here say '+(I.open?'open':'closed ('+I.why.join(', ')+')'));
+    info.push('chains read here: '+(I.open?'open':'closed')); }
+  if(P.raw.state==='open'&&!(P.raw.lastT&&nowMs-P.raw.lastT<3*864e5)) why.push('open, but its last verified crossing is over 3 days old');
+  if(I.lz){ for(const [k,lab] of [['in','to Solana'],['out','to Ethereum']]){ const x=P.raw.last[k]; if(!x) continue;
+      const m=I.lz.bySrc.get(String(x.src)); if(!m) why.push('the last crossing '+lab+' is not in LayerZero’s record'); else if(Math.abs((m.t||0)-x.t)>2*3600e3) why.push('the last crossing '+lab+' is not at the time LayerZero has'); }
+    const nI=I.lz.lastIn, nO=I.lz.lastOut, pI=P.raw.last.in, pO=P.raw.last.out;
+    if(nI&&nI.t<nowMs-60*60e3&&(!pI||nI.t>pI.t+90*60e3)) why.push('a newer crossing to Solana is not on the page');
+    if(nO&&nO.t<nowMs-60*60e3&&(!pO||nO.t>pO.t+90*60e3)) why.push('a newer crossing to Ethereum is not on the page');
+    if(P.raw.n30&&I.lz.full&&(Math.abs(P.raw.n30.to-I.lz.n30.to)>3||Math.abs(P.raw.n30.back-I.lz.n30.back)>3)) why.push('the 30-day counts differ from LayerZero’s');
+    info.push('LayerZero: last to Solana '+(nI?age(nowMs-nI.t)+' ago':'—')+', to Ethereum '+(nO?age(nowMs-nO.t)+' ago':'—')); }
+  if(I.supply&&P.raw.supply&&P.raw.supply.sol!=null&&P.raw.supply.locked!=null){ const d=Math.max(Math.abs(P.raw.supply.sol/I.supply.sol-1),Math.abs(P.raw.supply.locked/I.supply.locked-1));
+    if(!(d<=0.05)) why.push('the supply figures differ from the chains by '+Math.round(d*100)+'%'); }
+  if(I.since){ const H=P.raw.hist.filter(h=>h.t).sort((a,b)=>a.t-b.t); let i=H.length-1; while(i>0&&H[i-1].open===H[H.length-1].open) i--;
+    const ps=H.length?H[i]:null;
+    if(!ps||ps.open!==I.since.open||Math.abs(ps.t-I.since.t)>36*3600e3) why.push('the route’s '+(I.since.open?'open':'shut')+'-since date differs from its last change on chain');
+    else info.push((I.since.open?'open':'shut')+' since '+new Date(I.since.t).toISOString().slice(0,10)); }
+  if(!P.box||!P.box.txt) why.push('a tap on the card chip does not open the check');
+  else { if(!P.box.closed) why.push('a second tap does not close the check');
+    if(!(/LAST VERIFIED CROSSING/.test(P.box.txt)&&/ETH → SOL/.test(P.box.txt)&&/SOL → ETH/.test(P.box.txt))) why.push('the check lacks a crossing line');
+    if(!P.box.links.every(a=>/^https:\/\/(etherscan\.io|solscan\.io)\/tx\/[0-9A-Za-z]+$/.test(a.h)&&a.t==='_blank')) why.push('a verify link is not an explorer link opening in a new tab');
+    for(const k of ['in','out']){ const x=P.raw.last[k]; if(x&&x.src&&!P.box.links.some(a=>a.h.endsWith('/'+x.src))) why.push('a verify link does not point at the crossing it names'); } }
+  for(const [j,lab] of [[P.fromLight,'header light'],[P.fromLink,'fee link']]){
+    if(!j) why.push('the '+lab+' is not on the page');
+    else if(!(j.open&&j.onCard&&j.top!=null&&j.top>=0&&j.top<=j.nav+90)) why.push('the '+lab+' does not land on the CPOOL card with its check open'); }
+  return {why, info}; }
+/* BRIDGE-AUDIT-END */
 
 /* Bitcoin: what mempool.space recommends now, in sat/vB (blockstream's estimates when it does not answer) */
 async function btcFeeNow(){

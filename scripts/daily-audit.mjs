@@ -435,6 +435,17 @@ const feed=await pg.evaluate(()=>{ const L=[...document.querySelectorAll('.fpd-f
   +(feed.mine?', each marked YOU and "your swap": '+(feed.marked===feed.mine?'yes':'NO ('+feed.marked+')'):'')+' · trades noted as coming after a swap of yours: '+feed.after);
 const logLines=await pg.evaluate(()=>[...document.querySelectorAll('#logBody > *')].map(e=>e.innerText.replace(/\s+/g,' ').trim()).filter(t=>/Live\/relay check/.test(t)));
 if(!LOCKED) for(const t of logLines) notes.push('event log: '+t); else if(logLines.length) notes.push(logLines.length+' live/relay check line(s) in the event log');
+/* CPOOL's Ethereum ⇄ Solana bridge (v40.26), every day: the same check as the track audit, its code read
+   from track-audit.mjs (one implementation): the page's header light, fee link, card chip and check
+   against the chains and LayerZero read again here. States, ages and counts only. */
+{ try{ const src=fs.readFileSync(new URL('./track-audit.mjs', import.meta.url),'utf8');
+    const blk=src.slice(src.indexOf('/* BRIDGE-AUDIT-START */'), src.indexOf('/* BRIDGE-AUDIT-END */'));
+    const ageB=ms=>ms==null||!isFinite(ms)?'—':ms<90e3?Math.round(ms/1e3)+' s':ms<5400e3?Math.round(ms/60e3)+' min':(ms/3600e3).toFixed(1)+' h';
+    const getB=async u=>{ for(let k=0;k<3;k++){ try{ const r=await fetch(u,{signal:AbortSignal.timeout(20000),headers:{accept:'application/json'}}); if(r.ok) return await r.json(); }catch(e){} await new Promise(f=>setTimeout(f,800*(k+1))); } return null; };
+    const {bridgePage, bridgeIndep, bridgeVerdict}=new Function('age','get', blk+'\nreturn {bridgePage, bridgeIndep, bridgeVerdict};')(ageB,getB);
+    const P=await bridgePage(pg), I=await bridgeIndep(), V=bridgeVerdict(P, I, relay&&relay.bridge, Date.now());
+    (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the page and the chains agree')+(V.info.length?' · '+V.info.join(' · '):''));
+  }catch(e){ WARN('CPOOL bridge: the check could not run ('+String(e&&e.name||'error').replace(/[^A-Za-z]/g,'')+')'); } }
 // close the page the way a person closing the tab would, so the access log ends this visit now
 // instead of showing it live for a few minutes after the run
 try{ await pg.close({runBeforeUnload:true}); await new Promise(r=>setTimeout(r,1500)); }catch(e){}

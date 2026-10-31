@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import fs from 'fs';
 import { makeRpc, syncPositionLedger, valueDeposits, summarizeLedger } from './sol-history.mjs';
 import { initLock, lockOn, readJ, writeJ, isSealed, quietLogs, inboxOpen, inboxPublic} from './lock.mjs';
+import {readBridge} from './bridge.mjs';
 import { suiHoldings, tronHoldings, IKA_TYPE } from './alt-chains.mjs';
 import { scanNfts, nftSummary, openseaOn } from './nfts.mjs';
 const OUT='deck-r7k4x9';
@@ -228,7 +229,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -1954,6 +1955,18 @@ const main=async()=>{
   const blockNum=blockNums.ethereum;
   let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
   let btcFee=null; try{ btcFee=await readBtcFee(); }catch(e){ logErr('btcFee',e); }
+  /* CPOOL's Ethereum <-> Solana bridge (scripts/bridge.mjs): read about every half hour, from both
+     chains and LayerZero Scan, public data only. Between reads the last reading is carried forward
+     with its own time, so the page can say how old it is; a read that fails or runs over a minute
+     keeps the last one and is tried again about ten minutes later. */
+  let bridge=(blockCache.bridge&&blockCache.bridge.out)||null;
+  if(!bridge||Date.now()-(blockCache.bridge.at||0)>=25*60e3){
+    try{
+      const nb=await Promise.race([readBridge({eth, sol, get:u=>getJson(u,15000)}, bridge),
+        new Promise((_,no)=>setTimeout(()=>no(new Error('bridge read over 60 s')),60000))]);
+      if(nb&&Array.isArray(nb.routes)){ bridge=nb; blockCache.bridge={at:Date.now(), out:nb}; }
+    }catch(e){ logErr('bridge',e); blockCache.bridge={...(blockCache.bridge||{}), at:Date.now()-15*60e3}; }
+  }
   let ethUsd=null,btcUsd=null,ethUsdChg24=null,ethUsdAgo=null,btcUsdChg24=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
   try{
@@ -4148,7 +4161,7 @@ const main=async()=>{
       if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee,
+    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
     console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);
