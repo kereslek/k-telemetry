@@ -247,3 +247,22 @@ say(''); say('— verdict —');
 for(const [l,v] of verdicts) say((v==='ok'?'ok   ':v==='warn'?'WARN ':'?    ')+l);
 const warn=verdicts.filter(v=>v[1]==='warn').length, ok=verdicts.filter(v=>v[1]==='ok').length;
 say('bridge Ethereum ↔ Solana: '+(warn?'NOT CLEARLY OPEN ('+warn+' check(s) failed)':ok>=5?'OPEN (every check that could be read passed)':'UNCLEAR (too few checks could be read)'));
+
+/* ---------- the relay's reader (scripts/bridge.mjs), run here first on the same public data ----------
+   States, checks and times only: never a transaction hash or a message id. */
+say(''); say('— the relay’s reader (bridge.mjs) —');
+{ const {readBridge}=await import('./bridge.mjs');
+  const io={eth:(m,p)=>eth(m,p), sol:(m,p)=>sol(m,p), get:u=>get(u)};
+  const d=(t,v)=>t?when(t)+(v===false?' (NOT verified)':v?' (verified on both chains)':''):'—';
+  for(const pass of [1,2]){
+    const B=await readBridge(io, pass===2?globalThis.__b1:null); if(pass===1) globalThis.__b1=B;
+    for(const r of B.routes){ const c=r.checks||{};
+      say('read '+pass+': '+r.from+' → '+r.to+' · state '+(r.state||'unknown')+(r.why&&r.why.length?' ('+r.why.join('; ')+')':'')
+        +' · checks: '+Object.entries(c).map(([k,v])=>k+'='+(v==null?'?':v)).join(' '));
+      say('  last in (to Solana): '+d(r.last&&r.last.in&&r.last.in.t, r.last&&r.last.in&&r.last.in.verified)+(r.last&&r.last.in&&r.last.in.note?' · '+r.last.in.note:'')
+        +' · last out (to Ethereum): '+d(r.last&&r.last.out&&r.last.out.t, r.last&&r.last.out&&r.last.out.verified)+(r.last&&r.last.out&&r.last.out.note?' · '+r.last.out.note:''));
+      say('  30 days: '+(r.n30?r.n30.to+' to Solana · '+r.n30.back+' back'+(r.n30.partial?' (at least)':''):'—')+' · waiting over 30 min: '+(r.waiting??'—')
+        +' · supply covered: '+(c.supply==null?'?':c.supply)+' ('+(r.supply&&r.supply.sol!=null?r.supply.sol.toFixed(2):'—')+' on Solana, '+(r.supply&&r.supply.locked!=null?r.supply.locked.toFixed(2):'—')+' locked)'
+        +' · open since '+(r.since?new Date(r.since).toISOString().slice(0,10):'—')+' · history: '+(r.hist||[]).map(h=>new Date(h.t).toISOString().slice(0,10)+(h.open?' open':' shut')).join(', ')
+        +(r.pending?' · newer crossing not yet verified: '+r.pending:'')+(r.error?' · error: '+r.error:''));
+    } } }
