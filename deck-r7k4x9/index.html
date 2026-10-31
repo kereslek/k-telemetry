@@ -172,6 +172,9 @@
   .bbox a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent);margin-left:6px}
   .bbox .next{margin-top:6px;padding-top:5px;border-top:1px solid var(--line-soft);opacity:.85}
   header.bridge-open{z-index:60}
+  /* a card with the chip wraps its title row instead of squeezing it: on a laptop's three-across cards the
+     chip drops to a second line (as on a phone), the pair name stays on one line and nothing spills sideways */
+  .chead.chead-br{flex-wrap:wrap;row-gap:6px}
   /* small phones: a smaller dial, so the title and the dial share the row without crowding */
   @media(max-width:400px){ .gdial{width:24px;height:14px;margin:-2px 0 -2px auto} }
   @media(max-width:360px){ .px[data-gch] .k{gap:3px} .gdial{width:22px;height:13px} }
@@ -2660,7 +2663,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.27';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.28';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -10570,7 +10573,8 @@ function renderCards(){
     link.href = isSol ? 'https://raydium.io/portfolio/?position_tab=concentrated' : 'https://app.uniswap.org/positions/v3/ethereum/'+p.id;
     link.target='_blank'; link.rel='noopener';
     /* the bridge that brings arbitrage to a Solana CPOOL pool: open or not, and its last crossing */
-    if(isSol&&[p.m0,p.m1].some(m=>m&&String(m.symbol).toUpperCase()==='CPOOL')) head.insertAdjacentHTML('beforeend', bridgeChip(p.id));
+    if(isSol&&[p.m0,p.m1].some(m=>m&&String(m.symbol).toUpperCase()==='CPOOL')){ const bc=bridgeChip(p.id);
+      if(bc){ head.classList.add('chead-br'); head.insertAdjacentHTML('beforeend', bc); } }
     head.append(link);
     head.append(el('span','chip '+SEV_CHIP[sev],'<span class="ic">'+SEV_ICON[sev]+'</span>'+SEV_LABEL[sev]));
     card.append(head);

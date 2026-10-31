@@ -398,6 +398,14 @@ async function bridgePage(pg){
       return {open:!!bx, onCard:!!card, top:card?card.getBoundingClientRect().top:null, nav:parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34}; });
     await pg.keyboard.press('Escape'); await pg.waitForTimeout(150); return r; };
   P.fromLight=await jump('#hBridge'); P.fromLink=await jump('.br-link');
+  /* the chip fits its card on a phone and on a laptop (three cards across): the title row may wrap, but nothing spills
+     out of the card and the pair name is not squeezed onto two lines */
+  const vp=pg.viewportSize(); P.fit=[];
+  for(const w of [390,1440]){ await pg.setViewportSize({width:w,height:w<500?844:900}); await pg.waitForTimeout(700);
+    P.fit.push(await pg.evaluate(w=>({w, cards:[...document.querySelectorAll('#cards .card .brg')].map(c=>{ const card=c.closest('.card'), h=c.closest('.chead'), q=card.getBoundingClientRect(), pr=h&&h.querySelector('.pair');
+      const fs=pr?parseFloat(getComputedStyle(pr).fontSize):0;
+      return {spill:!!h&&[...h.children].some(k=>k.getBoundingClientRect().right>q.right+1), one:!pr||pr.getBoundingClientRect().height<fs*1.9}; })}), w)); }
+  if(vp) await pg.setViewportSize(vp);
   return P; }
 /* the verdict: one list of what disagrees, and what was seen */
 function bridgeVerdict(P, I, relayB, nowMs){
@@ -411,6 +419,9 @@ function bridgeVerdict(P, I, relayB, nowMs){
   if(P.link!==P.st) why.push('the fee link shows '+(P.link||'nothing')+', not '+P.st);
   if(P.chips.some(c=>c.bs!==P.st)) why.push('a card chip shows a different state');
   const on=new Set(P.chips.map(c=>c.card)); if(P.sol.length!==on.size||P.sol.some(id=>!on.has(id))) why.push('the chip is not on exactly the Solana CPOOL cards');
+  /* said only when it fails, and without naming a pool or token */
+  for(const f of P.fit||[]){ if(f.cards.some(c=>c.spill)) why.push('at '+f.w+' px the bridge chip spills its card\'s title row out of the card');
+    if(f.cards.some(c=>!c.one)) why.push('at '+f.w+' px the bridge chip squeezes a pair name onto two lines'); }
   info.push('page: '+P.st);
   if(I.open==null) info.push('the chains’ configuration could not all be read here');
   else { const pageOpen=P.raw.state==='open'||P.raw.state==='quiet'; if(I.open!==pageOpen) why.push('the page says '+(P.raw.state||'unknown')+' but the chains read here say '+(I.open?'open':'closed ('+I.why.join(', ')+')'));
