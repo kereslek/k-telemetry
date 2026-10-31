@@ -267,6 +267,70 @@ say(''); say('— the relay’s reader (bridge.mjs) —');
         +(r.pending?' · newer crossing not yet verified: '+r.pending:'')+(r.error?' · error: '+r.error:''));
     } } }
 
+/* ---------- the relay's own Solana path: why the live reading may differ from the run above ----------
+   The relay asks its keyed endpoint first, counts a null transaction as a miss on the archive list and goes
+   through scripts/sol-history.mjs's makeRpc. Outcomes per endpoint only: never a hash, a signature, an amount
+   or an endpoint's address (a keyed endpoint is called "keyed"; a host in an error is blanked). */
+say(''); say('— the relay’s Solana path, for the last crossing to Solana —');
+{ const {readBridge}=await import('./bridge.mjs'); const {makeRpc}=await import('./sol-history.mjs');
+  const KEYED=(process.env.SOL_RPC_URL||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const LIVE=[...KEYED,'https://solana-rpc.publicnode.com','https://api.mainnet-beta.solana.com'], ARCH=[...KEYED,'https://api.mainnet-beta.solana.com'];
+  const solLive=makeRpc(LIVE,{timeout:20000}), solArchive=makeRpc(ARCH,{timeout:25000,nullIsMiss:true});
+  const HIST=new Set(['getSignaturesForAddress','getTransaction','getBlock','getBlockTime']);
+  const rsol=(m,p)=>(HIST.has(m)?solArchive:solLive)(m,p);
+  const getJson=async(u,timeout=15000)=>{ const r=await fetch(u,{signal:AbortSignal.timeout(timeout)}); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); };
+  const clean=e=>String(e&&e.message||e).replace(/https?:\/\/\S+/g,'<url>').replace(/\b[a-z0-9-]+(\.[a-z0-9-]+)+\.[a-z]{2,}\b/gi,'<host>').slice(0,90);
+  const name=u=>KEYED.includes(u)?'keyed':new URL(u).host;
+  const A='0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992', MINT='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
+  say('keyed Solana endpoint configured: '+(KEYED.length?'yes ('+KEYED.length+')':'no'));
+  const lz=await getJson('https://scan.layerzero-api.com/v1/messages/oapp/'+EID_ETH+'/'+A+'?limit=100').catch(e=>{ say('LayerZero (relay fetch, no headers): '+clean(e)); return null; });
+  const items=(lz&&Array.isArray(lz.data))?lz.data:[];
+  say('LayerZero answered the relay’s plain fetch: '+(lz?items.length+' messages':'no'));
+  const del=items.filter(m=>m.pathway&&+m.pathway.srcEid===EID_ETH&&+m.pathway.dstEid===EID_SOL&&/DELIVERED/i.test(String(m.status&&m.status.name||m.status)))
+    .sort((a,b)=>Date.parse(b.created)-Date.parse(a.created));
+  const m=del[0], sig=m&&m.destination&&m.destination.tx&&m.destination.tx.txHash, srcTx=m&&m.source&&m.source.tx&&m.source.tx.txHash;
+  say('last delivered crossing to Solana: '+(m?when(Date.parse(m.created)):'none found')+(sig?' · its Solana signature is '+String(sig).length+' characters':''));
+  if(sig){
+    const raw=async(u,method,params)=>{ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(25000)});
+      if(!r.ok) return 'HTTP '+r.status; const j=await r.json(); if(j.error) return 'error '+(j.error.code??'')+' '+clean(j.error.message||''); return j.result; }catch(e){ return 'failed: '+clean(e); } };
+    const TXP=[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}], STP=[[sig],{searchTransactionHistory:true}];
+    let txAny=null;
+    for(const u of [...new Set([...LIVE,...ARCH])]){
+      const t=await raw(u,'getTransaction',TXP), st=await raw(u,'getSignatureStatuses',STP);
+      if(t&&typeof t==='object'&&!txAny) txAny=t;
+      const s0=st&&typeof st==='object'&&st.value?st.value[0]:undefined;
+      say('  '+name(u)+': getTransaction '+(t===null?'null':typeof t==='object'?'contents':t)+' · getSignatureStatuses '
+        +(typeof st==='string'?st:s0===null?'value null':s0?(s0.confirmationStatus||'?')+(s0.err?' with an error':' no error'):'unexpected shape'));
+    }
+    let wt=null, ws=null;
+    try{ wt=await rsol('getTransaction',TXP); }catch(e){ wt='threw: '+clean(e); }
+    try{ ws=await rsol('getSignatureStatuses',STP); }catch(e){ ws='threw: '+clean(e); }
+    const w0=ws&&typeof ws==='object'&&ws.value?ws.value[0]:undefined;
+    say('  through the relay’s wrapper: getTransaction '+(wt===null?'null':typeof wt==='object'?'contents':wt)+' · getSignatureStatuses '
+      +(typeof ws==='string'?ws:w0===null?'value null':w0?(w0.confirmationStatus||'?')+(w0.err?' with an error':' no error'):'unexpected shape'));
+    const tx=(wt&&typeof wt==='object')?wt:txAny;
+    if(tx&&srcTx){ // does the Solana side carry the amount the Ethereum event names? (an answer, never the amount)
+      const rc=await eth('eth_getTransactionReceipt',[srcTx]);
+      const lg=((rc&&rc.logs)||[]).find(l=>String(l.address).toLowerCase()===A&&String(l.topics&&l.topics[0]).toLowerCase()===T.sent);
+      const amt=lg?word(lg.data,2):null, want=amt!=null?amt/10n**9n:null;
+      const ins=[...((tx.meta&&tx.meta.innerInstructions)||[]).flatMap(x=>x.instructions||[]), ...((tx.transaction&&tx.transaction.message&&tx.transaction.message.instructions)||[])];
+      const kinds=ins.filter(i=>i&&i.parsed&&i.parsed.info&&i.parsed.info.mint===MINT).map(i=>i.parsed.type);
+      const mints=ins.filter(i=>i&&i.parsed&&i.parsed.info&&i.parsed.info.mint===MINT&&/^mintTo/.test(i.parsed.type)).map(i=>BigInt(i.parsed.info.amount||(i.parsed.info.tokenAmount&&i.parsed.info.tokenAmount.amount)||0));
+      say('  Ethereum event found: '+(lg?'yes':'no')+' · CPOOL instructions on Solana: '+(kinds.join(', ')||'none parsed')+' · a mint of the Ethereum amount: '+(want==null?'—':mints.some(a=>a===want)?'yes':mints.length?'NO (a mint of another amount)':'no mint seen')
+        +' · transaction error: '+(tx.meta&&tx.meta.err?'yes':'no'));
+    }
+    // the relay's reader, end to end, with the relay's Solana path, from a reading whose crossing to Solana is unverified
+    const prev={v:1, t:now-30*60e3, routes:[{id:'eth-sol', last:{in:{t:Date.parse(m.created), src:srcTx, dst:sig, verified:false, note:'Solana transaction not read'}, out:null}, hist:[]}]};
+    const t0=Date.now(); let B=null, err=null;
+    try{ B=await readBridge({eth:(mm,pp)=>eth(mm,pp), sol:rsol, get:u=>getJson(u,15000)}, prev); }catch(e){ err=clean(e); }
+    const secs=((Date.now()-t0)/1000).toFixed(1), r=B&&B.routes&&B.routes[0], li=r&&r.last&&r.last.in;
+    say('  the relay’s reader with this path: '+(err?'threw: '+err:li?(li.verified?'verified'+(li.via==='status'?' by its status':' on both chains'):'NOT verified ('+(li.note||'no note')+')'):'no crossing')
+      +' · took '+secs+' s (the relay gives it 60 s)'+(r&&r.pending?' · pending '+r.pending:''));
+    say('  calls through the relay’s wrapper: live '+JSON.stringify(solLive.stats&&{calls:solLive.stats.calls,throttled:solLive.stats.throttled,failed:solLive.stats.failed,retries:solLive.stats.retries})
+      +' · archive '+JSON.stringify(solArchive.stats&&{calls:solArchive.stats.calls,throttled:solArchive.stats.throttled,failed:solArchive.stats.failed,retries:solArchive.stats.retries}));
+  }
+}
+
 /* ---------- is the Ethereum → Solana direction usable right now? A live quote from the adapter ----------
    quoteSend asks the bridge, as a sender would, what sending 1 CPOOL to Solana costs. It only answers
    if the route, the verifiers and the executor are all configured: a quote is a send that could go now. */
