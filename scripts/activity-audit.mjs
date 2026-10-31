@@ -35,6 +35,37 @@ console.log('since',new Date(START).toISOString(),'· wallets: '+WE.length+' Eth
 const ETH_RPC=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth'];
 async function ecall(to,data){ for(const u of ETH_RPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to,data},'latest']})}); if(r&&r.result) return r.result; } return null; }
 const NPM='0xc36442b4a4522e871399cd717abdd847ab11fe88', FACT='0x1f98431c8ad98523631ae4a59f267346ea31f984';
+/* the EVM chains the relay reads positions on (its CHAINS): a position is checked on its own chain,
+   with that chain's position manager; the same token id on another chain is a different position */
+const CH={ethereum:{rpcs:ETH_RPC, npm:NPM, bph:300},
+  arbitrum:{rpcs:['https://arbitrum-one-rpc.publicnode.com','https://arb1.arbitrum.io/rpc','https://arbitrum.drpc.org'], npm:NPM, bph:14400},
+  base:{rpcs:['https://base-rpc.publicnode.com','https://mainnet.base.org','https://base.drpc.org'], npm:'0x03a520b32c04bf3beef7beb72e919cf822ed34f1', bph:1800},
+  optimism:{rpcs:['https://optimism-rpc.publicnode.com','https://mainnet.optimism.io','https://optimism.drpc.org'], npm:NPM, bph:1800},
+  polygon:{rpcs:['https://polygon-bor-rpc.publicnode.com','https://polygon-rpc.com','https://polygon.drpc.org'], npm:NPM, bph:1700}};
+const rpcOn=async(ch,method,params)=>{ for(const u of CH[ch].rpcs){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})}); if(r&&r.result!==undefined) return r.result; } return null; };
+const EV={collect:'0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01', increase:'0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f', decrease:'0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4'};
+const idTopic=id=>'0x'+BigInt(id).toString(16).padStart(64,'0');
+// a position's harvests, top-ups and withdrawals since START, from its chain's position manager; null when a stretch could not be read
+async function npmEvents(ch,id){
+  const C=CH[ch]; if(!C) return null; const tip=parseInt(await rpcOn(ch,'eth_blockNumber',[]),16); if(!(tip>0)) return null;
+  const from=Math.max(0,tip-Math.ceil((Date.now()-START)/3600e3*C.bph)-50), step=ch==='ethereum'?9000:10000, out={collect:[],increase:[],decrease:[]};
+  for(let a=from;a<=tip;a+=step){
+    const r=await rpcOn(ch,'eth_getLogs',[{address:C.npm,fromBlock:'0x'+a.toString(16),toBlock:'0x'+Math.min(tip,a+step-1).toString(16),topics:[[EV.collect,EV.increase,EV.decrease],idTopic(id)]}]);
+    if(!Array.isArray(r)) return null;
+    for(const l of r){ const k=Object.keys(EV).find(k=>EV[k]===l.topics[0]); if(k) out[k].push(l); } }
+  return out;
+}
+/* A request from the owner, sealed to the deck's inbox: the positions they say they touched. Only the
+   passphrase opens it (the same key pair as lock.mjs's inbox), and the positions are never printed. */
+const X_PKCS8=Buffer.from('302e020100300506032b656e04220420','hex'), X_SPKI=Buffer.from('302a300506032b656e032100','hex');
+function inboxOpen(env){
+  const seed=Buffer.from(crypto.hkdfSync('sha256', KEY, Buffer.alloc(0), Buffer.from('kt-inbox-x25519'), 32));
+  const priv=crypto.createPrivateKey({key:Buffer.concat([X_PKCS8, seed]), format:'der', type:'pkcs8'});
+  const epk=Buffer.from(env.epk,'base64'), pub=crypto.createPublicKey({key:Buffer.concat([X_SPKI, epk]), format:'der', type:'spki'});
+  const k=Buffer.from(crypto.hkdfSync('sha256', crypto.diffieHellman({privateKey:priv, publicKey:pub}), epk, Buffer.from('kt-inbox'), 32));
+  const all=Buffer.from(env.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm', k, Buffer.from(env.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
+  return Buffer.concat([d.update(all.subarray(0,all.length-16)), d.final()]).toString('utf8');
+}
 const ownEth=new Map((data.eth||[]).map(p=>[String(p.pool).toLowerCase(),'#'+p.id+' '+(p.pairLabel||'')]));
 for(const id of Object.keys(fees.closedPos||{}).filter(x=>/^\d+$/.test(x))){
   const r=await ecall(NPM,'0x99fbab88'+BigInt(id).toString(16).padStart(64,'0')); if(!r) continue;
@@ -47,6 +78,7 @@ console.log('own pools: '+ownEth.size+' Ethereum, '+(data.sol||[]).length+' Sola
 const found=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
 const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822', XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; let solSeen=0, solMine=0;
 // ---- Ethereum
+const lcx={n:0, tx:new Set(), last:0};   // LCX arriving in the deck's wallets today (counts and venues only)
 const BS='https://eth.blockscout.com/api/v2', SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
 for(const w of WE){
   let url=BS+'/addresses/'+w+'/transactions', n=0;
@@ -84,6 +116,7 @@ for(const w of WE){
     const r=await j(tu); if(!r) break; let older=false;
     for(const x of r.items||[]){
       if(Date.parse(x.timestamp)<START){ older=true; continue; }
+      if(x.token&&String(x.token.symbol).toUpperCase()==='LCX'&&String(x.to&&x.to.hash).toLowerCase()===w){ lcx.n++; lcx.tx.add(x.transaction_hash); lcx.last=Math.max(lcx.last,Date.parse(x.timestamp)||0); }
       const h=x.transaction_hash; if(seenTx.has(h)) continue; seenTx.add(h); ethIn++;
       const tx=await j(BS+'/transactions/'+h); if(!tx||String(tx.from&&tx.from.hash).toLowerCase()===w) continue;
       const lg=await j(BS+'/transactions/'+h+'/logs'); await sleep(150);
@@ -224,14 +257,12 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
 /* Ethereum positions: harvests, tokens added and withdrawn since START (from the position manager's
    own events), and whether each position's booked fee total ever fell — a harvest moves fees from
    unclaimed to collected, a top-up adds principal; neither may take fees away. */
-{ const EV={collect:'0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01', increase:'0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f', decrease:'0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4'};
-  const erpc=async(method,params)=>{ for(const u of ETH_RPC){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})}); if(r&&r.result!==undefined) return r.result; } return null; };
-  const tip=parseInt(await erpc('eth_blockNumber',[]),16), from=tip-Math.ceil((Date.now()-START)/12000)-50;
-  const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
+{ const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
   let quiet=0;
   for(const p of data.eth||[]){ const id=String(p.id); if(!/^\d+$/.test(id)) continue;
-    const topic='0x'+BigInt(id).toString(16).padStart(64,'0'), n={};
-    for(const [name,t0] of Object.entries(EV)){ let c=0; for(let a=from;a<=tip;a+=9000){ const r=await erpc('eth_getLogs',[{address:NPM,fromBlock:'0x'+a.toString(16),toBlock:'0x'+Math.min(tip,a+8999).toString(16),topics:[t0,topic]}]); if(Array.isArray(r)) c+=r.length; } n[name]=c; }
+    const ev=await npmEvents(CH[p.chain]?p.chain:'ethereum', id);
+    if(!ev){ console.log('note an Ethereum position: its position-manager events today could not be read'); continue; }
+    const n={collect:ev.collect.length, increase:ev.increase.length, decrease:ev.decrease.length};
     const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
     const ownOnly=fell&&takenBy.has(String(p.pool||'').toLowerCase());
     if(!(n.collect||n.increase||n.decrease)){ quiet++; continue; }
@@ -256,6 +287,50 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
 { const P=await j(PULSE+'/m?n=1440&k='+TOKEN);
   for(const l of ownSwapLines({posHist:fees.posHist, selfDone:fees.selfDone, selfPend:costs&&costs.selfPend, rec:positionsFrom(data),
     rows:(P&&Array.isArray(P.mins))?P.mins:[], start:START, now:Date.now(), normId})) console.log(l); }
+/* What the owner said they did, checked position by position (the sealed request): whether the deck
+   tracks it and where it is, today's harvests, top-ups and withdrawals on its own chain, whether its
+   booked fee total ever fell, and whether the relay read it after; for a withdrawal, the liquidity left
+   as a share of what was there, whether the deck shows that, and where the tokens went. */
+if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.env.ASK))); }catch(e){}
+  if(!q||!Array.isArray(q.pos)) console.log('note the sealed request could not be opened');
+  else { console.log('— what you said you did (the positions you named stay sealed) —');
+    const evmW=new Set(W.filter(x=>!['solana','sui','tron'].includes(x.chain)).map(x=>String(x.address).toLowerCase()));
+    const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
+    for(const it of q.pos){ const id=String(it.id); if(!/^\d+$/.test(id)) continue;
+      const lab=it.did==='harvest'?'the position you harvested':it.did==='withdraw'?'the position you partly withdrew':'a position you named';
+      const p=(data.eth||[]).find(x=>String(x.id)===id); let ch=p?(CH[p.chain]?p.chain:'ethereum'):null, owner=null;
+      if(!p) for(const c of Object.keys(CH)){ const r=await rpcOn(c,'eth_call',[{to:CH[c].npm,data:'0x6352211e'+idTopic(id).slice(2)},'latest']);
+        const o=typeof r==='string'&&r.length>=66?'0x'+r.slice(26,66).toLowerCase():null; if(o&&evmW.has(o)){ ch=c; owner=o; break; } }
+      const ev=ch?await npmEvents(ch,id):null, parts=['tracked by the deck: '+(p?'yes':'NO')+(ch?' · on '+ch:'')];
+      if(!p) parts.push(ch?'held by one of your wallets'+(HOLD.has(owner)?', a holdings-only one (the deck reads what those hold, not their positions)':''):'not held by any of your wallets on the chains the deck reads');
+      parts.push(ev?'today: harvests '+ev.collect.length+', tokens added '+ev.increase.length+', tokens withdrawn '+ev.decrease.length:'its events today could not be read');
+      if(p){ const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
+        parts.push('its booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings)');
+        const last=ev?Math.max(0,...[...ev.collect,...ev.decrease,...ev.increase].map(l=>parseInt(l.blockNumber,16))):0;
+        if(last){ const bk=await rpcOn(ch,'eth_getBlockByNumber',['0x'+last.toString(16),false]), ts=bk?parseInt(bk.timestamp,16)*1000:0;
+          parts.push('the relay read it after your transaction: '+(ts?((data.t||0)>ts?'yes':'not yet'):'unknown')); }
+        if(it.did==='harvest'&&p.feesEverUsd>0) parts.push('unclaimed now: '+Math.round((p.feesUsd||0)/p.feesEverUsd*100)+'% of its lifetime fees'); }
+      if(it.did==='withdraw'&&ev&&ev.decrease.length){
+        const first=Math.min(...ev.decrease.map(l=>parseInt(l.blockNumber,16)));
+        const liqAt=async tag=>{ const r=await rpcOn(ch,'eth_call',[{to:CH[ch].npm,data:'0x99fbab88'+idTopic(id).slice(2)},tag]); return typeof r==='string'&&r.length>=2+64*8?BigInt('0x'+r.slice(2+64*7,2+64*8)):null; };
+        const before=await liqAt('0x'+(first-1).toString(16)), now=await liqAt('latest');
+        if(before&&now!=null) parts.push('liquidity now: '+(Number(now*10000n/before)/100).toFixed(1)+'% of what it was before');
+        if(p&&now!=null) parts.push('the deck shows that liquidity: '+(String(p.liq)===now.toString()?'yes':'NO'));
+        const rec=ev.collect.map(l=>'0x'+String(l.data).slice(26,66).toLowerCase());
+        if(rec.length) parts.push('the withdrawn tokens went to one of your wallets: '+(rec.every(x=>evmW.has(x))?'yes':'NO')); }
+      console.log((p&&ev?'ok   ':'WARN ')+lab+': '+parts.join(' · ')); } } }
+/* LCX that arrived today, by the kind of venue it came through (never which pool or wallet), and
+   whether the relay's wallet balances were read after the last of it */
+if(lcx.n){ const v={own:0,v3:0,v4:0,v2:0,other:0};
+  for(const h of lcx.tx){ const lg=await j(BS+'/transactions/'+h+'/logs'); await sleep(150); const items=(lg&&lg.items)||[];
+    const sw=items.filter(x=>x.topics&&x.topics[0]===SWAP_V3);
+    if(sw.some(x=>ownEth.has(String(x.address&&x.address.hash).toLowerCase()))) v.own++;
+    else if(sw.length) v.v3++; else if(items.some(x=>x.topics&&x.topics[0]===SWAP_V4)) v.v4++; else if(items.some(x=>x.topics&&x.topics[0]===SWAP_V2)) v.v2++; else v.other++; }
+  const it=data.idle&&data.idle.t, held=!!(data.idle&&(data.idle.rows||[]).some(r=>String(r.symbol).toUpperCase()==='LCX'&&r.amount>0));
+  console.log(((it&&it>=lcx.last)?'ok   ':'WARN ')+'LCX arriving in your Ethereum wallets today: '+lcx.n+' transfer(s) in '+lcx.tx.size+' transaction(s) · through one of your own pools '+v.own
+    +', another Uniswap v3 pool '+v.v3+', Uniswap v4 '+v.v4+', a v2-style pool '+v.v2+', another venue (an aggregator or a filled order) '+v.other
+    +' · the relay\u2019s wallet balances read after the last of it: '+(it?(it>=lcx.last?'yes':'not yet'):'n/a')+' · LCX among them: '+(held?'yes':'no')); }
+else console.log('LCX arriving in your Ethereum wallets today: 0');
 // the relay's errors by kind: the first word of each, letters only, as the relay's own log counts them
 { const kinds={}; for(const e of data.errors||[]){ const k=(String(e).match(/^[A-Za-z]+/)||['other'])[0]; kinds[k]=(kinds[k]||0)+1; }
   console.log('positions now: '+(data.eth||[]).length+' Ethereum, '+(data.sol||[]).length+' Solana · relay errors: '+((data.errors||[]).length)

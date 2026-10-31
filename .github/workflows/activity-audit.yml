@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       start: { description: 'from (ISO time, UTC)', required: false, default: '' }
+      ask: { description: 'positions you touched, sealed to the deck inbox (unreadable here)', required: false, default: '' }
 permissions:
   contents: read
 jobs:
@@ -25,3 +26,4 @@ jobs:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
           START: ${{ github.event.inputs.start || '' }}   # empty: since midnight Budapest today
+          ASK: ${{ github.event.inputs.ask || '' }}        # sealed: only the passphrase opens it
