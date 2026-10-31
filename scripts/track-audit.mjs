@@ -131,7 +131,7 @@ const P=await pg.evaluate(()=>{
     worst:off.length?Math.max(...off.map(p=>Math.abs(p.poolGap.pct))):null};
   /* every gauge as drawn: the card's RANGE POSITION dial (needle and figure), the range bar's cursor
      under it, the move to each edge, and where the market price would put the needle for a pool
-     that is off the market; plus the momentum dials and the gas dials */
+     that is off the market; plus the momentum dials and the three gas dials */
   const gauges=[...document.querySelectorAll('#cards .card')].map(c=>{
     const p=[...state.positions.values()].find(q=>String(q.id)===c.dataset.id); if(!p) return null;
     const svg=c.querySelector('.gaugebox svg'), txt=svg?(svg.querySelector('text')||{}).textContent:null;
@@ -148,36 +148,41 @@ const P=await pg.evaluate(()=>{
   }).filter(Boolean);
   const M=state.momentum, mo=['#moTileDial','#moHeroDial'].map(s=>{ const n=document.querySelector(s+' .mo-needle'); const m=n&&/rotate\((-?[\d.]+)deg\)/.exec(n.style.transform); return m?+m[1]:null; });
   /* the GAS dials as drawn, against the page's own model run again on the same readings, with the parts
-     that matter worked out here independently: where the needle sits for what a re-range costs now (a
-     log scale from 1 cent to $30) and the lit band (under $1, $1-5, over $5), Ethereum's usual for this
-     hour (the median of that Budapest hour's readings over 14 days, six at least, else all of them), the
-     lowest stretch of the next 24 hours, and Solana's base fee (three signatures at 5,000 lamports);
-     then each tile tapped, its box read, and tapped again */
+     that matter worked out here independently: where the needle sits for what a re-range (on Bitcoin a
+     typical send) costs now (a log scale from 1 cent to $30) and the lit band (under $1, $1-5, over $5),
+     Ethereum's and Bitcoin's usual for this hour (the median of that Budapest hour's readings over 14
+     days, six at least, else all of them), the lowest stretch of the next 24 hours (named once 18 hours
+     have a usual), and Solana's base fee (three signatures at 5,000 lamports); then each tile tapped,
+     its box read, and tapped again */
   const fx=typeof feeModel!=='function'||typeof gasBand!=='function'?null:(()=>{
-    const E=feeModel('eth'), S=feeModel('sol'), now=Date.now(), H=state.history||[];
+    const E=feeModel('eth'), S=feeModel('sol'), B=typeof btcCostUsd==='function'?feeModel('btc'):null, now=Date.now(), H=state.history||[];
     const hf=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Budapest',hour:'numeric',hourCycle:'h23'});
     const bh=t=>+hf.formatToParts(new Date(t)).find(p=>p.type==='hour').value, HH=h=>String(h).padStart(2,'0')+':00';
     const md=a=>{ const s=[...a].sort((x,y)=>x-y); return s.length?s[Math.floor(s.length/2)]:null; };
-    const g=H.filter(x=>x&&x.t>=now-14*864e5&&typeof x.g==='number'&&x.g>0), by=Array.from({length:24},()=>[]); for(const x of g) by[bh(x.t)].push(x.g);
-    const hu=by.map(a=>a.length>=6?md(a):null), h0=bh(now), usualG=hu[h0]??md(g.map(x=>x.g));
-    const hrs=Array.from({length:24},(_,i)=>(h0+i)%24), nx=hrs.map(h=>hu[h]), have=nx.filter(v=>v>0), lo=have.length?Math.min(...have):null;
-    let best=null, run=null; nx.forEach((v,i)=>{ if(lo!=null&&v>0&&v<=1.3*lo){ run=run?[run[0],i]:[i,i]; if(!best||run[1]-run[0]>best[1]-best[0]) best=run; } else run=null; });
-    const lowTxt=!best?null:best[0]===0?'lowest now, until '+HH((hrs[best[1]]+1)%24):'lowest '+HH(hrs[best[0]])+'\u2013'+HH((hrs[best[1]]+1)%24);
+    const hours=k=>{ const g=H.filter(x=>x&&x.t>=now-14*864e5&&typeof x[k]==='number'&&x[k]>0), by=Array.from({length:24},()=>[]); for(const x of g) by[bh(x.t)].push(x[k]);
+      const hu=by.map(a=>a.length>=6?md(a):null), h0=bh(now), usual=hu[h0]??md(g.map(x=>x[k]));
+      const hrs=Array.from({length:24},(_,i)=>(h0+i)%24), nx=hrs.map(h=>hu[h]), have=nx.filter(v=>v>0), lo=have.length>=18?Math.min(...have):null;
+      let best=null, run=null; nx.forEach((v,i)=>{ if(lo!=null&&v>0&&v<=1.3*lo){ run=run?[run[0],i]:[i,i]; if(!best||run[1]-run[0]>best[1]-best[0]) best=run; } else run=null; });
+      return {usual, have:have.length, best, lowTxt:!best?null:best[0]===0?'lowest now, until '+HH((hrs[best[1]]+1)%24):'lowest '+HH(hrs[best[0]])+'\u2013'+HH((hrs[best[1]]+1)%24)}; };
     const pos=v=>Math.max(0,Math.min(1,(Math.log10(Math.max(v,1e-4))+2)/(Math.log10(30)+2))), band=v=>v==null?'':v>=5?'wait':v>=1?'hi':'ok';
-    const dial=(ch,m)=>{ const t=document.querySelector('#hPx .px[data-gch="'+ch+'"]'), s=t&&t.querySelector('svg.gdial'); if(!s) return {drawn:false};
+    const dial=(ch,m)=>{ const t=document.querySelector('#hPx .px[data-gch="'+ch+'"]'), s=t&&t.querySelector('svg.gdial'); if(!s||!m) return {drawn:false};
       const n=s.querySelector('line.ndl'), on=s.querySelector('path.on'), lit=on?((on.getAttribute('class')||'').match(/z-(\w+)/)||[])[1]:'';
       const p=n?1-Math.atan2(+n.getAttribute('y1')-+n.getAttribute('y2'), +n.getAttribute('x2')-+n.getAttribute('x1'))/Math.PI:null;
       t.click(); const bx=t.querySelector('.gbox'), txt=bx?bx.textContent.replace(/\s+/g,' ').trim():''; t.click();
       return {drawn:true, band:band(m.re), needleOk:m.re==null?p==null:p!=null&&Math.abs(p-pos(m.re))<0.01, bandOk:lit===band(m.re)&&(t.dataset.gas||'')===band(m.re),
-        boxOk:!!bx&&(m.re==null||txt.includes('re-range now '+fmtFee(m.re))), closed:!t.querySelector('.gbox'), txt}; };
-    const de=dial('eth',E), ds=dial('sol',S), per=state.gasGwei>0&&state.ethUsd?state.gasGwei*state.ethUsd/1e9:null;
+        boxOk:!!bx&&(m.re==null||txt.includes((ch==='btc'?'a typical send now ':'re-range now ')+fmtFee(m.re))), closed:!t.querySelector('.gbox'), txt}; };
+    const hourly=(m,d,k)=>{ const I=hours(k);
+      return {lowOk:!d.drawn||m.re==null||!I.lowTxt||d.txt.includes(I.lowTxt), hours:I.have, x:m.x, n:m.n,
+        usualOk:m.usualG==null?I.usual==null:I.usual!=null&&Math.abs(m.usualG-I.usual)<=1e-9,
+        cheapOk:I.best?!!m.cheap&&m.cheap.a===I.best[0]&&m.cheap.b===I.best[1]:!m.cheap, cheapLen:I.best?I.best[1]-I.best[0]+1:null}; };
+    const de=dial('eth',E), ds=dial('sol',S), db=dial('btc',B), per=state.gasGwei>0&&state.ethUsd?state.gasGwei*state.ethUsd/1e9:null;
     return {oldTile:!!document.getElementById('hFees'),
-      eth:{...de, boxOk:de.boxOk&&(E.re==null||((E.hv==null||de.txt.includes('harvest '+fmtFee(E.hv)))&&(E.usual==null||de.txt.includes('usual at this hour '+fmtFee(E.usual))))),
-        lowOk:!de.drawn||E.re==null||!lowTxt||de.txt.includes(lowTxt), x:E.x, n:E.n, gwei:state.gasGwei, hours:have.length,
-        usualOk:E.usualG==null?usualG==null:usualG!=null&&Math.abs(E.usualG-usualG)<=1e-9,
-        cheapOk:best?!!E.cheap&&E.cheap.a===best[0]&&E.cheap.b===best[1]:!E.cheap, cheapLen:best?best[1]-best[0]+1:null,
-        units:E.re!=null&&per?E.re/per:null, unitsHv:E.hv!=null&&per?E.hv/per:null},
-      sol:{...ds, x:S.x, dayN:S.dayN, dayPaid:S.dayPaid, baseOk:S.usual==null||Math.abs(S.usual-15000/1e9*(solUsdNow()||0))<1e-12, age:state.solPrio?now-state.solPrio.t:null}};
+      eth:{...de, ...hourly(E,de,'g'), boxOk:de.boxOk&&(E.re==null||((E.hv==null||de.txt.includes('harvest '+fmtFee(E.hv)))&&(E.usual==null||de.txt.includes('usual at this hour '+fmtFee(E.usual))))),
+        gwei:state.gasGwei, units:E.re!=null&&per?E.re/per:null, unitsHv:E.hv!=null&&per?E.hv/per:null},
+      sol:{...ds, x:S.x, dayN:S.dayN, dayPaid:S.dayPaid, baseOk:S.usual==null||Math.abs(S.usual-15000/1e9*(solUsdNow()||0))<1e-12, age:state.solPrio?now-state.solPrio.t:null},
+      btc:B?{...db, ...hourly(B,db,'b'), boxOk:db.boxOk&&(B.re==null||((B.fast==null||db.txt.includes('next block '+fmtFee(B.fast)))&&(B.usual==null||db.txt.includes('usual at this hour '+fmtFee(B.usual))))),
+        vb:B.re!=null&&B.cur>0&&state.btcUsd>0?B.re/(B.cur*state.btcUsd/1e8):null, half:state.btcFee?state.btcFee.half:null, fast:state.btcFee?state.btcFee.fast:null,
+        src:state.btcFee?state.btcFee.src:null, age:state.btcFee?now-state.btcFee.t:null}:null};
   })();
   const dials={moL:M&&M.now?M.now.L:null, mo, warn:cfg.warnPct, fx};
   return {gauges, dials, gaps, mode:state.mode, relayUsed:!!state.relayUsed, relayAt:state.relayAt||null, dataAt:state.dataAt||null, eth:state.ethUsd, btc:state.btcUsd,
@@ -291,9 +296,35 @@ console.log('\n— gauges —');
     (why.length?WARN:OK)('gas dial, SOL: '+(why.length?why.join('; '):'needle and lit band ('+col[s.band]+') where its cost puts them; the tap box shows its figures')
       +(s.x!=null?' · '+s.x.toFixed(2)+'\u00d7 its base fee':'')
       +(s.dayN?' · a priority fee needed in '+Math.round(s.dayPaid/s.dayN*100)+'% of the last 24 hours\u2019 '+s.dayN+' readings':'')
-      +(s.age!=null?' · the relay\u2019s reading '+Math.round(s.age/60e3)+' min old':'')); }
+      +(s.age!=null?' · the relay\u2019s reading '+Math.round(s.age/60e3)+' min old':''));
+    const c=D.fx.btc; why=[]; let mp='';
+    if(!c) why.push('the page has no Bitcoin model');
+    else { drawn(c,why);
+      if(!c.lowOk) why.push('the lowest stretch in the box is NOT the one worked out here');
+      if(!c.usualOk) why.push('its usual for this hour is NOT the median of that hour\u2019s readings');
+      if(!c.cheapOk) why.push('the lowest stretch is NOT the one worked out here');
+      if(c.vb!=null&&Math.abs(c.vb/141-1)>0.01) why.push('a send is not costed at 141 vbytes');
+      if(!(c.age!=null&&c.age<3600e3)) why.push('the relay\u2019s Bitcoin reading is '+(c.age==null?'missing':Math.round(c.age/60e3)+' min old'));
+      /* the relay's half-hour rate against what mempool.space recommends now: inside the floor-to-next-
+         block range, with room for the minutes between the two reads */
+      if(c.half>0){ const now2=await btcFeeNow();
+        if(now2){ const inside=c.half>=now2.min*0.5&&c.half<=now2.fast*2; if(!inside) why.push('the relay\u2019s rate is outside what mempool.space recommends now');
+          mp=' · the relay\u2019s rate '+(inside?'within':'OUTSIDE')+' what mempool.space recommends now ('+(c.half/now2.half).toFixed(1)+'\u00d7 its half-hour rate)'; } } }
+    (why.length?WARN:OK)('gas dial, BTC: '+(why.length?why.join('; '):'needle and lit band ('+col[c.band]+') where its cost puts them; the tap box shows its figures'
+        +(c.n?'; its usual for this hour and the lowest stretch match the ones worked out here':''))
+      +(c&&c.x!=null?' · '+(c.x>=100?Math.round(c.x):c.x.toFixed(1))+'\u00d7 its usual for this hour':c?' · no usual yet ('+c.n+' readings)':'')
+      +(c?' · '+c.hours+' of 24 hours with a usual'+(c.cheapLen?' · lowest stretch '+c.cheapLen+' h':'')
+        +(c.age!=null?' · the relay\u2019s reading '+Math.round(c.age/60e3)+' min old ('+c.src+')':''):'')+mp); }
 }
 
+/* Bitcoin: what mempool.space recommends now, in sat/vB (blockstream's estimates when it does not answer) */
+async function btcFeeNow(){
+  try{ const r=await fetch('https://mempool.space/api/v1/fees/recommended',{signal:AbortSignal.timeout(15000)}), j=r.ok?await r.json():null;
+    if(j&&j.halfHourFee>0) return {fast:+j.fastestFee, half:+j.halfHourFee, min:+j.minimumFee||+j.economyFee||+j.halfHourFee}; }catch(e){}
+  try{ const r=await fetch('https://blockstream.info/api/fee-estimates',{signal:AbortSignal.timeout(15000)}), j=r.ok?await r.json():null;
+    if(j&&+j['3']>0) return {fast:+j['1']||+j['3'], half:+j['3'], min:+j['1008']||+j['144']||+j['3']}; }catch(e){}
+  return null;
+}
 /* Ethereum: what the last 20 blocks charged, in gwei: the lowest base fee, and the highest base fee
    plus the 90th-percentile tip, with a typical transaction (the newest base fee plus the median tip) */
 async function feeHist(){

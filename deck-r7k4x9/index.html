@@ -120,9 +120,10 @@
   .px .k em{font-style:normal;font-size:8.5px;letter-spacing:.08em;line-height:1;padding:2px 4px;border:1px solid var(--line);color:var(--text-secondary);text-transform:uppercase}
   .px .v{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-family:var(--mono);font-size:15px;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
   .px .chg{font-size:10.5px;font-weight:600}
-  /* GAS: a small dial in the ETH / USD and SOL / USD tiles. The needle is what a re-range costs now (a
-     log scale from 1 cent to $30); the lit part of the arc is the answer: green under $1, amber $1 to
-     $5, red over $5. Amber or red also colours the tile's top edge. Tapped, a small box gives the figures. */
+  /* GAS: a small dial in the ETH / USD, SOL / USD and BTC / USD tiles. The needle is what a re-range
+     costs now (on Bitcoin a typical send), on a log scale from 1 cent to $30; the lit part of the arc
+     is the answer: green under $1, amber $1 to $5, red over $5. Amber or red also colours the tile's
+     top edge. Tapped, a small box gives the figures. */
   .px[data-gch]{position:relative;cursor:pointer}
   .px[data-gch]:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
   .px[data-gch] .k{overflow:visible}
@@ -1927,7 +1928,7 @@
     </div>
   </div>
   <!-- price tiles: tokens in the token-exposure order, then the market. renderHeader fills #hPx; the
-       ETH / USD and SOL / USD tiles carry the gas dials. -->
+       ETH / USD, SOL / USD and BTC / USD tiles carry the gas dials. -->
   <div class="hdr-px">
     <div id="hPx" style="display:contents"></div>
   </div>
@@ -2628,7 +2629,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.24';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.25';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3744,7 +3745,7 @@ function snapSave(){
       : idsNow(c);
     const solIds = keep('sol','solIds', !!state.solStale);
     const ethIds = keep('eth','ethIds', !!state.ethStale);
-    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei, solPrio:state.solPrio||null,
+    store.set('lastSnap',{t:Date.now(), ps, ethUsd:state.ethUsd, btcUsd:state.btcUsd, gasGwei:state.gasGwei, solPrio:state.solPrio||null, btcFee:state.btcFee||null,
       block:state.block, ethUsdChg24:state.ethUsdChg24, feeMonth:state.feeMonth, costMonth:state.costMonth,
       tickers:state.tickers, quotes:state.quotes, btcUsdChg24:state.btcUsdChg24, topPools:(state.topPools||[]).slice(0,25), history:(state.history||[]).slice(-600),
       idle:state.idle||prev.idle||null, idleAt:state.idleAt||prev.idleAt||null,
@@ -3914,6 +3915,7 @@ async function scanInner(isBoot){
           if(d.btcUsdChg24!=null) state.btcUsdChg24 = d.btcUsdChg24;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
           if(d.solPrio) state.solPrio = d.solPrio;
+          if(d.btcFee) state.btcFee = d.btcFee;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink = d.ink||null;
           if(d.mktRef) state.mktRef = d.mktRef;
@@ -4047,7 +4049,7 @@ async function scanInner(isBoot){
     if(snap && Array.isArray(snap.ps) && snap.ps.length){
       state.positions=new Map(snap.ps.map(p=>{ p.cached=true; return [p.id,p]; }));
       state.ethUsd=state.ethUsd??snap.ethUsd; state.btcUsd=state.btcUsd??snap.btcUsd;
-      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block; state.solPrio=state.solPrio??snap.solPrio;
+      state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block; state.solPrio=state.solPrio??snap.solPrio; state.btcFee=state.btcFee??snap.btcFee;
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
       state.feeMonth=state.feeMonth??snap.feeMonth;
       state.costMonth=state.costMonth??snap.costMonth;
@@ -4674,8 +4676,8 @@ function renderHeader(){
     const MKT=['SOL / USD','ETH / USD','BTC / USD'];
     const tok=[...TOK.filter(l=>got.has(l)), ...[...got.keys()].filter(l=>!TOK.includes(l)&&!MKT.includes(l))];
     /* "LCX / USD (new)" renders as the pair plus a small tag holding the same word. */
-    // the gas dials ride in the ETH and SOL tiles
-    const gas={eth:feeModel('eth'), sol:feeModel('sol')};
+    // the gas dials ride in the ETH, SOL and BTC tiles
+    const gas={eth:feeModel('eth'), sol:feeModel('sol'), btc:feeModel('btc')};
     const cell=(l,cls)=>{ const q=got.get(l)||{}, m=/^(.*?)\s*\((.+)\)$/.exec(l), g=GAS_TILE[l]&&gas[GAS_TILE[l]];
       return '<div class="px '+cls+'" data-l="'+esc(l)+'"'+(g?' data-gch="'+g.ch+'" data-gas="'+gasBand(g.re)+'" role="button" tabindex="0" aria-expanded="false"':'')
         +(q.tip?' title="'+esc(q.tip)+'"':'')+'><div class="k">'
@@ -7596,18 +7598,24 @@ function solCostUsd(op, prio){ const u=solUsdNow(), o=SOL_OPS[op]; return (u&&o&
 // a Solana operation's cost now: measured while the relay's reading is under an hour old, the old guess before
 function solOpUsd(op){ const P=state.solPrio, v=(P&&P.p90!=null&&Date.now()-P.t<3600e3)?solCostUsd(op,P.p90):null;
   return v!=null?v:(op==='rerange'?0.05:SOL_TX_USD); }
+/* Bitcoin: a typical send, one input and two outputs from a native SegWit wallet, is about 141 vbytes
+   (10.5 + 68 + 2 × 31), priced at the relay's half-hour rate (sat/vB) and BTC/USD */
+const BTC_SEND_VB=141;
+const btcCostUsd=rate=>rate!=null&&state.btcUsd>0?rate*BTC_SEND_VB*state.btcUsd/1e8:null;
 const fmtFee=v=>v==null?'—':v>=10?fmtUsd(v,0):v>=0.01?fmtUsd(v,2):v>=0.0005?'$'+v.toFixed(3):'<$0.001';
 const fmtX=x=>x>=100?Math.round(x).toLocaleString('en-US')+'×':x>=10?x.toFixed(0)+'×':x.toFixed(1)+'×';
 /* ---- GAS ----
-   A small dial in the ETH / USD and SOL / USD price tiles, taking no room of its own. The needle is
-   what a re-range costs in network fees now, on a log scale from 1 cent to $30, and the lit part of
+   A small dial in the ETH / USD, SOL / USD and BTC / USD price tiles, taking no room of its own. The
+   needle is what a re-range costs in network fees now (on Bitcoin, where nothing is re-ranged, a
+   typical send), on a log scale from 1 cent to $30, and the lit part of
    the arc is the answer: green under $1, amber $1 to $5, red over $5 (wait). Amber or red also colours
    the tile's top edge. Tapped, a small box gives the figures: the cost now and a harvest's; for
    Ethereum its usual for this hour of the day (its gas runs on a daily rhythm: over the last two weeks
    lowest overnight and highest late afternoon Budapest, about six times apart) and the lowest stretch
    of the next 24 hours; for Solana, against its base fee (the signature fees alone) and how often its
-   pools needed a priority fee. Ethereum's reading is the page's own, live; Solana's is the relay's, at
-   most an hour old; both histories are the relay's (g and s in its history, one a pass). */
+   pools needed a priority fee; for Bitcoin, the next block's rate and the same hour-by-hour view as
+   Ethereum's. Ethereum's reading is the page's own, live; Solana's and Bitcoin's are the relay's, at
+   most an hour old; the histories are the relay's (g, s and b in its history, one a pass). */
 const FEE_DAYS=14;
 const feeHourFmt=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hour:'2-digit',hourCycle:'h23'}), feeHourC=new Map();
 // the Budapest hour of a moment; Budapest is whole hours off UTC, so each UTC hour is worked out once
@@ -7615,24 +7623,28 @@ const feeHour=t=>{ const k=Math.floor(t/3600e3); let h=feeHourC.get(k); if(h==nu
 const feeHH=h=>String(h).padStart(2,'0')+':00';
 const qMed=a=>{ const s=[...a].sort((x,y)=>x-y); return s.length?s[Math.floor(s.length/2)]:null; };
 function feeModel(ch){
-  const now=Date.now(), key=ch==='eth'?'g':'s';
+  const now=Date.now(), key={eth:'g',sol:'s',btc:'b'}[ch];
   const pts=(state.history||[]).filter(x=>x&&x.t>=now-FEE_DAYS*864e5&&typeof x[key]==='number'&&(key==='s'?x[key]>=0:x[key]>0))
     .map(x=>[x.t,x[key]]).sort((a,b)=>a[0]-b[0]);
   let cur=null, at=null;
   if(ch==='eth'){ if(state.gasGwei>0){ cur=state.gasGwei; at=now; } }
-  else { const P=state.solPrio; if(P&&P.p90!=null&&now-P.t<3600e3){ cur=P.p90; at=P.t; } }
+  else if(ch==='sol'){ const P=state.solPrio; if(P&&P.p90!=null&&now-P.t<3600e3){ cur=P.p90; at=P.t; } }
+  else { const B=state.btcFee; if(B&&B.half>0&&now-B.t<3600e3){ cur=B.half; at=B.t; } }
   if(cur==null&&pts.length&&now-pts[pts.length-1][0]<3600e3) [at,cur]=pts[pts.length-1];
-  const usd=(v,op)=>v==null?null:ch==='eth'?(state.ethUsd?(op==='harvest'?HARVEST_GAS:REBALANCE_GAS)*v*state.ethUsd/1e9:null):solCostUsd(op,v);
-  const m={ch, cur, at, re:usd(cur,'rerange'), hv:usd(cur,'harvest'), n:pts.length, x:null};
+  const usd=(v,op)=>v==null?null:ch==='eth'?(state.ethUsd?(op==='harvest'?HARVEST_GAS:REBALANCE_GAS)*v*state.ethUsd/1e9:null)
+    :ch==='sol'?solCostUsd(op,v):btcCostUsd(v);
+  const m={ch, cur, at, re:usd(cur,'rerange'), hv:ch==='btc'?null:usd(cur,'harvest'), n:pts.length, x:null};
+  if(ch==='btc'){ const B=state.btcFee; m.fast=B&&B.fast>0&&now-B.t<3600e3?btcCostUsd(B.fast):null; }
   let high;   // a reading at three times its usual or more
-  if(ch==='eth'){
+  if(ch!=='sol'){
     // each hour's usual: the median of that hour's readings over two weeks (six at least), else all of them
     const by=Array.from({length:24},()=>[]); for(const p of pts) by[feeHour(p[0])].push(p[1]);
     const all=qMed(pts.map(p=>p[1])), hour=by.map(a=>a.length>=6?qMed(a):null), usualAt=t=>hour[feeHour(t)]??all;
     m.usualG=cur!=null?usualAt(at):null; m.usual=usd(m.usualG,'rerange'); m.x=cur!=null&&m.usualG>0?cur/m.usualG:null;
-    // the next 24 hours at their usual; the lowest stretch is the longest run within 30% of the lowest hour
+    // the next 24 hours at their usual; the lowest stretch is the longest run within 30% of the lowest
+    // hour, named only once 18 hours or more have a usual of their own (a new history has too few)
     const h0=feeHour(now), next=Array.from({length:24},(_,i)=>{ const h=(h0+i)%24; return {h, usd:usd(hour[h],'rerange')}; });
-    const vals=next.map(x=>x.usd).filter(v=>v>0); m.lo=vals.length?Math.min(...vals):null; m.next=next;
+    const vals=next.map(x=>x.usd).filter(v=>v>0); m.lo=vals.length>=18?Math.min(...vals):null; m.next=next;
     let best=null, run=null;
     next.forEach((x,i)=>{ if(m.lo!=null&&x.usd>0&&x.usd<=1.3*m.lo){ run=run?{a:run.a,b:i}:{a:i,b:i}; if(!best||run.b-run.a>best.b-best.a) best=run; } else run=null; });
     m.cheap=best&&{a:best.a, b:best.b, from:next[best.a].h, to:(next[best.b].h+1)%24, usd:qMed(next.slice(best.a,best.b+1).map(x=>x.usd))};
@@ -7657,7 +7669,7 @@ function feeModel(ch){
 const GAS_LO=-2, GAS_HI=Math.log10(30);   // the dial: 1 cent at the left end, $30 at the right, on a log scale
 const gasPos=v=>Math.max(0,Math.min(1,(Math.log10(Math.max(v,1e-4))-GAS_LO)/(GAS_HI-GAS_LO)));
 const gasBand=v=>v==null?'':v>=5?'wait':v>=1?'hi':'ok';
-const GAS_TILE={'ETH / USD':'eth','SOL / USD':'sol'}, GAS_NAME={eth:'Ethereum',sol:'Solana'};
+const GAS_TILE={'ETH / USD':'eth','SOL / USD':'sol','BTC / USD':'btc'}, GAS_NAME={eth:'Ethereum',sol:'Solana',btc:'Bitcoin'};
 function gasDial(m){
   const v=m.re, st=gasBand(v), cx=22, cy=22, r=17, pt=(p,rr)=>[cx-rr*Math.cos(Math.PI*p), cy-rr*Math.sin(Math.PI*p)];
   const arc=(p0,p1,z)=>{ const a=pt(p0,r), b=pt(p1,r);
@@ -7667,15 +7679,17 @@ function gasDial(m){
   if(v!=null){ const n=pt(gasPos(v),r-5);
     g+='<line class="ndl" x1="'+cx+'" y1="'+cy+'" x2="'+n[0].toFixed(2)+'" y2="'+n[1].toFixed(2)+'"/><circle class="hub" cx="'+cx+'" cy="'+cy+'" r="2.6"/>'; }
   const lab=v==null?GAS_NAME[m.ch]+' gas: no reading yet'
-    :'Gas to re-range on '+GAS_NAME[m.ch]+' now: '+fmtFee(v)+({ok:', low',hi:', pricey',wait:', a spike: wait'})[st]+'. Tap for more.';
+    :(m.ch==='btc'?'Fee for a typical Bitcoin send now: ':'Gas to re-range on '+GAS_NAME[m.ch]+' now: ')+fmtFee(v)+({ok:', low',hi:', pricey',wait:', a spike: wait'})[st]+'. Tap for more.';
   return '<svg class="gdial" data-s="'+st+'" viewBox="0 -1 44 26" role="img" aria-label="'+esc(lab)+'"><title>'+esc(lab)+'</title>'+g+'</svg>';
 }
 function gasBox(m){
-  const eth=m.ch==='eth', b=gasBand(m.re), L=['<span class="t">GAS · '+(eth?'ETH':'SOL')+'<i> · network fees only</i></span>'];
-  if(m.cur==null) L.push(m.n?'no reading in the last hour':'no reading yet'+(eth?'':': the relay reads your pools each pass'));
-  else if(m.re==null) L.push('no '+(eth?'ETH':'SOL')+' price yet');
-  else if(eth){
-    L.push('<span class="nw">re-range now <b class="'+b+'">'+fmtFee(m.re)+'</b></span> · <span class="nw">harvest <b>'+fmtFee(m.hv)+'</b></span>');
+  const sym=m.ch.toUpperCase(), b=gasBand(m.re), L=['<span class="t">GAS · '+sym+'<i> · network fees only</i></span>'];
+  if(m.cur==null) L.push(m.n?'no reading in the last hour':'no reading yet'+(m.ch==='sol'?': the relay reads your pools each pass':m.ch==='btc'?': the relay reads it each pass':''));
+  else if(m.re==null) L.push('no '+sym+' price yet');
+  else if(m.ch!=='sol'){
+    L.push(m.ch==='btc'
+      ?'<span class="nw">a typical send now <b class="'+b+'">'+fmtFee(m.re)+'</b></span>'+(m.fast!=null?' · <span class="nw">next block <b>'+fmtFee(m.fast)+'</b></span>':'')
+      :'<span class="nw">re-range now <b class="'+b+'">'+fmtFee(m.re)+'</b></span> · <span class="nw">harvest <b>'+fmtFee(m.hv)+'</b></span>');
     const u=m.usual!=null?'<span class="nw">usual at this hour <b>'+fmtFee(m.usual)+'</b></span>':'';
     const low=!m.cheap?'':m.cheap.a===0?'<span class="nw">lowest now, until '+feeHH(m.cheap.to)+'</span>'
       :'<span class="nw">lowest '+feeHH(m.cheap.from)+'–'+feeHH(m.cheap.to)+', about <b>'+fmtFee(m.cheap.usd)+'</b></span>';
@@ -12910,6 +12924,7 @@ async function init(){
       if(d.btcUsd!=null) state.btcUsd=d.btcUsd;
       if(d.btcUsdChg24!=null) state.btcUsdChg24=d.btcUsdChg24;
       if(d.solPrio) state.solPrio=d.solPrio;
+      if(d.btcFee) state.btcFee=d.btcFee;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
