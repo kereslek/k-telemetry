@@ -266,3 +266,22 @@ say(''); say('— the relay’s reader (bridge.mjs) —');
         +' · open since '+(r.since?new Date(r.since).toISOString().slice(0,10):'—')+' · history: '+(r.hist||[]).map(h=>new Date(h.t).toISOString().slice(0,10)+(h.open?' open':' shut')).join(', ')
         +(r.pending?' · newer crossing not yet verified: '+r.pending:'')+(r.error?' · error: '+r.error:''));
     } } }
+
+/* ---------- why can the last Ethereum → Solana crossing not be read on Solana? Shapes and outcomes only ---------- */
+say(''); say('— diagnosis: the Solana side of the last crossing to Solana —');
+{ const lz=await get('https://scan.layerzero-api.com/v1/messages/oapp/30101/'+'0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992'+'?limit=100'), items=lz&&Array.isArray(lz.data)?lz.data:[];
+  const m=items.filter(x=>x.pathway&&+x.pathway.srcEid===30101&&+x.pathway.dstEid===30168&&/DELIVERED/.test(String(x.status&&x.status.name))).sort((a,b)=>Date.parse(b.created)-Date.parse(a.created))[0];
+  if(!m) say('no delivered message to Solana in the latest 100');
+  else { const shape=v=>/^0x[0-9a-f]{64}$/i.test(v)?'evm-hash':/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(v)?'sol-signature('+v.length+')':/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)?'sol-address':/^\d{4}-\d\d-\d\dT/.test(v)?'time':v.length>40?'long('+v.length+')':'short';
+    const out=[]; const walk=(o,p)=>{ if(o==null) return; if(typeof o==='string'){ out.push(p+'='+shape(o)); return; } if(typeof o==='number'||typeof o==='boolean'){ out.push(p+'=#'); return; } if(typeof o==='object') for(const [k,v] of Object.entries(o)) walk(v,p+'.'+k); };
+    walk(m.destination,'destination'); say('destination fields: '+out.join(' '));
+    const sigs=[]; const grab=(o)=>{ if(o==null) return; if(typeof o==='string'){ if(/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(o)) sigs.push(o); return; } if(typeof o==='object') for(const v of Object.values(o)) grab(v); }; grab(m.destination);
+    say('signatures under destination: '+sigs.length);
+    for(const [i,s] of sigs.entries()){
+      for(const [lab,opt] of [['finalized v0',{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}],['confirmed v0',{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'confirmed'}],['no options',{encoding:'jsonParsed'}]]){
+        const r=await sol('getTransaction',[s,opt]);
+        const ins=r?[...((r.meta&&r.meta.innerInstructions)||[]).flatMap(x=>x.instructions||[]),...((r.transaction&&r.transaction.message&&r.transaction.message.instructions)||[])]:[];
+        const kinds=ins.filter(x=>x.parsed&&x.parsed.info&&x.parsed.info.mint==='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg').map(x=>x.parsed.type).join(',')||'none';
+        say('  signature #'+(i+1)+' getTransaction ('+lab+'): '+(r?'read'+(r.meta&&r.meta.err?' (failed tx)':'')+' · CPOOL mint/burn instructions: '+kinds:'null'));
+        await sleep(400); }
+      const st=await sol('getSignatureStatuses',[[s],{searchTransactionHistory:true}]); say('  signature #'+(i+1)+' status: '+(st&&st.value&&st.value[0]?(st.value[0].confirmationStatus||'?')+(st.value[0].err?' with an error':''):'not found')); } } }
