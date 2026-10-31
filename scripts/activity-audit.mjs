@@ -316,18 +316,37 @@ if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.
         const before=await liqAt('0x'+(first-1).toString(16)), now=await liqAt('latest');
         if(before&&now!=null) parts.push('liquidity now: '+(Number(now*10000n/before)/100).toFixed(1)+'% of what it was before');
         if(p&&now!=null) parts.push('the deck shows that liquidity: '+(String(p.liq)===now.toString()?'yes':'NO'));
-        const rec=ev.collect.map(l=>'0x'+String(l.data).slice(26,66).toLowerCase());
-        if(rec.length) parts.push('the withdrawn tokens went to one of your wallets: '+(rec.every(x=>evmW.has(x))?'yes':'NO')); }
+        /* where the tokens went: straight to a wallet, or (the Uniswap app's way with an ETH pair) to the
+           position manager itself, which in the same transaction unwraps the ETH for the caller and sends
+           the other token on: followed through the receipt */
+        const ZERO='0x'+'0'.repeat(40), mgr=CH[ch].npm, WITHDRAWAL='0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65';
+        let direct=0, via=0, lost=0;
+        for(const l of ev.collect){ const to='0x'+String(l.data).slice(26,66).toLowerCase();
+          if(evmW.has(to)){ direct++; continue; }
+          if(to!==mgr&&to!==ZERO){ lost++; continue; }
+          const rc=await rpcOn(ch,'eth_getTransactionReceipt',[l.transactionHash]), logs=(rc&&rc.logs)||[], caller=String(rc&&rc.from||'').toLowerCase();
+          const sent=logs.filter(x=>x.topics&&x.topics[0]===XFER&&x.topics.length===3&&('0x'+x.topics[1].slice(26)).toLowerCase()===mgr).map(x=>('0x'+x.topics[2].slice(26)).toLowerCase());
+          const unwrapped=logs.some(x=>x.topics&&x.topics[0]===WITHDRAWAL&&('0x'+String(x.topics[1]).slice(26)).toLowerCase()===mgr);
+          if((sent.length||unwrapped)&&sent.every(a=>evmW.has(a))&&(!unwrapped||evmW.has(caller))) via++; else lost++; }
+        if(ev.collect.length) parts.push('the withdrawn tokens went to one of your wallets: '+(lost?'NO':'yes')+(via?' (through the position manager, which unwrapped the ETH and sent both on)':''));
+        /* the portfolio total across it: positions, wallets and NFTs, from the readings either side (a
+           withdrawal moves value from a position to a wallet; it should not dip). Wallet reads held back
+           (is) are passed over. */
+        { const tsW=await (async()=>{ const bk=await rpcOn(ch,'eth_getBlockByNumber',['0x'+first.toString(16),false]); return bk?parseInt(bk.timestamp,16)*1000:0; })();
+          const H=(data.history||[]).filter(x=>x&&x.v!=null&&x.i!=null&&!x.is), tot=x=>(x.v||0)+(x.i||0)+(x.n||0);
+          const b0=[...H].reverse().find(x=>x.t<tsW), a0=H.find(x=>x.t>tsW);
+          if(tsW&&b0&&a0) parts.push('the portfolio total across it: '+((tot(a0)/tot(b0)-1)*100).toFixed(1)+'% (readings '+Math.round((a0.t-b0.t)/60e3)+' min apart) · dipped: '+(tot(a0)<0.98*tot(b0)?'YES':'no')); } }
       console.log((p&&ev?'ok   ':'WARN ')+lab+': '+parts.join(' · ')); } } }
 /* LCX that arrived today, by the kind of venue it came through (never which pool or wallet), and
    whether the relay's wallet balances were read after the last of it */
-if(lcx.n){ const v={own:0,v3:0,v4:0,v2:0,other:0};
+if(lcx.n){ const v={pos:0,own:0,v3:0,v4:0,v2:0,other:0};
   for(const h of lcx.tx){ const lg=await j(BS+'/transactions/'+h+'/logs'); await sleep(150); const items=(lg&&lg.items)||[];
     const sw=items.filter(x=>x.topics&&x.topics[0]===SWAP_V3);
-    if(sw.some(x=>ownEth.has(String(x.address&&x.address.hash).toLowerCase()))) v.own++;
+    if(items.some(x=>x.topics&&x.topics[0]===EV.collect)) v.pos++;   // paid out of one of your positions: a harvest or a withdrawal, not a swap
+    else if(sw.some(x=>ownEth.has(String(x.address&&x.address.hash).toLowerCase()))) v.own++;
     else if(sw.length) v.v3++; else if(items.some(x=>x.topics&&x.topics[0]===SWAP_V4)) v.v4++; else if(items.some(x=>x.topics&&x.topics[0]===SWAP_V2)) v.v2++; else v.other++; }
   const it=data.idle&&data.idle.t, held=!!(data.idle&&(data.idle.rows||[]).some(r=>String(r.symbol).toUpperCase()==='LCX'&&r.amount>0));
-  console.log(((it&&it>=lcx.last)?'ok   ':'WARN ')+'LCX arriving in your Ethereum wallets today: '+lcx.n+' transfer(s) in '+lcx.tx.size+' transaction(s) · through one of your own pools '+v.own
+  console.log(((it&&it>=lcx.last)?'ok   ':'WARN ')+'LCX arriving in your Ethereum wallets today: '+lcx.n+' transfer(s) in '+lcx.tx.size+' transaction(s) · paid out of one of your positions (a harvest or a withdrawal) '+v.pos+' · swapped through one of your own pools '+v.own
     +', another Uniswap v3 pool '+v.v3+', Uniswap v4 '+v.v4+', a v2-style pool '+v.v2+', another venue (an aggregator or a filled order) '+v.other
     +' · the relay\u2019s wallet balances read after the last of it: '+(it?(it>=lcx.last?'yes':'not yet'):'n/a')+' · LCX among them: '+(held?'yes':'no')); }
 else console.log('LCX arriving in your Ethereum wallets today: 0');
