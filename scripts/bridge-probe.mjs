@@ -267,21 +267,58 @@ say(''); say('— the relay’s reader (bridge.mjs) —');
         +(r.pending?' · newer crossing not yet verified: '+r.pending:'')+(r.error?' · error: '+r.error:''));
     } } }
 
-/* ---------- why can the last Ethereum → Solana crossing not be read on Solana? Shapes and outcomes only ---------- */
-say(''); say('— diagnosis: the Solana side of the last crossing to Solana —');
-{ const lz=await get('https://scan.layerzero-api.com/v1/messages/oapp/30101/'+'0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992'+'?limit=100'), items=lz&&Array.isArray(lz.data)?lz.data:[];
-  const m=items.filter(x=>x.pathway&&+x.pathway.srcEid===30101&&+x.pathway.dstEid===30168&&/DELIVERED/.test(String(x.status&&x.status.name))).sort((a,b)=>Date.parse(b.created)-Date.parse(a.created))[0];
-  if(!m) say('no delivered message to Solana in the latest 100');
-  else { const shape=v=>/^0x[0-9a-f]{64}$/i.test(v)?'evm-hash':/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(v)?'sol-signature('+v.length+')':/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)?'sol-address':/^\d{4}-\d\d-\d\dT/.test(v)?'time':v.length>40?'long('+v.length+')':'short';
-    const out=[]; const walk=(o,p)=>{ if(o==null) return; if(typeof o==='string'){ out.push(p+'='+shape(o)); return; } if(typeof o==='number'||typeof o==='boolean'){ out.push(p+'=#'); return; } if(typeof o==='object') for(const [k,v] of Object.entries(o)) walk(v,p+'.'+k); };
-    walk(m.destination,'destination'); say('destination fields: '+out.join(' '));
-    const sigs=[]; const grab=(o)=>{ if(o==null) return; if(typeof o==='string'){ if(/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(o)) sigs.push(o); return; } if(typeof o==='object') for(const v of Object.values(o)) grab(v); }; grab(m.destination);
-    say('signatures under destination: '+sigs.length);
-    for(const [i,s] of sigs.entries()){
-      for(const [lab,opt] of [['finalized v0',{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}],['confirmed v0',{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'confirmed'}],['no options',{encoding:'jsonParsed'}]]){
-        const r=await sol('getTransaction',[s,opt]);
-        const ins=r?[...((r.meta&&r.meta.innerInstructions)||[]).flatMap(x=>x.instructions||[]),...((r.transaction&&r.transaction.message&&r.transaction.message.instructions)||[])]:[];
-        const kinds=ins.filter(x=>x.parsed&&x.parsed.info&&x.parsed.info.mint==='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg').map(x=>x.parsed.type).join(',')||'none';
-        say('  signature #'+(i+1)+' getTransaction ('+lab+'): '+(r?'read'+(r.meta&&r.meta.err?' (failed tx)':'')+' · CPOOL mint/burn instructions: '+kinds:'null'));
-        await sleep(400); }
-      const st=await sol('getSignatureStatuses',[[s],{searchTransactionHistory:true}]); say('  signature #'+(i+1)+' status: '+(st&&st.value&&st.value[0]?(st.value[0].confirmationStatus||'?')+(st.value[0].err?' with an error':''):'not found')); } } }
+/* ---------- is the Ethereum → Solana direction usable right now? A live quote from the adapter ----------
+   quoteSend asks the bridge, as a sender would, what sending 1 CPOOL to Solana costs. It only answers
+   if the route, the verifiers and the executor are all configured: a quote is a send that could go now. */
+say(''); say('— can a transfer to Solana be sent right now? —');
+{ const A='0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992', toB=Buffer.from(b58d('BCtWmFRmrRB7WqjdX3FXK34TybwKu89Uzqne1ZbdYogb')).toString('hex').padStart(64,'0');
+  const u=n=>BigInt(n).toString(16).padStart(64,'0');
+  const param=(opts)=>{ const ob=opts.replace(/^0x/,''), len=ob.length/2, padded=ob.padEnd(Math.ceil(ob.length/64)*64,'0');
+    // the SendParam tuple: dstEid, to, amountLD, minAmountLD, then three bytes fields (extraOptions, composeMsg, oftCmd)
+    const head=u(30168)+toB+u(10n**18n)+u(0)+u(7*32)+u(7*32+32+padded.length/2)+u(7*32+32+padded.length/2+32);
+    return head+u(len)+padded+u(0)+u(0); };
+  for(const [lab,opts] of [['the bridge’s own enforced options','0x'],['explicit executor options (200k compute, rent)','0x00030100210100000000000000000000000000030d40000000000000000000000000002625a0']]){
+    const qs=await call(A,'0x3b6f743b'+u(64)+u(0)+param(opts)), qo=await call(A,'0x0d35b415'+u(32)+param(opts));
+    const fee=qs&&qs.length>=130?Number(BigInt('0x'+qs.slice(2,66)))/1e18:null;
+    say('quote with '+lab+': '+(fee!=null?'answered · fee '+fee.toFixed(5)+' ETH':'refused'+(qs===null?'':' ('+String(qs).slice(0,10)+')'))
+      +(qo&&qo.length>=194?' · per-send limit: '+(BigInt('0x'+qo.slice(66,130))>=10n**40n?'none':(Number(BigInt('0x'+qo.slice(66,130))/10n**18n)).toLocaleString('en-US')+' CPOOL'):'')); } }
+
+/* ---------- the history of crossings, week by week, since Solana was first connected ----------
+   Every OFTSent / OFTReceived for Solana in the adapter's logs (Blockscout, newest first), dated by
+   block (block times from anchors read every ~150k blocks, interpolated). Counts and size buckets. */
+say(''); say('— crossings by week (UTC), Ethereum ⇄ Solana —');
+{ const A='0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992', FIRST=21925082, ev=[]; let next=null, pages=0, seen=0;
+  for(;pages<120;pages++){
+    const r=await get('https://eth.blockscout.com/api/v2/addresses/'+A+'/logs'+(next?'?'+new URLSearchParams(next).toString():'')); if(!r||!Array.isArray(r.items)) break;
+    let old=false;
+    for(const l of r.items){ seen++; const bn=+l.block_number; if(bn<FIRST){ old=true; continue; }
+      const t0=l.topics&&String(l.topics[0]).toLowerCase();
+      if(t0===T.sent&&Number(word(l.data,0))===30168) ev.push({bn, dir:'in', amt:Number(word(l.data,2)/10n**12n)/1e6});
+      else if(t0===T.recv&&Number(word(l.data,0))===30168) ev.push({bn, dir:'out', amt:Number(word(l.data,1)/10n**12n)/1e6}); }
+    if(old||!r.next_page_params) break; next=r.next_page_params; await sleep(200); }
+  const tip=parseInt(await eth('eth_blockNumber',[]),16), anchors=[];
+  for(let bn=FIRST;bn<tip;bn+=150000){ const b=await eth('eth_getBlockByNumber',['0x'+bn.toString(16),false]); if(b) anchors.push([bn,parseInt(b.timestamp,16)*1000]); }
+  { const b=await eth('eth_getBlockByNumber',['0x'+tip.toString(16),false]); if(b) anchors.push([tip,parseInt(b.timestamp,16)*1000]); }
+  const tOf=bn=>{ for(let i=1;i<anchors.length;i++) if(bn<=anchors[i][0]){ const [b0,t0]=anchors[i-1],[b1,t1]=anchors[i]; return t0+(t1-t0)*(bn-b0)/(b1-b0); } return anchors.length?anchors[anchors.length-1][1]:null; };
+  for(const e of ev) e.t=tOf(e.bn);
+  ev.sort((a,b)=>a.t-b.t);
+  say('log entries read: '+seen+' in '+pages+' page(s) · crossings with Solana found: '+ev.length+' ('+ev.filter(e=>e.dir==='in').length+' to Solana, '+ev.filter(e=>e.dir==='out').length+' back)');
+  const bucket=v=>v<1e3?'<1k':v<1e4?'1k–10k':v<1e5?'10k–100k':v<1e6?'100k–1M':'≥1M';
+  const wk=t=>{ const d=new Date(t); d.setUTCHours(0,0,0,0); d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7)); return d.toISOString().slice(0,10); };   // the Monday of its week
+  const W=new Map(); for(const e of ev){ const k=wk(e.t); const w=W.get(k)||{in:0,out:0,vin:0,vout:0}; w[e.dir]++; w['v'+e.dir]+=e.amt; W.set(k,w); }
+  const first=ev.length?wk(ev[0].t):null;
+  if(first){ const d=new Date(first+'T00:00:00Z'); for(;d.getTime()<=now;d.setUTCDate(d.getUTCDate()+7)){ const k=d.toISOString().slice(0,10), w=W.get(k)||{in:0,out:0,vin:0,vout:0};
+      say('  week of '+k+': to Solana '+String(w.in).padStart(3)+' ('+(w.in?bucket(w.vin):'—')+') · back '+String(w.out).padStart(3)+' ('+(w.out?bucket(w.vout):'—')+')'); } }
+  /* the gaps between crossings to Solana: is 2 days without one unusual? */
+  const per=(from,to)=>ev.filter(e=>e.t>=from&&e.t<to);
+  const gaps=(L)=>{ const a=L.filter(e=>e.dir==='in').map(e=>e.t); const g=[]; for(let i=1;i<a.length;i++) g.push((a[i]-a[i-1])/864e5); return g.sort((x,y)=>x-y); };
+  const q=(g,p)=>g.length?g[Math.min(g.length-1,Math.floor(p*g.length))]:null;
+  for(const [lab,from,to] of [['first period (Feb 2025 – 5 May 2026)',0,Date.parse('2026-05-06')],['since it reopened (25 Sep 2026)',Date.parse('2026-09-25'),now+1]]){
+    const L=per(from,to), days=Math.max(1,((Math.min(to,now))-(from||ev[0].t))/864e5), g=gaps(L), lastIn=L.filter(e=>e.dir==='in').pop();
+    say(lab+': '+L.filter(e=>e.dir==='in').length+' to Solana, '+L.filter(e=>e.dir==='out').length+' back · per day '+(L.filter(e=>e.dir==='in').length/days).toFixed(2)+' to Solana, '+(L.filter(e=>e.dir==='out').length/days).toFixed(2)+' back'
+      +(g.length?' · gap between crossings to Solana: median '+q(g,0.5).toFixed(2)+' d, 90% under '+q(g,0.9).toFixed(1)+' d, longest '+g[g.length-1].toFixed(1)+' d · gaps of 2.2 d or more: '+g.filter(x=>x>=2.2).length:''));
+    if(lastIn&&to>now) say('  now: '+((now-lastIn.t)/864e5).toFixed(1)+' d since the last crossing to Solana'); }
+  /* the direction since the CPOOL → CLEAR vote (results announced 5 Oct 2026) */
+  for(const [lab,from,to] of [['25 Sep – 5 Oct',Date.parse('2026-09-25'),Date.parse('2026-10-05')],['5 Oct – 19 Oct',Date.parse('2026-10-05'),Date.parse('2026-10-19')],['19 Oct – now',Date.parse('2026-10-19'),now+1]]){
+    const L=per(from,to), vi=L.filter(e=>e.dir==='in').reduce((s,e)=>s+e.amt,0), vo=L.filter(e=>e.dir==='out').reduce((s,e)=>s+e.amt,0);
+    say('  '+lab+': to Solana '+L.filter(e=>e.dir==='in').length+' ('+(vi?bucket(vi):'—')+') · back '+L.filter(e=>e.dir==='out').length+' ('+(vo?bucket(vo):'—')+') · net '+(vi>=vo?'into Solana':'out of Solana')); } }
