@@ -320,6 +320,21 @@ say(''); say('— the relay’s Solana path, for the last crossing to Solana —
       say('  Ethereum event found: '+(lg?'yes':'no')+' · CPOOL instructions on Solana: '+(kinds.join(', ')||'none parsed')+' · a mint of the Ethereum amount: '+(want==null?'—':mints.some(a=>a===want)?'yes':mints.length?'NO (a mint of another amount)':'no mint seen')
         +' · transaction error: '+(tx.meta&&tx.meta.err?'yes':'no'));
     }
+    /* the Ethereum side as the relay asks it: its endpoints in order, the first answer taken even when it is "nothing" */
+    const ETH_RELAY=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'];
+    const rawE=async(u,method,params)=>{ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(15000)});
+      if(!r.ok) return {err:'HTTP '+r.status}; const j=await r.json(); return j.error?{err:'error '+(j.error.code??'')+' '+clean(j.error.message||'')}:{ok:true, result:j.result}; }catch(e){ return {err:'failed: '+clean(e)}; } };
+    const evmRelay=async(method,params)=>{ let last=null; for(const u of ETH_RELAY){ const r=await rawE(u,method,params); if(r.ok) return r.result; last=r.err; } throw new Error(last||'no endpoint'); };
+    const evmAny=async(method,params)=>{ for(const u of ETH_RELAY){ const r=await rawE(u,method,params); if(r.ok&&r.result!=null) return r.result; } return null; };
+    if(srcTx){ for(const u of ETH_RELAY){ const r=await rawE(u,'eth_getTransactionReceipt',[srcTx]);
+      say('  Ethereum '+new URL(u).host+': receipt '+(r.ok?(r.result==null?'null (nothing)':'found, '+((r.result.logs||[]).length)+' log(s)'):r.err)); } }
+    const runWith=async(label,ethFn)=>{ const prev={v:1, t:now-30*60e3, routes:[{id:'eth-sol', last:{in:{t:Date.parse(m.created), src:srcTx, dst:sig, verified:false, note:'Solana transaction not read'}, out:null}, hist:[]}]};
+      const t0=Date.now(); let B=null, err=null;
+      try{ B=await readBridge({eth:ethFn, sol:(mm,pp)=>mm==='getSignatureStatuses'?solArchive(mm,pp):rsol(mm,pp), get:u=>getJson(u,15000)}, prev); }catch(e){ err=clean(e); }
+      const r=B&&B.routes&&B.routes[0], li=r&&r.last&&r.last.in;
+      say('  reader, '+label+': '+(err?'threw: '+err:li?(li.verified?'verified'+(li.via==='status'?' by its status':' on both chains'):'NOT verified ('+(li.note||'no note')+')'):'no crossing')+' · took '+((Date.now()-t0)/1000).toFixed(1)+' s'); };
+    await runWith('Ethereum as the relay asks it now (first answer taken)', evmRelay);
+    await runWith('Ethereum asking the next node when one answers nothing', async(mm,pp)=>/^eth_getTransactionReceipt$|^eth_getBlockByNumber$/.test(mm)?evmAny(mm,pp):evmRelay(mm,pp));
     // the relay's reader, end to end, with the relay's Solana path, from a reading whose crossing to Solana is unverified
     const prev={v:1, t:now-30*60e3, routes:[{id:'eth-sol', last:{in:{t:Date.parse(m.created), src:srcTx, dst:sig, verified:false, note:'Solana transaction not read'}, out:null}, hist:[]}]};
     const t0=Date.now(); let B=null, err=null;
