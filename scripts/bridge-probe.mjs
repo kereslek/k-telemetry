@@ -122,39 +122,40 @@ else {
   const rlim=await call(A.a,SEL('rateLimits(uint32)')+u32Arg(EID_SOL)); if(rlim&&rlim.length>=2+64*4) say('rate limit to Solana: '+(word(rlim,2)===0n?'ZERO (nothing can pass)':'set'));
 }
 
-/* the adapter's own events over 30 days: transfers each way, peer changes, pauses */
-const sentSol=[], recvSol=[], byEid={}; let peerChanges=[], pauses=[];
+/* the adapter's own events, newest first, from Blockscout's index of its logs (the public RPCs
+   refused most 30-day ranges with getLogs): transfers each way and their message ids for 30 days;
+   peer changes and pauses as far back as the pages read go. Falls back to getLogs over 7 days. */
+const sentSol=[], recvSol=[], byEid={}, guids=new Set(); const peerChanges=[], pauses=[]; let seen=0, src='none', reach=null;
 if(A){
-  const tip=parseInt(await eth('eth_blockNumber',[]),16), from=tip-30*7200, step=9000; let unread=0;
-  for(let a=from;a<=tip;a+=step){
-    const r=await eth('eth_getLogs',[{address:A.a,fromBlock:'0x'+a.toString(16),toBlock:'0x'+Math.min(tip,a+step-1).toString(16),topics:[[T.sent,T.recv,T.peer,T.paused,T.unpaused]]}]);
-    if(!Array.isArray(r)){ unread++; continue; }
-    for(const l of r){ const k=l.topics[0], bn=parseInt(l.blockNumber,16);
-      if(k===T.sent){ const e=Number(word(l.data,0)), amt=word(l.data,2); (byEid[e]=byEid[e]||{out:0,in:0}).out++; if(e===EID_SOL) sentSol.push({bn,amt}); }
-      else if(k===T.recv){ const e=Number(word(l.data,0)), amt=word(l.data,1); (byEid[e]=byEid[e]||{out:0,in:0}).in++; if(e===EID_SOL) recvSol.push({bn,amt}); }
-      else if(k===T.peer) peerChanges.push({bn, eid:Number(word(l.data,0)), cleared:word(l.data,1)===0n});
-      else pauses.push({bn, on:k===T.paused}); } }
+  const tip=parseInt(await eth('eth_blockNumber',[]),16), cut=tip-30*7200;
+  const take=(tp,data,bn,recent)=>{ const k=tp[0];
+    if(k===T.sent&&recent){ const e=Number(word(data,0)), amt=word(data,2); (byEid[e]=byEid[e]||{out:0,in:0}).out++; guids.add(String(tp[1]).toLowerCase()); if(e===EID_SOL) sentSol.push({bn,amt}); }
+    else if(k===T.recv&&recent){ const e=Number(word(data,0)), amt=word(data,1); (byEid[e]=byEid[e]||{out:0,in:0}).in++; guids.add(String(tp[1]).toLowerCase()); if(e===EID_SOL) recvSol.push({bn,amt}); }
+    else if(k===T.peer) peerChanges.push({bn, eid:Number(word(data,0)), cleared:word(data,1)===0n});
+    else if(k===T.paused||k===T.unpaused) pauses.push({bn, on:k===T.paused}); };
+  let next=null;
+  for(let page=0;page<40;page++){
+    const r=await get('https://eth.blockscout.com/api/v2/addresses/'+A.a+'/logs'+(next?'?'+new URLSearchParams(next).toString():''));
+    if(!r||!Array.isArray(r.items)) break; src='Blockscout';
+    for(const l of r.items){ seen++; const bn=+l.block_number; reach=bn; take((l.topics||[]).map(x=>x&&String(x).toLowerCase()), l.data, bn, bn>=cut); }
+    if(!r.next_page_params) break; next=r.next_page_params; await sleep(250); }
+  if(src==='none'&&tip){ src='getLogs (7 days)'; let unread=0;
+    for(let a=tip-7*7200;a<=tip;a+=3000){
+      const r=await eth('eth_getLogs',[{address:A.a,fromBlock:'0x'+a.toString(16),toBlock:'0x'+Math.min(tip,a+2999).toString(16),topics:[[T.sent,T.recv,T.peer,T.paused,T.unpaused]]}]);
+      if(!Array.isArray(r)){ unread++; continue; } for(const l of r){ seen++; take(l.topics.map(x=>x.toLowerCase()), l.data, parseInt(l.blockNumber,16), true); } }
+    if(unread) say('  '+unread+' block ranges could not be read'); }
+  sentSol.sort((x,y)=>x.bn-y.bn); recvSol.sort((x,y)=>x.bn-y.bn);
   const tsOf=async bn=>{ const b=await eth('eth_getBlockByNumber',['0x'+bn.toString(16),false]); return b?parseInt(b.timestamp,16)*1000:null; };
-  for(const x of [...sentSol.slice(-25),...recvSol.slice(-25)]) x.t=await tsOf(x.bn);
-  for(const x of [...peerChanges,...pauses]) x.t=await tsOf(x.bn);
-  say('adapter events, last 30 days'+(unread?' ('+unread+' of '+Math.ceil((tip-from)/step)+' block ranges could not be read)':'')+':');
+  for(const x of [...sentSol.slice(-30),...recvSol.slice(-30),...peerChanges.slice(0,12),...pauses.slice(0,12)]) x.t=await tsOf(x.bn);
+  say('adapter events read from '+src+': '+seen+' log entries'+(reach?' (back to block '+reach+'; 30 days ago ≈ block '+cut+')':''));
+  say('transfers in the last 30 days, by chain:');
   for(const [e,c] of Object.entries(byEid).sort((x,y)=>(y[1].out+y[1].in)-(x[1].out+x[1].in))) say('  '+eidName(+e)+': sent there '+c.out+' · arrived from there '+c.in);
-  if(!Object.keys(byEid).length) say('  no transfers either way');
+  if(!Object.keys(byEid).length) say('  none either way'+(reach&&reach>cut?' in the entries read':''));
   const lastS=sentSol.length?sentSol[sentSol.length-1].t:null, lastR=recvSol.length?recvSol[recvSol.length-1].t:null;
   say('last Ethereum → Solana send: '+when(lastS)+' · last Solana → Ethereum arrival: '+when(lastR));
-  for(const p of peerChanges) say('  peer change: '+eidName(p.eid)+' '+(p.cleared?'CLEARED':'set')+' at '+when(p.t));
-  for(const p of pauses) say('  '+(p.on?'PAUSED':'unpaused')+' at '+when(p.t));
+  say('peer history in the entries read (newest first): '+(peerChanges.length?peerChanges.slice(0,12).map(p=>eidName(p.eid)+(p.cleared?' CLEARED':' set')+' '+(p.t?new Date(p.t).toISOString().slice(0,10):'@'+p.bn)).join(' · '):'no peer changes'));
+  if(pauses.length) say('pauses: '+pauses.slice(0,12).map(p=>(p.on?'PAUSED ':'unpaused ')+(p.t?new Date(p.t).toISOString().slice(0,10):'@'+p.bn)).join(' · '));
 }
-/* the full peer history, newest first, from Blockscout's record of the adapter's logs: when was Solana ever cut off? */
-if(A){ let next=null, seen=0, hist=[];
-  for(let page=0;page<15;page++){
-    const q=next?'?'+new URLSearchParams(next).toString():'';
-    const r=await get('https://eth.blockscout.com/api/v2/addresses/'+A.a+'/logs'+q); if(!r||!Array.isArray(r.items)) break;
-    for(const l of r.items){ seen++; if(l.topics&&l.topics[0]===T.peer) hist.push({bn:l.block_number, eid:Number(word(l.data,0)), cleared:word(l.data,1)===0n}); }
-    if(!r.next_page_params) break; next=r.next_page_params; await sleep(300); }
-  say('peer history (from '+seen+' adapter log entries, newest first): '+(hist.length?hist.slice(0,12).map(p=>eidName(p.eid)+(p.cleared?' cleared':' set')+' @block '+p.bn).join(' · '):'no peer changes in the entries read'));
-}
-
 /* ---------- Solana: the mint, who may mint it, and whether that side is configured and open ---------- */
 say(''); say('— Solana —');
 let solDec=null, solSupply=null, store=null, storeProg=null, storeOk=false;
@@ -227,6 +228,8 @@ if(A){ const urls=['https://scan.layerzero-api.com/v1/messages/oapp/'+EID_ETH+'/
       const del=p.filter(x=>/DELIVERED/i.test(x.st)).map(x=>x.t).filter(Boolean);
       say('  '+eidName(s)+' → '+eidName(d)+': '+p.length+' in the latest '+items.length+' · '+(Object.entries(st).map(([k,n])=>k+' '+n).join(', ')||'—')+' · last delivered '+when(del.length?Math.max(...del):null)); }
     if(!rows.some(x=>x.src)) say('  first item fields: '+Object.keys(items[0]).slice(0,12).join(','));
+    { const ids=items.map(m=>String(pick(m,'guid','pathway.guid','id')||'').toLowerCase()).filter(x=>/^0x[0-9a-f]{64}$/.test(x)), on=ids.filter(x=>guids.has(x)).length;
+      say('  the same message ids seen in the Ethereum adapter\u2019s own events: '+on+' of '+ids.length+' (older ones fall outside the 30 days read)'); }
     break; }
   if(!got) say('LayerZero Scan gave no messages for the adapter (the chains above are the record that counts)');
 }
