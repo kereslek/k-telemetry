@@ -138,7 +138,16 @@ async function readRoute(R, io, prev){
       const eid=Number(word(lg.data,0)), amt=word(lg.data,way==='in'?2:1);
       const getTx=()=>safe(()=>io.sol('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}]));
       let tx=await getTx(); if(!tx){ await new Promise(f=>setTimeout(f,1500)); tx=await getTx(); }   // public nodes drop some reads
-      if(!tx) return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'Solana transaction not read'};
+      if(!tx){
+        /* public nodes do not return an older transaction's contents, but they do return its status:
+           finalized with no error, beside the Ethereum event (same message id and amount) and
+           LayerZero's delivery, is a crossing seen on both chains; only its amount on Solana is unread */
+        const ss=await safe(()=>io.sol('getSignatureStatuses',[[solTx],{searchTransactionHistory:true}])), s0=ss&&ss.value&&ss.value[0];
+        if(s0&&!s0.err&&eid===R.eidTo&&s0.confirmationStatus==='finalized'){
+          const bt=s0.slot!=null?await safe(()=>io.sol('getBlockTime',[s0.slot])):null;
+          return {t:way==='in'?(bt?bt*1000:(m.updated||m.created)):(m.updated||m.created), sent:m.created, src:m.srcTx, dst:m.dstTx, verified:true, via:'status',
+            note:'Solana: finalized, no error (its amount could not be read from a public node)'}; }
+        return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'Solana transaction not read'}; }
       const mv=tokenMoves(tx,R.mint), want=amt/k, ok=eid===R.eidTo&&(tx.meta&&!tx.meta.err)&&(way==='in'?mv.mint:mv.burn).some(a=>a===want);
       const bt=tx.blockTime?tx.blockTime*1000:null;
       const eb=way==='out'&&rc.blockNumber?await safe(()=>io.eth('eth_getBlockByNumber',[rc.blockNumber,false])):null, et=eb?parseInt(eb.timestamp,16)*1000:null;

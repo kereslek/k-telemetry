@@ -12,7 +12,7 @@ let fails=0, n=0; const ok=(c,m)=>{ n++; if(!c){ fails++; console.log('FAIL', m)
 
 function world(o={}){
   const W=Object.assign({peer:hex(b58d(R.store)), send:LIB, recv:LIB, paused:0, minter:R.store, peerBack:R.adapter, supply:4203859630000000n, locked:4440919310000000000000000n,
-    inAge:2*H, outAge:5*H, inAmtSol:AMT/k, outBurn:AMT/k, lzDown:false, solTxDown:false, extraPeerSet:null, waiting:0, rpcDown:false}, o);
+    inAge:2*H, outAge:5*H, inAmtSol:AMT/k, outBurn:AMT/k, lzDown:false, solTxDown:false, statusOk:false, extraPeerSet:null, waiting:0, rpcDown:false}, o);
   const store=new Uint8Array(200); store.set(b58d(R.mint),17); store[156]=W.paused;
   const peerAcc=new Uint8Array(60); peerAcc.set(Uint8Array.from(Buffer.from(pad(W.peerBack),'hex')),8);
   const msg=(src,dst,guid,stx,dtx,age,st='DELIVERED')=>({pathway:{srcEid:src,dstEid:dst}, guid, status:{name:st}, created:new Date(now-age).toISOString(), updated:new Date(now-age+60e3).toISOString(),
@@ -38,6 +38,8 @@ function world(o={}){
       if(m==='getAccountInfo'&&p[0]===R.mint) return {value:{owner:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', data:{parsed:{info:{mintAuthority:W.minter, supply:W.supply.toString(), decimals:9}}}}};
       if(m==='getAccountInfo'&&p[0]===R.store) return {value:{owner:R.program, data:[Buffer.from(store).toString('base64'),'base64']}};
       if(m==='getAccountInfo'&&p[0]===R.peerAcc) return {value:{owner:R.program, data:[Buffer.from(peerAcc).toString('base64'),'base64']}};
+      if(m==='getSignatureStatuses'){ if(!W.statusOk) return {value:[null]}; return {value:[{slot:123, confirmationStatus:'finalized', err:W.statusOk==='err'?{InstructionError:[0,'x']}:null}]}; }
+      if(m==='getBlockTime') return Math.floor((now-W.inAge+120e3)/1000);
       if(m==='getTransaction'){ if(W.solTxDown) return null;
         if(p[0]===SIG1) return {blockTime:Math.floor((now-W.inAge+120e3)/1000), meta:{err:null, innerInstructions:[{instructions:[{parsed:{type:'mintTo',info:{mint:R.mint, amount:W.inAmtSol.toString()}}}]}]}, transaction:{message:{instructions:[]}}};
         if(p[0]===SIG2) return {blockTime:Math.floor((now-W.outAge)/1000), meta:{err:null, innerInstructions:[]}, transaction:{message:{instructions:[{parsed:{type:'burnChecked',info:{mint:R.mint, tokenAmount:{amount:W.outBurn.toString()}}}}]}}};
@@ -71,7 +73,9 @@ r=await one({inAge:4*24*H, outAge:5*24*H}); ok(r.state==='quiet', 'open but noth
 r=await one({rpcDown:true}); ok(r.state===null, 'nothing readable: unknown, not open');
 r=await one({lzDown:true}); ok(r.state==='quiet'&&!r.last.in&&!r.last.out, 'no crossing record and none before: quiet (open on chain, nothing seen crossing)');
 r=await one({inAmtSol:AMT/k-1n}); ok(r.last.in&&r.last.in.verified===false&&/do not match/.test(r.last.in.note), 'amount on Solana differs: not verified');
-r=await one({solTxDown:true}); ok(r.last.in&&r.last.in.verified===false&&/not read/.test(r.last.in.note)&&r.state==='quiet', 'Solana side unreadable: unverified, so not counted as a crossing');
+r=await one({solTxDown:true}); ok(r.last.in&&r.last.in.verified===false&&/not read/.test(r.last.in.note)&&r.state==='quiet', 'Solana side unreadable and no status: unverified, so not counted as a crossing');
+r=await one({solTxDown:true, statusOk:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via==='status'&&/amount could not be read/.test(r.last.in.note)&&r.state==='open', 'contents unreadable but finalized with no error: verified by status, said so');
+r=await one({solTxDown:true, statusOk:'err'}); ok(r.last.in&&r.last.in.verified===false, 'finalized with an error: not verified');
 r=await one({waiting:2}); ok(r.waiting===2, 'messages stuck over 30 min are counted');
 const p1=(await readBridge(world({}),null));
 r=(await readBridge(world({solTxDown:true}),p1)).routes[0];

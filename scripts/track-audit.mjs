@@ -423,6 +423,7 @@ function bridgeVerdict(P, I, relayB, nowMs){
     if(nO&&nO.t<nowMs-60*60e3&&(!pO||nO.t>pO.t+90*60e3)) why.push('a newer crossing to Ethereum is not on the page');
     if(P.raw.n30&&I.lz.full&&(Math.abs(P.raw.n30.to-I.lz.n30.to)>3||Math.abs(P.raw.n30.back-I.lz.n30.back)>3)) why.push('the 30-day counts differ from LayerZero’s');
     info.push('LayerZero: last to Solana '+(nI?age(nowMs-nI.t)+' ago':'—')+', to Ethereum '+(nO?age(nowMs-nO.t)+' ago':'—')); }
+  info.push('the page\u2019s last crossings checked on both chains: to Solana '+(P.raw.last.in?(P.raw.last.in.v?'yes':'NO'):'—')+', to Ethereum '+(P.raw.last.out?(P.raw.last.out.v?'yes':'NO'):'—'));
   if(I.supply&&P.raw.supply&&P.raw.supply.sol!=null&&P.raw.supply.locked!=null){ const d=Math.max(Math.abs(P.raw.supply.sol/I.supply.sol-1),Math.abs(P.raw.supply.locked/I.supply.locked-1));
     if(!(d<=0.05)) why.push('the supply figures differ from the chains by '+Math.round(d*100)+'%'); }
   if(I.since){ const H=P.raw.hist.filter(h=>h.t).sort((a,b)=>a.t-b.t); let i=H.length-1; while(i>0&&H[i-1].open===H[H.length-1].open) i--;

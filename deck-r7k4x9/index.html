@@ -2660,7 +2660,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.26';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.27';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7826,7 +7826,7 @@ function bridgeBox(p){
   else L.push('<span class="bdim">— '+esc((r.why||[]).join('; ')||'some checks could not be read this time')+'</span>');
   L.push('<div class="sub">LAST VERIFIED CROSSING</div>');
   for(const [k,lab] of [['in','ETH → SOL'],['out','SOL → ETH']]){ const x=r.last&&r.last[k];
-    L.push('<div class="row"><span>'+lab+' '+(x&&x.t?'<b>'+brAgoLong(x.t)+'</b> <span class="bdim">'+brWhen(x.t)+'</span>'+(x.verified?'':' <span class="bamb">unverified</span>'):'<b>—</b>')+'</span>'
+    L.push('<div class="row"'+(x&&x.note?' title="'+esc(x.note)+'"':'')+'><span>'+lab+' '+(x&&x.t?'<b>'+brAgoLong(x.t)+'</b> <span class="bdim">'+brWhen(x.t)+'</span>'+(x.verified?'':' <span class="bamb">unverified</span>'):'<b>—</b>')+'</span>'
       +'<span>'+(x?brLinks(k,x):'')+'</span></div>'); }
   if(r.n30){ const pl=r.n30.partial?'+':'';
     L.push('<div class="sub">LAST 30 DAYS</div><div><b>'+r.n30.to+pl+'</b> to Solana · <b>'+r.n30.back+pl+'</b> back · '
