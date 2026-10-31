@@ -320,6 +320,28 @@ say(''); say('— the relay’s Solana path, for the last crossing to Solana —
       say('  Ethereum event found: '+(lg?'yes':'no')+' · CPOOL instructions on Solana: '+(kinds.join(', ')||'none parsed')+' · a mint of the Ethereum amount: '+(want==null?'—':mints.some(a=>a===want)?'yes':mints.length?'NO (a mint of another amount)':'no mint seen')
         +' · transaction error: '+(tx.meta&&tx.meta.err?'yes':'no'));
     }
+    /* the newer Solana transaction format, field by field, beside an older one: what the position history
+       (blockTime, signatures, logMessages, accountKeys) and the activity audit (accountKeys, loadedAddresses,
+       instructions, token balances) read. Shapes and counts only: never a key, an amount or a signature. */
+    { const MB='https://api.mainnet-beta.solana.com';
+      const back=items.filter(x=>x.pathway&&+x.pathway.srcEid===EID_SOL&&+x.pathway.dstEid===EID_ETH&&/DELIVERED/i.test(String(x.status&&x.status.name||x.status)))
+        .sort((a,b)=>Date.parse(b.created)-Date.parse(a.created))[0];
+      const olderSig=back&&back.source&&back.source.tx&&back.source.tx.txHash;
+      const shape=(tx,enc)=>{ if(!tx||typeof tx!=='object') return 'not read ('+String(tx).slice(0,60)+')';
+        const msg=tx.transaction&&tx.transaction.message||{}, meta=tx.meta||{}, ak=msg.accountKeys||[], la=meta.loadedAddresses||null;
+        const nKeys=ak.length+(la?(la.writable||[]).length+(la.readonly||[]).length:0), nBal=(meta.preBalances||[]).length;
+        const k0=ak[0], k0s=typeof k0==='string'?'text':k0&&typeof k0==='object'?'{'+Object.keys(k0).join(',')+'}':String(k0);
+        return 'version '+(tx.version??'(none)')+' · top: '+Object.keys(tx).sort().join(',')+' · message: '+Object.keys(msg).sort().join(',')
+          +' · accountKeys '+ak.length+' as '+k0s+' · loadedAddresses '+(la?'{'+Object.keys(la).join(',')+'}':'none')
+          +' · keys '+(nKeys===nBal?'add up to':'do NOT add up to')+' the balances ('+nKeys+'/'+nBal+')'
+          +' · signatures '+((tx.transaction&&tx.transaction.signatures)||[]).length+' · blockTime '+(typeof tx.blockTime)
+          +' · logMessages '+(Array.isArray(meta.logMessages)?meta.logMessages.length:'none')+' · inner '+(Array.isArray(meta.innerInstructions)?meta.innerInstructions.length:'none')
+          +' · token balances '+(meta.preTokenBalances||[]).length+'/'+(meta.postTokenBalances||[]).length
+          +' · instructions '+((msg.instructions||[]).length)+(enc==='jsonParsed'&&msg.instructions&&msg.instructions[0]?' (first: '+Object.keys(msg.instructions[0]).sort().join(',')+')':''); };
+      for(const [lab,sg] of [['newer (the delivery to Solana)',sig],['older (the last send from Solana)',olderSig]]){ if(!sg) { say('  '+lab+': none found'); continue; }
+        for(const enc of ['jsonParsed','json']){ const t=await raw(MB,'getTransaction',[sg,{encoding:enc,maxSupportedTransactionVersion:1,commitment:'finalized'}]);
+          say('  '+lab+', '+enc+': '+shape(t,enc)); } }
+    }
     /* the Ethereum side as the relay asks it: its endpoints in order, the first answer taken even when it is "nothing" */
     const ETH_RELAY=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'];
     const rawE=async(u,method,params)=>{ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(15000)});
