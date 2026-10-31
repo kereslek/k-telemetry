@@ -235,10 +235,11 @@ try{
       await pg.setViewportSize({width:w,height:w<500?844:900});
       await pg.evaluate(()=>scrollTo(0,0)); await pg.waitForTimeout(1500);
       const r=await pg.evaluate(()=>{ const M=state.momentum, ok=!!(M&&M.status==='ok'&&M.now&&M.now.L!=null), L=ok?M.now.L:null, lv=x=>x==null?'—':(x?(x>0?'▲':'▼')+Math.abs(x):'0');
-        const tile=document.querySelector('#moTile'), q=tile&&tile.getBoundingClientRect(), quick=document.querySelector('#quickAdd'), ps=[...document.querySelectorAll('#panelStack > .panel')].map(p=>p.dataset.panel);
+        const tile=document.querySelector('#moTile'), q=tile&&tile.getBoundingClientRect(), tl=document.querySelector('#tiles'), last=tl&&tl.lastElementChild, lq=last&&last.getBoundingClientRect(), ps=[...document.querySelectorAll('#panelStack > .panel')].map(p=>p.dataset.panel);
         return { has:!!tile, tileMatch:!!tile&&(ok?document.querySelector('#moTileLvl').textContent.startsWith(lv(L)):document.querySelector('#moTileLvl').textContent==='—'),
           hintMatch:!ok||document.querySelector('#moHint').textContent.startsWith(lv(L)+' · '),
-          first:!!(tile&&quick&&(tile.compareDocumentPosition(quick)&Node.DOCUMENT_POSITION_FOLLOWING)), onScreen:!!q&&q.bottom<=innerHeight,
+          /* right below RANGE STATUS: the next thing after the tiles, whose last tile is RANGE STATUS, and drawn just under it */
+          below:!!(tile&&tl&&tile.previousElementSibling===tl&&last&&/RANGE STATUS/.test(last.textContent)&&q.top>=lq.bottom-1&&q.top-tl.getBoundingClientRect().bottom<=40),
           order:ps.indexOf('momentum')===ps.indexOf('action')+1, stripe:document.querySelectorAll('#moTileStrip i').length,
           floatHidden:!document.querySelector('#toMo')?.classList.contains('show'), hs:document.documentElement.scrollWidth>innerWidth+1,
           /* what sticks out, when something does: element kinds only (tag, id and first class, inside its parent), no text.
@@ -251,8 +252,8 @@ try{
       // a tap on the tile lands on the panel, under the jump strip
       await pg.evaluate(()=>document.querySelector('#moTileHeat')?.click()); await pg.waitForTimeout(2300);
       const land=await pg.evaluate(()=>{ const p=document.querySelector('.mo-panel'), want=(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34)+12; return !!p&&Math.abs(p.getBoundingClientRect().top-want)<=12; });
-      const ok=r.has&&r.tileMatch&&r.hintMatch&&r.first&&r.onScreen&&r.stripe===30&&r.floatHidden&&!r.hs&&land;
-      (ok?OK:FAIL)('MOMENTUM at '+w+': tile '+(r.has?(r.first?'first under the jump strip':'NOT first under the jump strip')+(r.onScreen?', whole on the first screen':', NOT whole on the first screen'):'MISSING')
+      const ok=r.has&&r.tileMatch&&r.hintMatch&&r.below&&r.stripe===30&&r.floatHidden&&!r.hs&&land;
+      (ok?OK:FAIL)('MOMENTUM at '+w+': tile '+(r.has?(r.below?'right below RANGE STATUS':'NOT right below RANGE STATUS'):'MISSING')
         +'; tile and panel '+(r.tileMatch&&r.hintMatch?'agree with the reading':'DISAGREE with the reading')+'; 30-day strip '+(r.stripe===30?'drawn':'NOT drawn')
         +'; floating button '+(r.floatHidden?'hidden at the top':'SHOWN at the top')+'; a tap on the tile '+(land?'lands on the panel':'does NOT land on the panel')+(r.hs?'; SIDEWAYS SCROLL (sticking out: '+(r.wide.join(', ')||'nothing measurable')+')':''));
       (r.order?OK:WARN)('MOMENTUM panel at '+w+' '+(r.order?'right after PRIORITY':'not right after PRIORITY (a saved panel order?)'));

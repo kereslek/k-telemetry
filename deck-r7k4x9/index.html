@@ -1972,7 +1972,13 @@
 <button id="toLive" type="button" aria-label="Go to the live 60-minute fee clock" title="Live fee clock · L" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="tl-ring" cx="12" cy="12" r="9.5"/><path class="tl-hand" d="M12 12V3.6"/><circle class="tl-now" cx="12" cy="2.5" r="1.7"/></svg><span class="tl-ping" aria-hidden="true"></span></button>
 
 <main>
-  <!-- MOMENTUM: the glance. Filled by renderMomentum() from momentum-<slug>.json (scripts/momentum.mjs, hourly). -->
+  <div id="quickAdd"><span style="color:var(--accent)">⊕</span><span class="qa-t">TRACK MORE — drop or paste a wallet (0x… / Solana) or a Uniswap position #</span><input id="quickAddInput" placeholder="0x… · So1… · 1234567" spellcheck="false"><button class="hbtn" id="quickAddBtn">ADD</button></div>
+  <div class="banner" id="partialBar" style="border-color:var(--status-warning);color:var(--status-warning)"></div>
+  <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN. <span id="simErr" style="color:var(--status-critical)"></span></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <!-- MOMENTUM: the glance, right under RANGE STATUS (the last of the tiles). Filled by renderMomentum() from momentum-<slug>.json (scripts/momentum.mjs, hourly). -->
   <div id="moTile" class="mo-tile">
     <span class="mo-aura"></span>
     <div class="mo-k"><span>MOMENTUM · TOKENS &amp; POOLS</span><button type="button" class="tile-why" data-jump="momentum">why ›</button></div>
@@ -1989,11 +1995,6 @@
     </div>
     <div class="mo-since" id="moTileSince" hidden></div>
   </div>
-  <div id="quickAdd"><span style="color:var(--accent)">⊕</span><span class="qa-t">TRACK MORE — drop or paste a wallet (0x… / Solana) or a Uniswap position #</span><input id="quickAddInput" placeholder="0x… · So1… · 1234567" spellcheck="false"><button class="hbtn" id="quickAddBtn">ADD</button></div>
-  <div class="banner" id="partialBar" style="border-color:var(--status-warning);color:var(--status-warning)"></div>
-  <div class="banner" id="simBanner">⚠ SIMULATION MODE — every RPC endpoint is unreachable from this browser, so ALL numbers shown are SYNTHETIC placeholders, not your positions. A per-endpoint diagnostic report has been written to the EVENT LOG below — red rows are what your antivirus/ad-blocker/network is blocking. Allow-list them, or add personal endpoints (free: alchemy.com for ETH, helius.dev for SOL) in ⚙ CONFIG, then hit ⟳ SCAN. <span id="simErr" style="color:var(--status-critical)"></span></div>
-
-  <div class="tiles" id="tiles"></div>
 
   <div id="panelStack">
     <section class="panel act-panel" data-panel="action" draggable="true">
@@ -2663,7 +2664,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.28';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.29';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -8087,14 +8088,20 @@ function moFloat(M){
     addEventListener('keydown',e=>{ if((e.key!=='m'&&e.key!=='M')||e.metaKey||e.ctrlKey||e.altKey||!moOk(state.momentum)) return;
       const a=document.activeElement; if(a&&(/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)||a.isContentEditable)) return;
       const b=document.querySelector('#moTile .mo-k .tile-why'); if(b) b.click(); });
-    const seen=new Map(), live=$('#toLive'), top=$('#toTop');
+    const live=$('#toLive'), top=$('#toTop');
+    const vis=n=>{ if(!n||!n.getClientRects().length) return false; const q=n.getBoundingClientRect(); return q.bottom>0&&q.top<innerHeight; };
+    /* the way back: hidden while the tile or the panel's reading is on the screen, and before the tile is reached —
+       it sits under the tiles, below the first screen on a phone, so the top of the page stays clear. Measured when
+       placed (a jump straight past the tile changes no intersection, so the last observer entry cannot be trusted) */
     const place=()=>{ const phone=matchMedia('(max-width:760px)').matches, h=phone?46:42, gap=phone?10:8; let b=16;
       if(top&&!top.hidden&&top.classList.contains('show')) b+=h+gap;
       if(live&&!live.hidden&&live.classList.contains('show')) b+=h+gap;
       fb.style.bottom='calc('+b+'px + env(safe-area-inset-bottom, 0px))';
-      fb.classList.toggle('show', moOk(state.momentum) && ![...seen.values()].some(Boolean)); };
-    if('IntersectionObserver' in window){ const io=new IntersectionObserver(es=>{ for(const e of es) seen.set(e.target,e.isIntersecting); place(); },{threshold:0});
-      for(const n of [$('#moTile'),$('#moSecNow')]) if(n){ seen.set(n,true); io.observe(n); } }
+      const tile=$('#moTile'), notYet=!!tile&&tile.getBoundingClientRect().top>=innerHeight;
+      fb.classList.toggle('show', moOk(state.momentum) && !notYet && !vis(tile) && !vis($('#moSecNow'))); };
+    let raf=0; addEventListener('scroll',()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; place(); }); },{passive:true});
+    if('IntersectionObserver' in window){ const io=new IntersectionObserver(()=>place(),{threshold:0});
+      for(const n of [$('#moTile'),$('#moSecNow')]) if(n) io.observe(n); }
     if('MutationObserver' in window) for(const n of [live,top]) if(n) new MutationObserver(place).observe(n,{attributes:true,attributeFilter:['class','hidden']});
     addEventListener('resize',place); state._moPlace=place; }
   if(moOk(M)){ const L=M.now.L, c=L?moHex(L):'var(--accent)', a=L*9, rad=a*Math.PI/180, nx=12+8.5*Math.sin(rad), ny=13-8.5*Math.cos(rad);
