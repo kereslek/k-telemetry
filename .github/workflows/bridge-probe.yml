@@ -1,0 +1,22 @@
+# Is CPOOL's Ethereum <-> Solana bridge open, and carrying transfers? The bridge's contracts on both
+# chains read directly, beside LayerZero Scan (scripts/bridge-probe.mjs). Public data only: no
+# passphrase is given to this job, and the log carries contract facts, counts, times and percentages.
+name: bridge-probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/bridge-probe.mjs', '.github/workflows/bridge-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/bridge-probe.mjs
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}   # optional, faster Solana reads; never printed
