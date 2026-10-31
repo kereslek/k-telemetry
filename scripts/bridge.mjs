@@ -136,7 +136,9 @@ async function readRoute(R, io, prev){
         &&String(l.topics[0]).toLowerCase()===(way==='in'?TOPIC.sent:TOPIC.recv));
       if(!lg) return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'no matching Ethereum event'};
       const eid=Number(word(lg.data,0)), amt=word(lg.data,way==='in'?2:1);
-      const getTx=()=>safe(()=>io.sol('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}]));
+      /* version 1: LayerZero's executor now delivers to Solana in the newer transaction format, which a node
+         refuses to return to a client that only accepts version 0 (error -32015); 1 still returns 0 and legacy */
+      const getTx=()=>safe(()=>io.sol('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:1,commitment:'finalized'}]));
       let tx=await getTx(); if(!tx){ await new Promise(f=>setTimeout(f,1500)); tx=await getTx(); }   // public nodes drop some reads
       if(!tx){
         /* public nodes do not return an older transaction's contents, but they do return its status:

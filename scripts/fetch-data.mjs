@@ -1962,7 +1962,9 @@ const main=async()=>{
   let bridge=(blockCache.bridge&&blockCache.bridge.out)||null;
   if(!bridge||Date.now()-(blockCache.bridge.at||0)>=25*60e3){
     try{
-      const nb=await Promise.race([readBridge({eth, sol, get:u=>getJson(u,15000)}, bridge),
+      /* a crossing's status is asked of the archive list: the first live node keeps no older statuses and
+         answers "nothing", which the reader would take as final */
+      const nb=await Promise.race([readBridge({eth, sol:(m,p)=>m==='getSignatureStatuses'?solArchive(m,p):sol(m,p), get:u=>getJson(u,15000)}, bridge),
         new Promise((_,no)=>setTimeout(()=>no(new Error('bridge read over 60 s')),60000))]);
       if(nb&&Array.isArray(nb.routes)){ bridge=nb; blockCache.bridge={at:Date.now(), out:nb}; }
     }catch(e){ logErr('bridge',e); blockCache.bridge={...(blockCache.bridge||{}), at:Date.now()-15*60e3}; }

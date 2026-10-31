@@ -293,18 +293,19 @@ say(''); say('— the relay’s Solana path, for the last crossing to Solana —
   if(sig){
     const raw=async(u,method,params)=>{ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(25000)});
       if(!r.ok) return 'HTTP '+r.status; const j=await r.json(); if(j.error) return 'error '+(j.error.code??'')+' '+clean(j.error.message||''); return j.result; }catch(e){ return 'failed: '+clean(e); } };
-    const TXP=[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}], STP=[[sig],{searchTransactionHistory:true}];
+    const TXP=[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:1,commitment:'finalized'}], TX0=[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'finalized'}], STP=[[sig],{searchTransactionHistory:true}];
     let txAny=null;
     for(const u of [...new Set([...LIVE,...ARCH])]){
-      const t=await raw(u,'getTransaction',TXP), st=await raw(u,'getSignatureStatuses',STP);
+      const t0=await raw(u,'getTransaction',TX0), t=await raw(u,'getTransaction',TXP), st=await raw(u,'getSignatureStatuses',STP);
       if(t&&typeof t==='object'&&!txAny) txAny=t;
       const s0=st&&typeof st==='object'&&st.value?st.value[0]:undefined;
-      say('  '+name(u)+': getTransaction '+(t===null?'null':typeof t==='object'?'contents':t)+' · getSignatureStatuses '
+      const tv=x=>x===null?'null':typeof x==='object'?'contents (version '+(x.version??'legacy')+')':x;
+      say('  '+name(u)+': getTransaction asking for version 0: '+tv(t0)+' · asking for version 1: '+tv(t)+' · getSignatureStatuses '
         +(typeof st==='string'?st:s0===null?'value null':s0?(s0.confirmationStatus||'?')+(s0.err?' with an error':' no error'):'unexpected shape'));
     }
     let wt=null, ws=null;
     try{ wt=await rsol('getTransaction',TXP); }catch(e){ wt='threw: '+clean(e); }
-    try{ ws=await rsol('getSignatureStatuses',STP); }catch(e){ ws='threw: '+clean(e); }
+    try{ ws=await solArchive('getSignatureStatuses',STP); }catch(e){ ws='threw: '+clean(e); }   // the relay asks the archive list for a status
     const w0=ws&&typeof ws==='object'&&ws.value?ws.value[0]:undefined;
     say('  through the relay’s wrapper: getTransaction '+(wt===null?'null':typeof wt==='object'?'contents':wt)+' · getSignatureStatuses '
       +(typeof ws==='string'?ws:w0===null?'value null':w0?(w0.confirmationStatus||'?')+(w0.err?' with an error':' no error'):'unexpected shape'));
@@ -322,7 +323,7 @@ say(''); say('— the relay’s Solana path, for the last crossing to Solana —
     // the relay's reader, end to end, with the relay's Solana path, from a reading whose crossing to Solana is unverified
     const prev={v:1, t:now-30*60e3, routes:[{id:'eth-sol', last:{in:{t:Date.parse(m.created), src:srcTx, dst:sig, verified:false, note:'Solana transaction not read'}, out:null}, hist:[]}]};
     const t0=Date.now(); let B=null, err=null;
-    try{ B=await readBridge({eth:(mm,pp)=>eth(mm,pp), sol:rsol, get:u=>getJson(u,15000)}, prev); }catch(e){ err=clean(e); }
+    try{ B=await readBridge({eth:(mm,pp)=>eth(mm,pp), sol:(mm,pp)=>mm==='getSignatureStatuses'?solArchive(mm,pp):rsol(mm,pp), get:u=>getJson(u,15000)}, prev); }catch(e){ err=clean(e); }
     const secs=((Date.now()-t0)/1000).toFixed(1), r=B&&B.routes&&B.routes[0], li=r&&r.last&&r.last.in;
     say('  the relay’s reader with this path: '+(err?'threw: '+err:li?(li.verified?'verified'+(li.via==='status'?' by its status':' on both chains'):'NOT verified ('+(li.note||'no note')+')'):'no crossing')
       +' · took '+secs+' s (the relay gives it 60 s)'+(r&&r.pending?' · pending '+r.pending:''));

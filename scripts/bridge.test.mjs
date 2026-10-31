@@ -12,7 +12,7 @@ let fails=0, n=0; const ok=(c,m)=>{ n++; if(!c){ fails++; console.log('FAIL', m)
 
 function world(o={}){
   const W=Object.assign({peer:hex(b58d(R.store)), send:LIB, recv:LIB, paused:0, minter:R.store, peerBack:R.adapter, supply:4203859630000000n, locked:4440919310000000000000000n,
-    inAge:2*H, outAge:5*H, inAmtSol:AMT/k, outBurn:AMT/k, lzDown:false, solTxDown:false, statusOk:false, extraPeerSet:null, waiting:0, rpcDown:false}, o);
+    inAge:2*H, outAge:5*H, inAmtSol:AMT/k, outBurn:AMT/k, lzDown:false, solTxDown:false, statusOk:false, extraPeerSet:null, waiting:0, rpcDown:false, v1:false}, o);
   const store=new Uint8Array(200); store.set(b58d(R.mint),17); store[156]=W.paused;
   const peerAcc=new Uint8Array(60); peerAcc.set(Uint8Array.from(Buffer.from(pad(W.peerBack),'hex')),8);
   const msg=(src,dst,guid,stx,dtx,age,st='DELIVERED')=>({pathway:{srcEid:src,dstEid:dst}, guid, status:{name:st}, created:new Date(now-age).toISOString(), updated:new Date(now-age+60e3).toISOString(),
@@ -41,6 +41,8 @@ function world(o={}){
       if(m==='getSignatureStatuses'){ if(!W.statusOk) return {value:[null]}; return {value:[{slot:123, confirmationStatus:'finalized', err:W.statusOk==='err'?{InstructionError:[0,'x']}:null}]}; }
       if(m==='getBlockTime') return Math.floor((now-W.inAge+120e3)/1000);
       if(m==='getTransaction'){ if(W.solTxDown) return null;
+        /* a node refuses a newer-format transaction to a client that only accepts an older version (-32015) */
+        if(W.v1&&p[0]===SIG1&&!((p[1]&&p[1].maxSupportedTransactionVersion)>=1)) throw new Error('Transaction version (1) is not supported by the requesting client');
         if(p[0]===SIG1) return {blockTime:Math.floor((now-W.inAge+120e3)/1000), meta:{err:null, innerInstructions:[{instructions:[{parsed:{type:'mintTo',info:{mint:R.mint, amount:W.inAmtSol.toString()}}}]}]}, transaction:{message:{instructions:[]}}};
         if(p[0]===SIG2) return {blockTime:Math.floor((now-W.outAge)/1000), meta:{err:null, innerInstructions:[]}, transaction:{message:{instructions:[{parsed:{type:'burnChecked',info:{mint:R.mint, tokenAmount:{amount:W.outBurn.toString()}}}}]}}};
         return null; }
@@ -75,6 +77,7 @@ r=await one({lzDown:true}); ok(r.state==='quiet'&&!r.last.in&&!r.last.out, 'no c
 r=await one({inAmtSol:AMT/k-1n}); ok(r.last.in&&r.last.in.verified===false&&/do not match/.test(r.last.in.note), 'amount on Solana differs: not verified');
 r=await one({solTxDown:true}); ok(r.last.in&&r.last.in.verified===false&&/not read/.test(r.last.in.note)&&r.state==='quiet', 'Solana side unreadable and no status: unverified, so not counted as a crossing');
 r=await one({solTxDown:true, statusOk:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via==='status'&&/amount could not be read/.test(r.last.in.note)&&r.state==='open', 'contents unreadable but finalized with no error: verified by status, said so');
+r=await one({v1:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via!=='status', 'a delivery in the newer transaction format (version 1) is read and verified on both chains');
 r=await one({solTxDown:true, statusOk:'err'}); ok(r.last.in&&r.last.in.verified===false, 'finalized with an error: not verified');
 r=await one({waiting:2}); ok(r.waiting===2, 'messages stuck over 30 min are counted');
 const p1=(await readBridge(world({}),null));
