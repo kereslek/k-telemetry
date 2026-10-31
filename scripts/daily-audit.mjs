@@ -240,14 +240,17 @@ try{
           hintMatch:!ok||document.querySelector('#moHint').textContent.startsWith(lv(L)+' · '),
           first:!!(tile&&quick&&(tile.compareDocumentPosition(quick)&Node.DOCUMENT_POSITION_FOLLOWING)), onScreen:!!q&&q.bottom<=innerHeight,
           order:ps.indexOf('momentum')===ps.indexOf('action')+1, stripe:document.querySelectorAll('#moTileStrip i').length,
-          floatHidden:!document.querySelector('#toMo')?.classList.contains('show'), hs:document.documentElement.scrollWidth>innerWidth+1 }; });
+          floatHidden:!document.querySelector('#toMo')?.classList.contains('show'), hs:document.documentElement.scrollWidth>innerWidth+1,
+          /* what sticks out, when something does: element kinds only (tag and first class), no text */
+          wide:document.documentElement.scrollWidth>innerWidth+1?[...document.querySelectorAll('body *')].filter(e=>{ const q=e.getBoundingClientRect(); return q.width>0&&q.right>innerWidth+1&&getComputedStyle(e).position!=='fixed'; })
+            .slice(0,6).map(e=>e.tagName.toLowerCase()+(e.id?'#'+e.id:'')+(e.classList[0]?'.'+e.classList[0]:'')):[] }; });
       // a tap on the tile lands on the panel, under the jump strip
       await pg.evaluate(()=>document.querySelector('#moTileHeat')?.click()); await pg.waitForTimeout(2300);
       const land=await pg.evaluate(()=>{ const p=document.querySelector('.mo-panel'), want=(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34)+12; return !!p&&Math.abs(p.getBoundingClientRect().top-want)<=12; });
       const ok=r.has&&r.tileMatch&&r.hintMatch&&r.first&&r.onScreen&&r.stripe===30&&r.floatHidden&&!r.hs&&land;
       (ok?OK:FAIL)('MOMENTUM at '+w+': tile '+(r.has?(r.first?'first under the jump strip':'NOT first under the jump strip')+(r.onScreen?', whole on the first screen':', NOT whole on the first screen'):'MISSING')
         +'; tile and panel '+(r.tileMatch&&r.hintMatch?'agree with the reading':'DISAGREE with the reading')+'; 30-day strip '+(r.stripe===30?'drawn':'NOT drawn')
-        +'; floating button '+(r.floatHidden?'hidden at the top':'SHOWN at the top')+'; a tap on the tile '+(land?'lands on the panel':'does NOT land on the panel')+(r.hs?'; SIDEWAYS SCROLL':''));
+        +'; floating button '+(r.floatHidden?'hidden at the top':'SHOWN at the top')+'; a tap on the tile '+(land?'lands on the panel':'does NOT land on the panel')+(r.hs?'; SIDEWAYS SCROLL (sticking out: '+(r.wide.join(', ')||'nothing measurable')+')':''));
       (r.order?OK:WARN)('MOMENTUM panel at '+w+' '+(r.order?'right after PRIORITY':'not right after PRIORITY (a saved panel order?)'));
     }
     await pg.evaluate(()=>scrollTo(0,0));
