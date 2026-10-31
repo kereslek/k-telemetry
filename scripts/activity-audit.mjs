@@ -138,7 +138,7 @@ for(const w of WS){
   while(!done){
     const sigs=await srpc('getSignaturesForAddress',[w,{limit:100,commitment:'confirmed',...(before?{before}:{})}]); if(!sigs||!sigs.length) break;
     for(const s of sigs){ before=s.signature; if(!s.blockTime) continue; if(s.blockTime*1000<START){ done=true; break; } if(s.err) continue; seen++;
-      const tx=await srpc('getTransaction',[s.signature,{encoding:'json',maxSupportedTransactionVersion:0}]); await sleep(120); if(!tx) continue;
+      const tx=await srpc('getTransaction',[s.signature,{encoding:'json',maxSupportedTransactionVersion:1}]); await sleep(120); if(!tx) continue;
       const keys=[...tx.transaction.message.accountKeys,...((tx.meta.loadedAddresses&&tx.meta.loadedAddresses.writable)||[]),...((tx.meta.loadedAddresses&&tx.meta.loadedAddresses.readonly)||[])];
       if(keys[0]!==w) continue; mine++;                               // spam is paid for by someone else
       lastTx=Math.max(lastTx, s.blockTime*1000);
@@ -153,7 +153,7 @@ for(const w of WS){
          where each top-level transfer went is read from the parsed instructions, a token
          account's owner from the token balances */
       if(!ownPos.length&&!logs.some(l=>/Instruction: Swap/i.test(l))){
-        const px=await srpc('getTransaction',[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]); await sleep(120);
+        const px=await srpc('getTransaction',[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:1}]); await sleep(120);
         const owners=new Map(); const ak=px?px.transaction.message.accountKeys.map(k=>k.pubkey||k):[];
         for(const tb of [...((px&&px.meta.preTokenBalances)||[]),...((px&&px.meta.postTokenBalances)||[])]) if(tb.owner) owners.set(ak[tb.accountIndex],tb.owner);
         let own=0, cx=0, out=0;
