@@ -383,7 +383,7 @@ async function bridgePage(pg){
     const sol=[...state.positions.values()].filter(p=>p.chain==='sol'&&[p.m0,p.m1].some(m=>m&&String(m.symbol).toUpperCase()==='CPOOL')).map(p=>String(p.id));
     const chips=[...document.querySelectorAll('#cards .card .brg')].map(c=>({bs:c.dataset.bs, card:c.dataset.bcard}));
     const l=document.getElementById('hBridge'), f=document.querySelector('.br-link');
-    const x=k=>{ const v=rt&&rt.last&&rt.last[k]; return v?{t:v.t, src:v.src, dst:v.dst, v:!!v.verified}:null; };
+    const x=k=>{ const v=rt&&rt.last&&rt.last[k]; return v?{t:v.t, src:v.src, dst:v.dst, v:!!v.verified, note:v.note||null, via:v.via||null}:null; };
     return {t:B?B.t:null, st:r?r.st||'unk':null, sol, chips, light:l&&!l.hidden?l.dataset.bs:null, link:f?f.dataset.bs:null,
       raw:rt?{state:rt.state||null, n30:rt.n30||null, lastT:rt.lastT||null, supply:rt.supply||null, last:{in:x('in'), out:x('out')}, hist:(rt.hist||[]).map(h=>({t:h.t, open:!!h.open}))}:null}; });
   if(P.missing||!P.raw) return P;
@@ -434,7 +434,9 @@ function bridgeVerdict(P, I, relayB, nowMs){
     if(nO&&nO.t<nowMs-60*60e3&&(!pO||nO.t>pO.t+90*60e3)) why.push('a newer crossing to Ethereum is not on the page');
     if(P.raw.n30&&I.lz.full&&(Math.abs(P.raw.n30.to-I.lz.n30.to)>3||Math.abs(P.raw.n30.back-I.lz.n30.back)>3)) why.push('the 30-day counts differ from LayerZero’s');
     info.push('LayerZero: last to Solana '+(nI?age(nowMs-nI.t)+' ago':'—')+', to Ethereum '+(nO?age(nowMs-nO.t)+' ago':'—')); }
-  info.push('the page\u2019s last crossings checked on both chains: to Solana '+(P.raw.last.in?(P.raw.last.in.v?'yes':'NO'):'—')+', to Ethereum '+(P.raw.last.out?(P.raw.last.out.v?'yes':'NO'):'—'));
+  /* why one is not checked, in the reader's own fixed words (never a hash or an amount) */
+  const said=x=>!x?'—':x.v?'yes'+(x.via==='status'?' (by its status)':''):'NO'+(x.note&&/^[A-Za-z :,()'.-]{1,90}$/.test(x.note)?' ('+x.note+')':'');
+  info.push('the page\u2019s last crossings checked on both chains: to Solana '+said(P.raw.last.in)+', to Ethereum '+said(P.raw.last.out));
   if(I.supply&&P.raw.supply&&P.raw.supply.sol!=null&&P.raw.supply.locked!=null){ const d=Math.max(Math.abs(P.raw.supply.sol/I.supply.sol-1),Math.abs(P.raw.supply.locked/I.supply.locked-1));
     if(!(d<=0.05)) why.push('the supply figures differ from the chains by '+Math.round(d*100)+'%'); }
   if(I.since){ const H=P.raw.hist.filter(h=>h.t).sort((a,b)=>a.t-b.t); let i=H.length-1; while(i>0&&H[i-1].open===H[H.length-1].open) i--;
