@@ -102,6 +102,23 @@ async function getJson(url,timeout=15000){
   try{ const r=await fetch(url,{signal:ctrl.signal}); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
   finally{ clearTimeout(t); }
 }
+/* Bitcoin's going rate for a transaction, in sat/vB: mempool.space's recommended rates (the next
+   block, about half an hour, about an hour, economy, the floor), blockstream's estimates when it does
+   not answer. Market data only: nothing of the deck's is asked or sent. The page prices a typical send
+   at the half-hour rate; the history keeps that rate as b. Both failing is one error, not two. */
+async function readBtcFee(){
+  // the half-hour and next-block rates are the ones used; the others fall back to the half-hour's
+  const ok=v=>isFinite(v)&&v>0, fill=(f,src)=>{ for(const k of ['hour','eco','min']) if(!ok(f[k])) f[k]=f.half;
+    return ok(f.half)&&ok(f.fast)?{t:Date.now(), ...f, src}:null; };
+  let last=null;
+  try{ const r=await getJson('https://mempool.space/api/v1/fees/recommended',8000);
+    const f=fill({fast:+r.fastestFee, half:+r.halfHourFee, hour:+r.hourFee, eco:+r.economyFee, min:+r.minimumFee},'mempool.space');
+    if(f) return f; last=new Error('mempool.space: unexpected answer'); }catch(e){ last=e; }
+  try{ const r=await getJson('https://blockstream.info/api/fee-estimates',8000), g=k=>+r[k];
+    const f=fill({fast:g('1')||g('2'), half:g('3'), hour:g('6'), eco:g('144')||g('25'), min:g('1008')||g('504')},'blockstream');
+    if(f) return f; last=new Error('blockstream: unexpected answer'); }catch(e){ last=e; }
+  throw last;
+}
 let rpcId=1;
 async function evm(chainKey,method,params){
   let last;
@@ -1936,6 +1953,7 @@ const main=async()=>{
   for(const ck in CHAINS){ try{ blockNums[ck]=Number(BigInt(await evm(ck,'eth_blockNumber',[]))); }catch(e){ logErr('block '+ck,e); } }
   const blockNum=blockNums.ethereum;
   let gasGwei=null; try{ gasGwei=Number(BigInt(await eth('eth_gasPrice',[])))/1e9; }catch(e){}
+  let btcFee=null; try{ btcFee=await readBtcFee(); }catch(e){ logErr('btcFee',e); }
   let ethUsd=null,btcUsd=null,ethUsdChg24=null,ethUsdAgo=null,btcUsdChg24=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
   try{
@@ -3356,8 +3374,10 @@ const main=async()=>{
         // g: gas price at this sample. Without a stored series there is nothing to call a gas
         // price high or low AGAINST, and a gauge with no distribution behind it is decoration.
         // s: the same for Solana (micro-lamports per compute unit, solPrio above)
+        // b: the same for Bitcoin (sat/vB at the half-hour rate, btcFee)
         history.push({t:Date.now(), v:Math.round(totV*100)/100, f:Math.round(totF*100)/100,
-                      g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null, s:solPrio?solPrio.p90:null});
+                      g:gasGwei!=null?Math.round(gasGwei*1000)/1000:null, s:solPrio?solPrio.p90:null,
+                      b:btcFee?Math.round(btcFee.half*10)/10:null});
         histPushed=true;
         if(history.length>3000) history=history.slice(-3000);
         writeJ(OUT+'/hist-'+profile.slug+'.json', history);
@@ -4128,7 +4148,7 @@ const main=async()=>{
       if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio,
+    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
     console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);
