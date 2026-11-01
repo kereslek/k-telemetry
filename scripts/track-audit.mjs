@@ -319,11 +319,6 @@ console.log('\n— gauges —');
         +(c.age!=null?' · the relay\u2019s reading '+Math.round(c.age/60e3)+' min old ('+c.src+')':''):'')+mp); }
 }
 
-/* CPOOL's Ethereum ⇄ Solana bridge: the page against the chains and LayerZero, read again here */
-if(scanned){ console.log('\n— the CPOOL bridge, Ethereum ⇄ Solana —');
-  const I=await bridgeIndep(BRP).catch(()=>({open:null, why:[], lz:null, supply:null, since:null})), V=bridgeVerdict(BRP, I, relay&&relay.bridge, Date.now());
-  (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the header light, the fee link and the card chip agree; the check opens and closes; both jumps land on the card with it open; '
-    +'the state, the last crossings, the 30-day counts, the supply and the open-since date match what was read here from the chains and LayerZero')+(V.info.length?' · '+V.info.join(' · '):'')); }
 /* BRIDGE-AUDIT-START */
 /* CPOOL's Ethereum ⇄ Solana bridge (v40.26): what the page shows (the header light, the fee link, the
    chip on each Solana CPOOL card and its check) against the same facts read again here, independently
@@ -458,6 +453,7 @@ function bridgeVerdict(P, I, relayB, nowMs){
   else { const pageOpen=P.raw.state==='open'||P.raw.state==='quiet'; if(I.open!==pageOpen) why.push('the page says '+(P.raw.state||'unknown')+' but the chains read here say '+(I.open?'open':'closed ('+I.why.join(', ')+')'));
     info.push('chains read here: '+(I.open?'open':'closed')); }
   if(P.raw.state==='open'&&!(P.raw.lastT&&nowMs-P.raw.lastT<3*864e5)) why.push('open, but its last verified crossing is over 3 days old');
+  if(!I.lz) info.push('LayerZero could not be read here: the crossings were not compared');
   if(I.lz){ for(const [k,lab] of [['in','to Solana'],['out','to Ethereum']]){ const x=P.raw.last[k]; if(!x) continue;
       const m=I.lz.bySrc.get(String(x.src)); if(!m) why.push('the last crossing '+lab+' is not in LayerZero’s record'); else if(Math.abs((m.t||0)-x.t)>2*3600e3) why.push('the last crossing '+lab+' is not at the time LayerZero has'); }
     const nI=I.lz.lastIn, nO=I.lz.lastOut, pI=P.raw.last.in, pO=P.raw.last.out;
@@ -506,6 +502,12 @@ function bridgeVerdict(P, I, relayB, nowMs){
     else if(!(j.open&&j.onCard&&j.top!=null&&j.top>=0&&j.top<=j.nav+90)) why.push('the '+lab+' does not land on the CPOOL card with its check open'); }
   return {why, info}; }
 /* BRIDGE-AUDIT-END */
+/* CPOOL's Ethereum ⇄ Solana bridge: the page against the chains and LayerZero, read again here. After the block
+   below: its constants (BR and the rest) must exist before bridgeIndep runs, or it fails and nothing is compared */
+if(scanned){ console.log('\n— the CPOOL bridge, Ethereum ⇄ Solana —');
+  const I=await bridgeIndep(BRP).catch(()=>({open:null, why:[], lz:null, supply:null, since:null})), V=bridgeVerdict(BRP, I, relay&&relay.bridge, Date.now());
+  (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the header light, the fee link and the card chip agree; the check opens and closes; the header light opens it under itself and closes it four ways; '
+    +'the fee link lands on the card with it open'+(I.open!=null&&I.lz?'; the state, the last crossings, the 30-day counts, the supply and the open-since date match what was read here from the chains and LayerZero':''))+(V.info.length?' · '+V.info.join(' · '):'')); }
 
 /* Bitcoin: what mempool.space recommends now, in sat/vB (blockstream's estimates when it does not answer) */
 async function btcFeeNow(){
