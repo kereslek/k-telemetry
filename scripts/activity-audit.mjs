@@ -296,7 +296,70 @@ if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.
   else { console.log('— what you said you did (the positions you named stay sealed) —');
     const evmW=new Set(W.filter(x=>!['solana','sui','tron'].includes(x.chain)).map(x=>String(x.address).toLowerCase()));
     const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
-    for(const it of q.pos){ const id=String(it.id); if(!/^\d+$/.test(id)) continue;
+    /* A restake: a position closed and one opened in its place (it.from), usually with a tighter range.
+       Ranges are said as how many times wide they are (upper price over lower, a ratio), never a price,
+       an amount or a position. The closed one's range comes from the pool's own Burn in its withdrawal
+       (found even when the NFT was burned); the new one's from the position manager now. */
+    const BURN='0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c';
+    const s24=h=>{ const v=Number(BigInt('0x'+h)&0xffffffn); return v>=0x800000?v-0x1000000:v; };
+    const wideOf=(tl,tu)=>Math.pow(1.0001,tu-tl);
+    const rcAny=async(ch,h)=>{ for(const u of CH[ch].rpcs){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getTransactionReceipt',params:[h]})}); if(r&&r.result) return r.result; } return null; };
+    const posNow=async(ch,id)=>{ const r=await rpcOn(ch,'eth_call',[{to:CH[ch].npm,data:'0x99fbab88'+idTopic(id).slice(2)},'latest']);
+      if(typeof r!=='string'||r.length<2+64*8) return null; const w=i=>r.slice(2+64*i,2+64*(i+1));
+      return {t0:'0x'+w(2).slice(24), t1:'0x'+w(3).slice(24), fee:parseInt(w(4),16), tl:s24(w(5).slice(58)), tu:s24(w(6).slice(58)), liq:BigInt('0x'+w(7))}; };
+    const whereIs=async id=>{ const p=(data.eth||[]).find(x=>String(x.id)===id); if(p) return {p, ch:CH[p.chain]?p.chain:'ethereum'};
+      for(const c of Object.keys(CH)){ const r=await rpcOn(c,'eth_call',[{to:CH[c].npm,data:'0x6352211e'+idTopic(id).slice(2)},'latest']);
+        const o=typeof r==='string'&&r.length>=66?'0x'+r.slice(26,66).toLowerCase():null; if(o&&evmW.has(o)) return {p:null, ch:c}; }
+      return {p:null, ch:null}; };
+    /* the closed one's pool and range, from the pool's Burn (owner: the position manager) in its withdrawal today */
+    const burnOf=async(ch,ev)=>{ for(const l of (ev&&ev.decrease)||[]){ const rc=await rcAny(ch,l.transactionHash);
+        const b=((rc&&rc.logs)||[]).find(x=>x.topics&&x.topics[0]===BURN&&('0x'+String(x.topics[1]).slice(26)).toLowerCase()===String(CH[ch].npm).toLowerCase());
+        if(b) return {pool:String(b.address).toLowerCase(), tl:s24(String(b.topics[2]).slice(-6)), tu:s24(String(b.topics[3]).slice(-6))}; }
+      return null; };
+    const restake={};                                         // the closed position's pool and range, for the one that replaced it
+    async function closedLine(id){
+      const {p,ch:c0}=await whereIs(id), ch=c0||'ethereum', ev=await npmEvents(ch,id), q=await posNow(ch,id), parts=[], bad=[];
+      parts.push(ev?'today: harvests '+ev.collect.length+', tokens added '+ev.increase.length+', tokens withdrawn '+ev.decrease.length:'its events today could not be read');
+      if(!ev||!ev.decrease.length) bad.push(1);
+      parts.push('liquidity left: '+(q?(q.liq===0n?'none':'SOME'):'none (the position is gone from the chain)')); if(q&&q.liq!==0n) bad.push(1);
+      const shut=!!(fees.closedPos&&fees.closedPos[id])||!!(p&&String(p.liq)==='0');
+      parts.push('the deck shows it closed: '+(shut?'yes':'NOT YET')); if(!shut) bad.push(1);
+      if(ev&&ev.collect.length){ let lost=0;
+        for(const l of ev.collect){ const to='0x'+String(l.data).slice(26,66).toLowerCase(); if(evmW.has(to)) continue;
+          const mgr=String(CH[ch].npm).toLowerCase(); if(to!==mgr){ lost++; continue; }
+          const rc=await rcAny(ch,l.transactionHash), logs=(rc&&rc.logs)||[], caller=String(rc&&rc.from||'').toLowerCase();
+          const sent=logs.filter(x=>x.topics&&x.topics[0]===XFER&&x.topics.length===3&&('0x'+x.topics[1].slice(26)).toLowerCase()===mgr).map(x=>('0x'+x.topics[2].slice(26)).toLowerCase());
+          if(!(sent.every(a=>evmW.has(a))&&evmW.has(caller))) lost++; }
+        parts.push('the withdrawn tokens went to your wallets: '+(lost?'NO':'yes')); if(lost) bad.push(1); }
+      const b=await burnOf(ch,ev); if(b) restake[id]={...b, ch};
+      parts.push('its range: '+(b?wideOf(b.tl,b.tu).toFixed(2)+'× wide':(q&&q.tu>q.tl?wideOf(q.tl,q.tu).toFixed(2)+'× wide':'could not be read')));
+      if(!b&&q) restake[id]={pool:null, tl:q.tl, tu:q.tu, ch, t0:q.t0, t1:q.t1, fee:q.fee};
+      return (bad.length?'WARN ':'ok   ')+'the position you closed: '+parts.join(' · '); }
+    async function openedLine(it,id){
+      const {p,ch}=await whereIs(id), parts=['tracked by the deck: '+(p?'yes':'NOT YET')+(ch?' · on '+ch:'')], bad=[];
+      if(!ch) return 'WARN the position you opened: not held by any of your wallets on the chains the deck reads';
+      if(!p) bad.push(1);
+      const ev=await npmEvents(ch,id), q=await posNow(ch,id);
+      parts.push(ev?'today: tokens added '+ev.increase.length+', withdrawn '+ev.decrease.length:'its events today could not be read');
+      if(q){ parts.push('its range: '+wideOf(q.tl,q.tu).toFixed(2)+'× wide');
+        if(p){ const sc=Math.pow(10,(p.d0||0)-(p.d1||0)), lo=Math.pow(1.0001,q.tl)*sc, hi=Math.pow(1.0001,q.tu)*sc;
+          const rOk=Math.abs(p.priceLower/lo-1)<1e-6&&Math.abs(p.priceUpper/hi-1)<1e-6, lOk=String(p.liq)===q.liq.toString();
+          parts.push('the deck shows its range: '+(rOk?'yes':'NO')+' · its liquidity: '+(lOk?'yes':'NO')); if(!rOk||!lOk) bad.push(1);
+          const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
+          parts.push('its booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings)'); if(fell) bad.push(1);
+          parts.push('in range now: '+(p.inRange?'yes':'no')); }
+        const o=it.from&&restake[String(it.from)];
+        if(o){ const pool=p&&p.pool?String(p.pool).toLowerCase():null, same=o.pool?(pool?pool===o.pool:null):(o.t0===q.t0&&o.t1===q.t1&&o.fee===q.fee);
+          const ow=wideOf(o.tl,o.tu), nw=wideOf(q.tl,q.tu);
+          parts.push('the same pool as the one you closed: '+(same==null?'unknown':same?'yes':'NO')+' · tighter than it: '+(nw<ow?'yes':'NO')+' ('+nw.toFixed(2)+'× against '+ow.toFixed(2)+'×)'); }
+        else if(it.from) parts.push('the one it replaced: not read (name it as closed in the same request)'); }
+      else { parts.push('its range could not be read'); bad.push(1); }
+      return (bad.length?'WARN ':'ok   ')+'the position you opened: '+parts.join(' · '); }
+    for(const it of q.pos.filter(x=>x.did==='close')){ const id=String(it.id); if(!/^\d+$/.test(id)) continue;
+      try{ console.log(await closedLine(id)); }catch(e){ console.log('WARN the position you closed: could not be checked this time'); } }
+    for(const it of q.pos.filter(x=>x.did==='open')){ const id=String(it.id); if(!/^\d+$/.test(id)) continue;
+      try{ console.log(await openedLine(it,id)); }catch(e){ console.log('WARN the position you opened: could not be checked this time'); } }
+    for(const it of q.pos.filter(x=>x.did!=='close'&&x.did!=='open')){ const id=String(it.id); if(!/^\d+$/.test(id)) continue;
       const lab=it.did==='harvest'?'the position you harvested':it.did==='withdraw'?'the position you partly withdrew':'a position you named';
       const p=(data.eth||[]).find(x=>String(x.id)===id); let ch=p?(CH[p.chain]?p.chain:'ethereum'):null, owner=null;
       if(!p) for(const c of Object.keys(CH)){ const r=await rpcOn(c,'eth_call',[{to:CH[c].npm,data:'0x6352211e'+idTopic(id).slice(2)},'latest']);
