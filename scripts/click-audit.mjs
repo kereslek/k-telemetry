@@ -200,7 +200,13 @@ async function run(w,h,perKind,label){
 async function links(){
   console.log('\n— links —');
   const {ctx,pg}=await session(1440,900);
-  const hrefs=await pg.evaluate(()=>[...document.querySelectorAll('a[href]')].map(a=>({href:a.href, raw:a.getAttribute('href'), target:a.target, rel:a.rel, lab:(a.innerText||a.title||a.getAttribute('aria-label')||'').trim()})));
+  /* a link to one of your wallets (data-wallet: its portfolio on DeBank or Jupiter) is checked by its shape only: never
+     opened from here, so no address of yours goes out from this runner, and never named in this log */
+  const wl=await pg.evaluate(()=>[...document.querySelectorAll('a[data-wallet]')].map(a=>({ok:/^https:\/\/(debank\.com\/profile\/0x[0-9a-f]{40}|jup\.ag\/portfolio\/[1-9A-HJ-NP-Za-km-z]{32,44})$/.test(a.href),
+    tab:a.target==='_blank', rel:/noopener/.test(a.rel)&&/noreferrer/.test(a.rel), rp:a.getAttribute('referrerpolicy')==='no-referrer', label:(a.textContent||'').trim().length>0&&(a.textContent||'').trim().length<=12})));
+  if(wl.length) (wl.every(x=>x.ok&&x.tab&&x.rel&&x.rp&&x.label)?OK:FAIL)('wallet links: '+wl.length+' · each a DeBank or Jupiter portfolio address: '+(wl.every(x=>x.ok)?'yes':'NO')
+    +' · in a new tab with no referrer: '+(wl.every(x=>x.tab&&x.rel&&x.rp)?'yes':'NO')+' · a short tag: '+(wl.every(x=>x.label)?'yes':'NO')+' (not opened from here; never named)');
+  const hrefs=await pg.evaluate(()=>[...document.querySelectorAll('a[href]:not([data-wallet])')].map(a=>({href:a.href, raw:a.getAttribute('href'), target:a.target, rel:a.rel, lab:(a.innerText||a.title||a.getAttribute('aria-label')||'').trim()})));
   const uniq=new Map(); for(const h of hrefs) if(!uniq.has(h.href)) uniq.set(h.href,h);
   const own=[], ext=[];
   for(const h of uniq.values()){ if(/^(javascript:|mailto:|tel:)/.test(h.raw)) continue; (h.href.startsWith(LIVE)||h.raw.startsWith('#')||h.raw.startsWith('?')?own:ext).push(h); }

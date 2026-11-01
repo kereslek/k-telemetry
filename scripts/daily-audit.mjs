@@ -415,6 +415,41 @@ for(const w of [390,1300]){
   else ((m.shown&&m.headOk&&m.partsOk&&m.fits)?OK:FAIL)('unclaimed-by-token strip at '+w+' px: '+m.n+' token(s) · total equals the UNCLAIMED column '+(m.headOk?'yes':'NO')
     +' · tokens add up to it '+(m.partsOk?'yes':'NO')+' · fits the screen '+(m.fits?'yes':'NO'));
 }
+/* which wallet holds each position, in the matrix: every row's mark is that position's own wallet (by the page's
+   own tag for it), links to that wallet's portfolio (DeBank or Jupiter) in a new tab with no referrer, and the
+   second line still fits the column at phone and laptop width. Optionally (a sealed list of the names the owner
+   uses, NAMES) how many of those names the page shows. Counts and yes/no only: never a tag, a name or an address. */
+for(const w of [390,1440]){
+  await pg.setViewportSize({width:w, height:900}); await pg.waitForTimeout(400);
+  const m=await pg.evaluate(()=>{ try{ renderMatrix(); }catch(e){}
+    if(typeof walletTags!=='function') return {missing:true};
+    const T=walletTags(), rows=[...document.querySelectorAll('#matrixBody tr')].filter(tr=>tr.querySelector('td'));
+    const ps=ordered(), byLab=new Map(); let marked=0, right=0, linkOk=0, fits=0;
+    for(const tr of rows){ const a=tr.querySelector('td:first-child .mx-w'), td=tr.querySelector('td:first-child'), sub=td&&td.querySelector('.sub');
+      if(sub&&sub.scrollWidth<=td.clientWidth+1) fits++;
+      if(!a) continue; marked++;
+      const ok=/^https:\/\/(debank\.com\/profile\/0x[0-9a-f]{40}|jup\.ag\/portfolio\/[1-9A-HJ-NP-Za-km-z]{32,44})$/.test(a.href)&&a.target==='_blank'&&/noreferrer/.test(a.rel)&&a.getAttribute('referrerpolicy')==='no-referrer';
+      if(ok) linkOk++;
+      const addr=decodeURIComponent(a.href.split('/').pop()), p=ps.find(q=>String((q.chain==='sol'?q.wallet:q.owner)||'').toLowerCase()===addr.toLowerCase());
+      if(p&&T.get((p.chain==='sol'?'s':'e')+(p.chain==='sol'?addr:addr.toLowerCase()))===a.textContent.trim()) right++; }
+    const withW=ps.filter(p=>(p.chain==='sol'?p.wallet:p.owner)).length;
+    return {rows:rows.length, withW, marked, right, linkOk, fits, tags:[...T.values()]}; });
+  if(m.missing){ FAIL('wallet marks in the matrix: the page has no wallet tags'); break; }
+  const ok=m.marked===m.withW&&m.right===m.marked&&m.linkOk===m.marked&&m.fits===m.rows;
+  (ok?OK:FAIL)('wallet marks in the matrix at '+w+' px: '+m.marked+' of '+m.withW+' position(s) with a known wallet · the mark is its own wallet: '+(m.right===m.marked?'yes':'NO')
+    +' · links to its portfolio in a new tab with no referrer: '+(m.linkOk===m.marked?'yes':'NO')+' · the line fits the column: '+(m.fits===m.rows?'yes':'NO ('+(m.rows-m.fits)+' row(s) spill)'));
+  if(w===1440&&process.env.NAMES&&KEY){ let names=null;
+    try{ const env=JSON.parse(process.env.NAMES), X_PKCS8=Buffer.from('302e020100300506032b656e04220420','hex'), X_SPKI=Buffer.from('302a300506032b656e032100','hex');
+      const seed=Buffer.from(crypto.hkdfSync('sha256', KEY, Buffer.alloc(0), Buffer.from('kt-inbox-x25519'), 32));
+      const priv=crypto.createPrivateKey({key:Buffer.concat([X_PKCS8, seed]), format:'der', type:'pkcs8'});
+      const epk=Buffer.from(env.epk,'base64'), pub=crypto.createPublicKey({key:Buffer.concat([X_SPKI, epk]), format:'der', type:'spki'});
+      const k=Buffer.from(crypto.hkdfSync('sha256', crypto.diffieHellman({privateKey:priv, publicKey:pub}), epk, Buffer.from('kt-inbox'), 32));
+      const all=Buffer.from(env.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm', k, Buffer.from(env.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
+      names=JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)), d.final()]).toString('utf8')).names; }catch(e){}
+    if(!Array.isArray(names)) WARN('wallet names: the sealed list could not be opened');
+    else { const have=new Set(m.tags.map(t=>String(t).toLowerCase())), hit=names.filter(n=>have.has(String(n).toLowerCase())).length;
+      (hit===names.length?OK:WARN)('wallet names you use, shown by the page as you call them: '+hit+' of '+names.length+(hit<names.length?' (the others read differently: the names stay sealed)':'')); } }
+}
 await pg.setViewportSize({width:1440, height:900});
 const sums=await pg.evaluate(()=>{ const ps=[...state.positions.values()], s=k=>ps.reduce((a,p)=>a+(p[k]||0),0);
   const tile=n=>{ const t=[...document.querySelectorAll('.tiles .tile')].find(t=>((t.querySelector('.k')||{}).textContent||'').trim().toUpperCase().startsWith(n));
