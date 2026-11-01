@@ -31,7 +31,11 @@ const MIN=60000;
           The recorder counted their fees while they were open, but `hist` (built from today's position
           list) cannot hold them, so a stretch where one was still earning reads as fees lost when none
           were: such a stretch is said to be unsure, with the ratio once their rise is counted too. */
-export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleMin=30, gone=[]}){
+/* born:  Map positionId -> time of the relay's first reading of it, for positions opened inside the
+          relay's record. A position opened this month starts its running total at zero, so its first
+          reading is a rise from zero (an own swap's fee that landed before it is in there) and is
+          counted as one: leaving it out would read as fees lost. */
+export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleMin=30, gone=[], born=new Map()}){
   const H=(hist||[]).filter(x=>x&&x[1]).sort((a,b)=>a[0]-b[0]);
   const settled=x=>x.applied && x.back>0 && now-x.at>=settleMin*MIN;
   const out={n:0, recent:(swaps||[]).filter(x=>x.back>0&&!settled(x)).length, unplaced:0,
@@ -39,7 +43,7 @@ export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleM
   const S=(swaps||[]).filter(settled);
   if(H.length<2||!S.length) return out;
   // the booked change from one reading to the next, over the positions present in both
-  const d=[0]; for(let j=1;j<H.length;j++){ let s=0; for(const id in H[j][1]) if(H[j-1][1][id]!=null) s+=H[j][1][id]-H[j-1][1][id]; d.push(s); }
+  const d=[0]; for(let j=1;j<H.length;j++){ let s=0; for(const id in H[j][1]){ if(H[j-1][1][id]!=null) s+=H[j][1][id]-H[j-1][1][id]; else if(born.get(id)===H[j][0]) s+=H[j][1][id]; } d.push(s); }
   // the recorder's fees between two moments, a minute's fees spread evenly over the minute
   const feeIn=(a,b)=>{ let s=0; for(let m=Math.floor(a/MIN)*MIN; m<b; m+=MIN){ const v=fees.get(m); if(v) s+=v*(Math.min(b,m+MIN)-Math.max(a,m))/MIN; } return s; };
   // a reading is a clean edge when nothing landed in the ten minutes before it: no fee, no own swap,
@@ -119,7 +123,10 @@ export function ownSwapLines({posHist, selfDone, selfPend, rec, rows, start, now
     const nowIds=new Set(rec.map(p=>String(p.id))), win=(posHist||[]).filter(x=>x[0]>=start-6*3600e3);
     const goneIds=[...new Set(win.flatMap(x=>Object.keys(x[1]||{})))].filter(id=>mine(id)&&!nowIds.has(id));
     const gone=goneIds.length?win.map(x=>[x[0], Object.fromEntries(goneIds.filter(id=>x[1][id]!=null).map(id=>[id,x[1][id]]))]):[];
-    const r=ownSwapCheck({hist, fees:fm, read, swaps:sw, now, gone}), v=ownSwapVerdict(r);
+    // positions the relay first read inside its record (opened then): their first reading counts from zero
+    const all=[...(posHist||[])].filter(x=>x&&x[1]).sort((p,q)=>p[0]-q[0]), born=new Map();
+    for(let j=1;j<all.length;j++) for(const id of ids) if(all[j][1][id]!=null&&!born.has(id)&&all.slice(0,j).every(x=>x[1][id]==null)) born.set(id, all[j][0]);
+    const r=ownSwapCheck({hist, fees:fm, read, swaps:sw, now, gone, born}), v=ownSwapVerdict(r);
     if(v) lines.push(v);
     if(r.recent) lines.push('     '+r.recent+' own swap(s) there waiting for the next run: a swap in those readings is under half an hour old');
     if(r.unplaced) lines.push('     '+r.unplaced+' own swap(s) there outside the relay’s readings: not checked');

@@ -68,6 +68,18 @@ const own3=[{min:470, back:12}, {min:800, back:20}, {min:805, back:8}];
   ok(r.gone>0 && /^note .*closed since then.*taken out 100%/.test(v), 'with it: unsure, and 100% once its rise is counted: '+v.slice(v.indexOf('a position closed')).slice(0,60)+'…'); }
 { const D=day({own:own3, fault:'twice'}), r=ownSwapCheck({...D, hist:D.hist.map(([t,v])=>[t,{A:v.A}]), gone:D.hist.map(([t,v])=>[t,{B:v.B}])});
   ok(/^WARN .*fees lost/.test(ownSwapVerdict(r)), 'taken out twice beside a closed position: still a warning ('+Math.round(r.takenAlt/r.expected*100)+'% with it counted)'); }
+/* A position opened just before an own swap through its pool, read by the relay for the first time
+   after the swap: its first reading (from zero) holds the swap's fee, and must count as a rise. */
+{ const D=day({own:[{min:470, back:12}]}), k=D.hist.findIndex(h=>h[0]>D.swaps[0].t), base=D.hist[k-1][1].B;
+  // B opens at the relay's read before the swap: until then only A earns, so the recorder saw A's 70%
+  const openAt=D.hist[k-1][0]-3*MIN; for(const [m,v] of D.fees) if(m<=openAt) D.fees.set(m, v*0.7);
+  const hist=D.hist.map(([t,v],j)=>[t, j<k?{A:v.A}:{A:v.A, B:v.B-base}]), born=new Map([['B', D.hist[k][0]]]);
+  const bare=ownSwapCheck({...D, hist}), r=ownSwapCheck({...D, hist, born});
+  ok(/^WARN .*fees lost/.test(ownSwapVerdict(bare)), 'a position opened right before the swap, first reading not counted: reads as fees lost ('+Math.round(bare.taken/bare.expected*100)+'%)');
+  ok(/^ok /.test(ownSwapVerdict(r)), 'its first reading counted from zero: '+Math.round(r.taken/r.expected*100)+'%, all taken back out');
+  const twice=day({own:[{min:470, back:12}], fault:'twice'}); for(const [m,v] of twice.fees) if(m<=openAt) twice.fees.set(m, v*0.7);
+  const h2=twice.hist.map(([t,v],j)=>[t, j<k?{A:v.A}:{A:v.A, B:v.B-twice.hist[k-1][1].B}]);
+  ok(/^WARN .*fees lost/.test(ownSwapVerdict(ownSwapCheck({...twice, hist:h2, born:new Map([['B', twice.hist[k][0]]])}))), 'and a real double deduction beside it still warns'); }
 { const D=day({own:own3}), r=ownSwapCheck({...D, gone:D.hist.map(([t])=>[t,{C:5}])});
   ok(r.gone===0 && /^ok /.test(ownSwapVerdict(r)), 'a closed position that earned nothing in the stretch changes nothing'); }
 { const r=ownSwapCheck(day({own:[]}));
