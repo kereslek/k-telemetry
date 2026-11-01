@@ -26,12 +26,16 @@ const MIN=60000;
           part kept out); minutes it read with nothing earned may be absent
    read:  Set of minute starts the recorder read at all (a missing one is a gap in its record)
    swaps: [{t, at, back, applied}] the deck's own swaps through that pool: when made, when the relay
-          queued its fee, the fee that came back, and whether the relay has taken it out yet */
-export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleMin=30}){
+          queued its fee, the fee that came back, and whether the relay has taken it out yet
+   gone:  [[t, {positionId: booked running total}]] for positions on the same chain that are closed now.
+          The recorder counted their fees while they were open, but `hist` (built from today's position
+          list) cannot hold them, so a stretch where one was still earning reads as fees lost when none
+          were: such a stretch is said to be unsure, with the ratio once their rise is counted too. */
+export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleMin=30, gone=[]}){
   const H=(hist||[]).filter(x=>x&&x[1]).sort((a,b)=>a[0]-b[0]);
   const settled=x=>x.applied && x.back>0 && now-x.at>=settleMin*MIN;
   const out={n:0, recent:(swaps||[]).filter(x=>x.back>0&&!settled(x)).length, unplaced:0,
-             taken:0, expected:0, dips:0, other:0, gapMin:0, busyEdge:0};
+             taken:0, expected:0, dips:0, other:0, gapMin:0, busyEdge:0, gone:0, takenAlt:0};
   const S=(swaps||[]).filter(settled);
   if(H.length<2||!S.length) return out;
   // the booked change from one reading to the next, over the positions present in both
@@ -61,7 +65,11 @@ export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleM
     if(inS.some(x=>!settled(x))){ out.recent+=inS.filter(settled).length; continue; }
     let booked=0, dips=0; for(let j=a+1;j<=b;j++){ booked+=d[j]; if(d[j]<0) dips-=d[j]; }
     const other=feeIn(t0,t1), back=inS.reduce((s,x)=>s+x.back,0);
-    out.n+=inS.length; out.expected+=back; out.taken+=other+back-booked; out.dips+=dips; out.other+=other;
+    // what positions closed since then earned inside the stretch (they may have been in this pool)
+    const G=(gone||[]).filter(x=>x&&x[1]).sort((p,q)=>p[0]-q[0]), at=t=>{ let v=null; for(const x of G) if(x[0]<=t) v=x[1]; return v; };
+    const g0=at(t0), g1=at(t1); let gr=0; if(g1) for(const id in g1){ const r=g1[id]-((g0&&g0[id]!=null)?g0[id]:0); if(r>0.005) gr+=r; }
+    if(gr>0) out.gone++;
+    out.n+=inS.length; out.expected+=back; out.taken+=other+back-booked; out.takenAlt+=other+back-booked-gr; out.dips+=dips; out.other+=other;
     for(let m=Math.floor(t0/MIN)*MIN; m<t1; m+=MIN) if(!read.has(m)) out.gapMin++;
     if(!quiet(a)) out.busyEdge++; if(!quiet(b)) out.busyEdge++;
   }
@@ -74,14 +82,17 @@ export function ownSwapCheck({hist, fees, read, swaps, now, quietMin=10, settleM
 export function ownSwapVerdict(r){
   if(!r.n) return null;
   const tol=Math.max(0.25, 0.03*r.other+0.02*r.expected), diff=r.taken-r.expected, pct=x=>Math.round(x*100)+'%';
-  const unsure=r.gapMin>0||r.busyEdge>0;
+  // a closed position explains the gap only when counting what it earned there closes it: a real loss
+  // beside it still warns
+  const unsure=r.gapMin>0||r.busyEdge>0||(r.gone>0&&Math.abs(r.takenAlt-r.expected)<=tol);
   const st=Math.abs(diff)<=tol?'ok  ':unsure?'note':'WARN';
   const what=Math.abs(diff)<=tol?'all taken back out of your fees':diff>0?'MORE came out of your fees than they paid in: fees lost':'LESS came out of your fees than they paid in: part of your own money still counted as income';
   // the allowance itself is never printed: at its floor it would give away what the swaps paid in
   return st+' '+r.n+' own swap(s) through one of your pools: '+what+' (taken out '+pct(r.taken/r.expected)+' of what they paid in'
     +', once the other traders’ fees that landed in the same readings are counted; the dips alone showed '+pct(r.dips/r.expected)+')'
     +(r.gapMin?' · the recorder has '+r.gapMin+' unread minute(s) in those readings, so this cannot be exact':'')
-    +(r.busyEdge?' · '+r.busyEdge+' edge(s) fell in the middle of trading: checked again on the next run':'');
+    +(r.busyEdge?' · '+r.busyEdge+' edge(s) fell in the middle of trading: checked again on the next run':'')
+    +(r.gone?' · a position closed since then was still earning in those readings, so this cannot be exact; counting what it earned there as this pool’s too: taken out '+pct(r.takenAlt/r.expected):'');
 }
 
 /* Today's own swaps, pool by pool, from the relay's files and the recorder's minutes, as the audit's
@@ -103,7 +114,12 @@ export function ownSwapLines({posHist, selfDone, selfPend, rec, rows, start, now
   for(const [k,sw] of swapsBy){
     const ids=idsOf.get(k)||[], fm=new Map(); for(const r of rows) if(r[3]&&r[3][k]>0) fm.set(r[0], r[3][k]);
     const hist=(posHist||[]).filter(x=>x[0]>=start-6*3600e3).map(x=>[x[0], Object.fromEntries(ids.filter(id=>x[1][id]!=null).map(id=>[id,x[1][id]]))]);
-    const r=ownSwapCheck({hist, fees:fm, read, swaps:sw, now}), v=ownSwapVerdict(r);
+    // positions on this pool's chain that are closed now (in the readings, not in today's list)
+    const chain=(rec.find(p=>keyOf(p)===k)||{}).chain, mine=id=>chain==='eth'?/^\d+$/.test(id):!/^\d+$/.test(id);
+    const nowIds=new Set(rec.map(p=>String(p.id))), win=(posHist||[]).filter(x=>x[0]>=start-6*3600e3);
+    const goneIds=[...new Set(win.flatMap(x=>Object.keys(x[1]||{})))].filter(id=>mine(id)&&!nowIds.has(id));
+    const gone=goneIds.length?win.map(x=>[x[0], Object.fromEntries(goneIds.filter(id=>x[1][id]!=null).map(id=>[id,x[1][id]]))]):[];
+    const r=ownSwapCheck({hist, fees:fm, read, swaps:sw, now, gone}), v=ownSwapVerdict(r);
     if(v) lines.push(v);
     if(r.recent) lines.push('     '+r.recent+' own swap(s) there waiting for the next run: a swap in those readings is under half an hour old');
     if(r.unplaced) lines.push('     '+r.unplaced+' own swap(s) there outside the relay’s readings: not checked');

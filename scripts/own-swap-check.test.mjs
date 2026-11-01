@@ -59,6 +59,17 @@ const own3=[{min:470, back:12}, {min:800, back:20}, {min:805, back:8}];
   ok(r.n===0 && r.recent===1, 'a swap whose fee was queued under half an hour ago waits for the next run'); }
 { const D=day({own:[{min:1300, back:10}], busyMin:Array.from({length:75},(_,i)=>1325+i), endAt:1400}), r=ownSwapCheck(D), v=ownSwapVerdict(r);
   ok(r.busyEdge>=1 && !/^WARN/.test(v||'WARN'), 'the last reading in the middle of trading: noted, not a warning ('+(v||'').slice(0,40)+'…)'); }
+/* A position closed since then: it took part of the pool's fees (here B's share) while it was open,
+   the recorder counted them, but today's position list no longer has it. Without it the check would
+   cry fees lost; with it the stretch is unsure, and counting its rise brings the ratio back to 100%. */
+{ const D=day({own:own3}), hist=D.hist.map(([t,v])=>[t,{A:v.A}]), gone=D.hist.map(([t,v])=>[t,{B:v.B}]);
+  const bare=ownSwapCheck({...D, hist}), r=ownSwapCheck({...D, hist, gone}), v=ownSwapVerdict(r);
+  ok(/^WARN .*fees lost/.test(ownSwapVerdict(bare)), 'a closed position left out: reads as fees lost ('+Math.round(bare.taken/bare.expected*100)+'%), which is why it is looked for');
+  ok(r.gone>0 && /^note .*closed since then.*taken out 100%/.test(v), 'with it: unsure, and 100% once its rise is counted: '+v.slice(v.indexOf('a position closed')).slice(0,60)+'…'); }
+{ const D=day({own:own3, fault:'twice'}), r=ownSwapCheck({...D, hist:D.hist.map(([t,v])=>[t,{A:v.A}]), gone:D.hist.map(([t,v])=>[t,{B:v.B}])});
+  ok(/^WARN .*fees lost/.test(ownSwapVerdict(r)), 'taken out twice beside a closed position: still a warning ('+Math.round(r.takenAlt/r.expected*100)+'% with it counted)'); }
+{ const D=day({own:own3}), r=ownSwapCheck({...D, gone:D.hist.map(([t])=>[t,{C:5}])});
+  ok(r.gone===0 && /^ok /.test(ownSwapVerdict(r)), 'a closed position that earned nothing in the stretch changes nothing'); }
 { const r=ownSwapCheck(day({own:[]}));
   ok(r.n===0 && ownSwapVerdict(r)===null, 'no own swaps: nothing to say'); }
 
