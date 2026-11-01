@@ -315,7 +315,10 @@ export async function syncPositionLedger(rpc, pos, st, {ourPdas, maxTx=40, maxPa
   }
   while(st.todo.length && read<maxTx){
     const sig=st.todo[st.todo.length-1];
-    const tx=await rpc('getTransaction',[sig,{maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]); calls++; read++;
+    /* version 1: Solana's newer transaction format is refused to a client that accepts only 0 (error -32015), which would
+       hold this position's history at that transaction; its fields read here (blockTime, signatures, logMessages,
+       accountKeys) have the same shape (checked on a real one, 1 Nov) */
+    const tx=await rpc('getTransaction',[sig,{maxSupportedTransactionVersion:1,encoding:'jsonParsed'}]); calls++; read++;
     if(!tx||!tx.meta){
       /* Not served this time. Left queued; after enough refusals it is dropped and the ledger
          is marked as having a hole, so it can never present itself as complete. */
