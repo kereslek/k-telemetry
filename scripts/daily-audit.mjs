@@ -451,7 +451,7 @@ if(!LOCKED) for(const t of logLines) notes.push('event log: '+t); else if(logLin
     const ageB=ms=>ms==null||!isFinite(ms)?'—':ms<90e3?Math.round(ms/1e3)+' s':ms<5400e3?Math.round(ms/60e3)+' min':(ms/3600e3).toFixed(1)+' h';
     const getB=async u=>{ for(let k=0;k<3;k++){ try{ const r=await fetch(u,{signal:AbortSignal.timeout(20000),headers:{accept:'application/json'}}); if(r.ok) return await r.json(); }catch(e){} await new Promise(f=>setTimeout(f,800*(k+1))); } return null; };
     const {bridgePage, bridgeIndep, bridgeVerdict}=new Function('age','get', blk+'\nreturn {bridgePage, bridgeIndep, bridgeVerdict};')(ageB,getB);
-    const P=await bridgePage(pg), I=await bridgeIndep(), V=bridgeVerdict(P, I, relay&&relay.bridge, Date.now());
+    const P=await bridgePage(pg), I=await bridgeIndep(P), V=bridgeVerdict(P, I, relay&&relay.bridge, Date.now());
     (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the page and the chains agree')+(V.info.length?' · '+V.info.join(' · '):''));
   }catch(e){ WARN('CPOOL bridge: the check could not run ('+String(e&&e.name||'error').replace(/[^A-Za-z]/g,'')+')'); } }
 // close the page the way a person closing the tab would, so the access log ends this visit now

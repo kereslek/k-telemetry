@@ -136,6 +136,7 @@ async function readRoute(R, io, prev){
         &&String(l.topics[0]).toLowerCase()===(way==='in'?TOPIC.sent:TOPIC.recv));
       if(!lg) return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'no matching Ethereum event'};
       const eid=Number(word(lg.data,0)), amt=word(lg.data,way==='in'?2:1);
+      const cp=amt!=null?Number(amt/10n**12n)/1e6:null;              // how much crossed, in CPOOL, from the Ethereum event
       /* version 1: LayerZero's executor now delivers to Solana in the newer transaction format, which a node
          refuses to return to a client that only accepts version 0 (error -32015); 1 still returns 0 and legacy */
       const getTx=()=>safe(()=>io.sol('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:1,commitment:'finalized'}]));
@@ -147,14 +148,14 @@ async function readRoute(R, io, prev){
         const ss=await safe(()=>io.sol('getSignatureStatuses',[[solTx],{searchTransactionHistory:true}])), s0=ss&&ss.value&&ss.value[0];
         if(s0&&!s0.err&&eid===R.eidTo&&s0.confirmationStatus==='finalized'){
           const bt=s0.slot!=null?await safe(()=>io.sol('getBlockTime',[s0.slot])):null;
-          return {t:way==='in'?(bt?bt*1000:(m.updated||m.created)):(m.updated||m.created), sent:m.created, src:m.srcTx, dst:m.dstTx, verified:true, via:'status',
+          return {t:way==='in'?(bt?bt*1000:(m.updated||m.created)):(m.updated||m.created), sent:m.created, src:m.srcTx, dst:m.dstTx, amt:cp, verified:true, via:'status',
             note:'Solana: finalized, no error (its amount could not be read from a public node)'}; }
-        return {t:m.created, src:m.srcTx, dst:m.dstTx, verified:false, note:'Solana transaction not read'}; }
+        return {t:m.created, src:m.srcTx, dst:m.dstTx, amt:cp, verified:false, note:'Solana transaction not read'}; }
       const mv=tokenMoves(tx,R.mint), want=amt/k, ok=eid===R.eidTo&&(tx.meta&&!tx.meta.err)&&(way==='in'?mv.mint:mv.burn).some(a=>a===want);
       const bt=tx.blockTime?tx.blockTime*1000:null;
       const eb=way==='out'&&rc.blockNumber?await safe(()=>io.eth('eth_getBlockByNumber',[rc.blockNumber,false])):null, et=eb?parseInt(eb.timestamp,16)*1000:null;
       // when it arrived: on Solana for a crossing in, on Ethereum for one back
-      return {t:way==='in'?(bt||m.updated||m.created):(et||m.updated||m.created), sent:m.created, src:m.srcTx, dst:m.dstTx, verified:!!ok, note:ok?null:'amounts or chain do not match'};
+      return {t:way==='in'?(bt||m.updated||m.created):(et||m.updated||m.created), sent:m.created, src:m.srcTx, dst:m.dstTx, amt:cp, verified:!!ok, note:ok?null:'amounts or chain do not match'};
     };
     for(const [way,L] of [['in',toSol],['out',back]]){
       const m=pickLast(L); if(!m) continue;

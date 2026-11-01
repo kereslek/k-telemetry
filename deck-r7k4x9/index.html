@@ -171,6 +171,14 @@
   .bbox .bok{color:var(--status-good)} .bbox .bamb{color:var(--status-warning)} .bbox .bbad{color:var(--status-critical)} .bbox .bdim{opacity:.75}
   .bbox a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent);margin-left:6px}
   .bbox .next{margin-top:6px;padding-top:5px;border-top:1px solid var(--line-soft);opacity:.85}
+  .bbox .row2{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:-1px 0 5px;font-size:10.5px;white-space:nowrap}
+  .bbox .row2 .bdim{white-space:normal}
+  .bbox .lg{font-size:10px;line-height:1.4;margin:-1px 0 2px}
+  .bbox .bclose{position:absolute;top:4px;right:5px;border:0;background:none;color:var(--text-muted);font:500 13px/1 var(--sans);padding:4px 6px;cursor:pointer}
+  .bbox .bclose:hover,.bbox .bclose:focus-visible{color:var(--text-primary)}
+  .bbox .t{padding-right:18px}
+  .bmini .bcar{display:inline-block;font-size:8px;margin-left:1px;opacity:.75;transition:transform .15s}
+  .bmini[aria-expanded=true] .bcar{transform:rotate(180deg)}
   header.bridge-open{z-index:60}
   /* a card with the chip wraps its title row instead of squeezing it: on a laptop's three-across cards the
      chip drops to a second line (as on a phone), the pair name stays on one line and nothing spills sideways */
@@ -2664,7 +2672,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.29';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.30';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7784,6 +7792,10 @@ const brWhen=t=>{ if(!t) return ''; const d=new Date(t), today=new Date().toLoca
 const BR_MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];   // the page's own month names (the locale's "Sept" is not)
 const brDay=t=>{ const [d,m]=new Date(t).toLocaleDateString('en-GB',{timeZone:TZ,day:'numeric',month:'numeric'}).split('/'); return (+d)+' '+BR_MN[(+m||1)-1]; };
 const brM=v=>v==null?'—':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':v.toFixed(0);
+const brAmt=v=>v>=1?Math.round(v).toLocaleString('en-US'):v.toFixed(3);   // a crossing's amount, whole CPOOL as the explorers show it
+/* the Solana CPOOL positions the chip is on, in card order */
+const bridgePools=()=>[...document.querySelectorAll('#cards .card .brg[data-bcard]')].map(c=>{ const id=c.dataset.bcard, P=state.positions;
+  return P&&P.get?P.get(id)||P.get(+id):null; }).filter(Boolean);
 /* what one line says when shut, quiet or unknown */
 function brLabel(r){
   if(!r) return 'CPOOL bridge: no reading yet';
@@ -7820,7 +7832,7 @@ function brLinks(way,x){
   return (ok(evm)?'<a href="https://etherscan.io/tx/'+encodeURIComponent(evm)+'" target="_blank" rel="noopener noreferrer">ETH ↗</a>':'')
     +(ok(sol)?'<a href="https://solscan.io/tx/'+encodeURIComponent(sol)+'" target="_blank" rel="noopener noreferrer">SOL ↗</a>':'');
 }
-function bridgeBox(p){
+function bridgeBox(p, where){
   const r=bridgeRoute(); if(!r) return '';
   const L=['<span class="t">BRIDGE · CPOOL <i>Ethereum ⇄ Solana · LayerZero</i></span>'];
   if(r.age>BRIDGE_STALE) L.push('<span class="bdim">— not checked for '+brAgoLong(r.t).replace(' ago','')+' (the relay reads it every half hour)</span>');
@@ -7829,19 +7841,32 @@ function bridgeBox(p){
   else if(r.st==='closed') L.push('<span class="bbad">● CLOSED</span> — '+esc((r.why||[]).join('; ')||'shut on chain'));
   else L.push('<span class="bdim">— '+esc((r.why||[]).join('; ')||'some checks could not be read this time')+'</span>');
   L.push('<div class="sub">LAST VERIFIED CROSSING</div>');
+  /* each way: when it arrived and whether it was found on both chains (or, in plain words, why not yet), then how
+     much crossed and the two explorers to see it on */
+  const WHY={'no matching Ethereum event':'its Ethereum side was not found yet','Solana transaction not read':'its Solana side could not be read yet',
+    'amounts or chain do not match':'the two sides do not match'};
   for(const [k,lab] of [['in','ETH → SOL'],['out','SOL → ETH']]){ const x=r.last&&r.last[k];
-    L.push('<div class="row"'+(x&&x.note?' title="'+esc(x.note)+'"':'')+'><span>'+lab+' '+(x&&x.t?'<b>'+brAgoLong(x.t)+'</b> <span class="bdim">'+brWhen(x.t)+'</span>'+(x.verified?'':' <span class="bamb">unverified</span>'):'<b>—</b>')+'</span>'
-      +'<span>'+(x?brLinks(k,x):'')+'</span></div>'); }
+    if(!x||!x.t){ L.push('<div class="row"><span>'+lab+' <b>—</b></span><span></span></div>'); continue; }
+    const ok=!!x.verified, amt=x.amt!=null&&isFinite(x.amt)?brAmt(x.amt)+' CPOOL':'';
+    L.push('<div class="row"'+(x.note?' title="'+esc(x.note)+'"':'')+'><span>'+lab+' <b>'+brAgoLong(x.t)+'</b> <span class="bdim">'+brWhen(x.t)+'</span></span>'
+      +(ok?'<span class="bok">✓ both chains</span>':'<span class="bamb">not checked yet</span>')+'</div>');
+    const say=[amt, ok&&x.via==='status'?'Solana by its status':'', ok?'':(WHY[x.note]||'not found on both chains yet')].filter(Boolean).join(' · ');
+    L.push('<div class="row2"><span class="bdim">'+esc(say)+'</span><span>'+brLinks(k,x)+'</span></div>'); }
+  L.push('<div class="bdim lg">✓ = the same crossing found on Ethereum and on Solana, same amount, delivered by LayerZero</div>');
   if(r.n30){ const pl=r.n30.partial?'+':'';
     L.push('<div class="sub">LAST 30 DAYS</div><div><b>'+r.n30.to+pl+'</b> to Solana · <b>'+r.n30.back+pl+'</b> back · '
       +(r.waiting?'<span class="bamb">'+r.waiting+' waiting over 30 min</span>':'none stuck')+'</div>'); }
   const h=brHistory(r); if(h) L.push('<div>'+h+'</div>');
-  if(p&&p.poolGap&&isFinite(p.poolGap.pct)) L.push('<div>price gap: this pool <b>'+(p.poolGap.pct>=0?'+':'−')+Math.abs(p.poolGap.pct).toFixed(1)+'%</b> vs Ethereum</div>');
+  const gp=v=>(v>=0?'+':'−')+Math.abs(v).toFixed(1)+'%';
+  if(where==='card'){ if(p&&p.poolGap&&isFinite(p.poolGap.pct)) L.push('<div>price gap: this pool <b>'+gp(p.poolGap.pct)+'</b> vs Ethereum</div>'); }
+  else { const G=[...new Set(bridgePools().map(q=>q.poolGap&&isFinite(q.poolGap.pct)?gp(q.poolGap.pct):null).filter(Boolean))];
+    if(G.length) L.push('<div>price gap: your Solana CPOOL pool'+(G.length>1?'s':'')+' <b>'+G.join(' / ')+'</b> vs Ethereum</div>'); }
   if(r.supply&&r.supply.sol!=null&&r.supply.locked!=null)
     L.push('<div>supply: <b>'+brM(r.supply.sol)+'</b> on Solana, covered by <b>'+brM(r.supply.locked)+'</b> locked '
       +(r.checks&&r.checks.supply===true?'<span class="bok">✓</span>':r.checks&&r.checks.supply===false?'<span class="bbad">✗ not covered</span>':'')+'</div>');
   L.push('<div class="next">checked '+brWhen(r.t)+' · XRPL (CLEAR): not live yet</div>');
-  return '<div class="bbox" role="dialog" aria-label="CPOOL bridge check">'+L.map((x,i)=>i&&!x.startsWith('<div')?'<div>'+x+'</div>':x).join('')+'</div>';
+  return '<div class="bbox" role="dialog" aria-label="CPOOL bridge check"><button type="button" class="bclose" aria-label="Close the bridge check" title="Close">✕</button>'
+    +L.map((x,i)=>i&&!x.startsWith('<div')?'<div>'+x+'</div>':x).join('')+'</div>';
 }
 /* the header light */
 function renderBridgeMini(){
@@ -7849,7 +7874,7 @@ function renderBridgeMini(){
   if(!r){ b.hidden=true; return; }
   b.hidden=false; b.dataset.bs=r.st||'unk';
   const lab=brLabel(r)+'. Tap for the check.'; b.title=lab; b.setAttribute('aria-label',lab);
-  b.innerHTML='<i class="bled"></i>BRIDGE';
+  b.innerHTML='<i class="bled"></i>BRIDGE<span class="bcar" aria-hidden="true">▾</span>';
 }
 /* one box open at a time: under a card's chip ('card:<id>'), the header light ('hdr') or the
    fee link ('fee'); drawn again with fresh figures whenever the page is, put away by a second tap,
@@ -7861,18 +7886,26 @@ function bridgeShow(key){
   document.querySelectorAll('.brg,#hBridge,.br-link').forEach(x=>x.setAttribute('aria-expanded','false'));
   const hd=document.querySelector('header'); if(hd) hd.classList.toggle('bridge-open', brOpen==='hdr');
   if(!brOpen) return;
+  if(brOpen==='hdr'){ const b=$('#hBridge');
+    if(!b||b.hidden||!hd){ brOpen=null; if(hd) hd.classList.remove('bridge-open'); return; }
+    hd.insertAdjacentHTML('beforeend', bridgeBox(null,'hdr'));
+    const bx=hd.lastElementChild; if(!bx||!bx.classList.contains('bbox')){ brOpen=null; hd.classList.remove('bridge-open'); return; }
+    bx.classList.add('bhdr'); bx.id='hBridgeBox'; b.setAttribute('aria-controls','hBridgeBox'); b.setAttribute('aria-expanded','true');
+    const hq=hd.getBoundingClientRect(), q=b.getBoundingClientRect(), vw=document.documentElement.clientWidth, w=bx.offsetWidth;
+    let x=q.left-1; if(x+w>vw-8) x=vw-8-w; if(x<8) x=8;                       // under the light, kept on the screen
+    bx.style.left=(x-hq.left)+'px'; bx.style.top=(q.bottom-hq.top+8)+'px';
+    return; }
   let anchor=null, p=null;
-  if(brOpen==='hdr') anchor=$('#hBridge');
-  else if(brOpen==='fee') anchor=document.querySelector('.br-link');
+  if(brOpen==='fee') anchor=document.querySelector('.br-link');
   else { const id=brOpen.slice(5); anchor=document.querySelector('.card[data-id="'+CSS.escape(id)+'"] .brg'); p=state.positions&&state.positions.get?state.positions.get(id)||state.positions.get(+id):null; }
   if(!anchor||anchor.hidden){ brOpen=null; return; }
   anchor.setAttribute('aria-expanded','true');
-  anchor.insertAdjacentHTML('beforeend', bridgeBox(p));
+  anchor.insertAdjacentHTML('beforeend', bridgeBox(p, brOpen==='fee'?'fee':'card'));
   const bx=anchor.querySelector('.bbox'); if(!bx) return;
   const over=bx.getBoundingClientRect().right-(document.documentElement.clientWidth-8);
   if(over>0) bx.style.left=(-1-over)+'px';   // kept on the screen
 }
-/* from the header light or the fee link: to the Solana CPOOL card, its box opened there */
+/* from the fee link: to the Solana CPOOL card, its box opened there */
 function bridgeGo(from){
   const chip=document.querySelector('.card .brg[data-bcard]');
   if(chip){ const id=chip.dataset.bcard; goToCard(id); bridgeShow('card:'+id); }
@@ -7880,17 +7913,20 @@ function bridgeGo(from){
 }
 document.addEventListener('click',e=>{
   const t=e.target instanceof Element?e.target:null; if(!t) return;
+  if(t.closest('.bbox .bclose')){ const was=brOpen; bridgeShow(null); if(was==='hdr') $('#hBridge')?.focus(); return; }
   if(t.closest('.bbox')) return;                   // its links open; the box stays
   const chip=t.closest('.brg[data-bcard]'), mini=t.closest('#hBridge'), link=t.closest('.br-link');
   if(chip){ const k='card:'+chip.dataset.bcard; bridgeShow(brOpen===k?null:k); return; }
-  if(mini||link){ bridgeGo(mini?'hdr':'fee'); return; }
+  if(mini){ bridgeShow(brOpen==='hdr'?null:'hdr'); return; }   // the check opens right here, under the light
+  if(link){ bridgeGo('fee'); return; }
   if(brOpen) bridgeShow(null);
 });
 document.addEventListener('keydown',e=>{
   const t=e.target instanceof Element?e.target.closest('.brg[data-bcard]'):null;
   if(t&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); const k='card:'+t.dataset.bcard; bridgeShow(brOpen===k?null:k); }
-  else if(e.key==='Escape'&&brOpen) bridgeShow(null);
+  else if(e.key==='Escape'&&brOpen){ const was=brOpen; bridgeShow(null); if(was==='hdr') $('#hBridge')?.focus(); }
 });
+addEventListener('resize',()=>{ if(brOpen==='hdr') bridgeShow('hdr'); });      // kept under the light and on the screen
 function gasCostUsd(gas){ return (state.gasGwei!=null&&state.ethUsd)? gas*state.gasGwei*state.ethUsd/1e9 : null; }
 function dailyFeeUsd(p){ const a=p.aprW?.d1 ?? p.feeAprPct; const base=p.valueUsd||p.costUsd; return (a!=null&&base)? a/100*base/365 : null; }
 

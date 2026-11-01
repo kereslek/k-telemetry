@@ -321,7 +321,7 @@ console.log('\n— gauges —');
 
 /* CPOOL's Ethereum ⇄ Solana bridge: the page against the chains and LayerZero, read again here */
 if(scanned){ console.log('\n— the CPOOL bridge, Ethereum ⇄ Solana —');
-  const I=await bridgeIndep().catch(()=>({open:null, why:[], lz:null, supply:null, since:null})), V=bridgeVerdict(BRP, I, relay&&relay.bridge, Date.now());
+  const I=await bridgeIndep(BRP).catch(()=>({open:null, why:[], lz:null, supply:null, since:null})), V=bridgeVerdict(BRP, I, relay&&relay.bridge, Date.now());
   (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the header light, the fee link and the card chip agree; the check opens and closes; both jumps land on the card with it open; '
     +'the state, the last crossings, the 30-day counts, the supply and the open-since date match what was read here from the chains and LayerZero')+(V.info.length?' · '+V.info.join(' · '):'')); }
 /* BRIDGE-AUDIT-START */
@@ -337,6 +337,10 @@ const b58dec=s=>{ let n=0n; for(const c of s) n=n*58n+BigInt(B58.indexOf(c)); co
 async function rpcE(method,params){ for(const u of ['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://eth.blockscout.com/api/eth-rpc']){
   try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
     const j=r.ok?await r.json():null; if(j&&j.result!==undefined&&!j.error) return j.result; }catch(e){} } return null; }
+/* asked until a node has it: a pruned node answers "nothing" for an older receipt, which is not "there is none" */
+async function rpcEAny(method,params){ for(const u of ['https://eth.drpc.org','https://1rpc.io/eth','https://eth.blockscout.com/api/eth-rpc','https://ethereum-rpc.publicnode.com']){
+  try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+    const j=r.ok?await r.json():null; if(j&&j.result!=null&&!j.error) return j.result; }catch(e){} } return null; }
 async function rpcS(method,params){ for(const u of ['https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com']) for(let k=0;k<3;k++){
   try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(20000),body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
     const j=r.ok?await r.json():null; if(j&&j.result!==undefined&&!j.error) return j.result; }catch(e){} await new Promise(f=>setTimeout(f,800*(k+1))); } return null; }
@@ -354,7 +358,7 @@ async function lastPeerSet(){ let next=null;
     if(ev){ const bk=await rpcE('eth_getBlockByNumber',['0x'+(+ev.block_number).toString(16),false]); return bk?{t:parseInt(bk.timestamp,16)*1000, open:!/^0*$/.test(String(ev.data).slice(66,130))}:null; }
     if(!r.next_page_params) return null; next=r.next_page_params; await new Promise(f=>setTimeout(f,250)); }
   return null; }
-async function bridgeIndep(){
+async function bridgeIndep(P){
   const I={open:null, why:[], supply:null, lz:null, since:null};
   const w=(h,i)=>{ const s=String(h||'').replace(/^0x/,'').slice(64*i,64*(i+1)); return s.length===64?BigInt('0x'+s):null; };
   const a20=h=>h&&String(h).length>=66?String(h).replace(/^0x/,'').slice(24,64).toLowerCase():null;
@@ -374,6 +378,13 @@ async function bridgeIndep(){
     I.lz={bySrc:new Map(M.filter(x=>x.tx).map(x=>[String(x.tx),x])), lastIn:last(30101,30168), lastOut:last(30168,30101), full:M.length<100||Math.min(...M.map(x=>x.t||Date.now()))<win,
       n30:{to:M.filter(x=>x.src===30101&&x.dst===30168&&x.t>=win).length, back:M.filter(x=>x.src===30168&&x.dst===30101&&x.t>=win).length}}; }
   I.since=await lastPeerSet();
+  /* how much each of the page's last crossings carried, from its own Ethereum event (undefined: not readable here) */
+  if(P&&P.raw&&P.raw.last){ I.amt={};
+    for(const [k,topic,wi] of [['in','0x85496b760a4b7f8d66384b9df21b381f5d1b1e79f229a47aaf4c232edc2fe59a',2],['out','0xefed6d3500546b29533b128a29e3a94d70788727f0507505ac12eaf2e578fd9c',1]]){
+      const x=P.raw.last[k], tx=x&&(k==='in'?x.src:x.dst); if(!tx||!/^0x[0-9a-fA-F]{64}$/.test(tx)) continue;
+      const rc=await rpcEAny('eth_getTransactionReceipt',[tx]);
+      const lg=rc&&(rc.logs||[]).find(l=>String(l.address).toLowerCase()===BR.adapter&&String(l.topics&&l.topics[0]).toLowerCase()===topic);
+      I.amt[k]=rc==null?undefined:lg?Number(w(lg.data,wi)/10n**12n)/1e6:null; } }
   return I; }
 /* what the page shows, read in the open browser before it closes */
 async function bridgePage(pg){
@@ -383,7 +394,7 @@ async function bridgePage(pg){
     const sol=[...state.positions.values()].filter(p=>p.chain==='sol'&&[p.m0,p.m1].some(m=>m&&String(m.symbol).toUpperCase()==='CPOOL')).map(p=>String(p.id));
     const chips=[...document.querySelectorAll('#cards .card .brg')].map(c=>({bs:c.dataset.bs, card:c.dataset.bcard}));
     const l=document.getElementById('hBridge'), f=document.querySelector('.br-link');
-    const x=k=>{ const v=rt&&rt.last&&rt.last[k]; return v?{t:v.t, src:v.src, dst:v.dst, v:!!v.verified, note:v.note||null, via:v.via||null}:null; };
+    const x=k=>{ const v=rt&&rt.last&&rt.last[k]; return v?{t:v.t, src:v.src, dst:v.dst, v:!!v.verified, note:v.note||null, via:v.via||null, amt:v.amt??null}:null; };
     return {t:B?B.t:null, st:r?r.st||'unk':null, sol, chips, light:l&&!l.hidden?l.dataset.bs:null, link:f?f.dataset.bs:null,
       raw:rt?{state:rt.state||null, n30:rt.n30||null, lastT:rt.lastT||null, supply:rt.supply||null, last:{in:x('in'), out:x('out')}, hist:(rt.hist||[]).map(h=>({t:h.t, open:!!h.open}))}:null}; });
   if(P.missing||!P.raw) return P;
@@ -397,7 +408,27 @@ async function bridgePage(pg){
     const r=await pg.evaluate(()=>{ const bx=document.querySelector('.bbox'), card=bx&&bx.closest('.card');
       return {open:!!bx, onCard:!!card, top:card?card.getBoundingClientRect().top:null, nav:parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||34}; });
     await pg.keyboard.press('Escape'); await pg.waitForTimeout(150); return r; };
-  P.fromLight=await jump('#hBridge'); P.fromLink=await jump('.br-link');
+  P.fromLink=await jump('.br-link');
+  /* the header light opens the check right under it, at the top (the page does not move), at phone and laptop width;
+     a second tap, the ✕ and Escape each put it away */
+  const vp0=pg.viewportSize(); P.hdr=[];
+  for(const w of [390,1440]){ await pg.setViewportSize({width:w,height:w<500?844:900}); await pg.waitForTimeout(700);
+    await pg.evaluate(()=>{ for(const x of [window,document]) x.dispatchEvent(new WheelEvent('wheel',{bubbles:true})); scrollTo(0,0); }); await pg.waitForTimeout(400);
+    const there=await pg.evaluate(()=>{ const b=document.getElementById('hBridge'); return !!b&&!b.hidden&&b.getClientRects().length>0; });
+    if(!there){ P.hdr.push({w, there:false}); continue; }
+    await pg.click('#hBridge'); await pg.waitForTimeout(500);
+    const o=await pg.evaluate(()=>{ const b=document.getElementById('hBridge'), bx=document.querySelector('.bbox'), q=b.getBoundingClientRect(), r=bx&&bx.getBoundingClientRect();
+      return {open:!!bx, inHeader:!!bx&&!!bx.closest('header')&&!bx.closest('.card')&&!bx.closest('#hBridge'), under:!!r&&r.top>=q.bottom-1&&r.top-q.bottom<=40,
+        onScreen:!!r&&r.left>=0&&r.right<=document.documentElement.clientWidth+1, scrolled:Math.round(scrollY), exp:b.getAttribute('aria-expanded'),
+        txt:bx?bx.innerText.replace(/\s+/g,' ').trim():null, links:bx?[...bx.querySelectorAll('a')].map(a=>({h:a.href, t:a.target})):[]}; });
+    await pg.click('#hBridge'); await pg.waitForTimeout(300);
+    const second=await pg.evaluate(()=>!document.querySelector('.bbox')&&document.getElementById('hBridge').getAttribute('aria-expanded')==='false');
+    await pg.click('#hBridge'); await pg.waitForTimeout(300); await pg.keyboard.press('Escape'); await pg.waitForTimeout(250);
+    const esc=await pg.evaluate(()=>!document.querySelector('.bbox'));
+    await pg.click('#hBridge'); await pg.waitForTimeout(300); const xb=await pg.$('header .bbox .bclose'); if(xb) await xb.click(); await pg.waitForTimeout(250);
+    const cross=!!xb&&await pg.evaluate(()=>!document.querySelector('.bbox'));
+    P.hdr.push({w, there:true, ...o, second, esc, cross}); }
+  if(vp0) await pg.setViewportSize(vp0);
   /* the chip fits its card on a phone and on a laptop (three cards across): the title row may wrap, but nothing spills
      out of the card and the pair name is not squeezed onto two lines */
   const vp=pg.viewportSize(); P.fit=[];
@@ -448,7 +479,29 @@ function bridgeVerdict(P, I, relayB, nowMs){
     if(!(/LAST VERIFIED CROSSING/.test(P.box.txt)&&/ETH → SOL/.test(P.box.txt)&&/SOL → ETH/.test(P.box.txt))) why.push('the check lacks a crossing line');
     if(!P.box.links.every(a=>/^https:\/\/(etherscan\.io|solscan\.io)\/tx\/[0-9A-Za-z]+$/.test(a.h)&&a.t==='_blank')) why.push('a verify link is not an explorer link opening in a new tab');
     for(const k of ['in','out']){ const x=P.raw.last[k]; if(x&&x.src&&!P.box.links.some(a=>a.h.endsWith('/'+x.src))) why.push('a verify link does not point at the crossing it names'); } }
-  for(const [j,lab] of [[P.fromLight,'header light'],[P.fromLink,'fee link']]){
+  for(const h of P.hdr||[]){ const at=' at '+h.w+' px', tx=h.txt||'';
+    if(!h.there){ why.push('the header light is not on the page'+at); continue; }
+    if(!h.open){ why.push('a tap on the header light does not open the check'+at); continue; }
+    if(!h.inHeader||!h.under) why.push('the header light\u2019s check does not open right under it'+at);
+    if(h.scrolled>5) why.push('a tap on the header light moves the page instead of opening the check there'+at);
+    if(!h.onScreen) why.push('the header light\u2019s check runs off the screen'+at);
+    if(h.exp!=='true') why.push('the header light does not say its check is open'+at);
+    if(!(/LAST VERIFIED CROSSING/.test(tx)&&/ETH → SOL/.test(tx)&&/SOL → ETH/.test(tx))) why.push('the header light\u2019s check lacks a crossing line'+at);
+    if(!h.links.every(a=>/^https:\/\/(etherscan\.io|solscan\.io)\/tx\/[0-9A-Za-z]+$/.test(a.h)&&a.t==='_blank')) why.push('a link in the header light\u2019s check is not an explorer link opening in a new tab'+at);
+    for(const k of ['in','out']){ const x=P.raw.last[k]; if(x&&x.src&&!h.links.some(a=>a.h.endsWith('/'+x.src))) why.push('the header light\u2019s check does not link the crossing it names'+at); }
+    for(const k of ['in','out']){ const x=P.raw.last[k]; if(x&&x.t&&(x.v?!/✓ both chains/.test(tx):!/not checked yet/.test(tx))) why.push('the header light\u2019s check does not say whether a crossing was found on both chains'+at); }
+    if(!h.second) why.push('a second tap on the header light does not close its check'+at);
+    if(!h.esc) why.push('Escape does not close the header light\u2019s check'+at);
+    if(!h.cross) why.push('the \u2715 does not close the header light\u2019s check'+at); }
+  /* the amounts shown, against each crossing's own Ethereum event (said as matches or not: never an amount) */
+  if(I.amt){ const said=[];
+    for(const [k,lab] of [['in','to Solana'],['out','to Ethereum']]){ const x=P.raw.last[k], a=I.amt[k];
+      if(!x||a===undefined){ said.push(lab+' —'); continue; }
+      if(a===null){ if(x.amt!=null) why.push('the last crossing '+lab+' shows an amount, but no such event was found on Ethereum'); said.push(lab+' no event'); continue; }
+      if(x.amt==null){ said.push(lab+' not shown yet'); continue; }
+      const same=Math.abs(x.amt-a)<=1e-6; if(!same) why.push('the amount shown for the last crossing '+lab+' differs from its Ethereum event'); said.push(lab+' '+(same?'yes':'NO')); }
+    info.push('amounts shown match the Ethereum events: '+said.join(', ')); }
+  for(const [j,lab] of [[P.fromLink,'fee link']]){
     if(!j) why.push('the '+lab+' is not on the page');
     else if(!(j.open&&j.onCard&&j.top!=null&&j.top>=0&&j.top<=j.nav+90)) why.push('the '+lab+' does not land on the CPOOL card with its check open'); }
   return {why, info}; }
