@@ -562,7 +562,10 @@
     border-bottom:1px dotted var(--text-muted);margin-left:3px;padding:0 1px 1px;position:relative}
   .matrix .mx-w::after{content:"";position:absolute;inset:-7px -4px}
   .matrix .mx-w:hover,.matrix .mx-w:focus-visible{color:var(--accent);border-bottom-color:var(--accent);outline:none}
-  .matrix .mx-fee{white-space:nowrap}
+  /* the fee % with its wallet, and the position link, each kept whole; on a phone a row longer than the column
+     (which stays put while the numbers scroll beneath it) moves its link to a third line instead of spilling */
+  .matrix .mx-fee,.matrix .mx-ln{white-space:nowrap}
+  @media(max-width:430px){ .matrix .pos-cell .sub{white-space:normal;line-height:1.55} .matrix .pos-cell{min-width:136px} .matrix td:first-child{padding-right:2px} }
   .matrix tr:hover td{background:rgba(53,214,232,.03)}
   /* unclaimed fees by token, under the matrix */
   .mx-mix[hidden]{display:none}
@@ -2678,7 +2681,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.31';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.32';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -5203,7 +5206,7 @@ function renderMatrix(){
         go.append(dot, el('span','mx-pr',esc(p.pairLabel)));
         go.addEventListener('click',()=>goToCard(p.id));
         const sev=severityOf(p);
-        cell.append(go, el('span','sub', '<span style="color:var(--status-'+sev+')" title="'+SEV_LABEL[sev]+'">'+SEV_ICON[sev]+'</span> <span class="mx-fee">'+esc(badgeOf(p)||p.feeLabel)+walletMark(p)+'</span>\u2009·\u2009'+linkRef(p)));
+        cell.append(go, el('span','sub', '<span style="color:var(--status-'+sev+')" title="'+SEV_LABEL[sev]+'">'+SEV_ICON[sev]+'</span> <span class="mx-fee">'+esc(badgeOf(p)||p.feeLabel)+walletMark(p)+'</span>\u2009<span class="mx-ln">·\u2009'+linkRef(p)+'</span>'));
         td.append(cell); tr.append(td); return;
       }
       if(c.key==='status'){
