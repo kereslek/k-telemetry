@@ -79,6 +79,9 @@ r=await one({inAmtSol:AMT/k-1n}); ok(r.last.in&&r.last.in.verified===false&&/do 
 r=await one({solTxDown:true}); ok(r.last.in&&r.last.in.verified===false&&/not read/.test(r.last.in.note)&&r.state==='quiet', 'Solana side unreadable and no status: unverified, so not counted as a crossing');
 r=await one({solTxDown:true, statusOk:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via==='status'&&/amount could not be read/.test(r.last.in.note)&&r.state==='open', 'contents unreadable but finalized with no error: verified by status, said so');
 ok(r.last.in.amt===1234.5, 'verified by its status, the amount is still the Ethereum event\'s');
+{ const r1=await one({}); const old={...r1, last:{in:{...r1.last.in}, out:{...r1.last.out}}}; delete old.last.in.amt; delete old.last.out.amt;
+  const r2=(await readBridge(world({}),{v:1,t:Date.now()-30*60e3,routes:[old]})).routes[0];
+  ok(r2.last.in.amt===1234.5&&r2.last.out.amt===1234.5&&r2.last.in.verified&&r2.last.out.verified, 'a crossing verified before amounts were kept is read once more and gains its amount'); }
 r=await one({v1:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via!=='status', 'a delivery in the newer transaction format (version 1) is read and verified on both chains');
 r=await one({solTxDown:true, statusOk:'err'}); ok(r.last.in&&r.last.in.verified===false, 'finalized with an error: not verified');
 r=await one({waiting:2}); ok(r.waiting===2, 'messages stuck over 30 min are counted');

@@ -159,7 +159,8 @@ async function readRoute(R, io, prev){
     };
     for(const [way,L] of [['in',toSol],['out',back]]){
       const m=pickLast(L); if(!m) continue;
-      if(P[way]&&P[way].src===m.srcTx&&P[way].verified) continue;     // already verified on an earlier read
+      // already verified on an earlier read (one read before amounts were kept is read once more, to add its amount)
+      if(P[way]&&P[way].src===m.srcTx&&P[way].verified&&P[way].amt!=null) continue;
       const v=await verify(m,way);
       if(v&&(v.verified||!(P[way]&&P[way].verified))) r.last[way]=v;
       else if(v) r.pending=(r.pending||0)+1; }
