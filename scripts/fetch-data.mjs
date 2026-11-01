@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import fs from 'fs';
 import { makeRpc, syncPositionLedger, valueDeposits, summarizeLedger } from './sol-history.mjs';
 import { initLock, lockOn, readJ, writeJ, isSealed, quietLogs, inboxOpen, inboxPublic} from './lock.mjs';
-import {readBridge} from './bridge.mjs';
+import {readBridge, ROUTES} from './bridge.mjs';
+import {readLinks} from './bridge-links.mjs';
 import { suiHoldings, tronHoldings, IKA_TYPE } from './alt-chains.mjs';
 import { scanNfts, nftSummary, openseaOn } from './nfts.mjs';
 const OUT='deck-r7k4x9';
@@ -237,7 +238,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge','bridgeLinks'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -4163,6 +4164,24 @@ const main=async()=>{
       }
       if(sd && Array.isArray(sd.ink) && sd.ink.length) ink={t:sd.t, wallets:sd.ink, px:{sui:suiUsd, ika:ikaUsd}};
     }catch(e){ logErr('suiDaily',e); }
+    /* LATEST FEES' bridge marks (scripts/bridge-links.mjs): which trades through this profile's CPOOL
+       pools came with a crossing of CPOOL's bridge by the same wallet, either way, either chain. Every
+       pass, within 40 s; what it could not read this pass it reads on the next. Only hashes of wallets
+       are carried between passes, and none reach the page. */
+    let bridgeLinks=null;
+    try{
+      const RT=ROUTES[0], CE=RT.tokenEth.toLowerCase();
+      const pools=[...solPositions.filter(p=>p.poolId&&(p.mint0===RT.mint||p.mint1===RT.mint)).map(p=>({chain:'sol', id:p.poolId, mints:[p.mint0,p.mint1]})),
+                   ...evmPositions.filter(p=>p.chain==='ethereum'&&p.pool&&[String(p.token0).toLowerCase(),String(p.token1).toLowerCase()].includes(CE)).map(p=>({chain:'eth', id:p.pool.toLowerCase(), mints:[String(p.token0).toLowerCase(),String(p.token1).toLowerCase()]}))]
+        .filter((x,i,a)=>a.findIndex(y=>y.chain===x.chain&&y.id===x.id)===i);
+      const BL=blockCache.bridgeLinks=blockCache.bridgeLinks||{}, prevL=BL[profile.slug]||null;
+      if(pools.length){
+        const r=await Promise.race([readLinks({io:{eth:(m,p)=>['eth_getTransactionReceipt','eth_getBlockByNumber','eth_getTransactionByHash'].includes(m)?evmAny('ethereum',m,p):eth(m,p), sol, get:u=>getJson(u,15000)},
+            R:RT, pools, prev:prevL, budgetMs:40000}), new Promise((_,no)=>setTimeout(()=>no(new Error('bridge links over 60 s')),60000))]);
+        BL[profile.slug]={t:r.t, cx:r.cx, sw:r.sw};
+        bridgeLinks={t:r.t, links:r.links, n:r.n, pools:pools.length};
+      } else bridgeLinks={t:Date.now(), links:[], n:null, pools:0};
+    }catch(e){ logErr('bridgeLinks',e); }
     /* This pass's history point also carries what the wallets hold (idle, staked, lent, less what
        is owed) and the NFTs at floor, so the history chart can show the whole portfolio. */
     if(histPushed && history.length){
@@ -4171,7 +4190,7 @@ const main=async()=>{
       if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge,
+    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge, bridgeLinks,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
     console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);

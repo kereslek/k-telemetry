@@ -509,6 +509,58 @@ if(scanned){ console.log('\n— the CPOOL bridge, Ethereum ⇄ Solana —');
   (V.why.length?WARN:OK)('CPOOL bridge: '+(V.why.length?V.why.join('; '):'the header light, the fee link and the card chip agree; the check opens and closes; the header light opens it under itself and closes it four ways; '
     +'the fee link lands on the card with it open'+(I.open!=null&&I.lz?'; the state, the last crossings, the 30-day counts, the supply and the open-since date match what was read here from the chains and LayerZero':''))+(V.info.length?' · '+V.info.join(' · '):'')); }
 
+/* LATEST FEES' bridge marks (v40.33), checked against the chains here with code of this file's own (not
+   bridge-links.mjs): for each link the relay found, its trade's transaction touches that pool at that time,
+   one wallet in it swapped CPOOL the way the link says, the crossing (LayerZero Scan, by its message id) moved
+   CPOOL for that same wallet on that chain, in the order of a trip and within two hours, and the amount is
+   the Ethereum event's. Counts only: no wallet, pool or amount is printed. */
+if(scanned){ const L=((relay.bridgeLinks&&relay.bridgeLinks.links)||[]).slice(0,12), CP='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
+  const AD='0xa5ff39ea51c1e2e9152d22b606ddc372ea2b1992', CE='0x66761fa41377003622aee3c7675fc7b5c1c2fac5';
+  const TS='0x85496b760a4b7f8d66384b9df21b381f5d1b1e79f229a47aaf4c232edc2fe59a', TR='0xefed6d3500546b29533b128a29e3a94d70788727f0507505ac12eaf2e578fd9c', SW='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
+  const BL=relay.bridgeLinks;
+  if(!BL) WARN('bridge marks: the relay file has none yet (it writes them from v40.33 on)');
+  else if(!L.length) OK('bridge marks: no trade through your CPOOL pools came with a bridge crossing in the last 24 h ('+(BL.n&&BL.n.crossings!=null?BL.n.crossings+' crossing(s) read':'crossings not read')+', '+(BL.pools||0)+' pool(s) watched)');
+  else { const st={n:L.length, tx:0, wallet:0, order:0, amt:0};
+    const bal=(tx,mint)=>{ const by=new Map(), m=tx&&tx.meta; if(!m) return by; const v=b=>Number(b.uiTokenAmount.amount)/10**b.uiTokenAmount.decimals;
+      const pre=new Map((m.preTokenBalances||[]).map(b=>[b.accountIndex,b]));
+      for(const b of m.postTokenBalances||[]) if(b.mint===mint){ const a=pre.get(b.accountIndex); by.set(b.owner,(by.get(b.owner)||0)+v(b)-(a?v(a):0)); }
+      for(const a of m.preTokenBalances||[]) if(a.mint===mint&&!(m.postTokenBalances||[]).some(b=>b.accountIndex===a.accountIndex)) by.set(a.owner,(by.get(a.owner)||0)-v(a));
+      return by; };
+    const allKeys=tx=>[...((tx.transaction.message.accountKeys)||[]).map(k=>k.pubkey||k), ...(((tx.meta||{}).loadedAddresses||{}).writable||[]), ...(((tx.meta||{}).loadedAddresses||{}).readonly||[])];
+    const lzMsg=async g=>{ for(let k=0;k<3;k++){ try{ const r=await fetch('https://scan.layerzero-api.com/v1/messages/guid/'+g,{signal:AbortSignal.timeout(20000)}); if(r.ok){ const j=await r.json(); return (j.data||[])[0]||null; } }catch(e){} await new Promise(f=>setTimeout(f,1500)); } return null; };
+    const lzTx=(m,side)=>{ const out=[]; const walk=(o,p)=>{ if(o==null) return; if(typeof o==='string'){ out.push([p.toLowerCase(),o]); return; } if(typeof o==='object') for(const [k,v] of Object.entries(o)) walk(v,p+'.'+k); };
+      walk(m,''); const g=String(m.guid||'').toLowerCase();
+      const h=out.find(([p,v])=>p.includes(side)&&/hash$/.test(p)&&!/(block|payload|message)hash$/.test(p)&&((/^0x[0-9a-f]{64}$/i.test(v)&&v.toLowerCase()!==g)||/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(v)));
+      return h?h[1]:null; };
+    for(const l of L){
+      const m=await lzMsg(l.guid); if(!m) continue;
+      const evmTx=lzTx(m,l.way==='in'?'source':'destination'), solTx=lzTx(m,l.way==='in'?'destination':'source');
+      const rc=evmTx?await rpcEAny('eth_getTransactionReceipt',[evmTx]):null, ev=rc&&(rc.logs||[]).find(x=>x.address.toLowerCase()===AD&&String(x.topics[1]).toLowerCase()===String(l.guid).toLowerCase()&&x.topics[0]===(l.way==='in'?TS:TR));
+      const amt=ev?Number(BigInt('0x'+ev.data.slice(2).slice(64*(l.way==='in'?2:1),64*(l.way==='in'?3:2)))/10n**12n)/1e6:null;
+      if(amt!=null&&l.amt!=null&&Math.abs(amt-l.amt)<1e-6) st.amt++;
+      if(l.chain==='sol'){
+        const t=await rpcS('getTransaction',[l.tx,{encoding:'jsonParsed',maxSupportedTransactionVersion:1}]), c=solTx?await rpcS('getTransaction',[solTx,{encoding:'jsonParsed',maxSupportedTransactionVersion:1}]):null;
+        if(!t||!c) continue;
+        if(Math.abs(t.blockTime*1000-l.t)<=1000&&allKeys(t).includes(l.pool)) st.tx++;
+        const sw=bal(t,CP), want=l.side==='sold'?-1:1;
+        const traders=[...sw.entries()].filter(([o,d])=>Math.sign(d)===want&&o).map(([o])=>o);
+        const cr=bal(c,CP), crossed=new Set([...[...cr.entries()].filter(([,d])=>l.way==='in'?d>0:d<0).map(([o])=>o), ...(l.way==='out'?[allKeys(c)[0]]:[])]);
+        if(traders.some(o=>crossed.has(o))) st.wallet++;
+        const dt=t.blockTime-c.blockTime; if(l.way==='in'?(dt>=0&&dt<=7200):(dt<=0&&dt>=-7200)) st.order++;
+      } else {
+        const r2=await rpcEAny('eth_getTransactionReceipt',[l.tx]), tx=await rpcEAny('eth_getTransactionByHash',[l.tx]); if(!r2||!rc) continue;
+        const lg=(r2.logs||[]).find(x=>x.address.toLowerCase()===String(l.pool).toLowerCase()&&x.topics[0]===SW);
+        const b1=await rpcEAny('eth_getBlockByNumber',[r2.blockNumber,false]), b0=await rpcEAny('eth_getBlockByNumber',[rc.blockNumber,false]);
+        const t1=b1?parseInt(b1.timestamp,16):null, t0=b0?parseInt(b0.timestamp,16):null;
+        if(lg&&t1!=null&&Math.abs(t1*1000-l.t)<=1000) st.tx++;
+        const who=new Set([lg&&'0x'+lg.topics[1].slice(26), lg&&'0x'+lg.topics[2].slice(26), tx&&tx.from].filter(Boolean).map(x=>x.toLowerCase()));
+        const party=new Set([ev&&'0x'+ev.topics[2].slice(26), l.way==='in'?rc.from:null].filter(Boolean).map(x=>x.toLowerCase()));
+        if([...who].some(a=>party.has(a))) st.wallet++;
+        const dt=t1-t0; if(t1!=null&&t0!=null&&(l.way==='in'?(dt<=0&&dt>=-7200):(dt>=0&&dt<=7200))) st.order++; } }
+    const all=st.tx===st.n&&st.wallet===st.n&&st.order===st.n&&st.amt===st.n;
+    (all?OK:WARN)('bridge marks, checked against the chains here: '+st.n+' link(s) · the trade is in that pool at that time '+st.tx+' · the same wallet bridged and traded '+st.wallet
+      +' · in the order of a trip, within 2 h '+st.order+' · the amount is the Ethereum event’s '+st.amt+(all?'':' (a read that failed here counts as not confirmed)')); } }
+
 /* Bitcoin: what mempool.space recommends now, in sat/vB (blockstream's estimates when it does not answer) */
 async function btcFeeNow(){
   try{ const r=await fetch('https://mempool.space/api/v1/fees/recommended',{signal:AbortSignal.timeout(15000)}), j=r.ok?await r.json():null;
