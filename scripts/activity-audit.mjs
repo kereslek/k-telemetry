@@ -307,10 +307,14 @@ if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.
     const posNow=async(ch,id)=>{ const r=await rpcOn(ch,'eth_call',[{to:CH[ch].npm,data:'0x99fbab88'+idTopic(id).slice(2)},'latest']);
       if(typeof r!=='string'||r.length<2+64*8) return null; const w=i=>r.slice(2+64*i,2+64*(i+1));
       return {t0:'0x'+w(2).slice(24), t1:'0x'+w(3).slice(24), fee:parseInt(w(4),16), tl:s24(w(5).slice(58)), tu:s24(w(6).slice(58)), liq:BigInt('0x'+w(7))}; };
-    const whereIs=async id=>{ const p=(data.eth||[]).find(x=>String(x.id)===id); if(p) return {p, ch:CH[p.chain]?p.chain:'ethereum'};
+    const whereIs=async id=>{ const p=(data.eth||[]).find(x=>String(x.id)===id); if(p) return {p, ch:CH[p.chain]?p.chain:'ethereum', owner:String(p.owner||'').toLowerCase()};
       for(const c of Object.keys(CH)){ const r=await rpcOn(c,'eth_call',[{to:CH[c].npm,data:'0x6352211e'+idTopic(id).slice(2)},'latest']);
-        const o=typeof r==='string'&&r.length>=66?'0x'+r.slice(26,66).toLowerCase():null; if(o&&evmW.has(o)) return {p:null, ch:c}; }
-      return {p:null, ch:null}; };
+        const o=typeof r==='string'&&r.length>=66?'0x'+r.slice(26,66).toLowerCase():null; if(o&&evmW.has(o)) return {p:null, ch:c, owner:o}; }
+      return {p:null, ch:null, owner:null}; };
+    /* the pool a position is in, from the factory, while the deck does not track it yet (Ethereum's v3 factory) */
+    const poolOf=async(ch,q)=>{ if(ch!=='ethereum'||!q) return null; const a=x=>x.replace(/^0x/,'').padStart(64,'0');
+      const r=await rpcOn(ch,'eth_call',[{to:FACT,data:'0x1698ee82'+a(q.t0)+a(q.t1)+q.fee.toString(16).padStart(64,'0')},'latest']);
+      return typeof r==='string'&&r.length>=66?'0x'+r.slice(26,66).toLowerCase():null; };
     /* the closed one's pool and range, from the pool's Burn (owner: the position manager) in its withdrawal today */
     const burnOf=async(ch,ev)=>{ for(const l of (ev&&ev.decrease)||[]){ const rc=await rcAny(ch,l.transactionHash);
         const b=((rc&&rc.logs)||[]).find(x=>x.topics&&x.topics[0]===BURN&&('0x'+String(x.topics[1]).slice(26)).toLowerCase()===String(CH[ch].npm).toLowerCase());
@@ -336,9 +340,9 @@ if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.
       if(!b&&q) restake[id]={pool:null, tl:q.tl, tu:q.tu, ch, t0:q.t0, t1:q.t1, fee:q.fee};
       return (bad.length?'WARN ':'ok   ')+'the position you closed: '+parts.join(' · '); }
     async function openedLine(it,id){
-      const {p,ch}=await whereIs(id), parts=['tracked by the deck: '+(p?'yes':'NOT YET')+(ch?' · on '+ch:'')], bad=[];
+      const {p,ch,owner}=await whereIs(id), parts=['tracked by the deck: '+(p?'yes':'NOT YET')+(ch?' · on '+ch:'')], bad=[];
       if(!ch) return 'WARN the position you opened: not held by any of your wallets on the chains the deck reads';
-      if(!p) bad.push(1);
+      if(!p){ bad.push(1); parts.push(HOLD.has(owner)?'held by a holdings-only wallet (the deck reads what those hold, not their positions)':'held by a wallet the deck sweeps for positions'); }
       const ev=await npmEvents(ch,id), q=await posNow(ch,id);
       parts.push(ev?'today: tokens added '+ev.increase.length+', withdrawn '+ev.decrease.length:'its events today could not be read');
       if(q){ parts.push('its range: '+wideOf(q.tl,q.tu).toFixed(2)+'× wide');
@@ -349,7 +353,7 @@ if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.
           parts.push('its booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings)'); if(fell) bad.push(1);
           parts.push('in range now: '+(p.inRange?'yes':'no')); }
         const o=it.from&&restake[String(it.from)];
-        if(o){ const pool=p&&p.pool?String(p.pool).toLowerCase():null, same=o.pool?(pool?pool===o.pool:null):(o.t0===q.t0&&o.t1===q.t1&&o.fee===q.fee);
+        if(o){ const pool=p&&p.pool?String(p.pool).toLowerCase():await poolOf(ch,q), same=o.pool?(pool?pool===o.pool:null):(o.t0===q.t0&&o.t1===q.t1&&o.fee===q.fee);
           const ow=wideOf(o.tl,o.tu), nw=wideOf(q.tl,q.tu);
           parts.push('the same pool as the one you closed: '+(same==null?'unknown':same?'yes':'NO')+' · tighter than it: '+(nw<ow?'yes':'NO')+' ('+nw.toFixed(2)+'× against '+ow.toFixed(2)+'×)'); }
         else if(it.from) parts.push('the one it replaced: not read (name it as closed in the same request)'); }
