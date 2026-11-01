@@ -93,13 +93,27 @@ say('  the same entity on both sides (Ethereum party ⇄ Solana party, crossings
 /* what the busiest Solana parties do besides bridging: their last signatures, by kind (counts only) */
 for(const [a] of sRank.slice(0,3)){ const sigs=await rpc(SOL_RPC,'getSignaturesForAddress',[a,{limit:200}]); await sleep(300);
   const L=(sigs||[]).filter(x=>!x.err); const last=L[0]&&L[0].blockTime?L[0].blockTime*1000:null, days=L.length&&L.at(-1).blockTime?(now-L.at(-1).blockTime*1000)/D:null;
+  let cp=0, seen=0; for(const x of L.slice(0,25)){ const t=await rpc(SOL_RPC,'getTransaction',[x.signature,{encoding:'json',maxSupportedTransactionVersion:1}]); await sleep(250); if(!t||!t.meta) continue; seen++;
+    const mv=[...(t.meta.preTokenBalances||[]),...(t.meta.postTokenBalances||[])].some(b=>b.mint===CPOOL_S); if(mv) cp++; }
+  say('  '+S.get(a)+': of its last '+seen+' transactions, '+cp+' moved CPOOL');
   say('  '+S.get(a)+': its latest '+L.length+' transactions span '+(days!=null?days.toFixed(1)+' days':'—')+' · its last transaction of any kind '+(last?((now-last)/H).toFixed(1)+' h ago':'—')); }
 
 /* ---------- C: the price gap, hour by hour, beside the crossings ---------- */
 say(''); say('— C. the price gap between the chains, hour by hour, and what crossed —');
 const poolsOf=async net=>{ const r=await get('https://api.geckoterminal.com/api/v2/networks/'+net+'/tokens/'+(net==='eth'?CPOOL_E:CPOOL_S)+'/pools?page=1'); return (r&&r.data)||[]; };
 const PE=await poolsOf('eth'); await sleep(2500); const PS=await poolsOf('solana'); await sleep(2500);
-const vol=p=>Number(p.attributes&&p.attributes.volume_usd&&p.attributes.volume_usd.h24||0), busiest=L=>[...L].sort((a,b)=>vol(b)-vol(a))[0];
+const vol=p=>Number(p.attributes&&p.attributes.volume_usd&&p.attributes.volume_usd.h24||0), res=p=>Number(p.attributes&&p.attributes.reserve_in_usd||0);
+const feeOf=p=>{ const m=/(\d+(?:\.\d+)?)%/.exec(String(p.attributes&&p.attributes.name||'')); return m?+m[1]:null; };
+// the reference pool: the deepest one with an ordinary fee (a pool with an odd fee can show a price nobody trades at)
+const busiest=L=>[...L].filter(p=>{ const f=feeOf(p); return f==null||f<=2; }).sort((a,b)=>res(b)-res(a))[0];
+{ const cg=await get('https://api.coingecko.com/api/v3/simple/price?ids=clearpool&vs_currencies=usd'), ref=cg&&cg.clearpool&&cg.clearpool.usd;
+  const px=p=>Number(p.attributes&&p.attributes.base_token_price_usd||0);
+  const dev=L=>L.filter(p=>res(p)>=1000&&px(p)>0).map(p=>(px(p)/ref-1)*100).sort((a,b)=>a-b);
+  say('price check against CoinGecko ($'+(ref||'—')+'): each pool with $1k+ in it, its price off CoinGecko by — Ethereum: '+(ref?dev(PE).map(x=>x.toFixed(1)+'%').join(', '):'—')+' · Solana: '+(ref?dev(PS).map(x=>x.toFixed(1)+'%').join(', '):'—'));
+  const de=busiest(PE), ds=busiest(PS);
+  say('reference pools (deepest, ordinary fee): Ethereum '+(de&&ref?((px(de)/ref-1)*100).toFixed(1)+'% off CoinGecko':'—')+' · Solana '+(ds&&ref?((px(ds)/ref-1)*100).toFixed(1)+'% off CoinGecko':'—')
+    +' · pools with $1k+ in them: Ethereum '+PE.filter(p=>res(p)>=1000).length+', Solana '+PS.filter(p=>res(p)>=1000).length
+    +' · CPOOL in all Solana pools together: $'+fmtK(PS.reduce((x,p)=>x+res(p),0))+' · 24 h trades, Solana pools together: '+PS.reduce((x,p)=>{ const t=p.attributes&&p.attributes.transactions&&p.attributes.transactions.h24; return x+(t?(t.buys||0)+(t.sells||0):0); },0)); }
 say('CPOOL pools listed: Ethereum '+PE.length+', Solana '+PS.length+' · 24 h DEX volume, all pools: Ethereum $'+fmtK(PE.reduce((x,p)=>x+vol(p),0))+', Solana $'+fmtK(PS.reduce((x,p)=>x+vol(p),0)));
 const ohlcv=async(net,pool)=>{ const out=new Map(); let before=Math.floor(now/1000);
   for(let k=0;k<3;k++){ const r=await get('https://api.geckoterminal.com/api/v2/networks/'+net+'/pools/'+pool+'/ohlcv/hour?aggregate=1&limit=1000&currency=usd&token='+(net==='eth'?CPOOL_E:CPOOL_S)+'&before_timestamp='+before); await sleep(2500);
@@ -108,7 +122,7 @@ const ohlcv=async(net,pool)=>{ const out=new Map(); let before=Math.floor(now/10
   return out; };
 const be=busiest(PE), bs=busiest(PS);
 const HE=be?await ohlcv('eth',be.attributes.address):new Map(), HS=bs?await ohlcv('solana',bs.attributes.address):new Map();
-say('hourly prices read: Ethereum '+HE.size+' h, Solana '+HS.size+' h (each chain’s busiest CPOOL pool, unnamed)');
+say('hourly prices read: Ethereum '+HE.size+' h, Solana '+HS.size+' h (each chain’s deepest ordinary-fee CPOOL pool, unnamed)');
 const hours=[...HS.keys()].filter(t=>HE.has(t)&&t>=REOPEN-0).sort((a,b)=>a-b);
 const gapAt=t=>{ const e=HE.get(t), s=HS.get(t); return e&&s&&e.c>0&&s.c>0?(s.c/e.c-1)*100:null; };
 // daily: the median gap, and the crossings
