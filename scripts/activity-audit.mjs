@@ -350,7 +350,9 @@ if(process.env.ASK){ let q=null; try{ q=JSON.parse(inboxOpen(JSON.parse(process.
           const rOk=Math.abs(p.priceLower/lo-1)<1e-6&&Math.abs(p.priceUpper/hi-1)<1e-6, lOk=String(p.liq)===q.liq.toString();
           parts.push('the deck shows its range: '+(rOk?'yes':'NO')+' · its liquidity: '+(lOk?'yes':'NO')); if(!rOk||!lOk) bad.push(1);
           const series=hist.map(x=>x[1][id]).filter(v=>v!=null); let fell=0; for(let i=1;i<series.length;i++) if(series[i]<series[i-1]-0.01) fell++;
-          parts.push('its booked fee total fell: '+(fell?fell+' time(s)':'never')+' ('+series.length+' readings)'); if(fell) bad.push(1);
+          // as for every position: a fall is fine when an own swap went through its pool (its fee is taken back out of income: checked by the own-swap check)
+          const own=fell&&takenBy.has(String(p.pool||'').toLowerCase());
+          parts.push('its booked fee total fell: '+(fell?fell+' time(s)'+(own?' (an own swap went through its pool: its fee taken back out of income)':''):'never')+' ('+series.length+' readings)'); if(fell&&!own) bad.push(1);
           parts.push('in range now: '+(p.inRange?'yes':'no')); }
         const o=it.from&&restake[String(it.from)];
         if(o){ const pool=p&&p.pool?String(p.pool).toLowerCase():await poolOf(ch,q), same=o.pool?(pool?pool===o.pool:null):(o.t0===q.t0&&o.t1===q.t1&&o.fee===q.fee);
