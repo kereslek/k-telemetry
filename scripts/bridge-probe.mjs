@@ -415,7 +415,8 @@ say(''); say('— crossings by week (UTC), Ethereum ⇄ Solana —');
   const per=(from,to)=>ev.filter(e=>e.t>=from&&e.t<to);
   const gaps=(L)=>{ const a=L.filter(e=>e.dir==='in').map(e=>e.t); const g=[]; for(let i=1;i<a.length;i++) g.push((a[i]-a[i-1])/864e5); return g.sort((x,y)=>x-y); };
   const q=(g,p)=>g.length?g[Math.min(g.length-1,Math.floor(p*g.length))]:null;
-  for(const [lab,from,to] of [['first period (Feb 2025 – 5 May 2026)',0,Date.parse('2026-05-06')],['since it reopened (25 Sep 2026)',Date.parse('2026-09-25'),now+1]]){
+  if(!ev.length) say('history: no log entries read this time (Blockscout gave none): nothing to compare');
+  else for(const [lab,from,to] of [['first period (Feb 2025 – 5 May 2026)',0,Date.parse('2026-05-06')],['since it reopened (25 Sep 2026)',Date.parse('2026-09-25'),now+1]]){
     const L=per(from,to), days=Math.max(1,((Math.min(to,now))-(from||ev[0].t))/864e5), g=gaps(L), lastIn=L.filter(e=>e.dir==='in').pop();
     say(lab+': '+L.filter(e=>e.dir==='in').length+' to Solana, '+L.filter(e=>e.dir==='out').length+' back · per day '+(L.filter(e=>e.dir==='in').length/days).toFixed(2)+' to Solana, '+(L.filter(e=>e.dir==='out').length/days).toFixed(2)+' back'
       +(g.length?' · gap between crossings to Solana: median '+q(g,0.5).toFixed(2)+' d, 90% under '+q(g,0.9).toFixed(1)+' d, longest '+g[g.length-1].toFixed(1)+' d · gaps of 2.2 d or more: '+g.filter(x=>x>=2.2).length:''));
