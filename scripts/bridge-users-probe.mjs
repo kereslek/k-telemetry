@@ -25,7 +25,7 @@ const fmtK=v=>v==null?'—':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed
 /* ---------- A: every crossing since the route opened, by its Ethereum party ---------- */
 say('— A. every crossing since the route opened (Feb 2025), by its Ethereum party —');
 const ev=[]; { let next=null, pages=0;
-  for(;pages<150;pages++){ const r=await get('https://eth.blockscout.com/api/v2/addresses/'+A+'/logs'+(next?'?'+new URLSearchParams(next).toString():'')); if(!r||!Array.isArray(r.items)) break;
+  for(;pages<150;pages++){ const r=await get('https://eth.blockscout.com/api/v2/addresses/'+A+'/logs'+(next?'?'+new URLSearchParams(next).toString():''),8); if(!r||!Array.isArray(r.items)){ say('!! the Ethereum log read stopped early at page '+pages+' — the counts below are incomplete'); break; }
     let old=false;
     for(const l of r.items){ const bn=+l.block_number; if(bn<FIRST){ old=true; continue; } const t0=String(l.topics&&l.topics[0]).toLowerCase();
       const party=l.topics&&l.topics[2]?('0x'+String(l.topics[2]).slice(26)).toLowerCase():null;
@@ -105,9 +105,11 @@ const PE=await poolsOf('eth'); await sleep(2500); const PS=await poolsOf('solana
 const vol=p=>Number(p.attributes&&p.attributes.volume_usd&&p.attributes.volume_usd.h24||0), res=p=>Number(p.attributes&&p.attributes.reserve_in_usd||0);
 const feeOf=p=>{ const m=/(\d+(?:\.\d+)?)%/.exec(String(p.attributes&&p.attributes.name||'')); return m?+m[1]:null; };
 // the reference pool: the deepest one with an ordinary fee (a pool with an odd fee can show a price nobody trades at)
+const cpoolIsBase=p=>{ const id=String(p.relationships&&p.relationships.base_token&&p.relationships.base_token.data&&p.relationships.base_token.data.id||'').toLowerCase(); return id.endsWith(CPOOL_E)||id.endsWith(CPOOL_S.toLowerCase()); };
+const cpx=p=>Number(p.attributes&&(cpoolIsBase(p)?p.attributes.base_token_price_usd:p.attributes.quote_token_price_usd)||0);
 const busiest=L=>[...L].filter(p=>{ const f=feeOf(p); return f==null||f<=2; }).sort((a,b)=>res(b)-res(a))[0];
 { const cg=await get('https://api.coingecko.com/api/v3/simple/price?ids=clearpool&vs_currencies=usd'), ref=cg&&cg.clearpool&&cg.clearpool.usd;
-  const px=p=>Number(p.attributes&&p.attributes.base_token_price_usd||0);
+  const px=cpx;
   const dev=L=>L.filter(p=>res(p)>=1000&&px(p)>0).map(p=>(px(p)/ref-1)*100).sort((a,b)=>a-b);
   say('price check against CoinGecko ($'+(ref||'—')+'): each pool with $1k+ in it, its price off CoinGecko by — Ethereum: '+(ref?dev(PE).map(x=>x.toFixed(1)+'%').join(', '):'—')+' · Solana: '+(ref?dev(PS).map(x=>x.toFixed(1)+'%').join(', '):'—'));
   const de=busiest(PE), ds=busiest(PS);
