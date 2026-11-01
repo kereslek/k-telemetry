@@ -59,6 +59,7 @@ ok(r.state==='open', 'all checks pass and a crossing 2 h ago: open');
 ok(Object.values(r.checks).every(v=>v===true||v===false)&&r.checks.paused===false&&r.checks.supply===true, 'every check read');
 ok(r.last.in&&r.last.in.verified&&r.last.out&&r.last.out.verified, 'both crossings verified on both chains');
 ok(r.last.in.src===ETX1&&r.last.in.dst===SIG1&&r.last.out.src===SIG2&&r.last.out.dst===ETX2, 'the transaction hash is taken, not the block hash beside it');
+ok(r.last.in.amt===1234.5&&r.last.out.amt===1234.5, 'each crossing carries its amount in CPOOL, from the Ethereum event (1234.5 both ways)');
 ok(Math.abs(r.lastT-(now-2*H+120e3))<5e3, 'the last crossing time is its arrival on Solana');
 ok(r.n30.to===1&&r.n30.back===1&&r.waiting===0, 'counted both ways, none waiting');
 ok(Math.abs(r.supply.sol-4203859.63)<0.01&&Math.abs(r.supply.locked-4440919.31)<0.01, 'supply in tokens on both chains');
@@ -77,6 +78,7 @@ r=await one({lzDown:true}); ok(r.state==='quiet'&&!r.last.in&&!r.last.out, 'no c
 r=await one({inAmtSol:AMT/k-1n}); ok(r.last.in&&r.last.in.verified===false&&/do not match/.test(r.last.in.note), 'amount on Solana differs: not verified');
 r=await one({solTxDown:true}); ok(r.last.in&&r.last.in.verified===false&&/not read/.test(r.last.in.note)&&r.state==='quiet', 'Solana side unreadable and no status: unverified, so not counted as a crossing');
 r=await one({solTxDown:true, statusOk:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via==='status'&&/amount could not be read/.test(r.last.in.note)&&r.state==='open', 'contents unreadable but finalized with no error: verified by status, said so');
+ok(r.last.in.amt===1234.5, 'verified by its status, the amount is still the Ethereum event\'s');
 r=await one({v1:true}); ok(r.last.in&&r.last.in.verified===true&&r.last.in.via!=='status', 'a delivery in the newer transaction format (version 1) is read and verified on both chains');
 r=await one({solTxDown:true, statusOk:'err'}); ok(r.last.in&&r.last.in.verified===false, 'finalized with an error: not verified');
 r=await one({waiting:2}); ok(r.waiting===2, 'messages stuck over 30 min are counted');
