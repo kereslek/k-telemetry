@@ -101,6 +101,20 @@ await ta('scan: Solana signatures a day old or failed are never opened; a swap s
   assert.deepEqual(got.map(x=>[x.id,x.side,x.venue]).sort(),[['A','sold','your pool'],['B','bought','Jupiter']]);
   assert.equal(got.find(x=>x.id==='A').t,NOW-3600e3); assert.deepEqual([...new Set(opened)].sort(),['A','B']);
 });
+await ta('scan: a swap in Solana\u2019s newer transaction format (version 1) is read, not given up after five tries', async()=>{
+  const V1='V1SIG';
+  const sigs={[W]:[{signature:V1, blockTime:(NOW-1800e3)/1000}]};
+  const v1tx={...soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]), version:1};
+  v1tx.meta.loadedAddresses={writable:[], readonly:[]};
+  // a node refuses a version 1 transaction to a client that accepts only version 0 (error -32015)
+  const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') return sigs[params[0]];
+    if(method==='getTransaction'){ if(!((params[1]&&params[1].maxSupportedTransactionVersion)>=1)) throw new Error('Transaction version (1) is not supported by the requesting client'); return v1tx; }
+    throw new Error('unexpected '+method); };
+  const st={}, got=[];
+  for(let i=0;i<8;i++){ got.push(...await scanMine(st,{ps, wallets:{eth:[], sol:[W]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW+i*60000, budget:3, call}));
+    if(!st.diag.sol.q) break; }
+  assert.deepEqual(got.map(x=>[x.id,x.side,x.tok,x.other,x.venue]),[[V1,'sold','CPOOL','SOL','your pool']]);
+});
 await ta('scan: nothing to watch asks nothing; a request over its limit is named as such', async()=>{
   let asked=0; const st={};
   await scanMine(st,{ps, wallets:{eth:[], sol:[]}, chains:['eth','sol'], now:NOW, call:async()=>{ asked++; }});

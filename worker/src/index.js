@@ -306,6 +306,10 @@ export class Pulse {
       const m=await this.load(), ps=await this.positions(), now=Date.now();
       // the first scan (17 Oct, one big look inside each reading) is started afresh: it looks back a day again
       if(!m.mineSt||m.mineSt.v!==2){ m.mineSt={v:2}; m.mine=[]; }
+      /* 1 Nov: the Solana side read only the older transaction format and gave up on a newer one after five tries (a
+         swap of yours this morning among them). Its day of signatures is looked at again; the list keeps each swap once,
+         and what it already holds (with its pool's price before and after) stays */
+      if(m.mineSt.sv!==1){ const st=m.mineSt; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.sv=1; }
       const got=await scanMine(m.mineSt, {ps, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs:this.solRpcs(), now});
       const ids=new Set((m.mine||[]).map(x=>x.id));
       m.mine=[...(m.mine||[]),...got.filter(x=>!ids.has(x.id))].filter(x=>now-x.t<24*60*MIN).sort((a,b)=>a.t-b.t).slice(-150);

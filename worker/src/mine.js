@@ -148,7 +148,10 @@ async function solLook(st,T,W,rpcs,ask,out,now,budget){
       q.push({s:g.signature, w, ts, n:0}); } }
   while(q.length){ const x=q[0];
     if(st.seen[x.s]){ q.shift(); continue; }
-    const tx=await ask(rpcs,'getTransaction',[x.s,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
+    /* version 1: Solana's newer transaction format is refused to a client that accepts only 0 (error -32015), and
+       such a swap was given up after five tries; 1 still returns 0 and legacy, and every field read here (account keys,
+       loaded addresses, balances, token balances, logs) has the same shape in it */
+    const tx=await ask(rpcs,'getTransaction',[x.s,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
     if(!tx){ q.shift(); if(++x.n<5) q.push(x); else st.seen[x.s]=now; break; }
     const r=solSwapOf(tx,x.w,T.sol,T.pools.sol); if(r){ r.t=x.ts; r.id=x.s; out.push(r); }
     st.seen[x.s]=now; q.shift(); }
