@@ -477,6 +477,43 @@ const feed=await pg.evaluate(()=>{ const L=[...document.querySelectorAll('.fpd-f
           after:document.querySelectorAll('.fpd-feed .aft').length}; });
 (feed.trades<=12&&feed.marked===feed.mine?OK:FAIL)('LATEST FEES: '+feed.trades+' trade(s) (at most 12) · your own swaps shown among them '+feed.mine
   +(feed.mine?', each marked YOU and "your swap": '+(feed.marked===feed.mine?'yes':'NO ('+feed.marked+')'):'')+' · trades noted as coming after a swap of yours: '+feed.after);
+/* LATEST FEES' bridge marks and the BIGGEST box (v40.33). The marks are matched again here by their own
+   rule (a link of the relay's inside a listed trade's minutes, in one of its pools: the pool named from the
+   positions, not by the page's helper) and must be on exactly those rows, each with its line. The box must
+   show, for each window of its switch, the trade the recorder names, never less than a listed trade of that
+   window, and fit its column at phone and laptop width; the switch is put back as it was. Counts only. */
+for(const w of [390,1440]){
+  await pg.setViewportSize({width:w, height:900}); await pg.waitForTimeout(500);
+  const m=await pg.evaluate(async()=>{
+    const out={box:!!document.querySelector('.fpd-big'), sw:!!document.querySelector('.fpd-big .fb-sw')};
+    if(!out.box) return out;
+    const P=state.pulse||{}, B=P.big||null, links=(state.bridgeLinks&&state.bridgeLinks.links)||[];
+    const ps=[...state.positions.values()], lab=l=>{ const q=ps.find(q=>l.chain==='sol'?q.poolId===l.pool:String(q.pool||'').toLowerCase()===String(l.pool).toLowerCase()); return q?q.pairLabel+' '+q.feeLabel:null; };
+    const tr=(P.trades||[]).slice(0,12), want=tr.filter(t=>{ const from=t.start??t.t, to=t.x?t.end:t.end+60000;
+      return links.some(l=>l.t>=from-90000&&l.t<=to+90000&&Object.keys(t.pools||{}).includes(lab(l))); }).length;
+    const rows=[...document.querySelectorAll('.fpd-feed li:not(.empty):not(.mine)')];
+    out.links=links.length; out.relayAge=state.bridgeLinks?Date.now()-state.bridgeLinks.t:null; out.lz=state.bridgeLinks&&state.bridgeLinks.n?state.bridgeLinks.n.msgs!=null:null;
+    out.want=want; out.marked=rows.filter(li=>li.querySelector('.bx')).length;
+    out.lines=document.querySelectorAll('.fpd-feed .brl').length; out.lineOk=[...document.querySelectorAll('.fpd-feed .brl')].every(e=>/^⇄ (ETH → SOL|SOL → ETH) · .*CPOOL/.test(e.textContent));
+    out.markedAll=[...document.querySelectorAll('.fpd-feed li')].filter(li=>li.querySelector('.bx')).length;
+    const box=document.querySelector('.fpd-big'), sw=box.querySelector('.fb-sw'), was=sw.dataset.w; out.win={};
+    for(const k of ['today','d24']){ box.querySelector('.fb-sw button[data-w="'+k+'"]').click(); await new Promise(r=>setTimeout(r,150));
+      const v=(box.querySelector('.fb-v')||{}).textContent||'', amt=+(v.replace(/[^0-9.]/g,'')||NaN), raw=B&&B[k];
+      const day0=B&&B.day0, from=k==='today'?day0:Date.now()-864e5, listedMax=Math.max(0,...(P.trades||[]).filter(t=>t.t>=from).map(t=>t.usd));
+      out.win[k]={shown:sw.dataset.w===k, has:!!raw, amtOk:raw?Math.abs(amt-raw.usd)<0.006:/No trade recorded/.test(box.textContent), notLess:raw?raw.usd+1e-9>=listedMax:listedMax===0,
+        fits:box.scrollWidth<=box.clientWidth+1}; }
+    box.querySelector('.fb-sw button[data-w="'+was+'"]').click(); out.back=sw.dataset.w===was;
+    return out; });
+  if(!m.box){ FAIL('BIGGEST box: not on the page at '+w+' px'); break; }
+  const W=['today','d24'].map(k=>m.win[k]), boxOk=W.every(x=>x.shown&&x.amtOk&&x.notLess&&x.fits)&&m.back;
+  (boxOk?OK:FAIL)('BIGGEST box at '+w+' px: the switch shows TODAY and 24 H in turn '+(W.every(x=>x.shown)?'yes':'NO')
+    +' · each the recorder’s biggest (or says there is none) '+(W.every(x=>x.amtOk)?'yes':'NO')+' · never less than a listed trade of its window '+(W.every(x=>x.notLess)?'yes':'NO')
+    +' · fits '+(W.every(x=>x.fits)?'yes':'NO')+' · put back as it was '+(m.back?'yes':'NO')+' · trades in it: today '+(m.win.today.has?'1':'none')+', 24 h '+(m.win.d24.has?'1':'none'));
+  if(w===1440){ const mk=m.marked===m.want&&m.lines===m.markedAll&&m.lineOk;
+    (mk?OK:FAIL)('bridge marks in LATEST FEES: links the relay found in the last 24 h '+m.links+' · rows that should carry one '+m.want+', carry one '+m.marked
+      +' · each with its line '+(m.lines===m.markedAll&&m.lineOk?'yes':'NO')+' · relay read '+(m.relayAge==null?'never':Math.round(m.relayAge/60000)+' min ago')+' · LayerZero Scan read: '+(m.lz==null?'—':m.lz?'yes':'NO')); }
+}
+await pg.setViewportSize({width:1440, height:900});
 const logLines=await pg.evaluate(()=>[...document.querySelectorAll('#logBody > *')].map(e=>e.innerText.replace(/\s+/g,' ').trim()).filter(t=>/Live\/relay check/.test(t)));
 if(!LOCKED) for(const t of logLines) notes.push('event log: '+t); else if(logLines.length) notes.push(logLines.length+' live/relay check line(s) in the event log');
 /* CPOOL's Ethereum ⇄ Solana bridge (v40.26), every day: the same check as the track audit, its code read

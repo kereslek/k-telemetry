@@ -9,6 +9,7 @@
    A reading that fails leaves that position's previous reading in place; the next good one
    covers the gap and its fees are spread evenly over the minutes it spans, so a missed minute
    never shows as a spike beside a hole. Gaps over 30 minutes are dropped, not smeared. */
+import {biggest} from './big.js';
 import {positionsFrom, readGrowth, earned, poolTraded, SOL_RPCS, EVM_RPCS, one} from './sampler.js';
 import {TOKENS, DEFAULT_CFG, readToken, opportunities, step} from './gaps.js';
 import {scanMine} from './mine.js';
@@ -68,10 +69,14 @@ function tradesOf(all, ev, evStart){
     for(const k in px||{}){ const q=tr.px[k]||(tr.px[k]={p:null, usd:0, n:0}); q.p=px[k][0];
       if(px[k][1]!=null){ q.usd+=px[k][1]; q.n++; } }
   }
-  return { trades: out.slice(-20).reverse().map(e=>({...(e.x?{k:e.k,x:1}:{}), t:e.t, start:e.start, end:e.end, usd:r(e.usd),
+  const fmt=e=>({...(e.x?{k:e.k,x:1}:{}), t:e.t, start:e.start, end:e.end, usd:r(e.usd),
              pools:Object.fromEntries(Object.entries(e.pools).map(([k,v])=>[k,r(v)])),
              ...(e.side&&Object.keys(e.side).length?{side:Object.fromEntries(Object.entries(e.side).map(([k,v])=>[k,[r(v[0]),r(v[1])]]))}:{}),
-             ...(e.px&&Object.keys(e.px).length?{px:Object.fromEntries(Object.entries(e.px).map(([k,v])=>[k,[v.p, v.n?Math.round(v.usd*100)/100:null]]))}:{})})),
+             ...(e.px&&Object.keys(e.px).length?{px:Object.fromEntries(Object.entries(e.px).map(([k,v])=>[k,[v.p, v.n?Math.round(v.usd*100)/100:null]]))}:{})});
+  // the biggest of the last 24 hours and of today (Budapest), from every trade held, not only the 20 listed
+  const B=biggest(out, Date.now());
+  return { trades: out.slice(-20).reverse().map(fmt),
+           big:{d24:B.d24?fmt(B.d24):null, today:B.today?fmt(B.today):null, day0:B.day0},
            gaps, from: all.length?all[0][0]:null };
 }
 

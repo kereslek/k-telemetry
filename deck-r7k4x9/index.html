@@ -1201,6 +1201,32 @@
   .you{display:inline-block;font:700 8.5px/1.4 var(--mono);letter-spacing:.08em;color:#140b24;background:#b48cff;border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:1px}
   .fpd-feed .mnote{font-size:10.5px;color:#a995d8}
   .fpd-feed .aft{grid-column:2 / -1;font-size:10.5px;color:#b48cff;margin-top:-2px}
+  /* bridge marks: a trade the same wallet's crossing of CPOOL's bridge came with (amber, both ways) */
+  .bx{display:inline-block;font:700 10px/14px var(--mono);color:#e0b453;border:1px solid rgba(224,180,83,.55);border-radius:3px;padding:0 3px;margin-right:5px;vertical-align:1px}
+  .fpd-feed .brl{grid-column:2 / -1;font-size:10.5px;color:#e0b453;margin-top:-2px}
+  .fpd-lh .lg .brm{color:#e0b453;font-weight:700}
+  /* the biggest trade of today or the last 24 hours, with its tiny switch */
+  .fpd-big{border:1px solid var(--line);border-radius:7px;padding:8px 10px 9px;background:linear-gradient(180deg,rgba(53,214,232,.035),rgba(53,214,232,0) 70%);display:flex;flex-direction:column;gap:5px;min-width:0}
+  .fpd-big .fb-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .fpd-big .fb-k{font-size:9.5px;letter-spacing:.16em;color:var(--text-muted)}
+  .fb-sw{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;align-items:center;height:17px;padding:1px;border-radius:9px;background:#08111d;border:1px solid #1a2c44;box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
+  .fb-sw button{position:relative;z-index:1;appearance:none;border:0;background:none;cursor:pointer;font:700 8px/13px var(--mono);letter-spacing:.14em;color:var(--text-muted);padding:1px 7px;border-radius:7px;transition:color .25s}
+  .fb-sw button[aria-checked="true"]{color:var(--text-primary)}
+  .fb-sw button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+  .fb-sw i{position:absolute;z-index:0;top:1px;bottom:1px;left:1px;width:calc(50% - 1px);border-radius:7px;background:linear-gradient(180deg,rgba(53,214,232,.30),rgba(53,214,232,.12));box-shadow:0 0 8px rgba(53,214,232,.35),inset 0 0 0 1px rgba(53,214,232,.55);transition:transform .28s cubic-bezier(.3,1.4,.5,1)}
+  .fb-sw[data-w="d24"] i{transform:translateX(100%)}
+  @media (prefers-reduced-motion:reduce){ .fb-sw i,.fb-sw button{transition:none} }
+  .fpd-big .fb-r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;font:13px var(--mono);min-width:0}
+  .fpd-big .fb-r .legw{display:flex;flex-direction:column;min-width:0}
+  .fpd-big .fb-r .leg{display:inline-flex;align-items:center;gap:3px;white-space:nowrap;min-width:0;overflow:hidden}
+  .fpd-big .fb-r .leg i{width:7px;height:7px;border-radius:50%;margin-right:2px;flex:none}
+  .fpd-big .fb-r .leg b{font-weight:600;color:var(--text-primary)} .fpd-big .fb-r .leg b.sd{color:var(--status-critical)} .fpd-big .fb-r .leg b.bt{color:var(--status-good)}
+  .fpd-big .fb-r .leg em{font-style:normal;font-weight:700;color:var(--text-secondary)} .fpd-big .fb-r .leg small{font-size:10.5px;color:var(--text-muted);margin-left:2px}
+  .fpd-big .fb-v{color:var(--text-primary);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
+  .fpd-big .fb-s{grid-column:1 / -1;font-size:10.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .fpd-big .fb-s b{color:var(--text-secondary);font-weight:600}
+  .fpd-big .fb-s .brl{color:#e0b453;display:block;margin-top:2px}
+  .fpd-big .fb-none{font-size:11px;color:var(--text-muted)}
 
   /* ---- touch and legibility (UX audit) ---- */
   @media (max-width:760px){
@@ -2681,7 +2707,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.32';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.33';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3969,6 +3995,7 @@ async function scanInner(isBoot){
           if(d.solPrio) state.solPrio = d.solPrio;
           if(d.btcFee) state.btcFee = d.btcFee;
           if(d.bridge) state.bridge = d.bridge;
+          if(d.bridgeLinks) state.bridgeLinks = d.bridgeLinks;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink = d.ink||null;
           if(d.mktRef) state.mktRef = d.mktRef;
@@ -11494,13 +11521,42 @@ function afterMine(t, mine){
   const d=Math.max(0,Math.round((t.at-x.t)/1000));
   return '<span class="aft">⟲ '+(d<90?d+' s':Math.round(d/60)+' min')+' after your swap ('+esc(x.side)+' '+esc(legSym(x.tok))+')</span>';
 }
+function tradeOf(t, P, now){ const pools=Object.entries(t.pools||{}).sort((a,b)=>b[1]-a[1]), at=t.x?t.t:t.t+30000;
+  return {k:String(t.k??t.t), t:t.t, at, start:t.start??t.t, end:t.end, endAt:t.x?t.end:t.end+60000, usd:t.usd, m:(now-at)/60000, pools, lbl:pools.length?pools[0][0]:null,
+          legs:pools.map(([k,usd])=>tradeLeg(k,usd,t.side&&t.side[k],P.pairs&&P.pairs[k],t.px&&t.px[k]))}; }
 function pulseTrades(){
   const P=state.pulse; if(!P||!Array.isArray(P.trades)) return [];
   const now=Date.now();
-  return P.trades.map(t=>{ const pools=Object.entries(t.pools||{}).sort((a,b)=>b[1]-a[1]), at=t.x?t.t:t.t+30000;
-    return {k:String(t.k??t.t), t:t.t, at, end:t.end, endAt:t.x?t.end:t.end+60000, usd:t.usd, m:(now-at)/60000, pools, lbl:pools.length?pools[0][0]:null,
-            legs:pools.map(([k,usd])=>tradeLeg(k,usd,t.side&&t.side[k],P.pairs&&P.pairs[k],t.px&&t.px[k]))}; });
+  return P.trades.map(t=>tradeOf(t,P,now));
 }
+/* ---- bridge marks (scripts/bridge-links.mjs, read by the relay every pass) ----
+   A trade through one of your CPOOL pools that the same wallet's crossing of CPOOL's bridge came
+   with: bought here and then bridged out, or bridged over and then traded here, within two hours,
+   on either chain. No wallet reaches the page; a link carries when, which pool, which way, how long
+   apart, how much crossed and what the trade did. */
+function bridgeLinksNow(){ const B=state.bridgeLinks; return B&&Array.isArray(B.links)?B.links:[]; }
+function poolLabelOf(chain, id){
+  for(const q of state.positions.values()){ if(!q||!q.pairLabel) continue;
+    if(chain==='sol'?q.poolId===id:String(q.pool||'').toLowerCase()===String(id).toLowerCase()) return q.pairLabel+' '+q.feeLabel; }
+  return null; }
+/* the link a row stands for: one of its pools, inside its minutes (a minute's slack either side, as the
+   recorder's minute and the chain's block time may sit a little apart); the nearest when two fit */
+function bridgeOf(labels, from, to, at){
+  let best=null;
+  for(const l of bridgeLinksNow()){ if(!(l.t>=from-90000&&l.t<=to+90000)) continue;
+    const lab=poolLabelOf(l.chain,l.pool); if(!lab||!labels.has(lab)) continue;
+    if(!best||Math.abs(l.t-at)<Math.abs(best.t-at)) best=l; }
+  return best; }
+const bridgeOfTrade=t=>bridgeOf(new Set((t.pools||[]).map(x=>x[0])), t.start, t.endAt, t.at);
+const bridgeOfMine=x=>x.own?bridgeOf(new Set([x.own]), x.t, x.t, x.t):null;
+const brLag=m=>{ const a=Math.abs(m); return a<1?'under a minute':a<120?a+' min':(a/60).toFixed(a<600?1:0)+' h'; };
+const brK=v=>v==null||!isFinite(v)?'':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':String(Math.round(v));
+function brText(l){
+  const dir=l.way==='in'?'ETH → SOL':'SOL → ETH', amt=l.amt!=null?brK(l.amt)+' CPOOL':'CPOOL', lag=brLag(l.lag), did=(l.side==='sold'?'sold':'bought')+' here';
+  // on the chain it arrived on the trade came after; on the one it left from, before
+  const arrived=(l.chain==='sol')===(l.way==='in');
+  return '⇄ '+dir+' · '+(arrived?amt+' came over, '+did+' '+lag+' later':did+', then bridged '+amt+(l.way==='in'?' to Solana ':' out ')+lag+' later'); }
+const brTitle='This trade and a crossing of CPOOL\u2019s bridge were made by the same wallet, within two hours, in the order of a trip: bridged over and then traded here, or traded here and then bridged out.';
 /* The hour in miniature, for the 24h tile: the big dial shrunk to a coin. Now at twelve, the hour
    running clockwise, each trade a dot sized by what it paid, the beam in step with the big dial's,
    and an inner ring filling toward a typical hour. Beside it the hour's total, how many trades,
@@ -11801,8 +11857,34 @@ function renderFeePulse60m(host){
   // ---- beside the dial: the reading, the quiet, the latest fees
   const side=el('div','fpd-side'); grid.append(side);
   const read=el('div','fp-read fpd-read'), stats=el('div','fpd-stats'), qm=el('div','fpd-quiet'), lh=el('div','fpd-lh'), list=el('ul','fpd-feed');
-  lh.innerHTML='LATEST FEES<span class="lg">trader <b class="sd">sold</b> · <b class="bt">bought</b> · <span class="you">YOU</span> your swap</span>';
-  side.append(read,stats,qm,lh,list);
+  const LG='LATEST FEES<span class="lg">trader <b class="sd">sold</b> · <b class="bt">bought</b> · <span class="you">YOU</span> your swap';
+  lh.innerHTML=LG+'</span>';
+  /* the biggest trade of today (since midnight Budapest) or of the last 24 hours, from the recorder's
+     whole day (worker big.js), with a tiny switch between the two; the choice is kept on this device */
+  const big=el('div','fpd-big');
+  let bigWin='d24'; try{ const v=localStorage.getItem('kt.bigWin'); if(v==='today'||v==='d24') bigWin=v; }catch(e){}
+  big.innerHTML='<div class="fb-h"><span class="fb-k">BIGGEST</span><span class="fb-sw" role="radiogroup" aria-label="Biggest trade of"><i></i>'
+    +'<button type="button" role="radio" data-w="today">TODAY</button><button type="button" role="radio" data-w="d24">24 H</button></span></div><div class="fb-b"></div>';
+  const bigSw=big.querySelector('.fb-sw'), bigB=big.querySelector('.fb-b');
+  const renderBig=()=>{
+    bigSw.dataset.w=bigWin; for(const b of bigSw.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.w===bigWin));
+    const P=state.pulse, B=P&&P.big, raw=B&&B[bigWin];
+    if(!P){ bigB.innerHTML='<span class="fb-none">The minute record is not loaded yet.</span>'; return; }
+    if(!B){ bigB.innerHTML='<span class="fb-none">—</span>'; return; }
+    if(!raw){ bigB.innerHTML='<span class="fb-none">No trade recorded '+(bigWin==='today'?'yet today':'in the last 24 hours')+'.</span>'; return; }
+    const now=Date.now(), t=tradeOf(raw,P,now), g=t.legs[0], bl=bridgeOfTrade(t);
+    const ago=t.m<1?'just now':t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago';
+    const sz=g&&g.px&&g.px[1]>0?' · <b>≈'+fmtUsd(g.px[1], g.px[1]<10?2:0)+' trade</b>':'';
+    const more=t.legs.length>1?' · +'+(t.legs.length-1)+' pool'+(t.legs.length>2?'s':''):'';
+    bigB.innerHTML='<div class="fb-r">'+(g?legHtml({...g, px:null}):'<span class="fb-none">pool not recorded</span>')
+      +'<span class="fb-v">'+(bl?'<span class="bx" title="'+brTitle+'">⇄</span>':'')+'+'+fmtUsd(t.usd,2)+'</span>'
+      +'<span class="fb-s">'+hl(t.t)+' · '+ago+sz+more+(bl?'<span class="brl">'+esc(brText(bl))+'</span>':'')+'</span></div>'; };
+  bigSw.addEventListener('click',e=>{ const b=e.target.closest('button[data-w]'); if(!b||b.dataset.w===bigWin) return;
+    bigWin=b.dataset.w; try{ localStorage.setItem('kt.bigWin',bigWin); }catch(err){} renderBig(); });
+  bigSw.addEventListener('keydown',e=>{ if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return; e.preventDefault();
+    bigWin=bigWin==='d24'?'today':'d24'; try{ localStorage.setItem('kt.bigWin',bigWin); }catch(err){} renderBig(); bigSw.querySelector('[data-w="'+bigWin+'"]').focus(); });
+  side.append(read,stats,qm,big,lh,list);
+  renderBig();
   wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
     +'A trade here is a run of back-to-back readings that found fees (every few seconds while this page is open, every minute otherwise); a new one arrives bright and dims as it goes round, fading out over its last quarter-hour. Typical hour is the last 24 hours\' average. Fees your own swaps pay into your own pools are left out, here as everywhere: they are your money going round, not income. Your swaps themselves are listed apart, in violet and marked YOU (any venue, in a token of your pools), with the price they left in your pool and how soon the next trades came: never counted as a fee.'));
 
@@ -12049,14 +12131,19 @@ function renderFeePulse60m(host){
     const rows=TR.slice(0,12), MINE=pulseMine(), from=rows.length?rows[rows.length-1].at-60000:Date.now()-60*60000;
     const items=[...rows.map(t=>({at:t.at, t})), ...MINE.filter(x=>x.t>=from).map(x=>({at:x.t, x}))].sort((a,b)=>b.at-a.at);
     list.innerHTML=items.length?'':'<li class="empty">No trades recorded yet.</li>';
+    let anyBr=false;
+    const bxOf=bl=>bl?'<span class="bx" title="'+brTitle+'">⇄</span>':'', brlOf=bl=>bl?'<span class="brl">'+esc(brText(bl))+'</span>':'';
     for(const it of items){ const li=document.createElement('li');
-      if(it.x){ const x=it.x; li.className='mine';
-        li.innerHTML='<span class="tm">'+hl(x.t)+'</span><span class="legs">'+mineHtml(x)+'</span><span class="amt">'+(x.usd>0?'≈'+fmtUsd(x.usd,x.usd<10?2:0):'—')+'<small>your swap</small></span>';
+      if(it.x){ const x=it.x, bl=bridgeOfMine(x); li.className='mine'+(bl?' br':''); if(bl) anyBr=true;
+        li.innerHTML='<span class="tm">'+hl(x.t)+'</span><span class="legs">'+mineHtml(x)+'</span><span class="amt">'+bxOf(bl)+(x.usd>0?'≈'+fmtUsd(x.usd,x.usd<10?2:0):'—')+'<small>your swap</small></span>'+brlOf(bl);
         list.append(li); continue; }
-      const t=it.t, aft=afterMine(t,MINE);
-      li.innerHTML='<span class="tm">'+hl(t.t)+'</span><span class="legs">'+(t.legs&&t.legs.length?t.legs.map(legHtml).join(''):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">+'+fmtUsd(t.usd,2)+'</span>'
-        +aft+(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
+      const t=it.t, aft=afterMine(t,MINE), bl=bridgeOfTrade(t); if(bl){ anyBr=true; li.className='br'; }
+      li.innerHTML='<span class="tm">'+hl(t.t)+'</span><span class="legs">'+(t.legs&&t.legs.length?t.legs.map(legHtml).join(''):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">'+bxOf(bl)+'+'+fmtUsd(t.usd,2)+'</span>'
+        +brlOf(bl)+aft+(t.m>60?'<span class="ago">'+(t.m<120?Math.round(t.m)+' min ago':Math.round(t.m/60)+' h ago')+'</span>':'');
       list.append(li); }
+    // the legend names the mark only while one is on the list
+    const lgNow=LG+(anyBr?' · <span class="brm">⇄</span> bridge':'')+'</span>'; if(lh.innerHTML!==lgNow) lh.innerHTML=lgNow;
+    renderBig();
   };
   /* ---- catch-up: the first sweep ----
      Coming back, the scope goes dark and powers up like a radar tube: a line of light across the
@@ -13176,6 +13263,7 @@ async function init(){
       if(d.solPrio) state.solPrio=d.solPrio;
       if(d.btcFee) state.btcFee=d.btcFee;
       if(d.bridge) state.bridge=d.bridge;
+      if(d.bridgeLinks) state.bridgeLinks=d.bridgeLinks;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
       if(d.chainStatus) state.chainStatus=d.chainStatus;
