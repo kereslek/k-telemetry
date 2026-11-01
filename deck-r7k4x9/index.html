@@ -557,6 +557,12 @@
   .matrix .mx-go:hover{color:var(--accent)} .matrix .mx-go:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
   .matrix .pos-cell .sub{white-space:nowrap}
   .matrix .sub{color:var(--text-muted);font-size:9px}
+  /* which of your wallets holds it: a few letters of its address, linked to that wallet's whole portfolio */
+  .matrix .mx-w{font:600 8px/1 var(--mono);letter-spacing:.03em;color:var(--text-secondary);text-decoration:none;
+    border-bottom:1px dotted var(--text-muted);margin-left:3px;padding:0 1px 1px;position:relative}
+  .matrix .mx-w::after{content:"";position:absolute;inset:-7px -4px}
+  .matrix .mx-w:hover,.matrix .mx-w:focus-visible{color:var(--accent);border-bottom-color:var(--accent);outline:none}
+  .matrix .mx-fee{white-space:nowrap}
   .matrix tr:hover td{background:rgba(53,214,232,.03)}
   /* unclaimed fees by token, under the matrix */
   .mx-mix[hidden]{display:none}
@@ -814,7 +820,7 @@
     .matrix td{padding:8px 8px}
     .mx-mix{padding:8px 10px 10px}
     .mx-mix .mm-leg{font-size:9.5px;gap:3px 10px}
-    .matrix th:first-child,.matrix td:first-child{padding-left:4px;max-width:132px}
+    .matrix th:first-child,.matrix td:first-child{padding-left:4px;max-width:140px}   /* room for the wallet beside the fee */
     footer{font-size:8px}
     .fd-main{font-size:13.5px}
     .chip{margin-left:0}
@@ -2672,7 +2678,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.30';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.31';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -4547,6 +4553,34 @@ const posLink = p => p.chain==='sol' ? (p.venue==='orca' ? 'https://www.orca.so/
 const scanBase = p => (EVM_CHAINS[p.chain]||EVM_CHAINS.ethereum).scan;
 const chainTag = p => p.chain==='sol' ? '◎SOL' : (p.chainTag||(EVM_CHAINS[p.chain]||{}).tag||'ETH');
 const linkRef = p => '<a class="plink" href="'+posLink(p)+'" target="_blank" rel="noopener" title="Open this position on '+(p.chain==='sol'?'Raydium':'Uniswap')+'">'+esc(posRef(p))+' ↗</a>';
+/* Which of your wallets holds a position, named the way you name them: a few characters of its own
+   address. Ethereum: its last four, without a leading digit (made-up: …7a3b → A3B, …be9c → BE9C). Solana:
+   its vanity tail of four to seven where it has one (made-up: …QKiwi → Kiwi), its last four otherwise, first letter raised. Longer
+   where two of your wallets would read the same. Worked out here, in the unlocked page, from the sealed
+   wallet list: no piece of an address is in this page's code or its public files. */
+let WTAGS=null, WTAGS_KEY='';
+function walletTags(){
+  const pr=activeProfile(), ws=[...((pr&&pr.wallets)||[]).map(w=>({sol:w.chain==='solana', a:String(w.address||'')})).filter(w=>w.a&&!/^(sui|tron)$/.test(w.chain||'')),
+    ...[...(state.positions?state.positions.values():[])].map(p=>({sol:p.chain==='sol', a:String((p.chain==='sol'?p.wallet:p.owner)||'')})).filter(w=>w.a)];
+  const key=ws.map(w=>(w.sol?'s':'e')+w.a).sort().join(',');
+  if(WTAGS&&key===WTAGS_KEY) return WTAGS;
+  const out=new Map();
+  for(const sol of [false,true]){
+    const A=[...new Set(ws.filter(w=>w.sol===sol&&(sol?/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(w.a):/^0x[0-9a-fA-F]{40}$/.test(w.a))).map(w=>sol?w.a:w.a.toLowerCase()))];
+    const first=a=>{ if(!sol){ let t=a.slice(-4).toUpperCase(); if(/^\d[A-F]/.test(t)) t=t.slice(1); return t; }
+      const m=/[A-Z][a-z1-9]{3,6}$/.exec(a), t=m?m[0]:a.slice(-4); return t[0].toUpperCase()+t.slice(1); };
+    const tag=new Map(A.map(a=>[a,first(a)]));
+    for(let L=5;L<=12;L++){ const seen=new Map(); for(const [a,t] of tag) seen.set(t.toLowerCase(),(seen.get(t.toLowerCase())||0)+1);
+      const dup=[...tag].filter(([,t])=>seen.get(t.toLowerCase())>1); if(!dup.length) break;
+      for(const [a] of dup) tag.set(a, sol?a.slice(-L):a.slice(-L).toUpperCase()); }
+    for(const [a,t] of tag) out.set((sol?'s':'e')+a, t); }
+  WTAGS=out; WTAGS_KEY=key; return out; }
+function walletMark(p){
+  const sol=p.chain==='sol', a=String((sol?p.wallet:p.owner)||''); if(!a) return '';
+  const t=walletTags().get((sol?'s':'e')+(sol?a:a.toLowerCase())); if(!t) return '';
+  const href=sol?'https://jup.ag/portfolio/'+encodeURIComponent(a):'https://debank.com/profile/'+encodeURIComponent(a.toLowerCase());
+  const lab='In your wallet '+t+' ('+(sol?'Solana':'Ethereum')+'): its whole portfolio on '+(sol?'Jupiter':'DeBank')+', in a new tab';
+  return '<a class="mx-w" data-wallet="1" href="'+href+'" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="'+esc(lab)+'" aria-label="'+esc(lab)+'">'+esc(t)+'</a>'; }
 /* display orientation: auto-invert unreadable ratios (price < 0.01), per-position override via ⇄ */
 const autoInv = p => p.price>0 && p.price < 0.01;
 function getInv(p){ const ip=store.get('invPref',{}); const k=String(p.id); return (k in ip) ? ip[k] : autoInv(p); }
@@ -5169,7 +5203,7 @@ function renderMatrix(){
         go.append(dot, el('span','mx-pr',esc(p.pairLabel)));
         go.addEventListener('click',()=>goToCard(p.id));
         const sev=severityOf(p);
-        cell.append(go, el('span','sub', '<span style="color:var(--status-'+sev+')" title="'+SEV_LABEL[sev]+'">'+SEV_ICON[sev]+'</span> '+esc(badgeOf(p)||p.feeLabel)+' · '+linkRef(p)));
+        cell.append(go, el('span','sub', '<span style="color:var(--status-'+sev+')" title="'+SEV_LABEL[sev]+'">'+SEV_ICON[sev]+'</span> <span class="mx-fee">'+esc(badgeOf(p)||p.feeLabel)+walletMark(p)+'</span>\u2009·\u2009'+linkRef(p)));
         td.append(cell); tr.append(td); return;
       }
       if(c.key==='status'){

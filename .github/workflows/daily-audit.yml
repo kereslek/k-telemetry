@@ -5,6 +5,8 @@ on:
   schedule:
     - cron: '47 4 * * *'   # 06:47 Budapest (CEST)
   workflow_dispatch:
+    inputs:
+      names: { description: 'the wallet names you use, sealed to the deck inbox (unreadable here)', required: false, default: '' }
   push:
     branches: [claude/new-session-argqhq]
     paths: ['scripts/daily-audit.mjs', '.github/workflows/daily-audit.yml']
@@ -23,5 +25,6 @@ jobs:
       - run: node scripts/daily-audit.mjs
         env:
           AUDIT_LOCAL: ''
+          NAMES: ${{ github.event.inputs.names || '' }}   # sealed: only the passphrase opens it; never printed
           # opens a locked deck; the log then shows pass/fail with every figure withheld
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
