@@ -5,6 +5,7 @@
    public: only counts and yes/no are printed, never a wallet, a transaction, a pool or an amount. */
 import crypto from 'node:crypto';
 import { positionsFrom } from '../worker/src/sampler.js';
+import { tracked, solSwapOf } from '../worker/src/mine.js';
 import { ownSwapLines } from './own-swap-check.mjs';
 const SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/', PASS=String(process.env.DECK_PASSPHRASE||'').trim();
 /* from START, or else from midnight Budapest today */
@@ -75,7 +76,7 @@ for(const id of Object.keys(fees.closedPos||{}).filter(x=>/^\d+$/.test(x))){
 const ownSol=new Map((data.sol||[]).map(p=>[p.poolId,p.id.slice(0,12)+' '+(p.pairLabel||'')+' '+(p.feeLabel||'')]));
 console.log('own pools: '+ownEth.size+' Ethereum, '+(data.sol||[]).length+' Solana positions');
 
-const found=[], elsewhere=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
+const found=[], elsewhere=[], solTx=new Map(), other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
 const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822', XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; let solSeen=0, solMine=0;
 // ---- Ethereum
 const lcx={n:0, tx:new Set(), last:0};   // LCX arriving in the deck's wallets today (counts and venues only)
@@ -165,6 +166,7 @@ for(const w of WS){
       if(!logs.some(l=>/Instruction: Swap/i.test(l))) continue;
       const pools=[...ownSol.keys()].filter(p=>keys.includes(p));
       if(!pools.length){ other.sol++; elsewhere.push({chain:'sol', t:s.blockTime*1000, k:s.signature}); continue; }
+      solTx.set(s.signature, {tx, w});
       for(const p of pools){ const id='sol:'+s.signature+':'+p; found.push({chain:'sol',t:new Date(s.blockTime*1000).toISOString(),id,addr:p,pool:ownSol.get(p),booked:booked.has(id),back:pendBack.get(id),who:w}); }
     }
     if(sigs.length<100) break;
@@ -302,8 +304,18 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
     for(const x of mine.sort((a,b)=>a.t-b.t)){ const i=P.mine.findIndex((y,j)=>!used.has(j)&&y.chain===x.chain&&Math.abs(y.t-x.t)<=120000);
       if(i<0){ miss.push(x); continue; } used.add(i); if(x.own&&P.mine[i].own) ownOk++; }
     const nOwn=mine.filter(x=>x.own).length, ok=!miss.length&&ownOk===nOwn;
+    /* for each one missing, the recorder's own rule (worker/src/mine.js) on that transaction: what it saw, yes/no only */
+    const why=[]; { const T=tracked(positionsFrom(data));
+      for(const x of miss) for(const [sig,v] of solTx){ if(Math.abs((v.tx.blockTime||0)*1000-x.t)>1000) continue;
+        const m=v.tx.meta||{}, keys=[...v.tx.transaction.message.accountKeys,...((m.loadedAddresses&&m.loadedAddresses.writable)||[]),...((m.loadedAddresses&&m.loadedAddresses.readonly)||[])].map(String);
+        const r=solSwapOf(v.tx, v.w, T.sol, T.pools.sol);
+        why.push('the recorder’s rule now '+(r?'takes it as your '+r.side+(r.own?' through your pool':''):'does NOT take it')+' · swap in its logs '+(/Instruction: (Swap\w*|\w*Route\w*)\b/i.test((m.logMessages||[]).join('\n'))?'yes':'no')
+          +' · logs cut short '+((m.logMessages||[]).some(l=>/truncated/i.test(l))?'yes':'no')+' · one of your pools in it '+(keys.some(k=>T.pools.sol.has(k))?'yes':'no')
+          +' · your token in its balances for the paying wallet '+([...(m.preTokenBalances||[]),...(m.postTokenBalances||[])].some(b=>b.owner===v.w&&T.sol.has(b.mint))?'yes':'no')
+          +' · made in the newer format '+(v.tx.version===1?'yes':v.tx.version===0?'v0':'legacy')); } }
     console.log((ok?'ok   ':miss.every(x=>Date.now()-x.t<5*60000)?'note ':'MISS ')+'your swaps today shown as YOU in LATEST FEES: '+(mine.length-miss.length)+' of '+mine.length
-      +' · through your own pools, with your pool named: '+ownOk+' of '+nOwn+(miss.length?' · not listed: made '+miss.map(x=>Math.round((Date.now()-x.t)/60000)+' min ago ('+x.chain+')').join(', '):'')); }
+      +' · through your own pools, with your pool named: '+ownOk+' of '+nOwn+(miss.length?' · not listed: made '+miss.map(x=>Math.round((Date.now()-x.t)/60000)+' min ago ('+x.chain+')').join(', '):''));
+    for(const l of why) console.log('     '+l); }
   /* the bridge marks: which of them are your own trades (a mark says "you" then) */
   { const L=(data.bridgeLinks&&data.bridgeLinks.links)||[];
     console.log('bridge marks the relay holds (last 24 h): '+L.length+(L.length?' · on your own trades: '+L.filter(l=>l.own).length+' · on other traders’ '+L.filter(l=>l.own===false).length+(L.some(l=>l.own==null)?' · from before marks said whose: '+L.filter(l=>l.own==null).length:''):'')); } }
