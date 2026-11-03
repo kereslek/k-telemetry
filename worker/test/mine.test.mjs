@@ -115,6 +115,26 @@ await ta('scan: a swap in Solana\u2019s newer transaction format (version 1) is 
     if(!st.diag.sol.q) break; }
   assert.deepEqual(got.map(x=>[x.id,x.side,x.tok,x.other,x.venue]),[[V1,'sold','CPOOL','SOL','your pool']]);
 });
+await ta('scan: a swap the relay booked as yours but this list missed is looked at again, whichever wallet made it', async()=>{
+  const W2='Wa11et2222222222222222222222222222222222222', S='MISSED';
+  const tx=soltx(['Program log: Instruction: SwapV2'],[tb(CPOOL,W2,10000)],[tb(CPOOL,W2,6000)],[W2,SPOOL],[1e9],[1.58e9-5000]);
+  const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') return []; if(method==='getTransaction') return params[0]===S?tx:null; throw new Error('unexpected '+method); };
+  const st={seen:{[S]:NOW-600e3}}, known=[{chain:'sol', id:'sol:'+S+':'+SPOOL, t:NOW-900e3}];
+  const got=await scanMine(st,{ps, wallets:{eth:[], sol:[W,W2]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW, budget:6, call, known, have:new Set()});
+  assert.deepEqual(got.map(x=>[x.id,x.side,x.venue,x.t]),[[S,'sold','your pool',NOW-900e3]]);
+  // once a day: the next look does not ask again, and one already listed is never asked
+  const again=await scanMine(st,{ps, wallets:{eth:[], sol:[W,W2]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW+60e3, budget:6, call, known, have:new Set()});
+  assert.equal(again.length,0);
+  const st2={}; await scanMine(st2,{ps, wallets:{eth:[], sol:[W]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW, budget:6, call, known, have:new Set([S])});
+  assert.equal((st2.qs||[]).length,0);
+});
+await ta('scan: a node that does not have a transaction yet is not the last word: the next one is asked', async()=>{
+  const S='LATE', tx=soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
+  const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') return [{signature:S, blockTime:(NOW-60e3)/1000}];
+    if(method==='getTransaction') return rpcs[0]==='https://behind.example'?null:rpcs[0]==='https://ahead.example'?tx:null; throw new Error('unexpected '+method); };
+  const got=await scanMine({},{ps, wallets:{eth:[], sol:[W]}, solRpcs:['https://behind.example','https://ahead.example'], chains:['sol'], now:NOW, budget:6, call});
+  assert.deepEqual(got.map(x=>x.id),[S]);
+});
 await ta('scan: nothing to watch asks nothing; a request over its limit is named as such', async()=>{
   let asked=0; const st={};
   await scanMine(st,{ps, wallets:{eth:[], sol:[]}, chains:['eth','sol'], now:NOW, call:async()=>{ asked++; }});

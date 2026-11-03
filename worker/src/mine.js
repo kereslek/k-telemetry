@@ -95,15 +95,27 @@ export function solSwapOf(tx, w, T, ownPools){
 const BUDGET=18, MARGIN=3, CHUNK=1000, OUT=new Error('budget'), good=new Map();
 const kind=e=>{ const s=String(e&&e.message||e); return /too many subrequests/i.test(s)?'request limit':/429|rate.?limit|too many requests/i.test(s)?'rate limit'
   :/timed? ?out|timeout|abort/i.test(s)?'timeout':'rpc error'; };
-export async function scanMine(st, {ps, wallets, solRpcs, chains=['eth','sol'], now=Date.now(), budget=BUDGET, call=one}){
-  const T=tracked(ps), out=[]; st.seen=st.seen||{}; st.diag=st.diag||{};
+/* known: the relay's own list of your swaps through your own pools ([{chain, id:'sol:<sig>:<pool>' | 'eth:<hash>:<i>', t}],
+   costs-main.json selfPend), and have: the ids this list already holds. A swap the relay has booked as yours that is
+   not on the list here is looked at again, once a day, even if an earlier look gave up on it or did not take it for a
+   swap of yours (3 Nov: a sale of yours through two of your pools at 21:10 was booked by the relay, so not counted as
+   income, but never listed here as YOU, while the Solana nodes were refusing asks for being asked too often). */
+export async function scanMine(st, {ps, wallets, solRpcs, chains=['eth','sol'], now=Date.now(), budget=BUDGET, call=one, known=[], have=new Set()}){
+  const T=tracked(ps), out=[]; st.seen=st.seen||{}; st.diag=st.diag||{}; st.bf=st.bf||{};
+  for(const x of known||[]){ const [c,id]=String(x&&x.id||'').split(':'); if(!id||!(x.t>now-DAY)||have.has(id)||st.bf[id]) continue;
+    if(c==='sol'){ const q=st.qs=st.qs||[]; if(!q.some(y=>y.s===id)){ delete st.seen[id]; q.push({s:id, w:null, ts:x.t, n:0}); } st.bf[id]=now; }
+    else if(c==='eth'){ const q=st.qe=st.qe||[]; if(!q.some(y=>y.h===id)){ delete st.seen[id]; q.push({h:id, n:0}); } st.bf[id]=now; } }
+  for(const k of Object.keys(st.bf)) if(now-st.bf[k]>DAY+3600e3) delete st.bf[k];
   const W={eth:((wallets&&wallets.eth)||[]).map(x=>String(x).toLowerCase()), sol:(wallets&&wallets.sol)||[]};
   for(const c of ['eth','sol']){ if(!chains.includes(c)) continue;
     const D=st.diag[c]={at:now, tok:T[c].size, w:W[c].length, asks:0, found:0, q:0, err:null};
     if(!T[c].size||!W[c].length) continue;
     let n=0; const ask=async(rpcs,method,params)=>{ const errs=[], g=good.get(c+method), order=g&&rpcs.includes(g)?[g,...rpcs.filter(u=>u!==g)]:rpcs;
+      let empty=false;
       for(const u of order){ if(n>=budget) throw OUT; n++;
-        try{ const r=await call([u],method,params); good.set(c+method,u); return r; }catch(e){ errs.push(String(e&&e.message||e)); } }
+        try{ const r=await call([u],method,params); if(r==null&&/^(getTransaction|eth_getTransactionReceipt)$/.test(method)){ empty=true; continue; }
+          good.set(c+method,u); return r; }catch(e){ errs.push(String(e&&e.message||e)); } }
+      if(empty) return null;                     // no node had it yet: the caller tries again on a later look
       throw new Error(errs.join(' | ')||'no rpc'); };
     try{ await (c==='eth'?ethLook(st,T,W.eth,ask,out,now):solLook(st,T,W.sol,solRpcs,ask,out,now,budget)); }
     catch(e){ if(e!==OUT) D.err=kind(e); }
@@ -121,7 +133,7 @@ async function ethLook(st,T,W,ask,out,now){
     if(st.seen[x.h]){ q.shift(); continue; }
     const rc=await ask(EVM_RPCS,'eth_getTransactionReceipt',[x.h]);
     // not there yet (the node answering is behind): tried again on a later look, given up after five
-    if(!rc){ q.shift(); if(++x.n<5) q.push(x); else st.seen[x.h]=now; return; }
+    if(!rc){ q.shift(); if(++x.n<30) q.push(x); else st.seen[x.h]=now; return; }
     const r=rc.status==='0x1'?evmSwapOf(rc,null,W,T.eth,T.pools.eth):null;
     if(r){ const b=await ask(EVM_RPCS,'eth_getBlockByNumber',[rc.blockNumber,false]); r.t=b&&b.timestamp?parseInt(b.timestamp,16)*1000:now; r.id=x.h; out.push(r); }
     st.seen[x.h]=now; q.shift(); } };
@@ -152,7 +164,9 @@ async function solLook(st,T,W,rpcs,ask,out,now,budget){
        such a swap was given up after five tries; 1 still returns 0 and legacy, and every field read here (account keys,
        loaded addresses, balances, token balances, logs) has the same shape in it */
     const tx=await ask(rpcs,'getTransaction',[x.s,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
-    if(!tx){ q.shift(); if(++x.n<5) q.push(x); else st.seen[x.s]=now; break; }
-    const r=solSwapOf(tx,x.w,T.sol,T.pools.sol); if(r){ r.t=x.ts; r.id=x.s; out.push(r); }
+    if(!tx){ q.shift(); if(++x.n<30) q.push(x); else st.seen[x.s]=now; break; }
+    // one looked at again from the relay's list does not say whose it was: each wallet of yours is tried
+    let r=null; for(const w of x.w?[x.w]:W){ r=solSwapOf(tx,w,T.sol,T.pools.sol); if(r) break; }
+    if(r){ r.t=x.ts||(tx.blockTime?tx.blockTime*1000:now); r.id=x.s; out.push(r); }
     st.seen[x.s]=now; q.shift(); }
 }
