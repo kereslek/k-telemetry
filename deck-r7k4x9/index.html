@@ -981,7 +981,7 @@
   @media(max-width:760px){ .fp-link .fpr-dial{width:46px;height:46px} .fpr{gap:7px} .fpr-txt .fpr-num{font-size:14px} .fpr-txt{font-size:10px} }
   @media(prefers-reduced-motion:reduce){ .fpr-sweep{animation:none;opacity:.6} .fpr-dot{transition:none} }
   .fpl-now{fill:var(--accent);filter:drop-shadow(0 0 4px var(--accent))}
-  .fpd-grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,560px);gap:8px 36px;align-items:center;justify-content:start}
+  .fpd-grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,560px);gap:8px 36px;align-items:start;justify-content:start}   /* the dial at the top of its row: a long feed beside it must not push it below the screen when LIVE lands it */
   @media(max-width:760px){ .fpd-grid{grid-template-columns:minmax(0,1fr)} }
   .fpd-dial{width:100%;max-width:380px;height:auto;display:block;margin:0 auto;overflow:visible}
   .fpd-face{fill:#08121f;stroke:var(--line)}
@@ -2707,7 +2707,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.34';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.35';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
