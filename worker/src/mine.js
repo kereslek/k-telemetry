@@ -22,7 +22,10 @@ const SOL_VENUES={'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4':'Jupiter','CAMMC
   '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8':'Raydium AMM','CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C':'Raydium CPMM',
   'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc':'Orca','LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo':'Meteora DLMM','Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB':'Meteora'};
 const DAY=86400000;
-const SWAP_LOG=/Instruction: (Swap|SwapV2|SwapBaseIn|SwapBaseOut|SwapBaseInput|SwapBaseOutput|Route|RouteV2|SharedAccountsRoute|ExactOutRoute|SharedAccountsExactOutRoute)\b/i;
+/* any swap or route instruction, in every version (SwapV2, SwapBaseInput, Route, SharedAccountsRouteV2, ExactOutRouteV2, ...):
+   a fixed list missed the newer route names, and a long route's logs are cut short by Solana ("Log truncated"), so a
+   transaction through a known venue or one of your pools also counts when your wallet's own balances show a swap */
+const SWAP_LOG=/Instruction: (Swap\w*|\w*Route\w*)\b/i;
 
 /* The tokens of your pools worth watching (each side that is not ETH, SOL or a dollar), with what
    the pool knows of them: symbol, decimals and dollar price. And your own pools, by address. */
@@ -64,9 +67,10 @@ export function evmSwapOf(rc, tx, wallets, T, ownPools){
    unless it swapped and moved a token of yours. */
 export function solSwapOf(tx, w, T, ownPools){
   const m=tx&&tx.meta; if(!m||m.err) return null;
-  if(!(m.logMessages||[]).some(l=>SWAP_LOG.test(l))) return null;
   const msg=(tx.transaction&&tx.transaction.message)||{};
   const keys=[...(msg.accountKeys||msg.staticAccountKeys||[]),...((m.loadedAddresses&&m.loadedAddresses.writable)||[]),...((m.loadedAddresses&&m.loadedAddresses.readonly)||[])].map(x=>String(x&&x.pubkey||x));
+  const logged=(m.logMessages||[]).some(l=>SWAP_LOG.test(l)), atVenue=keys.some(k=>ownPools.has(k)||SOL_VENUES[k]);
+  if(!logged&&!atVenue) return null;
   const d={}, ui=x=>Number((x&&x.uiTokenAmount&&(x.uiTokenAmount.uiAmountString??x.uiTokenAmount.uiAmount))||0);
   for(const x of m.preTokenBalances||[]) if(x.owner===w) d[x.mint]=(d[x.mint]||0)-ui(x);
   for(const x of m.postTokenBalances||[]) if(x.owner===w) d[x.mint]=(d[x.mint]||0)+ui(x);
@@ -76,6 +80,8 @@ export function solSwapOf(tx, w, T, ownPools){
   const mine=Object.keys(d).filter(k=>T.has(k)&&Math.abs(d[k])>1e-12); if(!mine.length) return null;
   const k=mine.sort((a,b)=>Math.abs(d[b])*T.get(b).usd-Math.abs(d[a])*T.get(a).usd)[0], tk=T.get(k), bought=d[k]>0;
   const ot=Object.keys(d).filter(x=>x!==k&&Math.sign(d[x])===(bought?-1:1)).sort((a,b)=>Math.abs(d[b])-Math.abs(d[a]))[0];
+  // without a swap in the logs, only a real swap counts: your token one way and something else the other (a deposit or a harvest moves both the same way)
+  if(!logged&&!(ot&&(ot!==WSOL||Math.abs(d[ot])>0.003))) return null;
   const ownId=keys.find(x=>ownPools.has(x))||null;
   const venue=ownId?'your pool':(keys.includes('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4')?'Jupiter':(Object.entries(SOL_VENUES).find(([p])=>keys.includes(p))||[,'a Solana DEX'])[1]);
   return {chain:'sol', tok:tk.sym, side:bought?'bought':'sold', other:ot?(BASE_SOL[ot]||(T.get(ot)||{}).sym||'token'):'SOL',

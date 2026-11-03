@@ -128,6 +128,14 @@ await ta('scan: a swap the relay booked as yours but this list missed is looked 
   const st2={}; await scanMine(st2,{ps, wallets:{eth:[], sol:[W]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW, budget:6, call, known, have:new Set([S])});
   assert.equal((st2.qs||[]).length,0);
 });
+t('sol: a route through two of your pools under a newer route name, its logs cut short, is still your sale', ()=>{
+  const tx=soltx(['Program log: Instruction: SharedAccountsRouteV2','Log truncated'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL,'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'],[1e9],[1.58e9-5000]);
+  const r=solSwapOf(tx,W,T.sol,T.pools.sol); assert.equal(r.side,'sold'); assert.equal(r.own,'CPOOL / SOL 0.25%');
+  const noLogs=soltx(['Log truncated'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
+  assert.equal(solSwapOf(noLogs,W,T.sol,T.pools.sol).side,'sold');            // no swap in the logs at all: the balances say it
+  const deposit=soltx(['Log truncated'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[0.5e9-5000]);
+  assert.equal(solSwapOf(deposit,W,T.sol,T.pools.sol),null);                  // CPOOL and SOL both into the pool: a deposit, not a swap
+});
 await ta('scan: nodes refusing to list signatures (too many asks) do not keep a waiting swap from being opened', async()=>{
   const S='WAITING', tx=soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
   const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') throw new Error('429 Too Many Requests'); if(method==='getTransaction') return tx; throw new Error('unexpected '+method); };

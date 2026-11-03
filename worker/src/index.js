@@ -315,6 +315,8 @@ export class Pulse {
          swap of yours this morning among them). Its day of signatures is looked at again; the list keeps each swap once,
          and what it already holds (with its pool's price before and after) stays */
       if(m.mineSt.sv!==1){ const st=m.mineSt; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.sv=1; }
+      // 3 Nov: once, the relay's swaps are looked at again with the wider swap rule (a newer route's name was missed)
+      if(m.mineSt.bv!==1){ m.mineSt.bf={}; m.mineSt.bv=1; }
       const known=(this.src&&Array.isArray(this.src.selfPend))?this.src.selfPend:[], have=new Set((m.mine||[]).map(x=>String(x.id)));
       const got=await scanMine(m.mineSt, {ps, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs:this.solRpcs(), now, known, have});
       const ids=new Set((m.mine||[]).map(x=>x.id));
