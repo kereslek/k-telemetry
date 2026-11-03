@@ -2707,7 +2707,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.33';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.34';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -7899,12 +7899,12 @@ function brLinks(way,x){
 function bridgeBox(p, where){
   const r=bridgeRoute(); if(!r) return '';
   const L=['<span class="t">BRIDGE · CPOOL <i>Ethereum ⇄ Solana · LayerZero</i></span>'];
-  if(r.age>BRIDGE_STALE) L.push('<span class="bdim">— not checked for '+brAgoLong(r.t).replace(' ago','')+' (the relay reads it every half hour)</span>');
+  if(r.age>BRIDGE_STALE) L.push('<span class="bdim">— not checked for '+brAgoLong(r.t).replace(' ago','')+' (the relay reads it every half hour, and at once when a new crossing turns up)</span>');
   else if(r.st==='open') L.push('<span class="bok">● OPEN</span> — both sides linked, nothing blocked or paused');
   else if(r.st==='quiet') L.push('<span class="bamb">● OPEN, QUIET</span> — nothing has crossed for '+brAgoLong(r.lastT).replace(' ago',''));
   else if(r.st==='closed') L.push('<span class="bbad">● CLOSED</span> — '+esc((r.why||[]).join('; ')||'shut on chain'));
   else L.push('<span class="bdim">— '+esc((r.why||[]).join('; ')||'some checks could not be read this time')+'</span>');
-  L.push('<div class="sub">LAST VERIFIED CROSSING</div>');
+  L.push('<div class="sub">LAST VERIFIED CROSSING'+(r.t?' <span class="bdim">· checked '+esc(brAgoLong(r.t))+'</span>':'')+'</div>');
   /* each way: when it arrived and whether it was found on both chains (or, in plain words, why not yet), then how
      much crossed and the two explorers to see it on */
   const WHY={'no matching Ethereum event':'its Ethereum side was not found yet','Solana transaction not read':'its Solana side could not be read yet',
@@ -11552,10 +11552,13 @@ const bridgeOfMine=x=>x.own?bridgeOf(new Set([x.own]), x.t, x.t, x.t):null;
 const brLag=m=>{ const a=Math.abs(m); return a<1?'under a minute':a<120?a+' min':(a/60).toFixed(a<600?1:0)+' h'; };
 const brK=v=>v==null||!isFinite(v)?'':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':String(Math.round(v));
 function brText(l){
-  const dir=l.way==='in'?'ETH → SOL':'SOL → ETH', amt=l.amt!=null?brK(l.amt)+' CPOOL':'CPOOL', lag=brLag(l.lag), did=(l.side==='sold'?'sold':'bought')+' here';
+  /* who: "you" when the wallet is one of yours, otherwise "a trader" — a row can hold your swap and someone
+     else's in the same minute, and the mark is about the bridging one only (3 Nov 21:10: your sale and a
+     trader's buy that went straight to Ethereum shared a row, and the mark read as if it were yours) */
+  const dir=l.way==='in'?'ETH → SOL':'SOL → ETH', amt=l.amt!=null?brK(l.amt)+' CPOOL':'CPOOL', lag=brLag(l.lag), who=l.own?'you':'a trader', did=(l.side==='sold'?'sold':'bought')+' here';
   // on the chain it arrived on the trade came after; on the one it left from, before
   const arrived=(l.chain==='sol')===(l.way==='in');
-  return '⇄ '+dir+' · '+(arrived?amt+' came over, '+did+' '+lag+' later':did+', then bridged '+amt+(l.way==='in'?' to Solana ':' out ')+lag+' later'); }
+  return '⇄ '+dir+' · '+(arrived?who+' brought '+amt+' over, then '+did+' '+lag+' later':who+' '+did+', then bridged '+amt+(l.way==='in'?' to Solana ':' out ')+lag+' later'); }
 const brTitle='This trade and a crossing of CPOOL\u2019s bridge were made by the same wallet, within two hours, in the order of a trip: bridged over and then traded here, or traded here and then bridged out.';
 /* The hour in miniature, for the 24h tile: the big dial shrunk to a coin. Now at twelve, the hour
    running clockwise, each trade a dot sized by what it paid, the beam in step with the big dial's,

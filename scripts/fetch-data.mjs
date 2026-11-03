@@ -1969,7 +1969,10 @@ const main=async()=>{
      with its own time, so the page can say how old it is; a read that fails or runs over a minute
      keeps the last one and is tried again about ten minutes later. */
   let bridge=(blockCache.bridge&&blockCache.bridge.out)||null;
-  if(!bridge||Date.now()-(blockCache.bridge.at||0)>=25*60e3){
+  /* also called again later in the pass when the bridge marks (below) have seen a crossing newer than the
+     card's last verified one: the card and the marks must never tell two stories (3 Nov: a crossing marked
+     at 21:10 while the card, read every half hour, still showed the one before it from two days earlier) */
+  const readBridgeNow=async()=>{
     try{
       /* a crossing's receipt and block are asked until a node has them, and its Solana status of the archive list:
          the first node of each keeps nothing older and answers "nothing", which the reader would take as final */
@@ -1977,7 +1980,8 @@ const main=async()=>{
         new Promise((_,no)=>setTimeout(()=>no(new Error('bridge read over 60 s')),60000))]);
       if(nb&&Array.isArray(nb.routes)){ bridge=nb; blockCache.bridge={at:Date.now(), out:nb}; }
     }catch(e){ logErr('bridge',e); blockCache.bridge={...(blockCache.bridge||{}), at:Date.now()-15*60e3}; }
-  }
+    };
+  if(!bridge||Date.now()-(blockCache.bridge.at||0)>=25*60e3) await readBridgeNow();
   let ethUsd=null,btcUsd=null,ethUsdChg24=null,ethUsdAgo=null,btcUsdChg24=null;
   try{ ethUsd=bigToFloat(BigInt(await ethCall(CHAINLINK_ETH,SEL.latestAnswer)),8); }catch(e){ logErr('chainlinkEth',e); }
   try{
@@ -4177,9 +4181,13 @@ const main=async()=>{
       const BL=blockCache.bridgeLinks=blockCache.bridgeLinks||{}, prevL=BL[profile.slug]||null;
       if(pools.length){
         const r=await Promise.race([readLinks({io:{eth:(m,p)=>['eth_getTransactionReceipt','eth_getBlockByNumber','eth_getTransactionByHash'].includes(m)?evmAny('ethereum',m,p):eth(m,p), sol, get:u=>getJson(u,15000)},
-            R:RT, pools, prev:prevL, budgetMs:40000}), new Promise((_,no)=>setTimeout(()=>no(new Error('bridge links over 60 s')),60000))]);
+            R:RT, pools, prev:prevL, budgetMs:40000, own:(profile.wallets||[]).map(w=>String(w.address||'')).filter(Boolean)}), new Promise((_,no)=>setTimeout(()=>no(new Error('bridge links over 60 s')),60000))]);
         BL[profile.slug]={t:r.t, cx:r.cx, sw:r.sw};
         bridgeLinks={t:r.t, links:r.links, n:r.n, pools:pools.length};
+        const BR=bridge&&Array.isArray(bridge.routes)?bridge.routes.find(x=>x&&x.id===RT.id):null;
+        const seen=BR&&BR.last?Math.max(0,...['in','out'].map(k=>BR.last[k]&&BR.last[k].verified?(BR.last[k].t||0):0)):0;
+        const newest=Math.max(0,...Object.values(r.cx||{}).map(c=>Math.max(c.tSol||0,c.tEth||0)));
+        if(newest>seen+60e3 && Date.now()-((blockCache.bridge&&blockCache.bridge.at)||0)>2*60e3) await readBridgeNow();
       } else bridgeLinks={t:Date.now(), links:[], n:null, pools:0};
     }catch(e){ logErr('bridgeLinks',e); }
     /* This pass's history point also carries what the wallets hold (idle, staked, lent, less what

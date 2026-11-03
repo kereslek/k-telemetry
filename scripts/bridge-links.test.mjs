@@ -88,6 +88,9 @@ const pools=[{chain:'sol', id:POOL, mints:[R.mint, SOLM]}, {chain:'eth', id:EPOO
   const W2=world(), r2=await readLinks({io:W2.io, R, pools, prev:{cx:r.cx, sw:r.sw}, now:NOW+60000});
   ok(W2.calls.solTx===0 && r2.links.length===4, 'the next run reads no transaction again and keeps the same links ('+W2.calls.solTx+' read)'); }
 
+{ const W=world(), r=await readLinks({io:W.io, R, pools, prev:null, now:NOW, own:[wZ]});
+  const by=k=>r.links.find(l=>l.tx===sig(k));
+  ok(by('a5').own===true && by('a1').own===false && by('a7').own===false, 'a link whose wallet is one of yours says so ("you"), every other says it is not ("a trader")'); }
 { const W=world(), r=await readLinks({io:W.io, R, pools, prev:null, now:NOW, maxTx:2});
   ok(r.n.capped && r.links.length<4, 'a run over its allowance stops and says so ('+r.links.length+' links so far)');
   const r2=await readLinks({io:world().io, R, pools, prev:{cx:r.cx, sw:r.sw}, now:NOW, maxTx:60});

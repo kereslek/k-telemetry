@@ -101,7 +101,7 @@ export function windowsOf(c){
 
 /* Pure: crossings {guid: c} and swaps {id: s} (s.chain, s.pool, s.t, s.w: [[hash, side]]) to links.
    Each swap goes with the nearest crossing it fits; a swap no crossing fits is not a link. */
-export function linkUp(cx, sw, now){
+export function linkUp(cx, sw, now, own=new Set()){
   const out=[];
   for(const [id,s] of Object.entries(sw||{})){
     if(!s||!(s.t>=now-LINK_SPAN)) continue;
@@ -111,8 +111,8 @@ export function linkUp(cx, sw, now){
       if(!(s.t>=a&&s.t<=b)) continue;
       const hit=(s.w||[]).find(([h])=>hs.has(h)); if(!hit) continue;
       const ct=s.chain==='sol'?c.tSol:c.tEth, gap=Math.abs(s.t-ct);
-      if(!best||gap<best.gap) best={gap, guid, c, ct, side:hit[1]}; }
-    if(best) out.push({t:s.t, chain:s.chain, pool:s.pool, way:best.c.way, lag:Math.round((s.t-best.ct)/60000), amt:best.c.amt, side:best.side, tx:id.split('#')[0], guid:best.guid});
+      if(!best||gap<best.gap) best={gap, guid, c, ct, side:hit[1], h:hit[0]}; }
+    if(best) out.push({t:s.t, chain:s.chain, pool:s.pool, way:best.c.way, lag:Math.round((s.t-best.ct)/60000), amt:best.c.amt, side:best.side, own:own.has(best.h), tx:id.split('#')[0], guid:best.guid});
   }
   return out.sort((x,y)=>y.t-x.t);
 }
@@ -120,7 +120,8 @@ export function linkUp(cx, sw, now){
 /* R: the bridge route (bridge.mjs ROUTES[0]); pools: [{chain:'sol'|'eth', id, mints:[a,b]}] the deck's pools
    that hold CPOOL; prev: the last run's state. Returns {t, links, cx, sw, n:{...}}: links for the page,
    cx/sw (hashes only) for the next run. A run that cannot finish keeps what it had and adds to it. */
-export async function readLinks({io, R, pools, prev, now=Date.now(), budgetMs=40000, maxTx=60}){
+/* own: the deck's wallets, hashed here like the rest, so a link can say the trade was yours (never which wallet) */
+export async function readLinks({io, R, pools, prev, now=Date.now(), budgetMs=40000, maxTx=60, own=[]}){
   const t0=Date.now(), over=()=>Date.now()-t0>budgetMs;
   const cx=Object.fromEntries(Object.entries((prev&&prev.cx)||{}).filter(([,c])=>c&&Math.max(c.tSol,c.tEth)>=now-KEEP));
   const sw=Object.fromEntries(Object.entries((prev&&prev.sw)||{}).filter(([,s])=>s&&s.t>=now-KEEP));
@@ -174,6 +175,6 @@ export async function readLinks({io, R, pools, prev, now=Date.now(), budgetMs=40
         sw[id]={chain:'eth', pool:P.id, t, w:[...new Set(who)].map(a=>[hashOf(a), side])}; n.swaps++; }
     }
   }
-  const links=linkUp(cx, sw, now);
+  const links=linkUp(cx, sw, now, new Set(own.map(a=>hashOf(/^0x/i.test(a)?a.toLowerCase():a))));
   return {t:now, links, cx, sw, n};
 }
