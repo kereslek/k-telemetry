@@ -315,7 +315,10 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
           +' · made in the newer format '+(v.tx.version===1?'yes':v.tx.version===0?'v0':'legacy')); } }
     console.log((ok?'ok   ':miss.every(x=>Date.now()-x.t<5*60000)?'note ':'MISS ')+'your swaps today shown as YOU in LATEST FEES: '+(mine.length-miss.length)+' of '+mine.length
       +' · through your own pools, with your pool named: '+ownOk+' of '+nOwn+(miss.length?' · not listed: made '+miss.map(x=>Math.round((Date.now()-x.t)/60000)+' min ago ('+x.chain+')').join(', '):''));
-    for(const l of why) console.log('     '+l); }
+    for(const l of why) console.log('     '+l);
+    for(const x of miss){ const near=P.mine.filter(y=>y.chain===x.chain).map(y=>({d:Math.round((y.t-x.t)/1000), own:!!y.own, side:y.side, used:used.has(P.mine.indexOf(y))})).sort((a,b)=>Math.abs(a.d)-Math.abs(b.d))[0];
+      console.log('     the nearest YOU row on that chain: '+(near?(near.d>0?'+':'')+near.d+' s from it, '+(near.own?'through your pool':'elsewhere')+', '+near.side+', '+(near.used?'already matched to another swap of yours':'matched to nothing else'):'none')
+        +' · YOU rows today on that chain: '+P.mine.filter(y=>y.chain===x.chain&&y.t>=START).length); } }
   /* the bridge marks: which of them are your own trades (a mark says "you" then) */
   { const L=(data.bridgeLinks&&data.bridgeLinks.links)||[];
     console.log('bridge marks the relay holds (last 24 h): '+L.length+(L.length?' · on your own trades: '+L.filter(l=>l.own).length+' · on other traders’ '+L.filter(l=>l.own===false).length+(L.some(l=>l.own==null)?' · from before marks said whose: '+L.filter(l=>l.own==null).length:''):'')); } }
