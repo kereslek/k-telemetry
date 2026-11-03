@@ -151,22 +151,30 @@ async function ethLook(st,T,W,ask,out,now){
    the last 25), a few wallets a look when there are many, then their transactions. */
 async function solLook(st,T,W,rpcs,ask,out,now,budget){
   const q=st.qs=st.qs||[], first=st.first=st.first||{};
-  for(let i=0, k=Math.min(W.length,Math.ceil(budget/2)); i<k; i++){ const w=W[(st.wi||0)%W.length];
-    const sigs=await ask(rpcs,'getSignaturesForAddress',[w,{limit:first[w]?25:100, commitment:'confirmed'}]);
-    first[w]=1; st.wi=((st.wi||0)+1)%W.length;
-    for(const g of sigs||[]){ const ts=(g.blockTime||0)*1000;
-      if(st.seen[g.signature]||q.some(x=>x.s===g.signature)) continue;
-      if(g.err||!ts||now-ts>DAY){ st.seen[g.signature]=now; continue; }
-      q.push({s:g.signature, w, ts, n:0}); } }
-  while(q.length){ const x=q[0];
+  /* what is already waiting is opened first, then each wallet's newest signatures: a node refusing to list
+     signatures (too many asks) must not keep the waiting ones from ever being opened (3 Nov: a swap the relay
+     knew sat in this queue while every look failed at its first listing) */
+  const open=async()=>{ while(q.length){ const x=q[0];
     if(st.seen[x.s]){ q.shift(); continue; }
     /* version 1: Solana's newer transaction format is refused to a client that accepts only 0 (error -32015), and
        such a swap was given up after five tries; 1 still returns 0 and legacy, and every field read here (account keys,
        loaded addresses, balances, token balances, logs) has the same shape in it */
     const tx=await ask(rpcs,'getTransaction',[x.s,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
-    if(!tx){ q.shift(); if(++x.n<30) q.push(x); else st.seen[x.s]=now; break; }
+    if(!tx){ q.shift(); if(++x.n<30) q.push(x); else st.seen[x.s]=now; return; }
     // one looked at again from the relay's list does not say whose it was: each wallet of yours is tried
     let r=null; for(const w of x.w?[x.w]:W){ r=solSwapOf(tx,w,T.sol,T.pools.sol); if(r) break; }
     if(r){ r.t=x.ts||(tx.blockTime?tx.blockTime*1000:now); r.id=x.s; out.push(r); }
-    st.seen[x.s]=now; q.shift(); }
+    st.seen[x.s]=now; q.shift(); } };
+  let listErr=null;
+  try{ await open(); }catch(e){ if(e===OUT) throw e; listErr=e; }
+  for(let i=0, k=Math.min(W.length,Math.ceil(budget/2)); i<k; i++){ const w=W[(st.wi||0)%W.length];
+    let sigs; try{ sigs=await ask(rpcs,'getSignaturesForAddress',[w,{limit:first[w]?25:100, commitment:'confirmed'}]); }
+    catch(e){ if(e===OUT) throw e; listErr=e; break; }        // tried again on the next look, from this wallet
+    first[w]=1; st.wi=((st.wi||0)+1)%W.length;
+    for(const g of sigs||[]){ const ts=(g.blockTime||0)*1000;
+      if(st.seen[g.signature]||q.some(x=>x.s===g.signature)) continue;
+      if(g.err||!ts||now-ts>DAY){ st.seen[g.signature]=now; continue; }
+      q.push({s:g.signature, w, ts, n:0}); } }
+  await open();
+  if(listErr) throw listErr;
 }

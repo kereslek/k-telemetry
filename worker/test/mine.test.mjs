@@ -128,6 +128,12 @@ await ta('scan: a swap the relay booked as yours but this list missed is looked 
   const st2={}; await scanMine(st2,{ps, wallets:{eth:[], sol:[W]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW, budget:6, call, known, have:new Set([S])});
   assert.equal((st2.qs||[]).length,0);
 });
+await ta('scan: nodes refusing to list signatures (too many asks) do not keep a waiting swap from being opened', async()=>{
+  const S='WAITING', tx=soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
+  const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') throw new Error('429 Too Many Requests'); if(method==='getTransaction') return tx; throw new Error('unexpected '+method); };
+  const st={}, got=await scanMine(st,{ps, wallets:{eth:[], sol:[W]}, solRpcs:['https://sol.example'], chains:['sol'], now:NOW, budget:6, call, known:[{chain:'sol', id:'sol:'+S+':'+SPOOL, t:NOW-300e3}]});
+  assert.deepEqual(got.map(x=>x.id),[S]); assert.equal(st.diag.sol.err,'rate limit');
+});
 await ta('scan: a node that does not have a transaction yet is not the last word: the next one is asked', async()=>{
   const S='LATE', tx=soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
   const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') return [{signature:S, blockTime:(NOW-60e3)/1000}];

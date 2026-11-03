@@ -291,6 +291,9 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
      YOU (the recorder's list), each once: through your own pools with your pool named, elsewhere as a swap
      elsewhere. Matched by chain and time (two minutes either way); one transaction through two of your
      pools is one swap. Counts and minutes only. */
+  if(P&&P.pools) console.log('recorder pools priced at its last reading: '+Object.entries(P.pools).map(([c,v])=>c+' '+(v&&v[0])+' of '+(v&&v[1])).join(', ')
+    +' · its read errors now: '+(Array.isArray(P.err)&&P.err.length?P.err.map(e=>String(e).replace(/https?:\/\/[^\s|]+/g,'a node').replace(/[a-z0-9-]+(\.[a-z0-9-]+)+/gi,'a node').replace(/[?&]?api[-_]?key=[^\s|&]+/gi,'').slice(0,60)).join(' | '):'none')
+    +(P.mineScan&&P.mineScan.sol?' · own-swap scan, Solana: asks '+P.mineScan.sol.asks+', waiting '+P.mineScan.sol.q+', '+(P.mineScan.sol.err||'no failure'):''));
   if(!P||!Array.isArray(P.mine)) console.log('note the recorder’s list of your swaps could not be read');
   else { const seen=new Set(), mine=[];
     for(const x of found){ const k=x.id.split(':')[1]; if(seen.has(k)) continue; seen.add(k); mine.push({chain:x.chain, t:Date.parse(x.t), own:true}); }
