@@ -75,7 +75,7 @@ for(const id of Object.keys(fees.closedPos||{}).filter(x=>/^\d+$/.test(x))){
 const ownSol=new Map((data.sol||[]).map(p=>[p.poolId,p.id.slice(0,12)+' '+(p.pairLabel||'')+' '+(p.feeLabel||'')]));
 console.log('own pools: '+ownEth.size+' Ethereum, '+(data.sol||[]).length+' Solana positions');
 
-const found=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
+const found=[], elsewhere=[], other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
 const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822', XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; let solSeen=0, solMine=0;
 // ---- Ethereum
 const lcx={n:0, tx:new Set(), last:0};   // LCX arriving in the deck's wallets today (counts and venues only)
@@ -103,7 +103,7 @@ for(const w of WE){
           if(from===w && CXE.has(to)) cexOut++; else if(from===w && !WE.includes(to)) extOut++; else if(from===w) intMove++; }
       const sw=((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===SWAP_V3);
       for(const s of sw){ const pool=String(s.address.hash).toLowerCase();
-        if(!ownEth.has(pool)) { other.eth++; continue; }
+        if(!ownEth.has(pool)) { other.eth++; elsewhere.push({chain:'eth', t:Date.parse(tx.timestamp), k:tx.hash}); continue; }
         const id='eth:'+tx.hash+':'+s.index; found.push({chain:'eth',t:tx.timestamp,id,addr:pool,pool:ownEth.get(pool),booked:booked.has(id),back:pendBack.get(id),data:s.data,tx:tx.hash,hold:HOLD.has(w)});
       } }
     url=(!older&&r.next_page_params)?BS+'/addresses/'+w+'/transactions?'+new URLSearchParams(r.next_page_params):null;
@@ -164,7 +164,7 @@ for(const w of WS){
         if(own&&!cx&&!out) solMove.own++; else if(cx&&!out) solMove.cex++; else if(out) solMove.out++; else if(!px) solMove.other++; }
       if(!logs.some(l=>/Instruction: Swap/i.test(l))) continue;
       const pools=[...ownSol.keys()].filter(p=>keys.includes(p));
-      if(!pools.length){ other.sol++; continue; }
+      if(!pools.length){ other.sol++; elsewhere.push({chain:'sol', t:s.blockTime*1000, k:s.signature}); continue; }
       for(const p of pools){ const id='sol:'+s.signature+':'+p; found.push({chain:'sol',t:new Date(s.blockTime*1000).toISOString(),id,addr:p,pool:ownSol.get(p),booked:booked.has(id),back:pendBack.get(id),who:w}); }
     }
     if(sigs.length<100) break;
@@ -286,7 +286,24 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
    minute counts as read only when every one of its positions was read in it. */
 { const P=await j(PULSE+'/m?n=1440&k='+TOKEN);
   for(const l of ownSwapLines({posHist:fees.posHist, selfDone:fees.selfDone, selfPend:costs&&costs.selfPend, rec:positionsFrom(data),
-    rows:(P&&Array.isArray(P.mins))?P.mins:[], start:START, now:Date.now(), normId})) console.log(l); }
+    rows:(P&&Array.isArray(P.mins))?P.mins:[], start:START, now:Date.now(), normId})) console.log(l);
+  /* Every swap of yours today, found here from your wallets' own transactions, must be on LATEST FEES as
+     YOU (the recorder's list), each once: through your own pools with your pool named, elsewhere as a swap
+     elsewhere. Matched by chain and time (two minutes either way); one transaction through two of your
+     pools is one swap. Counts and minutes only. */
+  if(!P||!Array.isArray(P.mine)) console.log('note the recorder’s list of your swaps could not be read');
+  else { const seen=new Set(), mine=[];
+    for(const x of found){ const k=x.id.split(':')[1]; if(seen.has(k)) continue; seen.add(k); mine.push({chain:x.chain, t:Date.parse(x.t), own:true}); }
+    for(const x of elsewhere){ if(seen.has(x.k)) continue; seen.add(x.k); mine.push({chain:x.chain, t:x.t, own:false}); }
+    const used=new Set(), miss=[]; let ownOk=0;
+    for(const x of mine.sort((a,b)=>a.t-b.t)){ const i=P.mine.findIndex((y,j)=>!used.has(j)&&y.chain===x.chain&&Math.abs(y.t-x.t)<=120000);
+      if(i<0){ miss.push(x); continue; } used.add(i); if(x.own&&P.mine[i].own) ownOk++; }
+    const nOwn=mine.filter(x=>x.own).length, ok=!miss.length&&ownOk===nOwn;
+    console.log((ok?'ok   ':miss.every(x=>Date.now()-x.t<5*60000)?'note ':'MISS ')+'your swaps today shown as YOU in LATEST FEES: '+(mine.length-miss.length)+' of '+mine.length
+      +' · through your own pools, with your pool named: '+ownOk+' of '+nOwn+(miss.length?' · not listed: made '+miss.map(x=>Math.round((Date.now()-x.t)/60000)+' min ago ('+x.chain+')').join(', '):'')); }
+  /* the bridge marks: which of them are your own trades (a mark says "you" then) */
+  { const L=(data.bridgeLinks&&data.bridgeLinks.links)||[];
+    console.log('bridge marks the relay holds (last 24 h): '+L.length+(L.length?' · on your own trades: '+L.filter(l=>l.own).length+' · on other traders’ '+L.filter(l=>l.own===false).length+(L.some(l=>l.own==null)?' · from before marks said whose: '+L.filter(l=>l.own==null).length:''):'')); } }
 /* What the owner said they did, checked position by position (the sealed request): whether the deck
    tracks it and where it is, today's harvests, top-ups and withdrawals on its own chain, whether its
    booked fee total ever fell, and whether the relay read it after; for a withdrawal, the liquidity left
