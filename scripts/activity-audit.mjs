@@ -300,9 +300,12 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
   else { const seen=new Set(), mine=[];
     for(const x of found){ const k=x.id.split(':')[1]; if(seen.has(k)) continue; seen.add(k); mine.push({chain:x.chain, t:Date.parse(x.t), own:true}); }
     for(const x of elsewhere){ if(seen.has(x.k)) continue; seen.add(x.k); mine.push({chain:x.chain, t:x.t, own:false}); }
-    const used=new Set(), miss=[]; let ownOk=0;
-    for(const x of mine.sort((a,b)=>a.t-b.t)){ const i=P.mine.findIndex((y,j)=>!used.has(j)&&y.chain===x.chain&&Math.abs(y.t-x.t)<=120000);
-      if(i<0){ miss.push(x); continue; } used.add(i); if(x.own&&P.mine[i].own) ownOk++; }
+    /* each swap with its nearest row: every pair within two minutes, closest first (two swaps of yours in the same
+       second must not take each other's rows, as a first-come pairing did on 3 Nov) */
+    const used=new Set(), took=new Set(), miss=[]; let ownOk=0; mine.sort((a,b)=>a.t-b.t);
+    const pairs=[]; mine.forEach((x,i)=>P.mine.forEach((y,j)=>{ if(y.chain===x.chain&&Math.abs(y.t-x.t)<=120000) pairs.push([Math.abs(y.t-x.t)+(x.own===!!y.own?0:0.5),i,j]); }));
+    for(const [,i,j] of pairs.sort((a,b)=>a[0]-b[0])){ if(took.has(i)||used.has(j)) continue; took.add(i); used.add(j); if(mine[i].own&&P.mine[j].own) ownOk++; }
+    mine.forEach((x,i)=>{ if(!took.has(i)) miss.push(x); });
     const nOwn=mine.filter(x=>x.own).length, ok=!miss.length&&ownOk===nOwn;
     /* for each one missing, the recorder's own rule (worker/src/mine.js) on that transaction: what it saw, yes/no only */
     const why=[]; { const T=tracked(positionsFrom(data));
