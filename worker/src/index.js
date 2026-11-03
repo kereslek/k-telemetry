@@ -315,8 +315,11 @@ export class Pulse {
          swap of yours this morning among them). Its day of signatures is looked at again; the list keeps each swap once,
          and what it already holds (with its pool's price before and after) stays */
       if(m.mineSt.sv!==1){ const st=m.mineSt; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.sv=1; }
-      // 3 Nov: once, the relay's swaps are looked at again with the wider swap rule (a newer route's name was missed)
-      if(m.mineSt.bv!==1){ m.mineSt.bf={}; m.mineSt.bv=1; }
+      /* 3 Nov: once, the day's Solana transactions are looked at again with the wider swap rule. The 21:10 sale through
+         two of your pools had been opened under the old rule, not taken for a swap and marked as looked at; the new
+         rule takes it (the activity audit runs this rule on it), so the day's signatures are listed afresh, a hundred
+         a wallet, and what is already on the list stays once (by its transaction) */
+      if(m.mineSt.bv!==2){ const st=m.mineSt; st.bf={}; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.bv=2; }
       const known=(this.src&&Array.isArray(this.src.selfPend))?this.src.selfPend:[], have=new Set((m.mine||[]).map(x=>String(x.id)));
       const got=await scanMine(m.mineSt, {ps, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs:this.solRpcs(), now, known, have});
       const ids=new Set((m.mine||[]).map(x=>x.id));
