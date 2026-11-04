@@ -294,7 +294,9 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
      elsewhere. Matched by chain and time (two minutes either way); one transaction through two of your
      pools is one swap. Counts and minutes only. */
   if(P&&P.pools) console.log('recorder pools priced at its last reading: '+Object.entries(P.pools).map(([c,v])=>c+' '+(v&&v[0])+' of '+(v&&v[1])).join(', ')
-    +' · its read errors now: '+(Array.isArray(P.err)&&P.err.length?P.err.map(e=>String(e).replace(/https?:\/\/[^\s|]+/g,'a node').replace(/[a-z0-9-]+(\.[a-z0-9-]+)+/gi,'a node').replace(/[?&]?api[-_]?key=[^\s|&]+/gi,'').slice(0,60)).join(' | '):'none')
+    +' · its read errors now: '+(Array.isArray(P.err)&&P.err.length?P.err.map(e=>{ const priv=(()=>{ try{ return new URL(process.env.SOL_RPC_URL||'').host; }catch(x){ return ''; } })();
+      return String(e).split(' | ').map(part=>{ const kind=/\b401\b/.test(part)?'refused: not authorised (401)':/\b403\b/.test(part)?'refused: forbidden (403)':/\b429\b|rate.?limit|too many/i.test(part)?'rate limited':/time.?out|abort/i.test(part)?'timed out':'other error';
+        return (priv&&part.includes(priv)?'your private Solana node':'a public node')+' '+kind; }).join(', '); }).join(' | '):'none')
     +(P.mineScan&&P.mineScan.sol?' · own-swap scan, Solana: asks '+P.mineScan.sol.asks+', waiting '+P.mineScan.sol.q+', '+(P.mineScan.sol.err||'no failure'):''));
   if(!P||!Array.isArray(P.mine)) console.log('note the recorder’s list of your swaps could not be read');
   else { const seen=new Set(), mine=[];
