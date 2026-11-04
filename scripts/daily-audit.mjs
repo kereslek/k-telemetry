@@ -490,7 +490,7 @@ for(const w of [390,1440]){
     const P=state.pulse||{}, B=P.big||null, links=(state.bridgeLinks&&state.bridgeLinks.links)||[];
     const ps=[...state.positions.values()], lab=l=>{ const q=ps.find(q=>l.chain==='sol'?q.poolId===l.pool:String(q.pool||'').toLowerCase()===String(l.pool).toLowerCase()); return q?q.pairLabel+' '+q.feeLabel:null; };
     const tr=(P.trades||[]).slice(0,12), want=tr.filter(t=>{ const from=t.start??t.t, to=t.x?t.end:t.end+60000;
-      return links.some(l=>l.t>=from-90000&&l.t<=to+90000&&Object.keys(t.pools||{}).includes(lab(l))); }).length;
+      return links.some(l=>!l.own&&l.t>=from-90000&&l.t<=to+90000&&Object.keys(t.pools||{}).includes(lab(l))); }).length;   // a trader's row carries a trader's crossing only
     const rows=[...document.querySelectorAll('.fpd-feed li:not(.empty):not(.mine)')];
     out.links=links.length; out.relayAge=state.bridgeLinks?Date.now()-state.bridgeLinks.t:null; out.lz=state.bridgeLinks&&state.bridgeLinks.n?state.bridgeLinks.n.msgs!=null:null;
     out.want=want; out.marked=rows.filter(li=>li.querySelector('.bx')).length;

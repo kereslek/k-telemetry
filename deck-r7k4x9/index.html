@@ -2707,7 +2707,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.35';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.36';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -11497,17 +11497,21 @@ function pulseMine(){ const P=state.pulse; return P&&Array.isArray(P.mine)?P.min
    what you got, where it went through and its size; through your own pool also the price it left
    there against the price just before (the recorder's readings either side of it) and the part of
    its fee that came back to you, which is not income. */
-function mineHtml(x){
+function mineHtml(x, showMove=true){
   const sold=x.side==='sold'?x.tok:x.other, bought=x.side==='sold'?x.other:x.tok;
   const via=x.own?'via your pool '+x.own:'via '+(x.venue||'another pool');
   const leg=legSpan('<span class="you">YOU</span>', sold, bought, esc(via), null);
   let mv='';
-  if(x.own && Array.isArray(x.px) && x.px[0]>0 && x.px[1]>0){
+  if(showMove && x.own && Array.isArray(x.px) && x.px[0]>0 && x.px[1]>0){
     const pos=[...state.positions.values()].find(p=>(p.pairLabel+' '+p.feeLabel)===x.own && p.usd0!=null && p.usd1!=null);
     if(pos){ const s0=(pos.m0&&pos.m0.symbol)||String(pos.pairLabel).split(' / ')[0], first=legSym(s0)===legSym(x.tok);
       const u=P=>first?P*pos.usd1:pos.usd0/P, a=u(x.px[0]), b=u(x.px[1]);
       if(a>0&&b>0){ const ch=(b/a-1)*100, up=ch>=0;
-        mv='<span class="pxl">'+esc(legSym(x.tok))+' price '+pxFmt(a)+' → <b class="'+(up?'up':'dn')+'">'+pxFmt(b)+' '+(up?'▲':'▼')+Math.abs(ch).toFixed(Math.abs(ch)<1?2:1)+'%</b></span>'; } } }
+        /* the pool's price at the recorder's reading before and after: it covers everything in that stretch, so
+           swaps of yours sharing the same readings show it once, on the newest, saying how many it covers */
+        mv='<span class="pxl" title="Your pool\u2019s '+esc(legSym(x.tok))+' price at the recorder\u2019s readings just before and just after: everything traded in between moved it, not this swap alone">'
+          +esc(legSym(x.tok))+' in your pool '+pxFmt(a)+' → <b class="'+(up?'up':'dn')+'">'+pxFmt(b)+' '+(up?'▲':'▼')+Math.abs(ch).toFixed(Math.abs(ch)<1?2:1)+'%</b>'
+          +(showMove>1?' · over these '+showMove+' swaps of yours':'')+'</span>'; } } }
   const back=x.back>0?'<span class="mnote">'+fmtUsd(x.back,2)+' of its fee came back to you · not income</span>':'';
   return '<span class="legw">'+leg+mv+back+'</span>';
 }
@@ -11541,20 +11545,21 @@ function poolLabelOf(chain, id){
   return null; }
 /* the link a row stands for: one of its pools, inside its minutes (a minute's slack either side, as the
    recorder's minute and the chain's block time may sit a little apart); the nearest when two fit */
-function bridgeOf(labels, from, to, at){
+function bridgeOf(labels, from, to, at, own=false){
   let best=null;
   for(const l of bridgeLinksNow()){ if(!(l.t>=from-90000&&l.t<=to+90000)) continue;
+    // a row of yours carries only a crossing of yours; a trader's row only a trader's (they can share a minute)
+    if(!!l.own!==own) continue;
     const lab=poolLabelOf(l.chain,l.pool); if(!lab||!labels.has(lab)) continue;
     if(!best||Math.abs(l.t-at)<Math.abs(best.t-at)) best=l; }
   return best; }
 const bridgeOfTrade=t=>bridgeOf(new Set((t.pools||[]).map(x=>x[0])), t.start, t.endAt, t.at);
-const bridgeOfMine=x=>x.own?bridgeOf(new Set([x.own]), x.t, x.t, x.t):null;
+const bridgeOfMine=x=>x.own?bridgeOf(new Set([x.own]), x.t, x.t, x.t, true):null;
 const brLag=m=>{ const a=Math.abs(m); return a<1?'under a minute':a<120?a+' min':(a/60).toFixed(a<600?1:0)+' h'; };
 const brK=v=>v==null||!isFinite(v)?'':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':String(Math.round(v));
 function brText(l){
   /* who: "you" when the wallet is one of yours, otherwise "a trader" — a row can hold your swap and someone
-     else's in the same minute, and the mark is about the bridging one only (3 Nov 21:10: your sale and a
-     trader's buy that went straight to Ethereum shared a row, and the mark read as if it were yours) */
+     else's in the same minute, and the mark is about the bridging one only */
   const dir=l.way==='in'?'ETH → SOL':'SOL → ETH', amt=l.amt!=null?brK(l.amt)+' CPOOL':'CPOOL', lag=brLag(l.lag), who=l.own?'you':'a trader', did=(l.side==='sold'?'sold':'bought')+' here';
   // on the chain it arrived on the trade came after; on the one it left from, before
   const arrived=(l.chain==='sol')===(l.way==='in');
@@ -12136,9 +12141,13 @@ function renderFeePulse60m(host){
     list.innerHTML=items.length?'':'<li class="empty">No trades recorded yet.</li>';
     let anyBr=false;
     const bxOf=bl=>bl?'<span class="bx" title="'+brTitle+'">⇄</span>':'', brlOf=bl=>bl?'<span class="brl">'+esc(brText(bl))+'</span>':'';
+    // swaps of yours that share the same before-and-after readings of the same pool: the price move once, on the newest
+    const mvKey=x=>x.own&&Array.isArray(x.px)?x.own+'|'+x.px[0]+'|'+x.px[1]:null, mvN=new Map(), mvShown=new Set();
+    for(const it of items) if(it.x){ const k=mvKey(it.x); if(k) mvN.set(k,(mvN.get(k)||0)+1); }
     for(const it of items){ const li=document.createElement('li');
-      if(it.x){ const x=it.x, bl=bridgeOfMine(x); li.className='mine'+(bl?' br':''); if(bl) anyBr=true;
-        li.innerHTML='<span class="tm">'+hl(x.t)+'</span><span class="legs">'+mineHtml(x)+'</span><span class="amt">'+bxOf(bl)+(x.usd>0?'≈'+fmtUsd(x.usd,x.usd<10?2:0):'—')+'<small>your swap</small></span>'+brlOf(bl);
+      if(it.x){ const x=it.x, bl=bridgeOfMine(x), k=mvKey(x), show=k&&!mvShown.has(k)?(mvN.get(k)>1?mvN.get(k):true):(k?false:true); if(k) mvShown.add(k);
+        li.className='mine'+(bl?' br':''); if(bl) anyBr=true;
+        li.innerHTML='<span class="tm">'+hl(x.t)+'</span><span class="legs">'+mineHtml(x, show)+'</span><span class="amt">'+bxOf(bl)+(x.usd>0?'≈'+fmtUsd(x.usd,x.usd<10?2:0):'—')+'<small>your swap</small></span>'+brlOf(bl);
         list.append(li); continue; }
       const t=it.t, aft=afterMine(t,MINE), bl=bridgeOfTrade(t); if(bl){ anyBr=true; li.className='br'; }
       li.innerHTML='<span class="tm">'+hl(t.t)+'</span><span class="legs">'+(t.legs&&t.legs.length?t.legs.map(legHtml).join(''):'<span class="unit">pool not recorded</span>')+'</span><span class="amt">'+bxOf(bl)+'+'+fmtUsd(t.usd,2)+'</span>'

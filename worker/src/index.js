@@ -311,15 +311,14 @@ export class Pulse {
       const m=await this.load(), ps=await this.positions(), now=Date.now();
       // the first scan (17 Oct, one big look inside each reading) is started afresh: it looks back a day again
       if(!m.mineSt||m.mineSt.v!==2){ m.mineSt={v:2}; m.mine=[]; }
-      /* 1 Nov: the Solana side read only the older transaction format and gave up on a newer one after five tries (a
-         swap of yours this morning among them). Its day of signatures is looked at again; the list keeps each swap once,
-         and what it already holds (with its pool's price before and after) stays */
+      /* the Solana side once read only the older transaction format and gave up on a newer one after five tries. Its
+         day of signatures is looked at again; the list keeps each swap once, and what it already holds stays */
       if(m.mineSt.sv!==1){ const st=m.mineSt; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.sv=1; }
-      /* 3 Nov: once, the day's Solana transactions are looked at again with the wider swap rule. The 21:10 sale through
-         two of your pools had been opened under the old rule, not taken for a swap and marked as looked at; the new
-         rule takes it (the activity audit runs this rule on it), so the day's signatures are listed afresh, a hundred
-         a wallet, and what is already on the list stays once (by its transaction) */
-      if(m.mineSt.bv!==2){ const st=m.mineSt; st.bf={}; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.bv=2; }
+      /* once per change of the swap rule: rows the old rule listed wrongly (a position NFT taken for the other side,
+         shown as "token") go, the day's Solana transactions are looked at again under the current rule, and what is
+         already on the list stays once (by its transaction) */
+      if(m.mineSt.bv===2){ m.mine=(m.mine||[]).filter(x=>!(x.chain==='sol'&&x.other==='token')); m.mineSt.bf={}; m.mineSt.bv=3; }
+      if(m.mineSt.bv!==2&&m.mineSt.bv!==3){ const st=m.mineSt; st.bf={}; for(const k of Object.keys(st.seen||{})) if(!/^0x/i.test(k)) delete st.seen[k]; st.first={}; st.qs=[]; st.bv=3; }
       const known=(this.src&&Array.isArray(this.src.selfPend))?this.src.selfPend:[], have=new Set((m.mine||[]).map(x=>String(x.id)));
       const got=await scanMine(m.mineSt, {ps, wallets:(this.src&&this.src.wallets)||{sol:[],eth:[]}, solRpcs:this.solRpcs(), now, known, have});
       const ids=new Set((m.mine||[]).map(x=>x.id));

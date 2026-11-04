@@ -136,6 +136,15 @@ t('sol: a route through two of your pools under a newer route name, its logs cut
   const deposit=soltx(['Log truncated'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[0.5e9-5000]);
   assert.equal(solSwapOf(deposit,W,T.sol,T.pools.sol),null);                  // CPOOL and SOL both into the pool: a deposit, not a swap
 });
+t('sol: opening or closing a position (its NFT in or out) is not a swap, whatever the logs say', ()=>{
+  const nft={accountIndex:9, mint:'PosNft1111111111111111111111111111111111111', owner:W, uiTokenAmount:{amount:'1', decimals:0, uiAmountString:'1'}};
+  const open=soltx(['Program log: Instruction: OpenPositionWithToken22Nft'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000),nft],[W,SPOOL],[1e9],[1e9-5000]);
+  assert.equal(solSwapOf(open,W,T.sol,T.pools.sol,T.names.sol),null);
+  const noLogs=soltx(['Log truncated'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000),nft],[W,SPOOL],[1e9],[1e9-5000]);
+  assert.equal(solSwapOf(noLogs,W,T.sol,T.pools.sol,T.names.sol),null);        // the NFT alone is never "the other side"
+  const sale=soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
+  assert.equal(solSwapOf(sale,W,T.sol,T.pools.sol,T.names.sol).other,'SOL');
+});
 await ta('scan: nodes refusing to list signatures (too many asks) do not keep a waiting swap from being opened', async()=>{
   const S='WAITING', tx=soltx(['Program log: Instruction: Swap'],[tb(CPOOL,W,10000)],[tb(CPOOL,W,6000)],[W,SPOOL],[1e9],[1.58e9-5000]);
   const call=async(rpcs,method,params)=>{ if(method==='getSignaturesForAddress') throw new Error('429 Too Many Requests'); if(method==='getTransaction') return tx; throw new Error('unexpected '+method); };

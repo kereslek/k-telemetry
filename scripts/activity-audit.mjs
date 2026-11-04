@@ -303,7 +303,7 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
     for(const x of found){ const k=x.id.split(':')[1]; if(seen.has(k)) continue; seen.add(k); mine.push({chain:x.chain, t:Date.parse(x.t), own:true}); }
     for(const x of elsewhere){ if(seen.has(x.k)) continue; seen.add(x.k); mine.push({chain:x.chain, t:x.t, own:false}); }
     /* each swap with its nearest row: every pair within two minutes, closest first (two swaps of yours in the same
-       second must not take each other's rows, as a first-come pairing did on 3 Nov) */
+       second must not take each other's rows, as a first-come pairing would) */
     const used=new Set(), took=new Set(), miss=[]; let ownOk=0; mine.sort((a,b)=>a.t-b.t);
     const pairs=[]; mine.forEach((x,i)=>P.mine.forEach((y,j)=>{ if(y.chain===x.chain&&Math.abs(y.t-x.t)<=120000) pairs.push([Math.abs(y.t-x.t)+(x.own===!!y.own?0:0.5),i,j]); }));
     for(const [,i,j] of pairs.sort((a,b)=>a[0]-b[0])){ if(took.has(i)||used.has(j)) continue; took.add(i); used.add(j); if(mine[i].own&&P.mine[j].own) ownOk++; }
@@ -320,6 +320,10 @@ for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) cont
           +' · made in the newer format '+(v.tx.version===1?'yes':v.tx.version===0?'v0':'legacy')); } }
     console.log((ok?'ok   ':miss.every(x=>Date.now()-x.t<5*60000)?'note ':'MISS ')+'your swaps today shown as YOU in LATEST FEES: '+(mine.length-miss.length)+' of '+mine.length
       +' · through your own pools, with your pool named: '+ownOk+' of '+nOwn+(miss.length?' · not listed: made '+miss.map(x=>Math.round((Date.now()-x.t)/60000)+' min ago ('+x.chain+')').join(', '):''));
+    /* and the other way round: a YOU row today with no swap of yours behind it (liquidity added or taken out must
+       never be listed as a swap) */
+    const extra=P.mine.filter((y,j)=>y.t>=START&&!used.has(j)).length;
+    console.log((extra?'MISS ':'ok   ')+'YOU rows today with no swap of yours behind them: '+extra);
     for(const l of why) console.log('     '+l);
     for(const x of miss){ const near=P.mine.filter(y=>y.chain===x.chain).map(y=>({d:Math.round((y.t-x.t)/1000), own:!!y.own, side:y.side, used:used.has(P.mine.indexOf(y))})).sort((a,b)=>Math.abs(a.d)-Math.abs(b.d))[0];
       console.log('     the nearest YOU row on that chain: '+(near?(near.d>0?'+':'')+near.d+' s from it, '+(near.own?'through your pool':'elsewhere')+', '+near.side+', '+(near.used?'already matched to another swap of yours':'matched to nothing else'):'none')

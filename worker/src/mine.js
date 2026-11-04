@@ -30,20 +30,21 @@ const SWAP_LOG=/Instruction: (Swap\w*|\w*Route\w*)\b/i;
 /* The tokens of your pools worth watching (each side that is not ETH, SOL or a dollar), with what
    the pool knows of them: symbol, decimals and dollar price. And your own pools, by address. */
 export function tracked(ps){
-  const eth=new Map(), sol=new Map(), pools={eth:new Map(), sol:new Map()};
+  const eth=new Map(), sol=new Map(), pools={eth:new Map(), sol:new Map()}, names={eth:new Map(), sol:new Map()};
   for(const p of ps||[]){
     const c=p.chain==='eth'?'eth':'sol', base=c==='eth'?BASE_EVM:BASE_SOL, T=c==='eth'?eth:sol;
     pools[c].set(c==='eth'?String(p.pool).toLowerCase():p.pool, p.lbl);
     for(const [a,s,d,u] of [[c==='eth'?p.t0:p.m0,p.s0,p.d0,p.usd0],[c==='eth'?p.t1:p.m1,p.s1,p.d1,p.usd1]]){
       if(!a) continue; const k=c==='eth'?String(a).toLowerCase():String(a);
+      if(s&&!names[c].has(k)) names[c].set(k,String(s).replace(/^W(ETH|SOL)$/,'$1'));
       if(!base[k]&&!T.has(k)) T.set(k,{sym:s||'?', dec:Number(d)||0, usd:Number(u)||0}); } }
-  return {eth, sol, pools};
+  return {eth, sol, pools, names};
 }
 
 /* One Ethereum transaction, for the deck's wallets: the tokens they gained and gave (Transfer logs;
    ether paid in or got back sends none, and is what the other side is when no token went that
    way), and the pools it swapped through. Null unless it swapped and moved a token of yours. */
-export function evmSwapOf(rc, tx, wallets, T, ownPools){
+export function evmSwapOf(rc, tx, wallets, T, ownPools, names){
   const logs=(rc&&rc.logs)||[], sw=logs.filter(l=>l.topics&&[SWAP_V3,SWAP_V2,SWAP_V4].includes(l.topics[0]));
   if(!sw.length) return null;
   const W=new Set((wallets||[]).map(x=>String(x).toLowerCase())), d={};
@@ -55,7 +56,7 @@ export function evmSwapOf(rc, tx, wallets, T, ownPools){
   const amt=k=>Math.abs(Number(d[k]))/10**T.get(k).dec;
   const k=mine.sort((a,b)=>amt(b)*T.get(b).usd-amt(a)*T.get(a).usd)[0], tk=T.get(k), bought=d[k]>0n;
   // the other side: a token that went the other way, else the ether paid in (a buy) or got back (a sale, unwrapped by the router)
-  const other=Object.keys(d).filter(x=>x!==k&&(d[x]>0n)!==bought&&d[x]!==0n).map(x=>BASE_EVM[x]||(T.get(x)||{}).sym||'token')[0]||'ETH';
+  const other=Object.keys(d).filter(x=>x!==k&&(d[x]>0n)!==bought&&d[x]!==0n).map(x=>BASE_EVM[x]||(names&&names.get(x))||(T.get(x)||{}).sym||'an unlisted token')[0]||'ETH';
   const own=sw.map(l=>ownPools.get(String(l.address).toLowerCase())).find(Boolean)||null;
   const venues=[...new Set(sw.map(l=>own&&ownPools.get(String(l.address).toLowerCase())?'your pool':l.topics[0]===SWAP_V4?'Uniswap v4':l.topics[0]===SWAP_V2?'a v2-style pool':'Uniswap v3'))];
   return {chain:'eth', tok:tk.sym, side:bought?'bought':'sold', other, usd:Math.round(amt(k)*tk.usd*100)/100,
@@ -65,15 +66,20 @@ export function evmSwapOf(rc, tx, wallets, T, ownPools){
 /* One Solana transaction, for one wallet of yours: its token changes (by mint, from the token
    accounts it owns) and its SOL change (the fee given back), when the transaction swapped. Null
    unless it swapped and moved a token of yours. */
-export function solSwapOf(tx, w, T, ownPools){
+export function solSwapOf(tx, w, T, ownPools, names){
   const m=tx&&tx.meta; if(!m||m.err) return null;
   const msg=(tx.transaction&&tx.transaction.message)||{};
   const keys=[...(msg.accountKeys||msg.staticAccountKeys||[]),...((m.loadedAddresses&&m.loadedAddresses.writable)||[]),...((m.loadedAddresses&&m.loadedAddresses.readonly)||[])].map(x=>String(x&&x.pubkey||x));
   const logged=(m.logMessages||[]).some(l=>SWAP_LOG.test(l)), atVenue=keys.some(k=>ownPools.has(k)||SOL_VENUES[k]);
   if(!logged&&!atVenue) return null;
+  /* Opening a position hands the wallet its position NFT (one token, no decimals), which a balance-based rule would take
+     for "the other side" of a swap. A token without decimals is never a side of a swap, and a transaction that opens,
+     adds to, takes out of or closes a position is not a swap (the relay books liquidity on its own) */
+  if((m.logMessages||[]).some(l=>/Instruction: (OpenPosition\w*|IncreaseLiquidity\w*|DecreaseLiquidity\w*|ClosePosition\w*|Deposit|Withdraw\w*)\b/i.test(l))) return null;
   const d={}, ui=x=>Number((x&&x.uiTokenAmount&&(x.uiTokenAmount.uiAmountString??x.uiTokenAmount.uiAmount))||0);
-  for(const x of m.preTokenBalances||[]) if(x.owner===w) d[x.mint]=(d[x.mint]||0)-ui(x);
-  for(const x of m.postTokenBalances||[]) if(x.owner===w) d[x.mint]=(d[x.mint]||0)+ui(x);
+  const nft=x=>Number(x&&x.uiTokenAmount&&x.uiTokenAmount.decimals)===0;
+  for(const x of m.preTokenBalances||[]) if(x.owner===w&&!nft(x)) d[x.mint]=(d[x.mint]||0)-ui(x);
+  for(const x of m.postTokenBalances||[]) if(x.owner===w&&!nft(x)) d[x.mint]=(d[x.mint]||0)+ui(x);
   const i=keys.indexOf(w);
   if(i>=0&&Array.isArray(m.preBalances)&&Array.isArray(m.postBalances)){ const sol=((m.postBalances[i]||0)-(m.preBalances[i]||0)+(i===0?(m.fee||0):0))/1e9;
     if(Math.abs(sol)>1e-6) d[WSOL]=(d[WSOL]||0)+sol; }
@@ -84,7 +90,7 @@ export function solSwapOf(tx, w, T, ownPools){
   if(!logged&&!(ot&&(ot!==WSOL||Math.abs(d[ot])>0.003))) return null;
   const ownId=keys.find(x=>ownPools.has(x))||null;
   const venue=ownId?'your pool':(keys.includes('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4')?'Jupiter':(Object.entries(SOL_VENUES).find(([p])=>keys.includes(p))||[,'a Solana DEX'])[1]);
-  return {chain:'sol', tok:tk.sym, side:bought?'bought':'sold', other:ot?(BASE_SOL[ot]||(T.get(ot)||{}).sym||'token'):'SOL',
+  return {chain:'sol', tok:tk.sym, side:bought?'bought':'sold', other:ot?(BASE_SOL[ot]||(names&&names.get(ot))||(T.get(ot)||{}).sym||'an unlisted token'):'SOL',
           usd:Math.round(Math.abs(d[k])*tk.usd*100)/100, venue, own:ownId?ownPools.get(ownId):null, pool:ownId};
 }
 
@@ -104,8 +110,7 @@ const kind=e=>{ const s=String(e&&e.message||e); return /too many subrequests/i.
 /* known: the relay's own list of your swaps through your own pools ([{chain, id:'sol:<sig>:<pool>' | 'eth:<hash>:<i>', t}],
    costs-main.json selfPend), and have: the ids this list already holds. A swap the relay has booked as yours that is
    not on the list here is looked at again, once a day, even if an earlier look gave up on it or did not take it for a
-   swap of yours (3 Nov: a sale of yours through two of your pools at 21:10 was booked by the relay, so not counted as
-   income, but never listed here as YOU, while the Solana nodes were refusing asks for being asked too often). */
+   swap of yours (a node refusing asks for being asked too often must not leave a booked swap off this list). */
 export async function scanMine(st, {ps, wallets, solRpcs, chains=['eth','sol'], now=Date.now(), budget=BUDGET, call=one, known=[], have=new Set()}){
   const T=tracked(ps), out=[]; st.seen=st.seen||{}; st.diag=st.diag||{}; st.bf=st.bf||{};
   for(const x of known||[]){ const [c,id]=String(x&&x.id||'').split(':'); if(!id||!(x.t>now-DAY)||have.has(id)||st.bf[id]) continue;
@@ -140,7 +145,7 @@ async function ethLook(st,T,W,ask,out,now){
     const rc=await ask(EVM_RPCS,'eth_getTransactionReceipt',[x.h]);
     // not there yet (the node answering is behind): tried again on a later look, given up after five
     if(!rc){ q.shift(); if(++x.n<30) q.push(x); else st.seen[x.h]=now; return; }
-    const r=rc.status==='0x1'?evmSwapOf(rc,null,W,T.eth,T.pools.eth):null;
+    const r=rc.status==='0x1'?evmSwapOf(rc,null,W,T.eth,T.pools.eth,T.names.eth):null;
     if(r){ const b=await ask(EVM_RPCS,'eth_getBlockByNumber',[rc.blockNumber,false]); r.t=b&&b.timestamp?parseInt(b.timestamp,16)*1000:now; r.id=x.h; out.push(r); }
     st.seen[x.h]=now; q.shift(); } };
   await open();
@@ -158,8 +163,7 @@ async function ethLook(st,T,W,ask,out,now){
 async function solLook(st,T,W,rpcs,ask,out,now,budget){
   const q=st.qs=st.qs||[], first=st.first=st.first||{};
   /* what is already waiting is opened first, then each wallet's newest signatures: a node refusing to list
-     signatures (too many asks) must not keep the waiting ones from ever being opened (3 Nov: a swap the relay
-     knew sat in this queue while every look failed at its first listing) */
+     signatures (too many asks) must not keep the waiting ones from ever being opened */
   const open=async()=>{ while(q.length){ const x=q[0];
     if(st.seen[x.s]){ q.shift(); continue; }
     /* version 1: Solana's newer transaction format is refused to a client that accepts only 0 (error -32015), and
@@ -168,7 +172,7 @@ async function solLook(st,T,W,rpcs,ask,out,now,budget){
     const tx=await ask(rpcs,'getTransaction',[x.s,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
     if(!tx){ q.shift(); if(++x.n<30) q.push(x); else st.seen[x.s]=now; return; }
     // one looked at again from the relay's list does not say whose it was: each wallet of yours is tried
-    let r=null; for(const w of x.w?[x.w]:W){ r=solSwapOf(tx,w,T.sol,T.pools.sol); if(r) break; }
+    let r=null; for(const w of x.w?[x.w]:W){ r=solSwapOf(tx,w,T.sol,T.pools.sol,T.names.sol); if(r) break; }
     if(r){ r.t=x.ts||(tx.blockTime?tx.blockTime*1000:now); r.id=x.s; out.push(r); }
     st.seen[x.s]=now; q.shift(); } };
   let listErr=null;
