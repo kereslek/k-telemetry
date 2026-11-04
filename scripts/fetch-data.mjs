@@ -1970,8 +1970,8 @@ const main=async()=>{
      keeps the last one and is tried again about ten minutes later. */
   let bridge=(blockCache.bridge&&blockCache.bridge.out)||null;
   /* also called again later in the pass when the bridge marks (below) have seen a crossing newer than the
-     card's last verified one: the card and the marks must never tell two stories (3 Nov: a crossing marked
-     at 21:10 while the card, read every half hour, still showed the one before it from two days earlier) */
+     card's last verified one: the card and the marks must never tell two stories (a crossing could be marked
+     while the card, read every half hour, still showed the one before it) */
   const readBridgeNow=async()=>{
     try{
       /* a crossing's receipt and block are asked until a node has them, and its Solana status of the archive list:
