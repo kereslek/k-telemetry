@@ -2707,7 +2707,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.37';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.38';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -8679,7 +8679,8 @@ function czToken(T,mine,W){
       const dd=A.share-B.share, k=Object.keys(parts).sort((a,b)=>Math.abs(parts[b])-Math.abs(parts[a]))[0];
       moved={k:Math.sign(parts[k])===Math.sign(dd)&&Math.abs(parts[k])>=0.4*Math.abs(dd)?k:null, parts, d:dd, riv:riv&&riv.g>0.03?riv.P:null}; } }
   return {T,W,sc,U,own,inU,outN,first,A,B,basis,tradeOf,pieOf,partOf,yoursOf,moved,ownTraded, you:ch(A.you,B.you), pie:ch(A.pie,B.pie), trade:ch(A.trade,B.trade), rate, slice:ch(A.share,B.share),
-    liq, atp:anyS&&ov>0?took/ov:null, served:anyS&&tA>0?took/tA:null, fillBy:wait>0?czDay(-wait):null}; }
+    // at the price, weighted by where the trading was; on a period your pools did not trade, your plain average there
+    liq, atp:anyS?(ov>0?took/ov:czAvg(inU.map(x=>sbar(x.M)).filter(v=>v!=null))):null, served:anyS&&tA>0?took/tA:null, fillBy:wait>0?czDay(-wait):null}; }
 
 /* the token's month: what all its LPs earned each day, and your share of it — two panels, one each */
 function czTokChart(r, cw){
