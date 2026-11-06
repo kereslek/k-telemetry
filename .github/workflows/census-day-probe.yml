@@ -1,0 +1,21 @@
+# YESTERDAY vs 7-DAY AVG on the live deck: which parts have a figure. Public log: yes/no and counts.
+name: census-day-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/census-day-probe.mjs', '.github/workflows/census-day-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: node scripts/census-day-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
