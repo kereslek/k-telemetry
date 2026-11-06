@@ -18,7 +18,7 @@ for(const w of ['w','d']){
   const r=await pg.evaluate(async w=>{ const btn=document.querySelector('#censusBody [data-cz="win"][data-v="'+w+'"]'); if(!btn) return null;
     btn.click(); await new Promise(r=>setTimeout(r,800));
     const h=document.querySelector('#censusBody'), C=state.census, W=czWins(w);
-    const cards=[...h.querySelectorAll('.cz-tk')].map(c=>{ const v=[...c.querySelectorAll('.cz-big,.cz-q .n,.cz-k .v')]; return [v.filter(x=>x.textContent.trim()==='—').length, v.length]; });
+    const cards=[...h.querySelectorAll('.cz-tk')].map(c=>{ const v=[...c.querySelectorAll('.cz-big,.cz-q .n,.cz-k .v')]; return [v.filter(x=>x.textContent.trim()==='—').length, v.length, v.map((x,i)=>x.textContent.trim()==='—'?i:-1).filter(i=>i>=0)]; });
     const rows=[...h.querySelectorAll('.cz-row .cz-ch')].map(x=>x.textContent.trim()==='—');
     const tok=C.tokens.map(T=>{ const t=czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W), mine=(C.mine||[]).filter(m=>m.tok===T.key&&!m.past), y=W.A[0];
       return {mkt:T.market[y]!=null, mktB:W.B.filter(d=>T.market[d]!=null).length, basis:!!t.basis, pieA:t.A.pie!=null, youA:t.A.you!=null, youB:t.B.you!=null,
@@ -29,7 +29,7 @@ for(const w of ['w','d']){
   if(!r){ console.log(w+': no switch'); continue; }
   console.log('== '+(w==='d'?'YESTERDAY vs 7-DAY AVG':'THIS WEEK vs LAST')+' ==');
   console.log('switch on: '+yn(r.pressed)+(w==='d'?' · ends on yesterday: '+yn(r.namesYday)+' (else on the census’s last whole day, named)':'')+' · census '+r.ageH+' h old · census written after yesterday ended: '+yn(r.censusHasY));
-  console.log('token cards, figures showing — : '+r.cards.map(c=>c[0]+' of '+c[1]).join(', ')+' · pool lines with — : '+r.rowsDash+' of '+r.rows);
+  console.log('token cards, figures showing — : '+r.cards.map(c=>c[0]+' of '+c[1]+(c[2].length?' (figure '+c[2].map(i=>['your fees','all LPs’ fees','your share of them','of the liquidity','at the price','of the trading','of all LPs’ fees'][i]||i).join(', ')+')':'')).join(', ')+' · pool lines with — : '+r.rowsDash+' of '+r.rows);
   r.tok.forEach((t,i)=>console.log('token '+(i+1)+': market has the newest day '+yn(t.mkt)+', older days '+t.mktB+' · comparison source found '+yn(t.basis)+' · LPs’ fees newest '+yn(t.pieA)+' · yours newest '+yn(t.youA)+' older '+yn(t.youB)
     +' · of '+t.n+' pool(s) with the newest day: fee counters '+t.fee+', share '+t.share+', replay '+t.rep));
 }
