@@ -633,6 +633,37 @@
   .fd-note{font-size:9.5px;color:var(--text-muted);margin-top:10px;letter-spacing:.08em}
   .flow-omit{font-size:9.5px;color:var(--text-muted);margin-top:8px;letter-spacing:.06em}
   .act-panel{border-color:rgba(255,176,32,.35)}
+  /* MARKET vs YOUR POOLS: three small tiles above the playbook */
+  .mk-why{font-size:11px;color:var(--text-secondary);margin:0 0 8px;line-height:1.45}
+  .mk-why b{color:var(--text-primary)} .mk-why .k{font-size:9.5px;letter-spacing:.16em;color:var(--text-muted);margin-right:6px}
+  .mk-tri{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:10px}
+  @media(max-width:900px){.mk-tri{grid-template-columns:1fr}}
+  .mk-t{border:1px solid var(--line-soft);padding:8px 9px;display:flex;flex-direction:column;gap:5px;min-width:0;font-family:var(--mono)}
+  .mk-tk{font-size:8.5px;letter-spacing:.16em;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .mk-tk b{color:var(--text-secondary);font-weight:600;letter-spacing:.06em;white-space:nowrap}
+  .mk-hs{display:grid;grid-template-columns:58px minmax(0,1fr);gap:3px 6px;align-items:center;position:relative}
+  .mk-hs>span{font-size:9px;color:var(--text-muted);text-align:right;white-space:nowrap}
+  .mk-hc{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;height:8px} .mk-hc i{border-radius:1px;background:#0f1e33}
+  .mk-hb{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;height:18px;align-items:end} .mk-hb i{background:var(--accent);border-radius:1px 1px 0 0;opacity:.85;min-height:1px}
+  .mk-hb i.nil{background:transparent;border-bottom:1px dashed var(--line)}
+  .mk-ax{display:grid;grid-template-columns:repeat(24,1fr);font-size:8px;color:var(--text-muted);height:10px} .mk-ax span{white-space:nowrap}
+  .mk-col{position:absolute;top:0;bottom:0;width:4.1667%;background:rgba(234,247,250,.08);pointer-events:none;display:none}
+  .mk-hit{position:absolute;left:64px;right:0;top:0;bottom:0;cursor:crosshair}
+  .mk-bn{font-size:15px;color:var(--text-primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .mk-bn small{font-size:10px;color:var(--text-muted);font-weight:400}
+  .mk-dr{display:grid;grid-template-columns:minmax(0,92px) 1fr 50px;gap:6px;align-items:center;font-size:10px;color:var(--text-secondary)}
+  .mk-dr>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mk-db{height:5px;background:var(--line-soft);border-radius:3px;overflow:hidden} .mk-db i{display:block;height:100%;border-radius:3px;transition:width .6s ease}
+  .mk-dv{text-align:right;color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .mk-cr{display:grid;grid-template-columns:82px 1fr 38px;gap:6px;align-items:center;font-size:10px;color:var(--text-secondary)}
+  .mk-cb{height:6px;position:relative;background:linear-gradient(90deg,transparent 49.5%,#2b4361 49.5%,#2b4361 50.5%,transparent 50.5%)}
+  .mk-cb i{position:absolute;top:0;bottom:0;border-radius:2px}
+  .mk-cv{text-align:right;color:var(--text-primary);font-variant-numeric:tabular-nums}
+  .mk-sw{display:inline-grid;grid-template-columns:repeat(2,auto);border:1px solid #1a2c44;border-radius:9px;overflow:hidden;flex:none}
+  .mk-sw button{all:unset;cursor:pointer;padding:0 7px;font:700 8px/15px var(--mono);letter-spacing:.1em;color:var(--text-muted)}
+  .mk-sw button[aria-pressed="true"]{background:rgba(53,214,232,.2);color:var(--text-primary)}
+  .mk-sw button:focus-visible{outline:1px solid var(--accent)}
+  .mk-ft{font-size:9.5px;color:var(--text-muted);line-height:1.4}
+  .mk-none{font-size:10.5px;color:var(--text-muted)}
   .act-row{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;margin-bottom:6px;border-radius:3px;
     border-left:3px solid var(--text-muted);background:rgba(255,255,255,.02)}
   .act-crit{border-left-color:var(--status-critical)}
@@ -2122,6 +2153,12 @@
       <div class="pbody" id="sparkBody"></div>
     </section>
 
+    <section class="panel" data-panel="mkt" data-before="playbook" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">MARKET vs YOUR POOLS</span><span class="hint" id="mktHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="mktBody"></div>
+    </section>
+
     <section class="panel act-panel" data-panel="playbook" draggable="true">
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">PLAYBOOK — WHAT TO DO, AND WHY</span><span class="hint" id="playbookHint"></span><button class="collapse-btn">▾</button></div>
@@ -2707,7 +2744,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.38';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.39';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3995,7 +4032,7 @@ async function scanInner(isBoot){
           if(d.solPrio) state.solPrio = d.solPrio;
           if(d.btcFee) state.btcFee = d.btcFee;
           if(d.bridge) state.bridge = d.bridge;
-          if(d.bridgeLinks) state.bridgeLinks = d.bridgeLinks;
+          if(d.bridgeLinks) state.bridgeLinks = d.bridgeLinks; if(d.mktHours) state.mktHours = d.mktHours;
           if(d.topPools) state.topPools = d.topPools;
           if(d.idle){ state.idle = d.idle; state.idleAt = d.t || Date.now(); } if(d.nfts) state.nfts = d.nfts; state.ink = d.ink||null;
           if(d.mktRef) state.mktRef = d.mktRef;
@@ -4707,7 +4744,7 @@ function renderAll(){
   assignColors(); assignPools();
   /* each panel on its own: one that throws on unexpected data used to stop every panel after it,
      silently (new wallets holding USDT on Tron blanked the fee pulse and the token exposure) */
-  for(const f of [renderHeader, renderTiles, renderActions, renderMomentum, renderCensus, renderIdle, renderNfts, renderSeismo, renderFeePulse, renderRank, renderFlow, renderOutlook, renderArch, renderCosmos, renderOps, renderGlobal, renderRadar, renderCompare, renderMatrix, renderSpark, renderTruth, renderPlaybook, renderCards, renderTokens, renderConcentration, renderCash]){
+  for(const f of [renderHeader, renderTiles, renderActions, renderMomentum, renderCensus, renderIdle, renderNfts, renderSeismo, renderFeePulse, renderRank, renderFlow, renderOutlook, renderArch, renderCosmos, renderOps, renderGlobal, renderRadar, renderCompare, renderMatrix, renderSpark, renderTruth, renderMkt, renderPlaybook, renderCards, renderTokens, renderConcentration, renderCash]){
     try{ f(); }catch(e){ console.error(f.name, e); try{ log('warning', f.name+' could not render: '+esc(String(e&&e.message||e).slice(0,120))); }catch(_){} }
   }
   if(!$('#quickNav').children.length) buildQuickNav();
@@ -9422,6 +9459,117 @@ function pbSide(p){
   if(p.inRange) return null;
   return (p.rangePos!=null && p.rangePos>1) ? 'above' : 'below';
 }
+/* ================= MARKET vs YOUR POOLS =================
+   Three small tiles above the playbook, for one question: is a quiet (or busy) day the market's doing,
+   and what actually moves your fees? An LP is paid when its pair's two tokens drift apart and traders
+   rebalance through the pool, not when the networks are busy; when everything falls together, the
+   pair barely moves and nobody needs to trade it.
+   A · BUSY vs EARNING: the last 24 clock hours, how busy each network was and how far your pairs
+       drifted (each hour against this month's hours), above what you earned that hour.
+   B · PAIR DRIFT: the last six hours, the market's move beside each of your pairs'.
+   C · WHAT MOVES YOUR FEES: hour against hour over 7 or 30 days, how closely each thing tracked your
+       fees (rank correlation; grey is what chance alone would give).
+   Everything is worked out here from the sealed payload: the relay's hourly prices (mktHours), its
+   fifteen-minute history (gas g, Solana s, Bitcoin b) and its hourly fee record (feeMonth.hours,
+   own swaps already out). */
+const MK_H=36e5;
+let mkWin=store.get('mkWin','7');
+function mkData(){
+  const M=state.mktHours, F=state.feeMonth&&state.feeMonth.hours, nowH=Math.floor(Date.now()/MK_H)*MK_H, N=31*24+1, G0=nowH-(N-1)*MK_H;
+  const grid=(t0,arr)=>Array.from({length:N},(_,i)=>{ if(!arr||t0==null) return null; const j=Math.round((G0+i*MK_H-t0)/MK_H); const v=j>=0&&j<arr.length?arr[j]:null; return v==null||!isFinite(v)?null:v; });
+  const fee=grid(F&&F.t0, F&&F.v);
+  const gas={g:[],s:[],b:[]}; { const acc={g:{},s:{},b:{}};
+    for(const x of state.history||[]){ if(!x||!x.t) continue; const i=Math.floor((x.t-G0)/MK_H); if(i<0||i>=N) continue;
+      for(const k of ['g','s','b']){ const v=x[k]; if(typeof v!=='number'||!(k==='s'?v>=0:v>0)) continue; const a=acc[k][i]||(acc[k][i]=[0,0]); a[0]+=v; a[1]++; } }
+    for(const k of ['g','s','b']) gas[k]=Array.from({length:N},(_,i)=>acc[k][i]?acc[k][i][0]/acc[k][i][1]:null); }
+  const px=k=>M&&M.px&&M.px[k]?grid(M.t0,M.px[k]):Array(N).fill(null);
+  const pools=(M&&M.pools||[]).map(p=>({...p, A:px(p.a), B:px(p.b)}));
+  const ratio=(p,i)=>p.A[i]>0&&p.B[i]>0?p.A[i]/p.B[i]:null;
+  // each hour: how far your pairs drifted apart (by the money in each), and how far the majors moved
+  const W=pools.reduce((s,p)=>s+(p.w||0),0);
+  const drift=Array.from({length:N},(_,i)=>{ if(!i) return null; let s=0, w=0;
+    for(const p of pools){ const a=ratio(p,i-1), b=ratio(p,i); if(!(a&&b)) continue; const x=W>0?(p.w||0):1; s+=x*Math.abs(Math.log(b/a)); w+=x; }
+    return w>0?s/w:null; });
+  const maj=(M&&M.maj||[]).map(px);
+  const mkt=Array.from({length:N},(_,i)=>{ if(!i) return null; const v=maj.map(a=>a[i]>0&&a[i-1]>0?Math.abs(Math.log(a[i]/a[i-1])):null).filter(x=>x!=null); return v.length?v.reduce((s,x)=>s+x,0)/v.length:null; });
+  return {M,N,G0,nowH,fee,gas,pools,ratio,drift,mkt,maj,ok:!!(M&&M.px)};
+}
+/* where a value stands among this month's complete hours: 0 the quietest, 1 the busiest */
+const mkRank=arr=>{ const v=arr.slice(0,-1).filter(x=>x!=null).sort((a,b)=>a-b); return x=>{ if(x==null||!v.length) return null; let lo=0, hi=v.length; while(lo<hi){ const m=(lo+hi)>>1; if(v[m]<x) lo=m+1; else hi=m; } let e=lo; while(e<v.length&&v[e]===x) e++; return (lo+(e-lo)/2)/v.length; }; };
+/* rank correlation of two series over the hours both have */
+function mkSpear(a,b){ const ix=[]; for(let i=0;i<a.length;i++) if(a[i]!=null&&b[i]!=null) ix.push(i); const n=ix.length; if(n<24) return {n, r:null};
+  const rk=xs=>{ const o=xs.map((v,i)=>[v,i]).sort((p,q)=>p[0]-q[0]), r=Array(xs.length); for(let i=0;i<o.length;){ let j=i; while(j+1<o.length&&o[j+1][0]===o[i][0]) j++; const m=(i+j)/2+1; for(let k=i;k<=j;k++) r[o[k][1]]=m; i=j+1; } return r; };
+  const ra=rk(ix.map(i=>a[i])), rb=rk(ix.map(i=>b[i])), ma=ra.reduce((s,x)=>s+x,0)/n, mb=rb.reduce((s,x)=>s+x,0)/n;
+  let c=0, va=0, vb=0; for(let k=0;k<n;k++){ const x=ra[k]-ma, y=rb[k]-mb; c+=x*y; va+=x*x; vb+=y*y; }
+  return {n, r:va>0&&vb>0?c/Math.sqrt(va*vb):null, sig:1.96/Math.sqrt(n-1)}; }
+const MK_F=[['drift','pair drift'],['mkt','market move'],['s','SOL fees'],['g','ETH gas'],['b','BTC fees']];
+const mkPct=(x,d=1)=>x==null||!isFinite(x)?'—':(x>=0?'+':'−')+Math.abs(x*100).toFixed(d)+'%';
+const mkNum=v=>v==null?'—':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e4?Math.round(v/1e3)+'k':v>=1e3?(v/1e3).toFixed(1)+'k':v>=10?String(Math.round(v)):v>=1?v.toFixed(1):v.toFixed(2);
+const mkHr=t=>new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hour12:false}).format(t);
+function mkCorr(D,w){ const H=w==='30'?720:168, lo=Math.max(0,D.N-1-H), sl=a=>a.slice(lo,D.N-1);
+  const f=sl(D.fee), src={drift:sl(D.drift), mkt:sl(D.mkt), g:sl(D.gas.g), s:sl(D.gas.s), b:sl(D.gas.b)};
+  const rows=MK_F.map(([k,l])=>({k,l,...mkSpear(f,src[k])})), have=f.filter(x=>x!=null).length;
+  return {rows, have, want:H}; }
+function renderMkt(){
+  const host=$('#mktBody'); if(!host) return;
+  const D=mkData(), hint=$('#mktHint');
+  if(!D.ok){ host.innerHTML='<div class="mk-none">The hourly market prices come with the relay’s next pass; this fills in then.</div>'; if(hint) hint.textContent=''; return; }
+  const {N,G0}=D, i1=N-1;
+  /* ---- B: the last six hours ---- */
+  const last=(()=>{ for(let i=i1;i>=6;i--) if(D.pools.some(p=>D.ratio(p,i)&&D.ratio(p,i-6))) return i; return null; })();
+  const bRows=last==null?[]:D.pools.map(p=>{ const a=D.ratio(p,last-6), b=D.ratio(p,last); return {p, d:a&&b?b/a-1:null}; }).filter(x=>x.d!=null).sort((x,y)=>(y.p.w||0)-(x.p.w||0));
+  const mMove=last==null?null:(()=>{ const v=D.maj.map(a=>a[last]>0&&a[last-6]>0?a[last]/a[last-6]-1:null).filter(x=>x!=null); return v.length?v.reduce((s,x)=>s+x,0)/v.length:null; })();
+  const Wb=bRows.reduce((s,x)=>s+(x.p.w||0),0), yours=bRows.length?bRows.reduce((s,x)=>s+(Wb>0?(x.p.w||0):1)*Math.abs(x.d),0)/(Wb>0?Wb:bRows.length):null;
+  const top=Math.max(0.005,Math.abs(mMove||0),...bRows.map(x=>Math.abs(x.d)));
+  const col=p=>p.ck==='sol'?'var(--series-1)':'var(--series-4)';
+  const B='<div class="mk-t"><div class="mk-tk"><span>B · PAIR DRIFT · 6 H</span><b>what pays you</b></div>'
+    +(bRows.length?'<div class="mk-bn">market <span style="color:'+(mMove==null?'var(--text-muted)':mMove<0?'var(--status-critical)':'var(--status-good)')+'">'+mkPct(mMove)+'</span> <small>· your pairs</small> <span style="color:var(--status-warning)">±'+(yours*100).toFixed(1)+'%</span></div>'
+      +bRows.map(x=>'<div class="mk-dr" title="'+esc(x.p.lbl+' '+(x.p.fee||''))+': the two tokens’ price ratio moved '+mkPct(x.d)+' over the six hours to '+mkHr(D.G0+last*MK_H+MK_H)+'"><span>'+esc(x.p.lbl)+'</span><div class="mk-db"><i style="width:'+Math.max(2,Math.abs(x.d)/top*100).toFixed(1)+'%;background:'+col(x.p)+'"></i></div><span class="mk-dv">'+mkPct(x.d)+'</span></div>').join('')
+      +'<div class="mk-ft">to '+mkHr(D.G0+last*MK_H+MK_H)+' · market = BTC, ETH and SOL in dollars</div>'
+     :'<div class="mk-none">No hourly prices for your pairs yet.</div>')+'</div>';
+  /* ---- C: what moves your fees ---- */
+  const C=mkCorr(D,mkWin), c7=mkWin==='7'?C:mkCorr(D,'7');
+  const best=c7.rows.filter(r=>r.r!=null&&r.r>=r.sig).sort((a,b)=>b.r-a.r)[0];
+  const Ct='<div class="mk-t"><div class="mk-tk"><span>C · WHAT MOVES YOUR FEES</span><span class="mk-sw" role="group" aria-label="Window"><button type="button" data-mk="7" aria-pressed="'+(mkWin==='7')+'">7D</button><button type="button" data-mk="30" aria-pressed="'+(mkWin==='30')+'">30D</button></span></div>'
+    +C.rows.map(r=>{ const v=r.r, ok=v!=null&&Math.abs(v)>=r.sig, c=!ok?'#5d7a90':v>0?'var(--status-good)':'var(--status-critical)', w=v==null?0:Math.max(1.5,Math.abs(v)*50);
+      return '<div class="mk-cr" title="'+(v==null?r.l+': needs a day of hours with both records':r.l+' against your fees, hour by hour over '+r.n+' h: '+(ok?(v>0?'they rise together':'one rises as the other falls'):'no clearer than chance (±'+r.sig.toFixed(2)+')'))+'"><span>'+r.l+'</span><div class="mk-cb">'+(v==null?'':'<i style="left:'+(v<0?50-w:50)+'%;width:'+w+'%;background:'+c+'"></i>')+'</div><span class="mk-cv">'+(v==null?'—':(v<0?'−':'+')+Math.abs(v).toFixed(2).replace(/^0/,''))+'</span></div>'; }).join('')
+    +'<div class="mk-ft">'+C.have+' h'+(C.have<C.want?' of '+C.want+' recorded so far':'')+' · rank correlation · grey = chance</div></div>';
+  /* ---- A: the last 24 clock hours ---- */
+  const ix=Array.from({length:24},(_,k)=>i1-24+k), rows=[['ETH gas',D.gas.g],['SOL fees',D.gas.s],['BTC fees',D.gas.b],['pair drift',D.drift]];
+  const cell=p=>p==null?'':p>=0.8?'background:rgba(239,83,80,'+(0.35+0.6*(p-0.8)/0.2).toFixed(2)+')':'background:rgba(53,214,232,'+(0.1+0.6*p).toFixed(2)+')';
+  const ranks=rows.map(r=>mkRank(r[1]));
+  const fmax=Math.max(0.01,...ix.map(i=>D.fee[i]||0));
+  const ax=ix.map(i=>{ const h=+new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hour:'2-digit',hour12:false}).format(G0+i*MK_H)%24; return '<span>'+(h%6===0?String(h).padStart(2,'0'):'')+'</span>'; }).join('');
+  const verdictA=best?'fees follow '+best.l:c7.rows.every(r=>r.r==null)?'recording':'no clear link yet';
+  const A='<div class="mk-t"><div class="mk-tk"><span>A · BUSY vs EARNING · 24 H</span><b>'+verdictA+'</b></div><div class="mk-hs" id="mkA">'
+    +rows.map((r,k)=>'<span>'+r[0]+'</span><div class="mk-hc">'+ix.map(i=>'<i style="'+cell(ranks[k](r[1][i]))+'"></i>').join('')+'</div>').join('')
+    +'<span>your fees</span><div class="mk-hb">'+ix.map(i=>D.fee[i]==null?'<i class="nil" style="height:100%"></i>':'<i style="height:'+Math.max(2,D.fee[i]/fmax*100).toFixed(1)+'%"></i>').join('')+'</div>'
+    +'<span></span><div class="mk-ax">'+ax+'</div><div class="mk-hit"></div><div class="mk-col"></div></div>'
+    +'<div class="mk-ft">each hour against this month’s · <span style="color:#ef5350">■</span> busiest fifth</div></div>';
+  /* ---- the line on top: a quiet or busy day, and why ---- */
+  const day=k=>{ let s=0, n=0; for(let i=i1-24*(k+1); i<i1-24*k; i++) if(i>=0&&D.fee[i]!=null){ s+=D.fee[i]; n++; } return n>=18?s*24/n:null; };
+  const today=day(0), prev=[1,2,3,4,5,6,7].map(day).filter(x=>x!=null), usual=prev.length>=3?prev.reduce((s,x)=>s+x,0)/prev.length:null, q=today!=null&&usual>0?today/usual:null;
+  const head=q==null?'THE LAST 24 HOURS':q<0.7?'WHY TODAY IS QUIET':q>1.3?'WHY TODAY IS BUSY':'AN ORDINARY DAY';
+  const am=Math.abs(mMove||0);
+  const why=yours==null?'':am>=0.02&&yours<am/2?'everything '+(mMove<0?'fell':'rose')+' together: <b>your pairs barely moved</b>'
+    :yours>=0.02?'<b>your pairs drifted '+(yours*100).toFixed(1)+'%</b>: traders rebalance through your pools'
+    :am<0.01&&yours<0.01?'a calm market: <b>little to rebalance</b>':'your pairs drifted <b>'+(yours*100).toFixed(1)+'%</b> against a market '+mkPct(mMove);
+  const fq=q==null?'':' · your last 24 h '+(q<1?Math.round((1-q)*100)+'% below':Math.round((q-1)*100)+'% above')+' your 7-day usual';
+  host.innerHTML='<p class="mk-why"><span class="k">'+head+'</span>'+why+fq+'</p><div class="mk-tri">'+A+B+Ct+'</div>';
+  if(hint) hint.textContent=head.toLowerCase();
+  // a column under the finger: that hour, every row
+  const hs=$('#mkA'), hit=hs&&hs.querySelector('.mk-hit'), bar=hs&&hs.querySelector('.mk-col');
+  if(hit){ const at=e=>{ const r=hit.getBoundingClientRect(), k=Math.max(0,Math.min(23,Math.floor((e.clientX-r.left)/r.width*24))), i=ix[k], t=G0+i*MK_H;
+      bar.style.display='block'; bar.style.left=(hit.offsetLeft+k*r.width/24)+'px'; bar.style.width=(r.width/24)+'px';
+      const busy=(rk,v)=>{ const p=rk(v); return p==null?'':p>=0.8?' <span style="color:#ef5350">busy</span>':''; };
+      moTip.show(e.clientX,e.clientY,'<b>'+mkHr(t)+'–'+mkHr(t+MK_H)+'</b><br>ETH gas '+(D.gas.g[i]==null?'—':D.gas.g[i].toFixed(D.gas.g[i]<1?2:1)+' gwei')+busy(ranks[0],D.gas.g[i])
+        +'<br>SOL fees '+(D.gas.s[i]==null?'—':mkNum(D.gas.s[i])+' µL/CU')+busy(ranks[1],D.gas.s[i])+'<br>BTC fees '+(D.gas.b[i]==null?'—':mkNum(D.gas.b[i])+' sat/vB')+busy(ranks[2],D.gas.b[i])
+        +'<br>pair drift '+(D.drift[i]==null?'—':(D.drift[i]*100).toFixed(2)+'%')+busy(ranks[3],D.drift[i])+'<br><span style="color:var(--accent)">your fees '+(D.fee[i]==null?'not recorded':czK(D.fee[i]))+'</span>'); };
+    hit.addEventListener('pointermove',at); hit.addEventListener('pointerdown',at); hit.addEventListener('pointerleave',()=>{ bar.style.display='none'; moTip.hide(); }); }
+}
+document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('#mktBody [data-mk]'); if(!b) return; mkWin=b.dataset.mk; store.set('mkWin',mkWin); renderMkt(); });
+document.addEventListener('pointerdown',e=>{ if(e.pointerType==='mouse'||(e.target.closest&&e.target.closest('#mkA'))) return; const c=document.querySelector('#mkA .mk-col'); if(c&&c.style.display==='block'){ c.style.display='none'; moTip.hide(); } },{passive:true});
+
 function renderPlaybook(){
   const host=$('#playbookBody'); if(!host) return; host.innerHTML='';
   const ps=ordered().filter(p=>p.valueUsd!=null);
@@ -11063,6 +11211,9 @@ function applyStoredOrders(){
   let po=store.get('panelOrder',null);
   if(po){ const all=[...$('#panelStack').querySelectorAll('.panel[data-panel]')].map(p=>p.dataset.panel);
     all.forEach((k,i)=>{ if(po.includes(k)) return;
+      // a new panel that names the one it belongs above goes there; any other follows its neighbour
+      const bf=$('#panelStack').querySelector('.panel[data-panel="'+k+'"]')?.dataset.before, jb=bf?po.indexOf(bf):-1;
+      if(jb>=0){ po.splice(jb,0,k); return; }
       const j=i?po.indexOf(all[i-1]):-1; po.splice(j<0?po.length:j+1,0,k); }); }
   if(po){ const stack=$('#panelStack');
     po.forEach(k=>{const p=stack.querySelector('[data-panel="'+k+'"]'); if(p)stack.append(p);}); }
@@ -13289,7 +13440,7 @@ async function init(){
       if(d.solPrio) state.solPrio=d.solPrio;
       if(d.btcFee) state.btcFee=d.btcFee;
       if(d.bridge) state.bridge=d.bridge;
-      if(d.bridgeLinks) state.bridgeLinks=d.bridgeLinks;
+      if(d.bridgeLinks) state.bridgeLinks=d.bridgeLinks; if(d.mktHours) state.mktHours=d.mktHours;
       if(d.topPools) state.topPools=d.topPools;
       if(d.competition) state.competition=d.competition;
       if(d.chainStatus) state.chainStatus=d.chainStatus;

@@ -238,7 +238,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge','bridgeLinks'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge','bridgeLinks','mktHours'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -2958,6 +2958,29 @@ const main=async()=>{
         fl.ticks=fl.ticks.filter(x=>x[0]>nowMs-50*3600000).sort((a,b)=>a[0]-b[0]);
         ticks=fl.ticks.filter(x=>x[0]>nowMs-26*3600000);
       }catch(e){ logErr('feeTicks',e); }
+      /* Fee income hour by hour, kept 35 days, for MARKET vs YOUR POOLS (what moves your fees, hour
+         against hour). The gain between two readings is spread over the clock hours they span, as the
+         24-hour view does; own swaps are already out of the readings. The hours the 50-hour readings
+         still cover are worked out afresh every pass (an own swap taken out later restates them);
+         older hours keep what they were last worked out as. Readings more than three hours apart
+         leave the hours between them unknown rather than spread thin, and the first hour the
+         readings cover only in part is left as it was. */
+      let feeHours=null;
+      try{
+        const H1=3600000, T=Array.isArray(fl.ticks)?fl.ticks:[], nowMs=Date.now();
+        fl.hours=fl.hours&&typeof fl.hours==='object'&&!Array.isArray(fl.hours)?fl.hours:{};
+        if(T.length>1){
+          const fresh={}, from=Math.floor(T[0][0]/H1)*H1+H1;
+          for(let i=1;i<T.length;i++){ const [a,va]=T[i-1], [b,vb]=T[i]; if(!(b>a)||b-a>3*H1) continue;
+            const g=Math.max(0,vb-va);   // a reading lower than the last is a restatement, not income lost
+            for(let h=Math.floor(a/H1)*H1; h<b; h+=H1){ const lo=Math.max(a,h), hi=Math.min(b,h+H1); if(hi>lo) fresh[h]=(fresh[h]||0)+g*(hi-lo)/(b-a); } }
+          for(const [h,v] of Object.entries(fresh)) if(+h>=from) fl.hours[h]=Math.round(v*1e4)/1e4;
+        }
+        for(const h of Object.keys(fl.hours)) if(+h<nowMs-35*864e5) delete fl.hours[h];
+        const hs=Object.keys(fl.hours).map(Number).sort((a,b)=>a-b);
+        if(hs.length){ const t0=Math.max(hs[0], Math.floor(nowMs/H1)*H1-31*24*H1), n=Math.floor((Math.floor(nowMs/H1)*H1-t0)/H1)+1;
+          feeHours={t0, v:Array.from({length:n},(_,i)=>{ const x=fl.hours[t0+i*H1]; return x==null?null:Math.round(x*100)/100; })}; }
+      }catch(e){ logErr('feeHours',e); }
       /* The last 24 hours per position, from each position's running total of what the ledger
          booked for it (it does not reset at a month end). A position closed inside the window
          contributes what it earned before it closed. Summed, it is the same figure as the running
@@ -2985,7 +3008,7 @@ const main=async()=>{
           pos24={from:start[0], to:nowMs, total:Math.round(rows.reduce((x,r)=>x+r.usd,0)*100)/100, byPos:rows.sort((x,y)=>y.usd-x.usd)};
         }
       }catch(e){ logErr('feePos24',e); }
-      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, pos24, basis:'tokens', selfBack:fl.selfMtd||0, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
+      feeMonth={month:monthKey, mtd:Math.round(mtd*100)/100, daily, ticks, hours:feeHours, pos24, basis:'tokens', selfBack:fl.selfMtd||0, ilNow:fl.lastIl, elapsedDays:Math.round(elapsed*100)/100, daysInMonth,
         proj: elapsed>0.25?Math.round(mtd/elapsed*daysInMonth*100)/100:null,
         projBasis:'average', dayRate:(pos24&&pos24.total!=null&&(pos24.to-pos24.from)>=20*3600000)?pos24.total:Math.round(dayRate*100)/100, prev:fl.months||[],
         /* Month to date per position — open ones and the ones closed this month — so the page
@@ -4172,6 +4195,40 @@ const main=async()=>{
        pools came with a crossing of CPOOL's bridge by the same wallet, either way, either chain. Every
        pass, within 40 s; what it could not read this pass it reads on the next. Only hashes of wallets
        are carried between passes, and none reach the page. */
+    /* MARKET vs YOUR POOLS: each pool's two tokens and the market's three majors, priced hour by hour
+       for 31 days (DefiLlama's hourly chart, market data only: nothing of the deck's is sent but the
+       tokens' public addresses). The page works out how far each pool's pair drifted apart each hour,
+       which is what pays an LP, beside how busy the networks were. Asked once an hour; the hours
+       already held are kept and only the newer ones asked for. */
+    let mktHours=null;
+    try{
+      const H1=3600000, nowH=Math.floor(Date.now()/H1)*H1, keep=nowH-31*24*H1, MAJ=['coingecko:bitcoin','coingecko:ethereum','coingecko:solana'];
+      const ZERO=/^0x0{40}$/i, kOf=(p,w)=>{ if(p.chain==='sol') return 'solana:'+(w?p.mint1:p.mint0);
+        const a=String(w?p.token1:p.token0||'').toLowerCase(); return ZERO.test(a)?'coingecko:ethereum':(p.chain||'ethereum')+':'+a; };
+      const byPool=new Map();
+      for(const p of [...evmPositions,...solPositions]){ const id=String(p.chain==='sol'?p.poolId:p.pool||'').toLowerCase(); if(!id||!(p.chain==='sol'?p.mint0&&p.mint1:p.token0&&p.token1)) continue;
+        const e=byPool.get(id)||{lbl:p.pairLabel||'?', fee:p.feeLabel||'', a:kOf(p,0), b:kOf(p,1), ck:p.chain==='sol'?'sol':'eth', w:0}; e.w+=p.valueUsd||0; byPool.set(id,e); }
+      const pools=[...byPool.values()].map(e=>({...e, w:Math.round(e.w)}));
+      const keys=[...new Set([...MAJ, ...pools.flatMap(e=>[e.a,e.b])])];
+      const MH=blockCache.mktHours=blockCache.mktHours&&blockCache.mktHours.px?blockCache.mktHours:{px:{}};
+      MH.atK=MH.atK||{};
+      const need=keys.filter(k=>Date.now()-(MH.atK[k]||0)>50*60e3);
+      if(need.length){
+        const last=k=>{ const hs=Object.keys(MH.px[k]||{}).map(Number); return hs.length?Math.max(...hs):keep-H1; };
+        let asked=0, got=0; const gotK=new Set();
+        for(let i=0;i<need.length;i+=8){ const ks=need.slice(i,i+8); let from=Math.min(...ks.map(last))+H1;
+          for(let g=0; from<=nowH && g<6; g++){ const span=Math.min(168, Math.floor((nowH-from)/H1)+1);
+            try{ asked++; const j=await getJson('https://coins.llama.fi/chart/'+ks.join(',')+'?start='+Math.floor(from/1000)+'&span='+span+'&period=1h&searchWidth=1200',20000);
+              for(const k of ks){ const ps=j&&j.coins&&j.coins[k]&&j.coins[k].prices; if(!Array.isArray(ps)) continue; const o=MH.px[k]=MH.px[k]||{};
+                for(const x of ps){ const h=Math.round(x.timestamp*1000/H1)*H1; if(x.price>0&&h>=keep&&h<=nowH){ o[h]=+(+x.price).toPrecision(6); got++; gotK.add(k); } } }
+            }catch(e){ logErr('mktHours',e); break; }
+            from+=span*H1; await sleep(250); } }
+        for(const k of Object.keys(MH.px)){ for(const h of Object.keys(MH.px[k])) if(+h<keep) delete MH.px[k][h]; if(!Object.keys(MH.px[k]).length){ delete MH.px[k]; delete MH.atK[k]; } }
+        for(const k of need) MH.atK[k]=gotK.has(k)?Date.now():Date.now()-40*60e3;   // a token not answered is asked again in ten minutes console.log('market hours: '+asked+' ask(s), '+got+' hourly price(s) added, '+need.length+' token(s) asked');
+      }
+      const t0=keep, n=Math.floor((nowH-t0)/H1)+1;
+      mktHours={t0, n, px:Object.fromEntries(keys.map(k=>[k, Array.from({length:n},(_,i)=>{ const v=MH.px[k]&&MH.px[k][t0+i*H1]; return v==null?null:v; })])), pools, maj:MAJ};
+    }catch(e){ logErr('mktHours',e); }
     let bridgeLinks=null;
     try{
       const RT=ROUTES[0], CE=RT.tokenEth.toLowerCase();
@@ -4198,7 +4255,7 @@ const main=async()=>{
       if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge, bridgeLinks,
+    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge, bridgeLinks, mktHours,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
     console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);
