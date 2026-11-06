@@ -2707,7 +2707,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.36';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.37';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -8430,14 +8430,23 @@ function loadCensus(){
     .catch(()=>{ if(state.census===undefined) state.census=null; })
     .finally(()=>{ state.censusSlug=slug; state._czAsk=false; state._czAt=Date.now(); try{ renderCensus(); }catch(e){ console.error('renderCensus',e); } });
 }
-const czDay=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
+/* The newest day the census has whole. It runs twice a day, and a run that falls before midnight leaves
+   that day partly counted (its fee counters only close whole days), so until the next run "yesterday"
+   is not yet a whole day: every comparison ends on the census's last whole day, and names it. */
+const czAnchor=()=>{ const y=Date.now()-864e5, C=state.census; if(!C||!C.t) return y; return Math.min(y, Date.parse(new Date(C.t).toISOString().slice(0,10)+'T12:00:00Z')-864e5); };
+const czDay=n=>new Date(czAnchor()-(n-1)*864e5).toISOString().slice(0,10);
+/* the newest whole day in words: "yesterday", or its date while the census has yet to add yesterday */
+const czIsY=()=>czDay(1)===new Date(Date.now()-864e5).toISOString().slice(0,10);
+const czYd=()=>czIsY()?'yesterday':'on '+czDate(czDay(1));
+const czDayBtn=()=>(czIsY()?'YESTERDAY':czDate(czDay(1)).toUpperCase())+' vs 7-DAY AVG';
 const czMon=(y,m)=>{ const n=new Date(Date.UTC(y,m+1,0)).getUTCDate(), o=[]; for(let i=n;i>=1;i--) o.push(new Date(Date.UTC(y,m,i)).toISOString().slice(0,10)); return o; };
 const czMName=(y,m)=>new Date(Date.UTC(y,m,15)).toLocaleDateString('en-GB',{month:'long',timeZone:'UTC'});
 /* The two periods compared, newest day first, with the words for them. A month is the whole days of
    yesterday's month against the whole month before it, compared a day at a time. */
 const czWins=w=>{
-  if(w==='d') return {k:'d', A:[czDay(1)], B:[2,3,4,5,6,7,8].map(czDay), a:'yesterday', b:'the 7 days before', than:'yesterday than their 7-day average', as:'yesterday as their 7-day average',
-    vs:'yesterday against the 7 days before', la:'YDAY', lb:'7 DAYS BEFORE', short:'YESTERDAY vs 7-DAY AVG', span:30};
+  if(w==='d'){ const y=czYd(), Y=czIsY();
+    return {k:'d', A:[czDay(1)], B:[2,3,4,5,6,7,8].map(czDay), a:y, b:'the 7 days before', than:y+' than their 7-day average', as:y+' as their 7-day average',
+      vs:y+' against the 7 days before', la:Y?'YDAY':czDate(czDay(1)).toUpperCase(), lb:'7 DAYS BEFORE', short:czDayBtn(), span:30}; }
   if(w==='m'){ const yd=new Date(Date.now()-864e5), y=yd.getUTCFullYear(), m=yd.getUTCMonth(), cur=new Date().getUTCMonth()===m, py=m?y:y-1, pm=m?m-1:11;
     const A=czMon(y,m).filter(d=>d<=czDay(1)), B=czMon(py,pm), na=czMName(y,m)+(cur?' so far':''), nb=czMName(py,pm);
     return {k:'m', A, B, a:'in '+na, b:'in '+nb, than:'a day in '+na+' than in '+nb, as:'a day in '+na+' as in '+nb, vs:'a day in '+na+' against '+nb,
@@ -8451,7 +8460,11 @@ const czWins=w=>{
 const czSrc={
   actual:(M,P,d)=>M&&M.fees&&M.fees[d]!=null?M.fees[d]:null,
   replay:(M,P,d)=>{ const x=M&&M.rep&&M.rep[d]; return x&&x.cov>=0.99&&x.s!=null&&P&&P.vol&&P.vol[d]!=null&&P.fee!=null?P.vol[d]*P.fee*(P.lpCut??1)*x.s:null; },
-  share:(M,P,d)=>M&&M.exp&&M.exp[d]!=null?M.exp[d]*(1-czOwnW(M,d)):null };
+  share:(M,P,d)=>M&&M.exp&&M.exp[d]!=null?M.exp[d]*(1-czOwnW(M,d)):czNoTrade(M,P,d)?0:null };
+/* A day your share is recorded but the pool has no candle: the price index serves a candle for every day
+   a pool traded, so inside its series (read whole on the last run) a missing day traded nothing, and
+   your fees that day were nothing too — not unknown, which once blanked a quiet pool's whole card. */
+const czNoTrade=(M,P,d)=>!!(M&&M.share&&M.share[d]&&P&&P.volOk!==false&&P.vol&&P.vol[d]==null&&Object.keys(P.vol).some(k=>k<d));
 /* Your own swaps through your own pools: what they pay comes back to you, so it is neither income nor
    the market's trading. The replay knows their part of each day's trading (by weight); where it has the
    day, they are left out of the trading, of all the LPs' fees, and of the share-based estimate alike. */
@@ -8514,7 +8527,7 @@ function czRival(T,P,W){ let best=null;
 /* the line */
 function czLine(r){
   const {T,P,W}=r;
-  if(r.isNew) return 'A new pool (opened '+czDate(r.born)+'): '+czK(r.vA*W.A.length)+' traded '+(W.k==='d'?'yesterday':W.k==='m'?W.a:'in its first week')+'; nothing before it to compare with.';
+  if(r.isNew) return 'A new pool (opened '+czDate(r.born)+'): '+czK(r.vA*W.A.length)+' traded '+(W.k==='d'?W.a:W.k==='m'?W.a:'in its first week')+'; nothing before it to compare with.';
   if(r.thin) return '<b>Thin:</b> '+czK(r.vA)+' a day traded against '+czK(r.vB)+' before, too little to name a cause.'+(r.slA!=null&&r.slA<0.05&&r.slB!=null&&r.slB<0.05?' The '+T.sym+' trading sits in other pools.':'');
   const E=r.eff, parts=[];
   const say={
@@ -8556,7 +8569,7 @@ function czEvidence(r, cw){
   const shOf=d=>M&&M.share&&M.share[d]||(M&&M.rep&&M.rep[d]&&M.rep[d].cov>=0.99&&M.rep[d].st!=null?{s:M.rep[d].st,tin:M.rep[d].tin??0,r:1}:null);
   const d7=days.slice(-7), sh7=d7.map(shOf).filter(Boolean), my7=d7.map(my).filter(Boolean);
   const tiles=[['POOL SIZE',czK(P.tvl),P.tvlRay!=null&&P.tvlIdx!=null&&Math.abs(P.tvlIdx/Math.max(P.tvlRay,.01)-1)>0.1?'Raydium’s figure':'now'],
-    ['TRADED · 7 DAYS',czK(d7.reduce((s,d)=>s+((P.vol&&P.vol[d])||0),0)),czK((P.vol&&P.vol[days[days.length-1]])||0)+' yesterday'],
+    ['TRADED · 7 DAYS',czK(d7.reduce((s,d)=>s+((P.vol&&P.vol[d])||0),0)),czK((P.vol&&P.vol[days[days.length-1]])||0)+' '+czYd()],
     ['LPs’ FEES · 7 DAYS',czK(d7.reduce((s,d)=>s+pf(d),0)),(fee*100).toFixed(2).replace(/\.?0+$/,'')+'%'+(cut<1?' less Raydium’s '+Math.round((1-cut)*100)+'%':'')],
     ['LPs IN THE POOL',P.book&&P.book.open!=null?String(P.book.open):'—',P.book&&P.book.open!=null?P.book.atPrice+' at the price'+(P.book.wallets?', '+P.book.wallets+' wallets':'')+(Array.isArray(P.book.at)?(()=>{ const o=P.book.at.filter(x=>!x.mine); return o.length?' · '+o.length+' not yours ('+czP(o.reduce((s,x)=>s+(x.s||0),0),0)+')':' · all yours'; })():''):'not readable yet'],
     ['YOUR SHARE AT THE PRICE',sh7.length?czP(czAvg(sh7.map(x=>x.s)),1):'—',sh7.length?'7-day average · in range '+czP(czAvg(sh7.map(x=>x.tin))):'recorded from '+(M&&M.since?czDate(M.since):'the next census'),1],
@@ -8759,7 +8772,7 @@ function czTokCard(r, cw){
       :'Your fee counters ran '+by+' above what the public trading figures imply.')+'</span>'; }
   if(r.you!=null&&r.pie!=null&&r.slice!=null&&Math.abs(r.you)>=0.03) s+=' So your fees '+(r.you<0?'fell ':'rose ')+pct(r.you)+(r.pie>=0.03&&r.you<0?', even though its LPs earned more':r.pie<=-0.03&&r.you>0?', even though its LPs earned less':'')+'.';
   if(r.ownTraded>=1) s+=' <span class="cz-fl">Your own swaps through your pools ('+czK(r.ownTraded)+' '+W.a+') are left out of the trading and of what the LPs earned: what they pay comes back to you.</span>';
-  if(r.you==null&&r.fillBy) s+=' <span class="cz-fl">Your part of the comparison fills in by '+czDate(r.fillBy)+(W.A.length>1?'; YESTERDAY vs 7-DAY AVG compares it sooner':'')+'.</span>';
+  if(r.you==null&&r.fillBy) s+=' <span class="cz-fl">Your part of the comparison fills in by '+czDate(r.fillBy)+(W.A.length>1?'; '+czDayBtn()+' compares it sooner':'')+'.</span>';
   const kp=[['OF THE LIQUIDITY',r.liq,'your money ÷ all the money in the pools '+sc.on+' that trade'],['AT THE PRICE',r.atp,'in your pools, where the trading happens'],
     ['OF THE TRADING',r.served,'the part your liquidity took'],['OF ALL '+S+' LPs’ FEES',sNow==null?null:Math.min(1,sNow),(A.share==null&&A.part?A.part.n+' of '+W.A.length+' days recorded · ':'')+((A.k||A.part?.k)&&(A.k||A.part?.k)!=='actual'?CZ_BLBL[A.k||A.part.k]:'what you earned ÷ what every '+S+' LP earned')]];
   const sh=w=>String(w).slice(0,4)+'…'+String(w).slice(-4);
@@ -8808,7 +8821,7 @@ function renderCensus(){
     +'<div class="cz-x'+(czFold.b?' shut':'')+'"><div><div class="cz-tks">'+TK.map(r=>czTokCard(r,tkW)).join('')+'</div></div></div></div>';
   const ck=[...(C.checks||[]), ...(C.repChecks||[])], nOk=ck.filter(c=>c.st==='ok').length, nLook=ck.filter(c=>c.st==='look').length, nNa=ck.filter(c=>c.st==='na').length;
   const age=(Date.now()-C.t)/36e5;
-  const bar='<div class="cz-bar"><div class="cz-seg" role="group" aria-label="Compare"><button type="button" data-cz="win" data-v="w" aria-pressed="'+(czWin==='w')+'">THIS WEEK vs LAST</button><button type="button" data-cz="win" data-v="d" aria-pressed="'+(czWin==='d')+'">YESTERDAY vs 7-DAY AVG</button>'+(C.repTrusted?'<button type="button" data-cz="win" data-v="m" aria-pressed="'+(czWin==='m')+'">THIS MONTH vs LAST</button>':'')+'</div>'
+  const bar='<div class="cz-bar"><div class="cz-seg" role="group" aria-label="Compare"><button type="button" data-cz="win" data-v="w" aria-pressed="'+(czWin==='w')+'">THIS WEEK vs LAST</button><button type="button" data-cz="win" data-v="d" aria-pressed="'+(czWin==='d')+'">'+czDayBtn()+'</button>'+(C.repTrusted?'<button type="button" data-cz="win" data-v="m" aria-pressed="'+(czWin==='m')+'">THIS MONTH vs LAST</button>':'')+'</div>'
     +'<span class="cz-age'+(age>30?' old':'')+'">census '+new Date(C.t).toLocaleString('en-GB',{timeZone:TZ,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})+'</span>'
     +'<button type="button" class="cz-stat'+(nLook?' look':'')+'" data-cz="checks" title="Open the checks">'+(nLook?'! <b>'+nLook+'</b> to look at · ':'✓ ')+'<b>'+nOk+'</b> checks agree'+(nNa?' · '+nNa+' not readable':'')+'</button></div>';
   const g='<div class="cz-sec"><div class="cz-sh"><span class="k">POOL BY POOL</span><span class="d">the detail: one line per pool, what moved it, biggest cause first</span><button type="button" class="cz-fold" data-cz="fold" data-v="g" aria-expanded="'+!czFold.g+'">'+(czFold.g?'SHOW ▸':'HIDE ▾')+'</button></div>'
