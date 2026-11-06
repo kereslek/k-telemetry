@@ -205,6 +205,18 @@ try{
   }
   /* The page's token maths on made-up records, the shape that once put a sole LP at 54%: pools whose
      records start on different days, and a pool not yours carrying most of the trading. */
+  /* MARKET vs YOUR POOLS: the strip sits right above the playbook, its three tiles drawn, every
+     correlation between −1 and 1, and the hourly records it reads arriving (counts only). */
+  try{ const mk=await pg.evaluate(()=>{ const p=document.querySelector('[data-panel="mkt"]'); if(!p||typeof mkData!=='function') return null;
+      const D=mkData(), C=mkCorr(D,'7'), C30=mkCorr(D,'30'), rs=[...C.rows,...C30.rows].map(r=>r.r).filter(r=>r!=null);
+      return {above:p.nextElementSibling&&p.nextElementSibling.dataset.panel==='playbook', tiles:p.querySelectorAll('.mk-t').length, ok:D.ok,
+        px:D.ok?Object.values(D.M.px).filter(a=>a.some(x=>x!=null)).length:0, keys:D.ok?Object.keys(D.M.px).length:0, pools:D.pools.length,
+        drift24:D.drift.slice(-25,-1).filter(x=>x!=null).length, fee24:D.fee.slice(-25,-1).filter(x=>x!=null).length, feeH:C30.have, gas24:D.gas.g.slice(-25,-1).filter(x=>x!=null).length,
+        rOk:rs.every(r=>r>=-1.0001&&r<=1.0001), nR:rs.length, bRows:p.querySelectorAll('.mk-dr').length}; });
+    const ok=mk&&mk.above&&mk.tiles===3&&mk.ok&&mk.rOk&&mk.px===mk.keys&&mk.drift24>=20&&mk.gas24>=20;
+    (mk&&mk.above&&mk.tiles===3?(ok?OK:WARN):FAIL)('MARKET vs YOUR POOLS: '+(!mk?'strip MISSING':(mk.above?'right above the playbook':'NOT above the playbook')+', '+mk.tiles+' of 3 tiles'
+      +(mk.ok?'; hourly prices for '+mk.px+' of '+mk.keys+' token(s), '+mk.pools+' pool(s), '+mk.bRows+' drift row(s); last 24 h: drift '+mk.drift24+', gas '+mk.gas24+', fees '+mk.fee24+' of 24 hours; '+mk.feeH+' fee hour(s) in 30 days; '+mk.nR+' correlation(s) '+(mk.rOk?'within ±1':'OUT OF RANGE'):'; hourly prices NOT in the payload yet'))); }
+  catch(e){ WARN('MARKET vs YOUR POOLS: '+String(e.message||e).slice(0,60)); }
   const self=await pg.evaluate(()=>{
     const days=[]; for(let i=0;i<=40;i++) days.push(czDay(i));
     const mk=(id,fee,base,mine)=>{ const vol={}; days.forEach((d,i)=>vol[d]=base*(1+0.6*Math.sin(i*1.7))); return {id,name:id,venue:'Raydium CLMM',fee,lpCut:0.84,real:true,mine,vol,tvl:1000}; };
