@@ -8,7 +8,8 @@ const L=await (await fetch(LIVE+'lock.json?t='+Date.now())).json();
 const BITS=crypto.pbkdf2Sync(PASS, Buffer.from(L.salt,'base64'), L.iter, 64, 'sha256').toString('base64');
 const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:1440,height:900}});
 await ctx.addInitScript(([salt,bits])=>{ try{ localStorage.setItem('lphud:lockKey',JSON.stringify({salt,bits})); }catch(e){} },[L.salt,BITS]);
-const pg=await ctx.newPage(); let errs=0; pg.on('pageerror',()=>errs++);
+const pg=await ctx.newPage(); let errs=0;
+await pg.waitForTimeout(1); pg.on('pageerror',()=>errs++);
 await pg.goto(LIVE+'?audit='+Date.now(),{waitUntil:'domcontentloaded'});
 await pg.waitForFunction(()=>!!document.querySelector('#censusBody .cz-bar'),null,{timeout:90000}).catch(()=>{});
 await pg.waitForTimeout(3000);
@@ -22,11 +23,12 @@ for(const w of ['w','d']){
     const tok=C.tokens.map(T=>{ const t=czToken(T,(C.mine||[]).filter(m=>m.tok===T.key),W), mine=(C.mine||[]).filter(m=>m.tok===T.key&&!m.past), y=W.A[0];
       return {mkt:T.market[y]!=null, mktB:W.B.filter(d=>T.market[d]!=null).length, basis:!!t.basis, pieA:t.A.pie!=null, youA:t.A.you!=null, youB:t.B.you!=null,
         fee:mine.filter(M=>M.fees&&M.fees[y]!=null).length, share:mine.filter(M=>M.share&&M.share[y]).length, rep:mine.filter(M=>M.rep&&M.rep[y]&&M.rep[y].cov>=0.99).length, n:mine.length}; });
-    return {pressed:btn.getAttribute('aria-pressed')==='true', ageH:Math.round((Date.now()-C.t)/36e5), yIsLast:W.A[0]===new Date(Date.now()-864e5).toISOString().slice(0,10),
+    const on=document.querySelector('#censusBody [data-cz="win"][data-v="'+w+'"]');
+    return {pressed:!!on&&on.getAttribute('aria-pressed')==='true', namesYday:czIsY?czIsY():null, ageH:Math.round((Date.now()-C.t)/36e5), yIsLast:W.A[0]===new Date(Date.now()-864e5).toISOString().slice(0,10),
       censusHasY:new Date(C.t).toISOString().slice(0,10)>W.A[0], cards, rowsDash:rows.filter(Boolean).length, rows:rows.length, tok}; }, w);
   if(!r){ console.log(w+': no switch'); continue; }
   console.log('== '+(w==='d'?'YESTERDAY vs 7-DAY AVG':'THIS WEEK vs LAST')+' ==');
-  console.log('switch on: '+yn(r.pressed)+' · census '+r.ageH+' h old · census written after yesterday ended: '+yn(r.censusHasY));
+  console.log('switch on: '+yn(r.pressed)+(w==='d'?' · ends on yesterday: '+yn(r.namesYday)+' (else on the census’s last whole day, named)':'')+' · census '+r.ageH+' h old · census written after yesterday ended: '+yn(r.censusHasY));
   console.log('token cards, figures showing — : '+r.cards.map(c=>c[0]+' of '+c[1]).join(', ')+' · pool lines with — : '+r.rowsDash+' of '+r.rows);
   r.tok.forEach((t,i)=>console.log('token '+(i+1)+': market has the newest day '+yn(t.mkt)+', older days '+t.mktB+' · comparison source found '+yn(t.basis)+' · LPs’ fees newest '+yn(t.pieA)+' · yours newest '+yn(t.youA)+' older '+yn(t.youB)
     +' · of '+t.n+' pool(s) with the newest day: fee counters '+t.fee+', share '+t.share+', replay '+t.rep));
