@@ -4216,8 +4216,9 @@ const main=async()=>{
       if(need.length){
         const last=k=>{ const hs=Object.keys(MH.px[k]||{}).map(Number); return hs.length?Math.max(...hs):keep-H1; };
         let asked=0, got=0; const gotK=new Set();
-        for(let i=0;i<need.length;i+=8){ const ks=need.slice(i,i+8); let from=Math.min(...ks.map(last))+H1;
-          for(let g=0; from<=nowH && g<6; g++){ const span=Math.min(168, Math.floor((nowH-from)/H1)+1);
+        for(let i=0;i<need.length;i+=4){ const ks=need.slice(i,i+4); let from=Math.min(...ks.map(last))+H1;
+          // DefiLlama serves at most 500 points a request, counted over every coin asked for
+          for(let g=0; from<=nowH && g<12; g++){ const span=Math.min(Math.floor(480/ks.length), Math.floor((nowH-from)/H1)+1);
             try{ asked++; const j=await getJson('https://coins.llama.fi/chart/'+ks.join(',')+'?start='+Math.floor(from/1000)+'&span='+span+'&period=1h&searchWidth=1200',20000);
               for(const k of ks){ const ps=j&&j.coins&&j.coins[k]&&j.coins[k].prices; if(!Array.isArray(ps)) continue; const o=MH.px[k]=MH.px[k]||{};
                 for(const x of ps){ const h=Math.round(x.timestamp*1000/H1)*H1; if(x.price>0&&h>=keep&&h<=nowH){ o[h]=+(+x.price).toPrecision(6); got++; gotK.add(k); } } }
