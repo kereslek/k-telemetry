@@ -137,8 +137,11 @@ for(const [id] of POOLS){ const c=cache.pools[id];
     for(const x of ol.sigs) if(!cache.tx[x.signature]&&!x.err) need.add(x.signature);
     if(ol.sigs.length){ c.oldest=ol.sigs[ol.sigs.length-1].signature; c.oldestT=(ol.sigs[ol.sigs.length-1].blockTime||0)*1000; } if(ol.reached) c.complete=true; } }
 const needL=[...need];
-await mapLimit(needL, KEYED.length?6:2, async sig=>{ const tx=await srpc('getTransaction',[sig,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
-  if(!tx){ stats.txFail++; return; } const r=recOf(tx); if(!r){ stats.txFail++; return; } stats.txRead++; cache.tx[sig]=r; });
+const readTx=async sig=>{ const tx=await srpc('getTransaction',[sig,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
+  if(!tx) return false; const r=recOf(tx); if(!r) return false; stats.txRead++; cache.tx[sig]=r; return true; };
+await mapLimit(needL, KEYED.length?4:2, readTx);
+/* the node turns a busy caller away: what it would not serve is asked again, one at a time and unhurried */
+for(const sig of needL.filter(s=>!cache.tx[s])){ if(over(5*60e3)) break; if(!(await readTx(sig))) stats.txFail++; await sleep(150); }
 // a transaction that could not be read is asked for again next run: the pools' cursors stay where the reads reached
 for(const s of Object.keys(cache.tx)) if(cache.tx[s].t<FROM-D) delete cache.tx[s];
 cache.retry=needL.filter(s=>!cache.tx[s]).slice(0,20000);
