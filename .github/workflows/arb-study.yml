@@ -24,7 +24,10 @@ jobs:
         with: { node-version: 22 }
       - name: Restore the sealed cache
         uses: actions/cache/restore@v4
-        with: { path: .arbcache, key: arb-cache-${{ github.run_id }}, restore-keys: arb-cache- }
+        with:
+          path: .arbcache
+          key: arb-cache-${{ github.run_id }}
+          restore-keys: arb-cache-
       - name: Study
         run: node scripts/arb-study.mjs
         env:
@@ -35,7 +38,9 @@ jobs:
       - name: Keep the sealed cache
         if: always()
         uses: actions/cache/save@v4
-        with: { path: .arbcache, key: arb-cache-${{ github.run_id }} }
+        with:
+          path: .arbcache
+          key: arb-cache-${{ github.run_id }}
       - name: Commit
         run: |
           git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
