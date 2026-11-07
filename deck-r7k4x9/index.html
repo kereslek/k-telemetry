@@ -2623,9 +2623,13 @@ async function loadAccess(){
   renderAccess();
   if(!accGreeted){ accGreeted=true;
     const seen=store.get('accSeenAt',0), since=accData.ev.filter(e=>e.t>seen && e.sid!==ACC.sid);
-    const fails=since.filter(e=>e.type==='fail'), fresh=since.filter(e=>e.fresh && e.did!==ACC.did);
+    /* New devices are counted once each, never per visit, and the daily audit's headless browsers are
+       not devices: every audit run is a fresh browser, and counting them once read "87 new devices". */
+    const human=e=>!(e.dev&&e.dev.bot==='1'), fails=since.filter(e=>e.type==='fail'&&human(e));
+    const fresh=[...new Map(since.filter(e=>e.fresh&&e.did&&e.did!==ACC.did&&human(e)).map(e=>[e.did,e])).values()];
     if(seen && (fails.length||fresh.length)){
-      const m=(fails.length?fails.length+' wrong passphrase attempt'+(fails.length>1?'s':''):'')+(fails.length&&fresh.length?' and ':'')+(fresh.length?fresh.length+' new device'+(fresh.length>1?'s':''):'')+' since your last visit — see ACCESS.';
+      const who=fresh.slice(0,2).map(e=>accDev(e.dev,e.did,accNames())+(e.loc?' · '+accWhere(e.loc):'')).join('; ');
+      const m=(fails.length?fails.length+' wrong passphrase attempt'+(fails.length>1?'s':''):'')+(fails.length&&fresh.length?' and ':'')+(fresh.length?fresh.length+' new device'+(fresh.length>1?'s':'')+' signed in ('+who+(fresh.length>2?' and '+(fresh.length-2)+' more':'')+')':'')+' since your last visit — see ACCESS.';
       log('warning',m); toast(m,'warn');
     } else {
       const prev=accData.ev.find(e=>(e.type==='login'||e.type==='resume') && e.sid!==ACC.sid && !(e.dev&&e.dev.bot==='1'));
@@ -2744,7 +2748,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.39';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.40';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -4391,7 +4395,7 @@ const RN=(()=>{
     const onS=()=>{ if(scrollY>240) close(); };
     w.querySelector('.rw-x').addEventListener('click',close);
     addEventListener('scroll',onS,{passive:true});
-    setTimeout(close, 10000);
+    setTimeout(close, 20000);   // twenty seconds: ten was gone before the figures under it had finished rolling
   }
   if(!off){
     /* every open lands at the top; a link to a place on the page still goes there */
