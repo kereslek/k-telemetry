@@ -42,10 +42,14 @@ const stats={pools:0, sigsNew:0, txRead:0, txFail:0, txKept:0, swaps:0, mkt:{sol
 /* ---------- Solana ---------- */
 const KEYED=(process.env.SOL_RPC_URL||'').split(',').map(s=>s.trim()).filter(Boolean);
 const SRPC=[...KEYED,'https://api.mainnet-beta.solana.com'];
+/* why the last call failed, by kind only (no address or signature): for the public log */
+let lastErr='';
+const errKind=m=>String(m||'').replace(/[1-9A-HJ-NP-Za-km-z]{30,}/g,'…').replace(/https?:\/\/\S+/g,'node').slice(0,70);
 async function srpc(method,params){
-  for(const u of SRPC){ for(let k=0;k<5;k++){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,30000);
+  for(const [ui,u] of SRPC.entries()){ for(let k=0;k<5;k++){ const r=await j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,30000);
       if(r&&r.result!==undefined&&!r.error) return r.result;
-      const msg=String(r?.error?.message||''); if(r&&!/too many|rate|429|busy/i.test(msg)) break;
+      const msg=String(r?.error?.message||''); lastErr=(ui<KEYED.length?'private node: ':'public node: ')+(r?(msg?errKind(msg):'answered with nothing'):'no answer');
+      if(r&&!/too many|rate|429|busy/i.test(msg)) break;
       await sleep(800*2**k); } }
   return undefined; }
 const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -126,7 +130,7 @@ stats.pools=POOLS.size;
 const need=new Set((cache.retry||[]).filter(s=>!cache.tx[s]));   // what the last run listed but could not read
 for(const [id] of POOLS){ const c=cache.pools[id];
   const nw=await sigsOf(id, c.newest||null, null, FROM); stats.sigsNew+=nw.sigs.length;
-  for(const x of nw.sigs) if(!cache.tx[x.signature]&&!x.err) need.add(x.signature);
+  for(const x of nw.sigs) if(!cache.tx[x.signature]&&!x.err){ need.add(x.signature); (cache.retryT=cache.retryT||{})[x.signature]=x.blockTime||0; }
   /* A listing is contiguous from the newest down. A first listing that ran out of time still leaves both ends
      known (the rest is read back from its oldest next run); a later one that did not reach the last run's newest
      leaves a hole, so the newest is not moved and the next run lists that stretch again. */
@@ -134,17 +138,19 @@ for(const [id] of POOLS){ const c=cache.pools[id];
     if(first){ c.oldest=nw.sigs[nw.sigs.length-1].signature; c.oldestT=(nw.sigs[nw.sigs.length-1].blockTime||0)*1000; if(nw.reached) c.complete=true; } }
   if(!nw.sigs.length&&!c.newest&&nw.reached) c.complete=true;
   if(!c.complete&&c.oldest&&!over(10*60e3)){ const ol=await sigsOf(id, null, c.oldest, FROM); stats.sigsNew+=ol.sigs.length;
-    for(const x of ol.sigs) if(!cache.tx[x.signature]&&!x.err) need.add(x.signature);
+    for(const x of ol.sigs) if(!cache.tx[x.signature]&&!x.err){ need.add(x.signature); (cache.retryT=cache.retryT||{})[x.signature]=x.blockTime||0; }
     if(ol.sigs.length){ c.oldest=ol.sigs[ol.sigs.length-1].signature; c.oldestT=(ol.sigs[ol.sigs.length-1].blockTime||0)*1000; } if(ol.reached) c.complete=true; } }
 const needL=[...need];
-const readTx=async sig=>{ const tx=await srpc('getTransaction',[sig,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
-  if(!tx) return false; const r=recOf(tx); if(!r) return false; stats.txRead++; cache.tx[sig]=r; return true; };
+const failKinds={};
+const readTx=async sig=>{ lastErr=''; const tx=await srpc('getTransaction',[sig,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
+  if(!tx){ const k=tx===null?'the node has no such transaction (null)':(lastErr||'unknown'); failKinds[k]=(failKinds[k]||0)+1; return false; } const r=recOf(tx); if(!r) return false; stats.txRead++; cache.tx[sig]=r; return true; };
 await mapLimit(needL, KEYED.length?4:2, readTx);
 /* the node turns a busy caller away: what it would not serve is asked again, one at a time and unhurried */
 for(const sig of needL.filter(s=>!cache.tx[s])){ if(over(5*60e3)) break; if(!(await readTx(sig))) stats.txFail++; await sleep(150); }
 // a transaction that could not be read is asked for again next run: the pools' cursors stay where the reads reached
 for(const s of Object.keys(cache.tx)) if(cache.tx[s].t<FROM-D) delete cache.tx[s];
 cache.retry=needL.filter(s=>!cache.tx[s]).slice(0,20000);
+{ const keep=new Set(cache.retry); for(const k of Object.keys(cache.retryT||{})) if(!keep.has(k)) delete cache.retryT[k]; }
 await marketMinutes(cache);
 fs.mkdirSync(CACHE_DIR,{recursive:true}); writeJ(CACHE, cache);
 const missing=needL.filter(s=>!cache.tx[s]).length;
@@ -385,3 +391,6 @@ console.log('  what-ifs computed: copy '+sMimic.length+' set(s), correct '+sSelf
 console.log('  checks: '+cnt('ok')+' agree, '+cnt('look')+' to look at, '+cnt('na')+' not comparable');
 checks.forEach((c,i)=>console.log('    '+String(i+1).padStart(2)+'. '+(c.st==='ok'?'ok  ':c.st==='look'?'LOOK':'n/a ')+' '+c.t.replace(/ · .*$/,'')));
 for(const n of report.notes) console.log('  note: '+n);
+if(Object.keys(failKinds).length){ console.log('  reads that failed, by why:'); for(const [k,n] of Object.entries(failKinds).sort((a,b)=>b[1]-a[1])) console.log('    '+n+' × '+k); }
+if(cache.retry.length){ const byDay={}; for(const sg of cache.retry){ const t=(cache.retryT||{})[sg]; const d=t?new Date(t*1000).toISOString().slice(0,10):'date unknown'; byDay[d]=(byDay[d]||0)+1; }
+  console.log('  still unread, by day: '+Object.entries(byDay).sort().map(([d,n])=>d+' '+n).join(' · ')); }
