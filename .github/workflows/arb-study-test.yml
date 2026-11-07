@@ -1,0 +1,19 @@
+# The arbitrage study's maths, and the whole study run offline on a made-up world (no secrets, no network).
+name: arb-study-test
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/arb-*.mjs', 'scripts/lock.mjs', 'scripts/bridge-links.mjs', '.github/workflows/arb-study-test.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node --test scripts/arb-core.test.mjs
+      - run: node scripts/arb-study.sim.mjs

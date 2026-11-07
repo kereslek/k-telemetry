@@ -205,6 +205,14 @@ try{
   }
   /* The page's token maths on made-up records, the shape that once put a sole LP at 54%: pools whose
      records start on different days, and a pool not yours carrying most of the trading. */
+  /* ARBITRAGE STUDY: the panel draws the sealed study, the study is fresh and whole, and its own checks agree (counts only) */
+  try{ const ab=await pg.evaluate(async()=>{ const p=document.querySelector('[data-panel="arb"]'); if(!p) return null; p.classList.remove('collapsed'); if(typeof renderArb==='function') renderArb();
+      for(let i=0;i<40&&state.arb===undefined;i++) await new Promise(r=>setTimeout(r,250)); const R=state.arb;
+      return R?{drawn:!!p.querySelector('.ab-lead'), ageH:Math.round((Date.now()-R.t)/36e5), complete:!!R.read.complete, trades:R.totals.trades, ok:R.checks.filter(c=>c.st==='ok').length, look:R.checks.filter(c=>c.st==='look').length, n:R.checks.length, pairs:R.scenarios.self.length}:{none:true, drawn:!!p.querySelector('.cz-empty')}; });
+    if(!ab) FAIL('ARBITRAGE STUDY: panel MISSING');
+    else if(ab.none) WARN('ARBITRAGE STUDY: no study published yet (the panel says so: '+(ab.drawn?'yes':'NO')+')');
+    else ((ab.drawn&&ab.ageH<=30&&ab.complete&&!ab.look)?OK:WARN)('ARBITRAGE STUDY: drawn '+(ab.drawn?'yes':'NO')+' · '+ab.ageH+' h old · window read whole: '+(ab.complete?'yes':'not yet')+' · '+ab.trades+' trades · checks '+ab.ok+' agree, '+ab.look+' to look at, of '+ab.n+' · '+ab.pairs+' pool pair(s) studied'); }
+  catch(e){ WARN('ARBITRAGE STUDY: '+String(e.message||e).slice(0,60)); }
   /* MARKET vs YOUR POOLS: the strip sits right above the playbook, its three tiles drawn, every
      correlation between −1 and 1, and the hourly records it reads arriving (counts only). */
   try{ const mk=await pg.evaluate(()=>{ const p=document.querySelector('[data-panel="mkt"]'); if(!p||typeof mkData!=='function') return null;

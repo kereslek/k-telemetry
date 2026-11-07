@@ -1670,6 +1670,36 @@
 .tile .v .apr30-v{white-space:nowrap}
 .tile .v .apr30-k{font-size:9.5px;letter-spacing:.12em;color:var(--text-muted,#8a9bb0)}
   /* ---------- WHY YOUR FEES MOVED (the pool census) ---------- */
+  /* ARBITRAGE STUDY */
+  .ab-lead{font-size:13px;line-height:1.6;color:var(--text-secondary);margin:2px 0 10px} .ab-lead b{color:var(--text-primary)}
+  .ab-warn{font-size:11.5px;color:var(--cz-amber);margin:0 0 10px}
+  .ab-panel .ab-up,.ab-panel b.ab-up{color:var(--cz-up)} .ab-panel .ab-dn,.ab-panel b.ab-dn{color:var(--cz-dn)} .ab-mute{color:var(--text-muted)}
+  .ab-panel .cz-tile .v.ab-up{color:var(--cz-up)} .ab-panel .cz-tile .v.ab-dn{color:var(--cz-dn)}
+  .ab-chip{display:inline-block;font:700 8.5px/1 var(--mono);letter-spacing:.1em;padding:3px 5px;border-radius:3px;border:1px solid var(--line);color:var(--text-secondary);margin-right:4px;vertical-align:1px}
+  .ab-chip.ab-bot{border-color:rgba(255,107,107,.45);color:#ff9b9b} .ab-chip.ab-ppl{border-color:rgba(61,220,132,.4);color:#7fe8ad} .ab-chip.ab-you{border-color:rgba(250,178,25,.5);color:var(--cz-amber)}
+  .ab-chip.ab-br{border-color:rgba(164,147,255,.5);color:#c5bbff} .ab-chip.ab-mk{color:var(--text-muted)}
+  .ab-who{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .ab-wr{display:grid;grid-template-columns:104px minmax(0,190px) 1fr 82px;gap:8px;align-items:center;font-size:11px}
+  .ab-wn{color:var(--text-muted);font-family:var(--mono);font-size:10.5px}
+  .ab-bar{position:relative;height:8px;background:linear-gradient(90deg,transparent 49.6%,var(--line) 49.6%,var(--line) 50.4%,transparent 50.4%)}
+  .ab-bar i{position:absolute;top:0;bottom:0;border-radius:2px} .ab-bar i.up{background:var(--cz-up)} .ab-bar i.dn{background:var(--cz-dn)}
+  .ab-wv{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  @media(max-width:620px){ .ab-wr{grid-template-columns:96px 1fr 76px} .ab-wn{display:none} }
+  .ab-note{font-size:11px;color:var(--text-muted);line-height:1.5;margin:6px 0 2px}
+  .ab-bots{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:8px;margin-top:8px}
+  .ab-bc{border:1px solid var(--line-soft);padding:8px 10px;background:var(--panel)}
+  .ab-bh{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;margin-bottom:6px} .ab-bm{margin-left:auto;font-weight:700;font-size:13px}
+  .ab-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:10.5px} .ab-kv span:nth-child(odd){color:var(--text-muted)} .ab-kv span:nth-child(even){color:var(--text-primary);text-align:right}
+  .ab-h4{font:600 11px var(--mono);letter-spacing:.08em;color:var(--text-primary);margin:14px 0 4px}
+  .ab-h5{font:500 11px var(--mono);color:var(--text-secondary);margin:10px 0 0} .ab-h5 small{color:var(--text-muted);font-size:9.5px}
+  .ab-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:11px;color:var(--text-muted);margin:8px 0 2px}
+  .ab-panel .cz-t tr.ab-best td{background:rgba(61,220,132,.07)}
+  .ab-panel .cz-t td.lp small{display:block;color:var(--text-muted);font-size:9.5px;margin-top:2px}
+  .ab-comb{display:flex;flex-direction:column;gap:4px;max-width:520px;margin-top:6px;font-size:12px}
+  .ab-comb>div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line-soft);padding:4px 0} .ab-comb b{font-family:var(--mono)}
+  .ab-comb .ab-tot{border-top:1px solid var(--line);font-weight:600} .ab-comb .ab-tot b{font-size:15px}
+  .ab-ul{margin:8px 0 0 18px;font-size:11.5px;color:var(--text-secondary);line-height:1.6}
+  .ab-panel a{color:var(--accent);text-decoration:none} .ab-panel a:hover{text-decoration:underline}
   .cz-panel{--cz-dn:#ff6b6b;--cz-up:#3ddc84;--cz-you:#2fd3ea;--cz-pool:#2a3c52;--cz-pool-hi:#4f6a86;--cz-amber:#fab219;--cz-new:#a493ff}
   .cz-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-bottom:12px}
   .cz-seg{display:flex;gap:4px;flex-wrap:wrap}
@@ -2145,6 +2175,12 @@
       <div class="cb"></div>
       <div class="phead"><span class="drag-dots">⠿</span><span class="t">WHY YOUR FEES MOVED</span><span class="hint" id="censusHint"></span><button class="collapse-btn">▾</button></div>
       <div class="pbody" id="censusBody"></div>
+    </section>
+
+    <section class="panel cz-panel ab-panel" data-panel="arb" draggable="true">
+      <div class="cb"></div>
+      <div class="phead"><span class="drag-dots">⠿</span><span class="t">ARBITRAGE STUDY · 28 DAYS</span><span class="hint" id="arbHint"></span><button class="collapse-btn">▾</button></div>
+      <div class="pbody" id="arbBody"></div>
     </section>
 
     <section class="panel" data-panel="telemetry" draggable="true">
@@ -2748,7 +2784,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.40';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.41';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -4748,7 +4784,7 @@ function renderAll(){
   assignColors(); assignPools();
   /* each panel on its own: one that throws on unexpected data used to stop every panel after it,
      silently (new wallets holding USDT on Tron blanked the fee pulse and the token exposure) */
-  for(const f of [renderHeader, renderTiles, renderActions, renderMomentum, renderCensus, renderIdle, renderNfts, renderSeismo, renderFeePulse, renderRank, renderFlow, renderOutlook, renderArch, renderCosmos, renderOps, renderGlobal, renderRadar, renderCompare, renderMatrix, renderSpark, renderTruth, renderMkt, renderPlaybook, renderCards, renderTokens, renderConcentration, renderCash]){
+  for(const f of [renderHeader, renderTiles, renderActions, renderMomentum, renderCensus, renderArb, renderIdle, renderNfts, renderSeismo, renderFeePulse, renderRank, renderFlow, renderOutlook, renderArch, renderCosmos, renderOps, renderGlobal, renderRadar, renderCompare, renderMatrix, renderSpark, renderTruth, renderMkt, renderPlaybook, renderCards, renderTokens, renderConcentration, renderCash]){
     try{ f(); }catch(e){ console.error(f.name, e); try{ log('warning', f.name+' could not render: '+esc(String(e&&e.message||e).slice(0,120))); }catch(_){} }
   }
   if(!$('#quickNav').children.length) buildQuickNav();
@@ -8460,6 +8496,119 @@ $('#moBackTile')?.addEventListener('click',()=>{ try{ scrollTo({top:0,behavior:m
    days one tap below it; every pool of the token; and the checks. */
 let czJust=null; const czKey=C=>C.t+'|'+(state.replay?state.replay.t:0)+'|'+czWin+'|'+czTok+'|'+JSON.stringify(czFold)+'|'+[...czOpenSet].sort().join(',');
 let czWin=store.get('czWin','w'), czTok=store.get('czTok',0), czFold=store.get('czFold2',{g:1,e:1,f:1}), czOpenSet=new Set(store.get('czOpen',[]));
+/* ================= ARBITRAGE STUDY =================
+   Step 1 of the arbitrage plan, measure only: 28 days of your CPOOL pools read back from Solana
+   (scripts/arb-study.mjs, daily, sealed). Every trade valued at the exchanges' price of its minute:
+   what the trader made, what the pool's LPs made, and your share. Who trades your pools; the bots,
+   profiled; every gap between your pools and against the market; and the what-ifs: copying the bots,
+   closing gaps ourselves, selling across sibling pools, and the three together. */
+let abW=store.get('abW',1), abTx=store.get('abTx',1), abFold=store.get('abFold',{gaps:1,days:1,checks:1,method:1});
+function loadArb(){
+  const slug=activeProfile()?.slug||'main';
+  if(state._abAsk||(state.arb!==undefined&&state.arbSlug===slug&&Date.now()-(state._abAt||0)<30*60e3)) return;
+  state._abAsk=true;
+  lfetch('arb-'+slug+'.json?nc='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(j=>{ state.arb=j&&j.v===1&&Array.isArray(j.pools)?j:null; })
+    .finally(()=>{ state.arbSlug=slug; state._abAsk=false; state._abAt=Date.now(); try{ renderArb(); }catch(e){ console.error('renderArb',e); } });
+}
+const abS=v=>v==null||!isFinite(v)?'—':(v<0?'−':v>0?'+':'')+czK(Math.abs(v));
+const abC=v=>v==null||!isFinite(v)?'':v<-0.005?'ab-dn':v>0.005?'ab-up':'';
+const abP=(x,d=1)=>x==null||!isFinite(x)?'—':(x*100).toFixed(d).replace(/\.0$/,'')+'%';
+const abWho=a=>a?'<a href="https://solscan.io/account/'+encodeURIComponent(a)+'" target="_blank" rel="noopener noreferrer">'+esc(a.slice(0,4)+'…'+a.slice(-4))+'</a>':'—';
+const AB_CLS={you:['YOU','ab-you'], atomic:['ATOMIC BOT','ab-bot'], market:['MARKET BOT','ab-bot'], bridge:['BRIDGE','ab-br'], person:['PEOPLE','ab-ppl'], 'market move':['MARKET MOVED','ab-mk']};
+const abChip=c=>{ const x=AB_CLS[c]||[String(c||'?').toUpperCase(),'']; return '<span class="ab-chip '+x[1]+'">'+x[0]+'</span>'; };
+const abWhen=t=>t?new Date(t).toLocaleString('en-GB',{timeZone:TZ,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+const abDur=s=>s==null?'still open':s<90?Math.round(s)+' s':s<5400?Math.round(s/60)+' min':s<172800?(s/3600).toFixed(1)+' h':Math.round(s/86400)+' d';
+function renderArb(){
+  const host=$('#arbBody'); if(!host) return;
+  loadArb();
+  const R=state.arb, hint=$('#arbHint');
+  if(R===undefined){ if(!host.dataset.k) host.innerHTML='<div class="cz-empty">Reading the study…</div>'; return; }
+  if(R===null){ host.dataset.k='none'; host.innerHTML='<div class="cz-empty">The study has not run yet. It reads 28 days of your pools back from the chain once a day; the first full read may take a run or two.</div>'; if(hint) hint.textContent=''; return; }
+  const key=R.t+'|'+abW+'|'+abTx+'|'+JSON.stringify(abFold)+'|'+(host.clientWidth>700?1:0); if(host.dataset.k===key) return; host.dataset.k=key;
+  const T=R.totals, C=R.classes, G=R.scenarios.grid, poolBy=new Map(R.pools.map(p=>[p.id,p]));
+  const pn=(id,name,fee)=>{ const same=R.pools.filter(p=>p.name===name&&p.fee===fee).length>1; return esc(name)+' '+abP(fee,2).replace(/\.?0+%$/,'%')+(same?' <small>'+esc(String(id).slice(0,4))+'</small>':''); };
+  const botLp=(C.atomic?.uLp||0)+(C.market?.uLp||0), pplLp=C.person?.uLp||0, CB=R.scenarios.combined;
+  const fold=(k,label,desc,body)=>'<div class="cz-sec"><div class="cz-sh"><span class="k">'+label+'</span><span class="d">'+desc+'</span><button type="button" class="cz-fold" data-ab="fold" data-v="'+k+'" aria-expanded="'+!abFold[k]+'">'+(abFold[k]?'SHOW ▸':'HIDE ▾')+'</button></div><div class="cz-x'+(abFold[k]?' shut':'')+'"><div>'+body+'</div></div></div>';
+  // the verdict
+  const parts=CB.parts.filter(p=>Math.abs(p.gain)>=0.5);
+  const lead='<p class="ab-lead">Over the last <b>'+R.days+' days</b>, '+T.trades.toLocaleString('en-US')+' trades went through your pools. People paid you <b class="ab-up">'+abS(pplLp)+'</b> as LP; bots cost you <b class="ab-dn">'+abS(botLp)+'</b> (and kept '+czK(T.botTake)+' for themselves). '
+    +(CB.total>0?'Following the plan would have added about <b class="ab-up">'+abS(CB.total)+'</b> — '+czK(CB.perMonth)+' a month: '+parts.map(p=>esc(p.name)+' '+abS(p.gain)).join(' · ')+'.':'None of the what-ifs would have paid over this window.')+'</p>'
+    +(!R.read.complete?'<p class="ab-warn">Still reading back: the window is not whole yet ('+R.read.txWindow.toLocaleString('en-US')+' transactions so far). Each run reads further.</p>':'');
+  const tiles='<div class="cz-tiles">'+[['YOUR FEES',czK(T.uFee),'from '+T.trades.toLocaleString('en-US')+' trades'],['YOUR RESULT AS LP',abS(T.uLp),'fees and price, at the market',abC(T.uLp)],
+    ['WHAT BOTS COST YOU',abS(botLp),'they paid you '+czK(T.botFee)+' in fees',abC(botLp)],['THE PLAN WOULD ADD',abS(CB.total),czK(CB.perMonth)+' a month',abC(CB.total)]]
+    .map(t=>'<div class="cz-tile"><span class="l">'+t[0]+'</span><span class="v '+(t[3]||'')+'">'+t[1]+'</span><span class="s">'+t[2]+'</span></div>').join('')+'</div>';
+  // who trades
+  const order=['person','market','atomic','bridge','you'].filter(k=>C[k]);
+  const mx=Math.max(1,...order.map(k=>Math.abs(C[k].uLp)));
+  const who='<div class="ab-who">'+order.map(k=>{ const c=C[k], w=Math.min(50,Math.abs(c.uLp)/mx*50);
+      return '<div class="ab-wr">'+abChip(k)+'<span class="ab-wn">'+c.n.toLocaleString('en-US')+' trades · '+c.traders+' trader'+(c.traders===1?'':'s')+'</span>'
+        +'<span class="ab-bar"><i class="'+(c.uLp<0?'dn':'up')+'" style="'+(c.uLp<0?'right:50%':'left:50%')+';width:'+w.toFixed(1)+'%"></i></span><span class="ab-wv '+abC(c.uLp)+'">'+abS(c.uLp)+'</span></div>'; }).join('')
+    +'<p class="ab-note">Your result as LP from each kind of trader, valued at the exchanges’ price: fees in, less what the price you traded at gave away. People pay you; bots trade only when the pool is off the market, and take more than their fees.</p></div>'
+    +'<div class="cz-t"><table><tr><th>TRADER</th><th>KIND</th><th>TRADES</th><th>VOLUME</th><th>FEES TO YOU</th><th>YOUR RESULT</th><th>THEIR RESULT</th></tr>'
+    +R.traders.slice(0,12).map(a=>'<tr><td>'+abWho(a.a)+'</td><td>'+abChip(a.cls)+'</td><td>'+a.n+'</td><td>'+czK(a.usd)+'</td><td>'+czK(a.uFee)+'</td><td class="'+abC(a.uLp)+'">'+abS(a.uLp)+'</td><td class="'+abC(a.pnl)+'">'+abS(a.pnl)+'</td></tr>').join('')+'</table></div>';
+  // the bots
+  const bots=R.bots.length?'<div class="ab-bots">'+R.bots.slice(0,6).map(b=>'<div class="ab-bc"><div class="ab-bh">'+abChip(b.cls)+abWho(b.a)+'<span class="ab-bm '+abC(b.pnl)+'">'+abS(b.pnl)+'</span></div>'
+      +'<div class="ab-kv"><span>trades</span><span>'+b.n+' in '+b.days+' d · '+abP(b.win,0)+' won</span><span>per trade</span><span>'+abS(b.per)+' · size '+czK(b.size)+'</span>'
+      +'<span>fires at a gap of</span><span>'+abP(b.gap)+' typical · '+abP(b.gap90)+' at most (9 in 10)</span><span>reacts</span><span>'+(b.dt==null?'—':abDur(b.dt))+' after the pool last moved</span>'
+      +'<span>toward the market</span><span>'+abP(b.toward,0)+' of its trades</span><span>block-builder tip</span><span>'+(b.jito?abP(b.jito,0)+' of trades · '+b.tip+' SOL':'none')+'</span>'
+      +'<span>through</span><span>'+(b.pg||[]).map(x=>esc(x.p)).join(', ')+'</span><span>busiest hours</span><span>'+(b.hours||[]).map(h=>String(h.h).padStart(2,'0')+':00').join(', ')+'</span>'
+      +'<span>cost you as LP</span><span class="'+abC(b.uLp)+'">'+abS(b.uLp)+' (fees to you '+czK(b.uFee)+')</span></div></div>').join('')+'</div>'
+    :'<p class="ab-note">No bot traded your pools more than once in the window.</p>';
+  // gaps
+  const sumRow=(s,th)=>'<tr><td>'+abP(+th,0)+'</td><td>'+s.n+'</td><td>'+(s.dur==null?'—':abDur(s.dur))+'</td><td>'+Object.entries(s.open||{}).sort((a,b)=>b[1]-a[1]).map(([k,n])=>abChip(k)+n).join(' ')+'</td><td>'+Object.entries(s.close||{}).sort((a,b)=>b[1]-a[1]).map(([k,n])=>abChip(k)+n).join(' ')+'</td><td>'+czK(s.take)+'</td><td class="'+abC(s.cost)+'">'+abS(s.cost)+'</td></tr>';
+  const gapT=(sum,top)=>'<div class="cz-t"><table><tr><th>GAP OVER</th><th>TIMES</th><th>LASTED</th><th>OPENED BY</th><th>CLOSED BY</th><th>BOTS KEPT</th><th>COST YOU</th></tr>'+R.gaps.th.map(th=>sumRow(sum[th],th)).join('')+'</table></div>'
+    +(top&&top.length?'<div class="cz-t"><table><tr><th>BIGGEST COSTS</th><th>PEAK</th><th>LASTED</th><th>OPENED BY</th><th>CLOSED BY</th><th>BOTS KEPT</th><th>COST YOU</th></tr>'
+      +top.slice(0,8).map(e=>'<tr><td>'+abWhen(e.t0)+'</td><td>'+abP(e.peak)+'</td><td>'+abDur(e.dur)+'</td><td>'+abChip(e.open.cls)+(e.open.a?' '+abWho(e.open.a):'')+'</td><td>'+(e.close?abChip(e.close.cls)+(e.close.a?' '+abWho(e.close.a):''):'—')+'</td><td>'+czK(e.take)+'</td><td class="'+abC(e.cost)+'">'+abS(e.cost)+'</td></tr>').join('')+'</table></div>':'');
+  const gaps=R.gaps.pairs.map(p=>'<h5 class="ab-h5">'+pn(p.a,p.an,p.af)+' ↔ '+pn(p.b,p.bn,p.bf)+(p.cross?' <small>quoted in different tokens: compared in dollars</small>':'')+'</h5>'+gapT(p.sum,p.top)).join('')
+    +R.gaps.market.map(m=>'<h5 class="ab-h5">'+pn(m.p,m.n,m.f)+' against the exchanges</h5>'+gapT(m.sum,m.top)).join('');
+  // what-ifs
+  const wv=G.w[abW], tv=G.tx[abTx];
+  const ctl='<div class="ab-ctl"><span>assume we win</span><div class="cz-seg">'+G.w.map((w,i)=>'<button type="button" data-ab="w" data-v="'+i+'" aria-pressed="'+(i===abW)+'">'+abP(w,0)+'</button>').join('')+'</div>'
+    +'<span>of the races, paying</span><div class="cz-seg">'+G.tx.map((x,i)=>'<button type="button" data-ab="tx" data-v="'+i+'" aria-pressed="'+(i===abTx)+'">'+x+' SOL</button>').join('')+'</div><span>a trade</span></div>';
+  const mim='<div class="cz-t"><table><tr><th>COPY</th><th>TRADES</th><th>SIZE</th><th>WE WOULD GAIN</th></tr>'+R.scenarios.mimic.map(m=>{ const r=m.grid[abW].rows[abTx];
+      return '<tr><td class="lp">'+esc(m.name)+(m.k==='market'?'<small> turning the CPOOL or SOL back costs '+abP(G.cx[1])+' of size; at '+abP(G.cx[0])+': '+abS(m.cx[0].gain)+', at '+abP(G.cx[2])+': '+abS(m.cx[2].gain)+' (70% won)</small>':'')+'</td><td>'+r.n+'</td><td>'+czK(r.notional)+'</td><td class="'+abC(r.gain)+'">'+abS(r.gain)+'</td></tr>'; }).join('')+'</table></div>'
+    +'<p class="ab-note">A trade of a bot’s, made by us instead, gains what that bot made, give or take the difference in costs: on your own pools the fee mostly comes back to you. It means being faster than the bot, so the win rate matters.</p>';
+  const self=R.scenarios.self.map(p=>{ const rows=p.ths.map(x=>({th:x.th, ...x.grid[abW].rows[abTx]})), best=rows.slice().sort((a,b)=>b.gain-a.gain)[0];
+      return '<h5 class="ab-h5">'+pn(p.a,p.an,p.af)+' ↔ '+pn(p.b,p.bn,p.bf)+(best&&best.gain>0?' · <span class="ab-up">best at '+abP(best.th,1)+'</span>':' · <span class="ab-mute">does not pay</span>')+'</h5>'
+        +'<div class="cz-t"><table><tr><th>CORRECT AT</th><th>CORRECTIONS</th><th>THEIR COST</th><th>BOT TRADES PREVENTED</th><th>SAVED</th><th>NET</th></tr>'
+        +rows.map(r=>'<tr'+(best&&r===best&&r.gain>0?' class="ab-best"':'')+'><td>'+abP(r.th,1)+'</td><td>'+r.n.toLocaleString('en-US')+'</td><td class="'+abC(r.ours)+'">'+abS(r.ours)+'</td><td>'+r.prevented+'</td><td class="'+abC(r.saved)+'">'+abS(r.saved)+'</td><td class="'+abC(r.gain)+'"><b>'+abS(r.gain)+'</b></td></tr>').join('')+'</table></div>'; }).join('')
+    +'<p class="ab-note">A correction is our own trade between two of your pools, sized for what it costs us (the fee less the part that comes back to you), at the pools’ real depth. It costs mostly the protocol’s 16% of the fee; it pays when it stops a bot that would have traded one pool against the other. Booked event by event against what really happened.</p>';
+  const S=R.scenarios.sales;
+  const sales='<p class="ab-lead">'+(S.n?'Your '+S.n+' sale'+(S.n===1?'':'s')+' into one pool, split across its sibling pool'+(S.n===1?'':'s')+' instead, would have fetched <b class="'+abC(S.gain)+'">'+abS(S.gain)+'</b> more.':'No sale of yours had a sibling pool to split across.')
+    +(S.opened?' Your sales opened '+S.opened+' gap'+(S.opened===1?'':'s')+' of 2% or more between your pools; bots then cost you <b class="ab-dn">'+abS(-S.opTake)+'</b> closing them.':'')+'</p>';
+  const comb='<div class="ab-comb">'+CB.parts.map(p=>'<div><span>'+esc(p.name)+'</span><b class="'+abC(p.gain)+'">'+abS(p.gain)+'</b></div>').join('')+'<div class="ab-tot"><span>together, over '+R.days+' days</span><b class="'+abC(CB.total)+'">'+abS(CB.total)+'</b></div><div><span>a month at this pace</span><b class="'+abC(CB.perMonth)+'">'+abS(CB.perMonth)+'</b></div></div>'
+    +'<p class="ab-note">At a middle setting: corrections where they pay (pair by pair: '+CB.pairs.map(p=>p.an+' ↔ '+p.bn+' '+(p.th==null?'none':'at '+abP(p.th,1))).map(esc).join('; ')+'), won 70% of the time, 0.0003 SOL a trade; copying the other bots won 40%.</p>';
+  // day by day
+  const D=R.daysOut, dmx=Math.max(1,...D.map(d=>Math.max(Math.abs(d.uLp-d.botLp),Math.abs(d.botLp),Math.abs(d.save))));
+  const dW=Math.max(300,Math.min(900,(host.clientWidth||640)-20)), dH=120, bw=dW/D.length, y0=dH/2, yv=v=>y0-v/dmx*(dH/2-8);
+  let svg=''; D.forEach((d,i)=>{ const x=i*bw+bw*.15, w=bw*.7, pp=d.uLp-d.botLp;
+    if(pp) svg+='<rect x="'+x.toFixed(1)+'" y="'+Math.min(yv(pp),y0).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.abs(yv(pp)-y0).toFixed(1)+'" fill="var(--cz-up)" opacity=".55"/>';
+    if(d.botLp) svg+='<rect x="'+x.toFixed(1)+'" y="'+Math.min(yv(d.botLp),y0).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.abs(yv(d.botLp)-y0).toFixed(1)+'" fill="var(--cz-dn)" opacity=".7"/>';
+    if(d.save) svg+='<circle cx="'+(x+w/2).toFixed(1)+'" cy="'+yv(d.save).toFixed(1)+'" r="2.6" fill="var(--cz-you)"/>'; });
+  svg+='<line x1="0" x2="'+dW+'" y1="'+y0+'" y2="'+y0+'" stroke="var(--grid)"/>';
+  const days='<div class="cz-chart"><svg viewBox="0 0 '+dW+' '+dH+'" role="img" aria-label="Your result as LP each day from people and from bots, and what the plan would have saved">'+svg+'</svg></div>'
+    +'<div class="cz-leg"><span><i style="background:var(--cz-up);opacity:.55"></i>people and the rest</span><span><i style="background:var(--cz-dn)"></i>bots</span><span><i style="background:var(--cz-you);border-radius:50%"></i>the plan would have saved</span></div>'
+    +'<div class="cz-t"><table><tr><th>DAY</th><th>TRADES</th><th>YOUR FEES</th><th>YOUR RESULT</th><th>BOTS COST YOU</th><th>GAPS (PAIRS · MARKET)</th><th>PLAN</th></tr>'
+    +D.slice(-10).reverse().map(d=>'<tr><td>'+czDate(d.d)+'</td><td>'+d.swaps+'</td><td>'+czK(d.uFee)+'</td><td class="'+abC(d.uLp)+'">'+abS(d.uLp)+'</td><td class="'+abC(d.botLp)+'">'+abS(d.botLp)+'</td><td>'+d.gapsOwn+' · '+d.gapsMkt+'</td><td class="'+abC(d.save)+'">'+abS(d.save)+'</td></tr>').join('')+'</table></div>';
+  const ck=R.checks.map(c=>'<div class="cz-ck"><span class="st '+c.st+'">'+(c.st==='ok'?'✓':c.st==='look'?'!':'·')+'</span><b>'+esc(c.t)+'</b><span class="x">'+esc(c.x)+'</span></div>').join('')+(R.notes||[]).map(n=>'<p class="ab-note">'+esc(n)+'</p>').join('');
+  const method='<ul class="ab-ul"><li>Every transaction in your Raydium CPOOL pools for '+R.days+' days, read from Solana; each swap’s amounts and the pool’s price after it come from the pool’s own record.</li>'
+    +'<li>Valued at the market of the minute: SOL from Coinbase, CPOOL as the median of MEXC, KuCoin and Bitget. Your share of each pool’s LP fees per day comes from the swap replay.</li>'
+    +'<li>A trader’s result is its balances’ change in the transaction, at the same prices (tips and fees included). Bots are recognised by what they do: a round trip in one transaction, or trades that take the pool back to the market.</li>'
+    +'<li>The what-ifs hold the pools’ liquidity constant inside a trade and treat each correction on its own; a bot that would have traded later is not modelled. Win rate and cost are assumptions you can change above.</li>'
+    +'<li>Measure only: nothing trades. Read daily; '+abWhen(R.t)+' this time.</li></ul>';
+  const ws='<div class="cz-sec"><div class="cz-sh"><span class="k">WHAT-IFS</span><span class="d">what an arbitrage bot of ours would have done with the same 28 days</span></div>'+ctl
+    +'<h4 class="ab-h4">1 · Copy the bots</h4>'+mim+'<h4 class="ab-h4">2 · Close the gaps between your pools ourselves</h4>'+self+'<h4 class="ab-h4">3 · Sell across sibling pools</h4>'+sales+'<h4 class="ab-h4">4 · The plan: all three where they pay</h4>'+comb+'</div>';
+  host.innerHTML=lead+tiles+'<div class="cz-sec"><div class="cz-sh"><span class="k">WHO TRADES YOUR POOLS</span><span class="d">and what each kind did for you</span></div>'+who+'</div>'
+    +'<div class="cz-sec"><div class="cz-sh"><span class="k">THE BOTS</span><span class="d">what sets them off, how fast, what they make</span></div>'+bots+'</div>'
+    +ws+fold('gaps','GAPS','every time your pools drifted apart, or away from the exchanges',gaps)
+    +fold('days','DAY BY DAY','the shadow bot’s log',days)+fold('checks','CHECKS','what the study was checked against',ck)+fold('method','HOW IT IS WORKED OUT','method and limits',method);
+  if(hint) hint.textContent=T.trades.toLocaleString('en-US')+' trades · checks '+R.checks.filter(c=>c.st==='ok').length+'/'+R.checks.length;
+}
+document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('#arbBody [data-ab]'); if(!b) return; const k=b.dataset.ab, v=b.dataset.v;
+  if(k==='w'){ abW=+v; store.set('abW',abW); } else if(k==='tx'){ abTx=+v; store.set('abTx',abTx); } else if(k==='fold'){ abFold={...abFold,[v]:!abFold[v]}; store.set('abFold',abFold); }
+  renderArb(); });
+
 function loadCensus(){
   const slug=activeProfile()?.slug||'main';
   if(state._czAsk || (state.census!==undefined && state.censusSlug===slug && Date.now()-(state._czAt||0)<30*60e3)) return;

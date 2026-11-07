@@ -1,0 +1,45 @@
+# ARBITRAGE STUDY: 28 days of the deck's CPOOL pools read back from Solana, every trade valued at the
+# exchanges' price, the bots profiled and the what-ifs booked (step 1 of the plan: measure only, nothing
+# trades). Once a day it carries on from its sealed cache; the first run is started by hand and may take
+# a few runs to read the whole window. Written sealed; the log is public: counts, ratios, pass/fail only.
+name: arb-study
+on:
+  workflow_dispatch:
+    inputs:
+      days: { description: 'days to study (28)', required: false, default: '28' }
+      budget: { description: 'minutes this run may spend reading (150)', required: false, default: '150' }
+  schedule:
+    - cron: '17 5 * * *'   # 06:17 Budapest (CET)
+permissions:
+  contents: write
+concurrency: { group: arb-study, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Restore the sealed cache
+        uses: actions/cache/restore@v4
+        with: { path: .arbcache, key: arb-cache-${{ github.run_id }}, restore-keys: arb-cache- }
+      - name: Study
+        run: node scripts/arb-study.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          DAYS: ${{ github.event.inputs.days || '28' }}
+          BUDGET_MIN: ${{ github.event_name == 'schedule' && '60' || github.event.inputs.budget || '150' }}
+      - name: Keep the sealed cache
+        if: always()
+        uses: actions/cache/save@v4
+        with: { path: .arbcache, key: arb-cache-${{ github.run_id }} }
+      - name: Commit
+        run: |
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          f=deck-r7k4x9/arb-main.json; [ -f "$f" ] || exit 0
+          git add -- "$f"; git diff --cached --quiet && exit 0
+          git commit -q -m "arbitrage study $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1
