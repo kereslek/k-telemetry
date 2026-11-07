@@ -1,0 +1,18 @@
+# Which exchanges serve one-minute candles 28 days back (CPOOL, LCX, SOL)? Market data only, no secrets.
+name: arb-sources-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/arb-sources-probe.mjs', '.github/workflows/arb-sources-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node scripts/arb-sources-probe.mjs
