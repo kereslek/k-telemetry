@@ -139,3 +139,35 @@ export function splitSell(pools, sts, cpoolIn, n=60){
     if(best<0) break; got[best]+=br.out; used[best]+=step; st[best].sp=br.sp; }
   return {got, used, sts:st}; }
 export { qDec, cDec };
+
+/* ---------- robustness ---------- */
+/* A correction capped so neither pool's price moves more than `cap` (log): past a few percent the pool's
+   liquidity is no longer the one read at the price, so a larger simulated trade would claim depth that may
+   not be there. Returns the trade scaled down (or as it was), and whether it was capped. */
+export function capArb(A, stA, B, stB, r, cap, conv=null){
+  if(!r) return null;
+  const k2=conv?10**(qDec(A)-qDec(B))*conv.rate*(1-conv.cx):1;
+  const move=qin=>{ const b=buyCpool(A,stA,qin,A.fee), s=sellCpool(B,stB,b.out,B.fee);
+    return {b, s, m:Math.max(Math.abs(2*Math.log(b.sp/stA.sp)), Math.abs(2*Math.log(s.sp/stB.sp)))}; };
+  const full=move(r.qin); if(full.m<=cap) return {...r, capped:false};
+  let lo=0, hi=r.qin; for(let i=0;i<60;i++){ const mid=(lo+hi)/2; if(move(mid).m<=cap) lo=mid; else hi=mid; }
+  const x=move(lo); if(!(lo>0)||!(x.s.out*k2>lo)) return null;   // capped down to nothing worth doing
+  return {qin:lo, cpool:x.b.out, qout:x.s.out, spA:x.b.sp, spB:x.s.sp, cx:r.cx, capped:true}; }
+/* A seeded random source, so a resampled range is the same every run on the same data. */
+export const rng=seed=>{ let s=seed>>>0||1; return ()=>{ s^=s<<13; s>>>=0; s^=s>>>17; s^=s<<5; s>>>=0; return s/4294967296; }; };
+/* The 28 days resampled with replacement: the range a total over that many days could have come out at.
+   vals: one number per day. Returns the 10th, 50th and 90th percentiles of the total, the share of draws
+   above zero, and the total without its single best day. */
+export function bootstrap(vals, n=1000, seed=7){
+  const R=rng(seed), k=vals.length; if(!k) return {p10:null, p50:null, p90:null, pPos:null, noBest:null};
+  const tot=[]; for(let i=0;i<n;i++){ let s=0; for(let j=0;j<k;j++) s+=vals[Math.floor(R()*k)]; tot.push(s); }
+  tot.sort((a,b)=>a-b); const at=p=>tot[Math.min(n-1,Math.max(0,Math.round(p*(n-1))))];
+  return {p10:at(0.1), p50:at(0.5), p90:at(0.9), pPos:tot.filter(x=>x>0).length/n, noBest:vals.reduce((a,b)=>a+b,0)-Math.max(...vals)}; }
+/* The verdict on one part of the plan, by fixed rules (never by eye):
+   ROBUST — it paid in the half it was not tuned on, at least four times in five resampled months, and it
+   still pays at the slower reaction time; PROMISING — it paid over the whole window and either in the untuned
+   half or in three resampled months in five; else NOT PROVEN. */
+export function verdict({full, oos, pPos, slow}){
+  if(full>0&&oos>0&&pPos>=0.8&&(slow==null||slow>0)) return 'robust';
+  if(full>0&&(oos>0||pPos>=0.6)) return 'promising';
+  return 'not proven'; }

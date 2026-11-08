@@ -19,7 +19,7 @@ import { initLock, readJ, writeJ } from './lock.mjs';
 import { hashOf } from './bridge-links.mjs';
 import fs from 'node:fs';
 import { D, MIN, SOL_MINT, STABLES, JITO_TIPS, PROGRAMS, PLUMBING, med, q, sum, r2, r4, day, legValue, cpoolPx, txFlags, classify, CLASS_NAME,
-  episodes, bestArb, bookArb, splitSell, sellCpool, qDec, cDec } from './arb-core.mjs';
+  episodes, bestArb, bookArb, splitSell, sellCpool, qDec, cDec, capArb, bootstrap, verdict } from './arb-core.mjs';
 
 const OUT='deck-r7k4x9', SLUG=process.env.PROFILE||'main', DAYS=+process.env.DAYS||28, START=Date.now(), BUDGET=(+process.env.BUDGET_MIN||50)*60e3;
 const CACHE_DIR=process.env.CACHE_DIR||'.arbcache', CACHE=CACHE_DIR+'/arb-cache-'+SLUG+'.json', FILE='arb-'+SLUG+'.json';
@@ -170,6 +170,10 @@ function shareOf(id,d){ const k=id+'|'+d; if(shareMemo.has(k)) return shareMemo.
 const bridgeParties=new Set(); for(const c of Object.values(bc?.bridgeLinks?.[SLUG]?.cx||{})) for(const h of c?.ps||[]) bridgeParties.add(h);
 const usdOf=(mint,amt,t)=>mint===SOL_MINT?amt*solAt(t):mint===CPOOL?amt*cpAt(t):STABLES.has(mint)?amt:null;
 
+/* what the LPs made from a leg, valued at the market some minutes after it: a trade that keeps costing LPs as the
+   price settles was informed; one whose cost fades was noise (the measure market makers call a markout) */
+const HZ=[0,1,5,30];
+const lpsAt=(P,l,t)=>{ const c=cpAt(t), qq=quoteUsd(P,t); if(!(c>0&&qq>0)) return null; const pin=l.inC?c:qq, pout=l.inC?qq:c; return l.aIn*(1-P.fee*(1-P.lpCut))*pin-l.aOut*pout; };
 const recs=Object.entries(cache.tx).map(([sig,r])=>({sig,...r})).filter(r=>!r.err&&r.t>=FROM&&r.legs.some(l=>POOLS.has(l.pl))).sort((a,b)=>a.t-b.t||a.sl-b.sl);
 const st=new Map();   // each pool's state after its last swap: {sp, L, t}
 const trades=[], ownSnaps=new Map();
@@ -185,7 +189,9 @@ for(const r of recs){
     if(!v) continue;
     const cpIn=!!l.z===P.c0, cpAmt=(cpIn?-1:1)*Number(cpIn?(l.z?l.a0:l.a1):(l.z?l.a1:l.a0))/10**cDec(P);
     const s=shareOf(P.id,d), pxPre=pre?cpoolPx(P,pre.sp)*quoteUsd(P,t):null, pxPost=cpoolPx(P,sp)*quoteUsd(P,t);
-    legs.push({pool:P.id, side:cpIn?'sell':'buy', cpoolAmt:cpAmt, usd:v.vin, fees:v.fees, lps:v.lps, prot:v.prot, trader:v.trader, s, uFee:s*v.fees, uLp:s*v.lps,
+    const inRaw=Number(l.z?l.a0:l.a1), outRaw=Number(l.z?l.a1:l.a0), aIn=inRaw/10**(l.z?P.d0:P.d1), aOut=outRaw/10**(l.z?P.d1:P.d0);
+    const uLpH=HZ.map(h=>{ const v_=lpsAt(P,{aIn,aOut,inC:cpIn},t+h*MIN); return v_==null?null:s*v_; });
+    legs.push({pool:P.id, side:cpIn?'sell':'buy', cpoolAmt:cpAmt, usd:v.vin, uLpH, fees:v.fees, lps:v.lps, prot:v.prot, trader:v.trader, s, uFee:s*v.fees, uLp:s*v.lps,
       gapPre:pxPre?Math.log(pxPre/cU):null, gapPost:Math.log(pxPost/cU), dtPrev:pre?(t-pre.t)/1000:null}); stats.swaps++; }
   if(!legs.length) continue;
   // the trader's result: its balances, valued at the minute (a token the study cannot price leaves it unknown)
@@ -218,6 +224,8 @@ const poolOut=mine.map(P=>{ const ls=trades.flatMap(x=>x.legs.filter(l=>l.pool==
     read:{complete:!!cache.pools[P.id]?.complete, oldest:cache.pools[P.id]?.oldestT||null}}; });
 const classes={}; for(const x of trades) for(const l of x.legs){ const c=classes[x.cls]||(classes[x.cls]={n:0, traders:new Set(), usd:0, fees:0, uFee:0, uLp:0, pnl:0}); c.n++; c.traders.add(x.a); c.usd+=l.usd; c.fees+=l.fees; c.uFee+=l.uFee; c.uLp+=l.uLp; }
 for(const x of trades) if(x.pnl!=null) classes[x.cls].pnl+=x.pnl;
+const classesH={}; for(const x of trades) for(const l of x.legs){ const c=classesH[x.cls]||(classesH[x.cls]=HZ.map(()=>0)); l.uLpH.forEach((v,i)=>{ if(v!=null) c[i]+=v; }); }
+for(const k of Object.keys(classesH)) classesH[k]=classesH[k].map(r2);
 for(const [k,c] of Object.entries(classes)) classes[k]={name:CLASS_NAME[k], n:c.n, traders:c.traders.size, usd:r2(c.usd), fees:r2(c.fees), uFee:r2(c.uFee), uLp:r2(c.uLp), pnl:r2(c.pnl)};
 
 /* ---------- gap episodes ---------- */
@@ -266,60 +274,85 @@ const bots=[...TR.values()].filter(a=>BOT.has(a.cls)&&a.n>=2).sort((a,b)=>b.pnl-
     size:r2(med(a.sizes)), gap:r4(med(a.gaps)), gap90:r4(q(a.gaps,0.9)), dt:r2(med(a.dts)), tip:a.tips.length?+med(a.tips).toPrecision(3):0, jito:r4(a.jito/a.n), atomic:r4(a.atomic/a.n),
     uFee:r2(a.uFee), uLp:r2(a.uLp), toward:r4(a.legsN?a.toward/a.legsN:null), hours:topH, pg:pgs}; });
 
-/* ---------- the what-ifs ---------- */
-const W=[1,0.7,0.4], TXC=[0.00005,0.0003,0.001], CX=[0.0025,0.005,0.01];
+/* ---------- the what-ifs ----------
+   Every what-if is booked with the same valuation, and made as hard to flatter as the chain allows:
+   · RACES are read from the chain, not assumed: a bot of ours reacts LAT seconds after the moment it could
+     act; where a bot in history acted sooner (within that time of the same move), that trade is lost to it.
+   · COSTS are cheap, what the bots in your pools actually pay (network fee and tip), or dear.
+   · THRESHOLDS are tuned on the first half of the window and judged on the second, which they never saw.
+   · RANGES come from resampling the window's days; and every total is shown without its single best day.
+   · a correction never moves a pool more than 5%: past that the depth read at the price may not be there. */
+const LAT=[0.4,2,10,60], CX=[0.0025,0.005,0.01], MID={lat:1, tx:1}, CAP=0.05;
 const solMed=med(Object.values(M.sol))||150;
-/* 1 · do what the bots did: their trades in your pools, made by us. What a replaced trade gains is what
-   its bot made, give or take the difference in costs (arb-core's identity); a trade that was not atomic
-   leaves us holding CPOOL or SOL to be turned back at some cost (cx, on its size). */
-function mimic(sel, w, txSol, cx){ let g=0, n=0, notional=0;
-  for(const x of trades){ if(!sel(x)||x.pnl==null) continue; n++; const our=txSol*solMed, size=sum(x.legs.map(l=>l.usd));
-    g+=x.pnl+x.cost-our-(x.atomic?0:cx*size); notional+=size; }
-  return {n:Math.round(n*w), gain:r2(g*w), notional:r2(notional*w)}; }
+const botCostSol=med(trades.filter(x=>BOT.has(x.cls)).map(x=>{ const s=solAt(x.t); return s>0?x.cost/s:null; }))||0.0003;
+const TXC=[0.00005, +Number(botCostSol).toPrecision(2), 0.001];
+const HALF=FROM+Math.floor(DAYS/2)*D, H1=[FROM,HALF], H2=[HALF,NOW+D];
+const inWin=(t,w)=>!w||(t>=w[0]&&t<w[1]);
+const dayList=[]; for(let t=FROM;t<NOW;t+=D) dayList.push(day(t));
+const perVec=per=>dayList.map(d=>per[d]||0);
+const strip=r=>{ const {per,sizes,...o}=r; return o; };
+/* how fast a bot reacted: seconds from the last move of the pool it traded to its trade */
+const reactOf=x=>{ const v=x.legs.map(l=>l.dtPrev).filter(v=>v!=null); return v.length?Math.min(...v):null; };
+/* 1 · do what the bots did: their trades in your pools, made by us, where we would have been there first. What a
+   replaced trade gains is what its bot made, give or take the difference in costs (arb-core's identity); a trade
+   that was not atomic leaves us holding CPOOL or SOL to be turned back at some cost (cx, on its size). */
+function mimic(sel, lat, txSol, cx, w=null){ let g=0, n=0, notional=0, lost=0; const per={}, sizes=[];
+  for(const x of trades){ if(!sel(x)||x.pnl==null||!inWin(x.t,w)) continue;
+    const rt=reactOf(x); if(rt==null||rt<=lat){ lost++; continue; }
+    const our=txSol*(solAt(x.t)||solMed), size=sum(x.legs.map(l=>l.usd)), v=x.pnl+x.cost-our-(x.atomic?0:cx*size);
+    g+=v; n++; notional+=size; sizes.push(size); const d=day(x.t); per[d]=(per[d]||0)+v; }
+  return {lat, tx:txSol, n, lost, gain:r2(g), notional:r2(notional), per, sizes}; }
 const mimicSets=[
   ['own-pair','bots trading one of your pools against another', x=>x.cls==='atomic'&&x.ownPair],
   ['atomic-other','atomic bots trading your pools against other venues', x=>x.cls==='atomic'&&!x.ownPair],
   ['market','market-making bots in your pools', x=>x.cls==='market']];
 if(bots[0]) mimicSets.push(['best','the most profitable bot alone ('+bots[0].a.slice(0,4)+'…)', x=>x.a===bots[0].a]);
-const sMimic=mimicSets.map(([k,name,sel])=>({k, name, grid:W.map(w=>({w, rows:TXC.map(tx=>({tx, ...mimic(sel,w,tx,CX[1])}))})), cx:CX.map(cx=>({cx, ...mimic(sel,0.7,TXC[1],cx)}))}));
+const sMimic=mimicSets.map(([k,name,sel])=>({k, name, grid:LAT.map(lat=>({lat, rows:TXC.map(tx=>strip(mimic(sel,lat,tx,CX[1])))})),
+  cx:CX.map(cx=>({cx, ...strip(mimic(sel,LAT[MID.lat],TXC[MID.tx],cx))}))}));
 /* 2 · close the gaps between your pools ourselves, as soon as one passes θ. Booked as a counterfactual, event by
    event: the gap is carried forward as it would have stood with our corrections in place (each trade moves it by
    as much as it moved it in history), and whenever it passes θ we correct it there — sized for what it costs us
-   (the fee less our share of it) at the pools' real depth, booked at the market — and it falls back to what is
-   left. A bot that traded one of these pools against the other is taken as prevented when the gap, so carried,
-   stood well short of where that bot actually fired; what its trade cost you is then saved. */
+   (the fee less our share of it) at the pools' real depth, capped at a 5% move, booked at the market — and it
+   falls back to what is left. A correction is lost when a bot traded these two pools against each other within
+   our reaction time of that moment. A bot trade is taken as prevented when the gap, so carried, stood well short
+   of where that bot actually fired; what its trade cost you is then saved. Only the days in w are booked. */
 const THS=[0.01,0.015,0.02,0.03,0.05,0.08,0.1];
 const spFor=(P,usd,t)=>{ const qp=usd/quoteUsd(P,t), k=10**(P.d0-P.d1); const raw=P.c0?qp/k:1/(qp*k); return raw>0?Math.sqrt(raw):null; };
-function selfCorrect(th, w, txSol, only=null){ let n=0, ours=0, saved=0, vol=0, prevented=0; const per={};
-  for(const pe of pairEp){ if(only&&pe!==only) continue; const {A,B}=pe, ps=new Set([A.id,B.id]); let gc=null, prevG=null;
-    for(const p of pe.pts){ const dg=prevG==null?0:p.g-prevG, gBefore=prevG; prevG=p.g;
-      if(gc==null){ gc=p.g; continue; }
-      const x=p.by==='market'?null:tradeBy.get(p.by), d=day(p.t);
-      if(x&&x.cls==='atomic'&&x.ownPair&&x.legs.every(l=>ps.has(l.pool))&&gBefore!=null&&Math.abs(gc)<Math.abs(gBefore)-0.02){
-        const c=sum(x.legs.filter(l=>ps.has(l.pool)).map(l=>l.uLp)); saved+=w*(-c); prevented++; per[d]=(per[d]||0)+w*(-c); continue; }
-      gc+=dg; if(Math.abs(gc)<th) continue;
-      // the pools as they would stand: A as it was, B priced so the gap is the carried one
-      const t=p.t, su=solAt(t), cu=cpAt(t); if(!(su>0&&cu>0)) continue;
-      const pa=cpoolPx(A,p.stA.sp)*quoteUsd(A,t), spB=spFor(B,pa*Math.exp(-gc),t); if(!spB||!(p.stA.L>0&&p.stB.L>0)) continue;
-      const stA={sp:p.stA.sp, L:p.stA.L}, stB={sp:spB, L:p.stB.L}, sA=shareOf(A.id,d), sB=shareOf(B.id,d);
-      const cheapA=gc<0, [X,Y,sX,sY,stX,stY]=cheapA?[A,B,sA,sB,stA,stB]:[B,A,sB,sA,stB,stA];
-      const conv=X.qk===Y.qk?null:{rate:quoteUsd(Y,t)/quoteUsd(X,t), cx:0.0005};
-      const r=bestArb(X,stX,Y,stY,X.fee*(1-X.lpCut*sX),Y.fee*(1-Y.lpCut*sY),conv); if(!r) continue;
-      const b=bookArb(X,Y,r,mOf(X,t),sX,sY,txSol*su,mOf(Y,t)); if(!b) continue;
-      ours+=w*b.total; vol+=w*b.notional; n++; per[d]=(per[d]||0)+w*b.total;
-      const px=cpoolPx(X,r.spA)*quoteUsd(X,t), py=cpoolPx(Y,r.spB)*quoteUsd(Y,t); gc=cheapA?Math.log(px/py):Math.log(py/px); } }
-  return {th, w, tx:txSol, n:Math.round(n*w), prevented:Math.round(prevented*w), gain:r2(ours+saved), ours:r2(ours), saved:r2(saved), vol:r2(vol), per}; }
+function selfCorrect(th, lat, txSol, pe, w=null){ let n=0, ours=0, saved=0, vol=0, prevented=0, lost=0, capped=0; const per={}, sizes=[];
+  const {A,B}=pe, ps=new Set([A.id,B.id]);
+  const isBot=x=>!!x&&x.cls==='atomic'&&x.ownPair&&x.legs.every(l=>ps.has(l.pool));
+  const botT=pe.pts.filter(p=>p.by!=='market'&&isBot(tradeBy.get(p.by))).map(p=>p.t);
+  let gc=null, prevG=null;
+  for(const p of pe.pts){ const dg=prevG==null?0:p.g-prevG, gBefore=prevG; prevG=p.g;
+    if(gc==null){ gc=p.g; continue; }
+    const x=p.by==='market'?null:tradeBy.get(p.by), d=day(p.t), live=inWin(p.t,w);
+    if(live&&isBot(x)&&gBefore!=null&&Math.abs(gc)<Math.abs(gBefore)-0.02){
+      const c=sum(x.legs.filter(l=>ps.has(l.pool)).map(l=>l.uLp)); saved+=-c; prevented++; per[d]=(per[d]||0)-c; continue; }
+    gc+=dg; if(!live||Math.abs(gc)<th) continue;
+    if(botT.some(bt=>bt>p.t&&bt<=p.t+lat*1000)){ lost++; continue; }   // a bot got there first
+    const t=p.t, su=solAt(t), cu=cpAt(t); if(!(su>0&&cu>0)) continue;
+    const pa=cpoolPx(A,p.stA.sp)*quoteUsd(A,t), spB=spFor(B,pa*Math.exp(-gc),t); if(!spB||!(p.stA.L>0&&p.stB.L>0)) continue;
+    const stA={sp:p.stA.sp, L:p.stA.L}, stB={sp:spB, L:p.stB.L}, sA=shareOf(A.id,d), sB=shareOf(B.id,d);
+    const cheapA=gc<0, [X,Y,sX,sY,stX,stY]=cheapA?[A,B,sA,sB,stA,stB]:[B,A,sB,sA,stB,stA];
+    const conv=X.qk===Y.qk?null:{rate:quoteUsd(Y,t)/quoteUsd(X,t), cx:0.0005};
+    const r=capArb(X,stX,Y,stY,bestArb(X,stX,Y,stY,X.fee*(1-X.lpCut*sX),Y.fee*(1-Y.lpCut*sY),conv),CAP,conv); if(!r) continue;
+    const b=bookArb(X,Y,r,mOf(X,t),sX,sY,txSol*su,mOf(Y,t)); if(!b) continue;
+    if(r.capped) capped++;
+    ours+=b.total; vol+=b.notional; sizes.push(b.notional); n++; per[d]=(per[d]||0)+b.total;
+    const px=cpoolPx(X,r.spA)*quoteUsd(X,t), py=cpoolPx(Y,r.spB)*quoteUsd(Y,t); gc=cheapA?Math.log(px/py):Math.log(py/px); }
+  return {th, lat, tx:txSol, n, lost, capped, prevented, gain:r2(ours+saved), ours:r2(ours), saved:r2(saved), vol:r2(vol), per, sizes}; }
 /* pair by pair: corrections pay only where bots were taking money between those two pools; each pair gets its
-   own best threshold, or none */
-const sSelf=pairEp.map(pe=>({a:pe.A.id, b:pe.B.id, an:pe.A.name, bn:pe.B.name, af:pe.A.fee, bf:pe.B.fee, cross:pe.A.qk!==pe.B.qk,
-  ths:THS.map(th=>({th, grid:W.map(w=>({w, rows:TXC.map(tx=>{ const r=selfCorrect(th,w,tx,pe); delete r.per; return r; })}))}))}));
-for(const p of sSelf){ const b=p.ths.map(x=>({th:x.th, g:x.grid[1].rows[1].gain})).sort((x,y)=>y.g-x.g)[0]; p.best=b&&b.g>0?b.th:null; }
+   own best threshold, or none — over the whole window, and tuned on the first half alone to be judged on the second */
+const bestOf=(pe,w)=>{ const b=THS.map(th=>({th, g:selfCorrect(th,LAT[MID.lat],TXC[MID.tx],pe,w).gain})).sort((x,y)=>y.g-x.g)[0]; return b&&b.g>0?b.th:null; };
+const sSelf=pairEp.map(pe=>{ const p={a:pe.A.id, b:pe.B.id, an:pe.A.name, bn:pe.B.name, af:pe.A.fee, bf:pe.B.fee, cross:pe.A.qk!==pe.B.qk,
+    ths:THS.map(th=>({th, grid:LAT.map(lat=>({lat, rows:TXC.map(tx=>strip(selfCorrect(th,lat,tx,pe)))}))}))};
+  p.best=bestOf(pe,null); p.bestH1=bestOf(pe,H1); return p; });
 /* 3 · sell smarter: each sale of yours put through its pool and any sibling of the same quote, split so both
    end at about the same price; booked at the market both ways (your proceeds and your share of each pool's
    LPs' side). Gaps your own sales opened and what the bots then took are counted beside it. */
-function smarterSales(){ let gain=0, n=0, skipped=0, opened=0, opTake=0; const per={};
-  for(const pe of pairEp) for(const e of pe.by[0.02]) if(e.open.cls==='you'){ opened++; opTake+=-e.cost; }
-  for(const x of trades.filter(x=>x.cls==='you')){ const snap=ownSnaps.get(x.id); const sells=x.legs.filter(l=>l.side==='sell'); if(!snap||!sells.length){ skipped++; continue; }
+function smarterSales(w=null){ let gain=0, n=0, skipped=0, opened=0, opTake=0; const per={};
+  for(const pe of pairEp) for(const e of pe.by[0.02]) if(e.open.cls==='you'&&inWin(e.t0,w)){ opened++; opTake+=-e.cost; }
+  for(const x of trades.filter(x=>x.cls==='you'&&inWin(x.t,w))){ const snap=ownSnaps.get(x.id); const sells=x.legs.filter(l=>l.side==='sell'); if(!snap||!sells.length){ skipped++; continue; }
     const P0=POOLS.get(sells[0].pool), sib=mine.filter(P=>P.qk===P0.qk&&snap.get(P.id)); if(sib.length<2){ skipped++; continue; }
     const t=x.t, d=day(t), m=mOf(P0,t), cpIn=-sum(sells.map(l=>l.cpoolAmt));
     const val=(alloc)=>{ let v=0; for(const [P,amt] of alloc){ if(!(amt>0)) continue; const s0=snap.get(P.id); const raw=amt*10**cDec(P); const r=sellCpool(P,s0,raw,P.fee);
@@ -330,20 +363,44 @@ function smarterSales(){ let gain=0, n=0, skipped=0, opened=0, opTake=0; const p
     if(actual==null||alt==null){ skipped++; continue; } const g=alt-actual; gain+=g; n++; per[d]=(per[d]||0)+g; }
   return {n, skipped, gain:r2(gain), opened, opTake:r2(opTake), per}; }
 const sSales=smarterSales();
-/* 4 · the three together, at a middle setting: corrections at the best threshold (70% won, middle cost),
-   smarter sales, and copying the bots the corrections do not already cover (40% won, middle cost) */
-const scs=sSelf.map((p,i)=>p.best!=null?selfCorrect(p.best,0.7,TXC[1],pairEp[i]):null).filter(Boolean);
-const sc={gain:r2(sum(scs.map(x=>x.gain))), per:{}}; for(const x of scs) for(const [d,v] of Object.entries(x.per)) sc.per[d]=(sc.per[d]||0)+v;
-const mOther=mimic(x=>x.cls==='atomic'&&!x.ownPair,0.4,TXC[1],CX[1]), mMkt=mimic(x=>x.cls==='market',0.4,TXC[1],CX[1]);
-const combined={pairs:sSelf.map(p=>({an:p.an, bn:p.bn, af:p.af, bf:p.bf, th:p.best})), parts:[{k:'self', name:'closing gaps between your pools, where it pays', gain:sc.gain}, {k:'sales', name:'selling across sibling pools', gain:sSales.gain},
-  {k:'other', name:'copying atomic bots elsewhere', gain:mOther.gain}, {k:'market', name:'copying market-making bots', gain:mMkt.gain}]};
-combined.total=r2(sum(combined.parts.map(p=>p.gain))); combined.perDay=r2(combined.total/DAYS); combined.perMonth=r2(combined.total/DAYS*30);
+/* 4 · the plan, at a middle setting (we react in 2 s and pay what the bots pay): each part over the whole window,
+   tuned on the first half and judged on the second, its resampled range, without its best day, at the slower
+   10 s reaction; a part joins the plan only where it paid over the whole window */
+const midLat=LAT[MID.lat], midTx=TXC[MID.tx], slowLat=LAT[2];
+const selfRun=(lat,w,useH1)=>{ const per={}, sizes=[]; let gain=0;
+  sSelf.forEach((p,i)=>{ const th=useH1?p.bestH1:p.best; if(th==null) return; const r=selfCorrect(th,lat,midTx,pairEp[i],w);
+    gain+=r.gain; sizes.push(...r.sizes); for(const [d,v] of Object.entries(r.per)) per[d]=(per[d]||0)+v; });
+  return {gain:r2(gain), per, sizes}; };
+const mimOther=x=>x.cls==='atomic'&&!x.ownPair, mimMkt=x=>x.cls==='market';
+const PARTS=[
+  {k:'self', name:'closing gaps between your pools, where it pays', full:()=>selfRun(midLat,null,false), h1:()=>selfRun(midLat,H1,true), h2:()=>selfRun(midLat,H2,true), slow:()=>selfRun(slowLat,null,false)},
+  {k:'sales', name:'selling across sibling pools', full:()=>sSales, h1:()=>smarterSales(H1), h2:()=>smarterSales(H2), slow:()=>null},
+  {k:'other', name:'copying atomic bots elsewhere', full:()=>mimic(mimOther,midLat,midTx,CX[1]), h1:()=>mimic(mimOther,midLat,midTx,CX[1],H1), h2:()=>mimic(mimOther,midLat,midTx,CX[1],H2), slow:()=>mimic(mimOther,slowLat,midTx,CX[1])},
+  {k:'market', name:'copying market-making bots', full:()=>mimic(mimMkt,midLat,midTx,CX[1]), h1:()=>mimic(mimMkt,midLat,midTx,CX[1],H1), h2:()=>mimic(mimMkt,midLat,midTx,CX[1],H2), slow:()=>mimic(mimMkt,slowLat,midTx,CX[1])}];
+const partOut=PARTS.map(P=>{ const f=P.full(), a=P.h1(), b=P.h2(), s=P.slow(), bs=bootstrap(perVec(f.per));
+  const o={k:P.k, name:P.name, gain:r2(f.gain), h1:r2(a.gain), h2:r2(b.gain), slow:s?r2(s.gain):null, p10:r2(bs.p10), p50:r2(bs.p50), p90:r2(bs.p90), pPos:r4(bs.pPos), noBest:r2(bs.noBest), sizes:f.sizes||[], per:f.per};
+  o.verdict=verdict({full:o.gain, oos:o.h2, pPos:o.pPos??0, slow:o.slow}); o.inPlan=o.gain>0; return o; });
+const planPer={}; for(const p of partOut.filter(p=>p.inPlan)) for(const [d,v] of Object.entries(p.per)) planPer[d]=(planPer[d]||0)+v;
+const planBs=bootstrap(perVec(planPer));
+const inP=partOut.filter(p=>p.inPlan);
+const plan={total:r2(sum(inP.map(p=>p.gain))), h1:r2(sum(inP.map(p=>p.h1))), h2:r2(sum(inP.map(p=>p.h2))), slow:r2(sum(inP.map(p=>p.slow??p.gain))),
+  p10:r2(planBs.p10), p50:r2(planBs.p50), p90:r2(planBs.p90), pPos:r4(planBs.pPos), noBest:r2(planBs.noBest)};
+plan.verdict=verdict({full:plan.total, oos:plan.h2, pPos:plan.pPos??0, slow:plan.slow});
+plan.perDay=r2(plan.total/DAYS); plan.perMonth=r2(plan.total/DAYS*30); plan.h2PerMonth=r2(plan.h2/Math.max(1,(NOW-HALF)/D)*30);
+/* what a bot of ours would need: corrections are atomic (SOL in, SOL out in one transaction), so the largest one
+   sets the float; copying market-making bots leaves inventory to carry, about three typical trades of it */
+const selfSizes=partOut.find(p=>p.k==='self')?.sizes||[], mktSizes=partOut.find(p=>p.k==='market'&&p.inPlan)?.sizes||[];
+const capUsd=(selfSizes.length?Math.max(...selfSizes)*1.25:0)+(mktSizes.length?(q(mktSizes,0.95)||0)*3:0);
+const capital={usd:r2(capUsd), sol:capUsd&&solMed?+(capUsd/solMed).toFixed(2):null, roc:capUsd>0?r4(plan.perMonth/capUsd):null};
+const sc={per:partOut.find(p=>p.k==='self')?.per||{}};
+const combined={pairs:sSelf.map(p=>({an:p.an, bn:p.bn, af:p.af, bf:p.bf, th:p.best, thH1:p.bestH1})),
+  parts:partOut.map(({sizes,per,...o})=>o), plan, capital, total:plan.total, perDay:plan.perDay, perMonth:plan.perMonth};
 
 /* ---------- day by day: the shadow bot's log ---------- */
 const days=[]; for(let t=FROM;t<NOW;t+=D){ const d=day(t), xs=trades.filter(x=>day(x.t)===d), ls=xs.flatMap(x=>x.legs.map(l=>({...l,cls:x.cls})));
   const own2=sum(pairEp.map(pe=>pe.by[0.02].filter(e=>day(e.t0)===d).length)), mk3=sum(mktEp.map(me=>me.by[0.03].filter(e=>day(e.t0)===d).length));
   days.push({d, swaps:ls.length, usd:r2(sum(ls.map(l=>l.usd))), uFee:r2(sum(ls.map(l=>l.uFee))), uLp:r2(sum(ls.map(l=>l.uLp))), botLp:r2(sum(ls.filter(l=>BOT.has(l.cls)).map(l=>l.uLp))),
-    take:r2(sum(xs.filter(x=>BOT.has(x.cls)&&x.pnl!=null).map(x=>x.pnl))), gapsOwn:own2, gapsMkt:mk3, save:r2((sc.per[d]||0)+(sSales.per[d]||0)),
+    take:r2(sum(xs.filter(x=>BOT.has(x.cls)&&x.pnl!=null).map(x=>x.pnl))), gapsOwn:own2, gapsMkt:mk3, save:r2(planPer[d]||0),
     read:[...POOLS.keys()].every(id=>cache.pools[id]?.complete||(cache.pools[id]?.oldestT||Infinity)<=t)?1:0}); }
 
 /* ---------- checks ---------- */
@@ -376,7 +433,8 @@ const report={v:1, t:NOW, slug:SLUG, from:FROM, to:NOW, days:DAYS,
   gaps:{th:TH, pairs:pairEp.map(pe=>({a:pe.A.id, b:pe.B.id, an:pe.A.name, bn:pe.B.name, af:pe.A.fee, bf:pe.B.fee, cross:pe.A.qk!==pe.B.qk,
       sum:Object.fromEntries(TH.map(th=>[th,epiSummary(pe.by[th])])), top:keepEp(pe.by[0.02],25)})),
     market:mktEp.map(me=>({p:me.P.id, n:me.P.name, f:me.P.fee, sum:Object.fromEntries(TH.map(th=>[th,epiSummary(me.by[th])])), top:keepEp(me.by[0.03],15)}))},
-  scenarios:{mimic:sMimic, self:sSelf, sales:{...sSales, per:undefined}, combined, grid:{w:W, tx:TXC, cx:CX}, solUsd:r2(solMed)},
+  horizons:{hz:HZ, by:classesH},
+  scenarios:{mimic:sMimic, self:sSelf, sales:{...sSales, per:undefined}, combined, grid:{lat:LAT, tx:TXC, cx:CX, mid:MID, cap:CAP, botCostSol:TXC[1]}, half:HALF, solUsd:r2(solMed)},
   daysOut:days, recent, checks, notes:[...new Set(stats.notes)],
   read:{pools:POOLS.size, txWindow:swapsAll, complete:mine.every(P=>cache.pools[P.id]?.complete), missing}};
 writeJ(OUT+'/'+FILE, report);
@@ -387,6 +445,7 @@ console.log('arbitrage study over '+DAYS+' days from '+day(FROM)+': '+POOLS.size
 console.log('  window covered: '+(report.read.complete?'yes':'not yet')+' · market minutes priced: '+Math.round(cover*100)+'% · traders\' results readable: '+Math.round(pnlOk*100)+'%');
 console.log('  trades in the deck’s pools: '+trades.length+' by '+TR.size+' trader(s) · by class: '+Object.entries(classes).map(([k,c])=>k+' '+c.n).join(', '));
 console.log('  gap episodes at 2%: between pools '+sum(pairEp.map(pe=>pe.by[0.02].length))+', against the market (3%) '+sum(mktEp.map(me=>me.by[0.03].length))+' · bots profiled: '+bots.length);
+console.log('  robustness: reaction times '+LAT.join('/')+' s · tuned on '+day(FROM)+'–'+day(HALF-D)+', judged on '+day(HALF)+' on · 1000 resampled windows · corrections capped at a '+CAP*100+'% move · verdicts: '+partOut.map(p=>p.k+' '+p.verdict).join(', ')+' · plan '+plan.verdict);
 console.log('  what-ifs computed: copy '+sMimic.length+' set(s), correct '+sSelf.length+' pair(s) at '+THS.length+' threshold(s) ('+sSelf.filter(p=>p.best!=null).length+' pair(s) where it pays), sales '+sSales.n+' sale(s) modelled ('+sSales.skipped+' not), combined');
 console.log('  checks: '+cnt('ok')+' agree, '+cnt('look')+' to look at, '+cnt('na')+' not comparable');
 checks.forEach((c,i)=>console.log('    '+String(i+1).padStart(2)+'. '+(c.st==='ok'?'ok  ':c.st==='look'?'LOOK':'n/a ')+' '+c.t.replace(/ · .*$/,'')));
