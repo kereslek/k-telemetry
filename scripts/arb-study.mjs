@@ -142,7 +142,7 @@ for(const [id] of POOLS){ const c=cache.pools[id];
     if(ol.sigs.length){ c.oldest=ol.sigs[ol.sigs.length-1].signature; c.oldestT=(ol.sigs[ol.sigs.length-1].blockTime||0)*1000; } if(ol.reached) c.complete=true; } }
 const needL=[...need];
 const failKinds={};
-const readTx=async sig=>{ lastErr=''; const tx=await srpc('getTransaction',[sig,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
+const readTx=async sig=>{ lastErr=''; const tx=await srpc('getTransaction',[sig,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
   if(!tx){ const k=tx===null?'the node has no such transaction (null)':(lastErr||'unknown'); failKinds[k]=(failKinds[k]||0)+1; return false; } const r=recOf(tx); if(!r) return false; stats.txRead++; cache.tx[sig]=r; return true; };
 await mapLimit(needL, KEYED.length?4:2, readTx);
 /* the node turns a busy caller away: what it would not serve is asked again, one at a time and unhurried */
