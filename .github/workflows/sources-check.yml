@@ -1,0 +1,24 @@
+# Can every data source the deck relies on be read right now? Market data only; the private Solana node is
+# asked one harmless question and never named. Run by hand, and weekly.
+name: sources-check
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/sources-check.mjs', '.github/workflows/sources-check.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '41 8 * * 1'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/sources-check.mjs
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
