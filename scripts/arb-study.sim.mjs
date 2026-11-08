@@ -157,7 +157,21 @@ ok_(R.scenarios.sales.n>0&&R.scenarios.sales.gain>0,'selling across both SOL poo
 const own=R.scenarios.mimic.find(m=>m.k==='own-pair');
 ok_(own&&own.grid[0].rows[0].gain>0&&Math.abs(own.grid[0].rows[0].gain-ab.pnl)/ab.pnl<0.25,'copying the own-pair bot gains about what it made');
 ok_(R.checks.filter(c=>c.st==='look').length===0,'every check agrees ('+R.checks.map(c=>c.st).join(',')+')');
-ok_(R.combined===undefined&&R.scenarios.combined.total>0,'the three together gain');
+ok_(R.combined===undefined&&R.scenarios.combined.total>0,'the plan gains over the whole window');
+/* the robustness the study now carries */
+const G=R.scenarios.grid, CB=R.scenarios.combined, PL=CB.plan;
+console.log('      bot cost read from the chain: '+G.botCostSol+' SOL a trade · reaction times '+G.lat.join('/')+' s');
+const ownLat=own.grid.map(g=>g.rows[1]); console.log('      copying the own-pair bot by reaction time: '+ownLat.map(r=>r.lat+' s → '+r.n+' won, '+r.lost+' lost, '+r.gain).join(' · '));
+ok_(own.grid[0].rows[1].lost===0&&own.grid[1].rows[1].lost>0&&own.grid[1].rows[1].n<own.grid[0].rows[1].n,'races are read from the chain: the planted bot answers your sales within a second, so 0.4 s wins every race and 2 s only the slow ones');
+ok_(ownLat.every((r,i)=>i===0||r.gain<=ownLat[i-1].gain+1e-9),'slower reactions never gain more');
+ok_(sAB.ths.every(x=>x.grid.every((g,i)=>i===0||g.rows[1].gain<=x.grid[i-1].rows[1].gain+0.01)),'the same for corrections, at every threshold');
+ok_(sAB.bestH1!==undefined&&CB.pairs.every(p=>'thH1' in p),'each pair’s threshold is also tuned on the first half alone ('+(sAB.bestH1==null?'none':sAB.bestH1*100+'%')+' for A↔B)');
+ok_(CB.parts.every(p=>typeof p.h1==='number'&&typeof p.h2==='number'),'every part is judged on the half it was not tuned on: '+CB.parts.map(p=>p.k+' '+p.h1+' → '+p.h2).join(' · '));
+ok_(PL.p10<=PL.p50&&PL.p50<=PL.p90&&PL.pPos>=0&&PL.pPos<=1,'the plan’s resampled range: '+PL.p10+' … '+PL.p50+' … '+PL.p90+', above zero '+Math.round(PL.pPos*100)+'% of the time, '+PL.noBest+' without its best day');
+ok_(CB.parts.every(p=>['robust','promising','not proven'].includes(p.verdict))&&['robust','promising','not proven'].includes(PL.verdict),'a verdict for every part: '+CB.parts.map(p=>p.k+' '+p.verdict).join(', ')+' · plan '+PL.verdict);
+ok_(sAB.ths.some(x=>x.grid.some(g=>g.rows.some(r=>r.capped>0))),'corrections are capped at a 5% move where they would go further ('+Math.max(...sAB.ths.flatMap(x=>x.grid.flatMap(g=>g.rows.map(r=>r.capped))))+' at most)');
+ok_(CB.capital.usd>0&&CB.capital.sol>0,'the capital a bot of ours would need: '+CB.capital.sol+' SOL, '+(CB.capital.roc!=null?Math.round(CB.capital.roc*100)+'% a month on it':'—'));
+ok_(R.horizons&&R.horizons.hz.length===4&&R.horizons.by.atomic&&R.horizons.by.atomic.length===4,'what each kind of trader did for you, at the trade and 1, 5 and 30 minutes on');
 ok_(R.daysOut.length>=28&&R.daysOut.every(d=>d.read===1),'a line for every day, every day read');
 console.log((fails?'FAILED ':'passed ')+'· planted: '+JSON.stringify(planted)+' · report '+Math.round(fs.statSync(path.join(OUT,'arb-main.json')).size/1024)+' KB sealed');
 fs.rmSync(DIR,{recursive:true,force:true});

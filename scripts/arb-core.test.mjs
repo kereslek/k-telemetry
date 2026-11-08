@@ -74,3 +74,20 @@ test('pools quoted in different tokens: the same correction through a conversion
   const r=bestArb(A,sA,B,sB,c,c,{rate:1/180, cx:0.0005}); assert.ok(r&&r.cpool>0, 'a trade');
   const b=bookArb(A,B,r,{cpool:0.0189,quote:180},1,1,0.05,{cpool:0.0189,quote:1});
   assert.ok(b.ext>0); near(b.total, -b.prot-0.05-b.ext, 1e-6); });
+
+import { capArb, bootstrap, verdict } from './arb-core.mjs';
+test('a correction is capped so neither pool moves more than the cap, and never grows', ()=>{
+  const A=mk(true), B=mk(false), sA=st(A,1e-4,3e10), sB=st(B,1.3e-4,3e10), c=0.04*0.16;
+  const r=bestArb(A,sA,B,sB,c,c), k=capArb(A,sA,B,sB,r,0.05);
+  assert.ok(k&&k.capped&&k.qin<r.qin);
+  assert.ok(Math.abs(2*Math.log(k.spA/sA.sp))<=0.0501 && Math.abs(2*Math.log(k.spB/sB.sp))<=0.0501);
+  const small=capArb(A,sA,B,sB,r,1); assert.equal(small.capped,false); near(small.qin,r.qin); });
+test('the resampled range brackets the total and is the same every run', ()=>{
+  const v=[3,-1,2,0,5,-2,1,4,0,2,1,-1,3,2], a=bootstrap(v), b=bootstrap(v), tot=v.reduce((s,x)=>s+x,0);
+  assert.ok(a.p10<=a.p50&&a.p50<=a.p90); assert.ok(a.p10<tot&&tot<a.p90); assert.deepEqual(a,b); near(a.noBest,tot-5); });
+test('verdicts follow the rules', ()=>{
+  assert.equal(verdict({full:10,oos:4,pPos:0.85,slow:2}),'robust');
+  assert.equal(verdict({full:10,oos:4,pPos:0.85,slow:-1}),'promising');
+  assert.equal(verdict({full:10,oos:-1,pPos:0.65,slow:2}),'promising');
+  assert.equal(verdict({full:10,oos:-1,pPos:0.5,slow:2}),'not proven');
+  assert.equal(verdict({full:-3,oos:4,pPos:0.9,slow:2}),'not proven'); });
