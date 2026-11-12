@@ -1,0 +1,32 @@
+# Read Clearpool's public announcements and the pages they link to, as plain text. Public pages only;
+# nothing of the deck's is read. Run by hand with the URLs to read.
+name: clearpool-read
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/clearpool-read.mjs', '.github/workflows/clearpool-read.yml']
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: 'Comma-separated URLs'
+        required: false
+        default: 'https://clearpool.medium.com/cpool-clear-swap-migration-guide-8e1d42db59cf'
+      depth:
+        description: '0 = the pages only, 1 = also the pages they link to'
+        required: false
+        default: '1'
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/clearpool-read.mjs
+        env:
+          READ_URLS: ${{ github.event.inputs.urls }}
+          DEPTH: ${{ github.event.inputs.depth || '1' }}
