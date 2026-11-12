@@ -27,6 +27,8 @@ function world(o={}){
         if(sel==='0xb96a277f') return '0x'+pad(W.send);
         if(sel==='0x402f8468') return '0x'+pad(W.recv)+pad('0');
         if(sel==='0x70a08231') return '0x'+W.locked.toString(16).padStart(64,'0');
+        if(sel==='0x8da5cb5b') return '0x'+pad('0x'+'7'.repeat(40));            // the adapter's owner
+        if(sel==='0x587cde1e') return '0x'+pad('0x'+'8'.repeat(40));            // its LayerZero delegate
         throw new Error('unknown call '+sel); }
       if(m==='eth_getTransactionReceipt'){
         if(p[0]===ETX1) return {blockNumber:'0x10', logs:[{address:R.adapter, topics:[TOPIC.sent,G1,'0x'+pad('0xdead')], data:'0x'+pad((30168).toString(16))+pad(AMT.toString(16))+pad(AMT.toString(16))}]};
@@ -92,5 +94,25 @@ r=(await readBridge(world({extraPeerSet:'clear', peer:'0'}),p1)).routes[0];
 ok(r.state==='closed'&&r.hist[r.hist.length-1].open===false&&r.hist[r.hist.length-1].bn===26200000, 'a new PeerSet clearing Solana is added to the history');
 r=(await readBridge(world({peer:'0'}),p1)).routes[0];
 ok(r.hist[r.hist.length-1].open===false&&r.hist[r.hist.length-1].seen, 'a flip with no event yet is noted at the read that saw it');
+/* the migration watch's additions: crossing times, the last 7 days, who controls the bridge, and the
+   Solana peer record's rate limits and fee (none of which may change the state on their own) */
+r=await one({});
+ok(r.dur&&r.dur.in&&r.dur.in.n===1&&r.dur.in.med===60e3&&r.dur.out&&r.dur.out.med===60e3, 'crossing times read each way');
+ok(r.n7&&r.n7.to===1&&r.n7.back===1, 'crossings in the last 7 days counted each way');
+ok(r.ctl&&r.ctl.owner==='0x'+'7'.repeat(40)&&r.ctl.delegate==='0x'+'8'.repeat(40)&&r.ctl.outLimit===null&&Array.isArray(r.warn)&&r.warn.length===0, 'owner and delegate read; no limit, no fee: no warning');
+{ const u64=v=>{ const b=Buffer.alloc(8); b.writeBigUInt64LE(BigInt(v)); return b; };
+  const mk=(out,inn,fee)=>{ const parts=[Buffer.alloc(8), Buffer.from(pad(R.adapter),'hex'), Buffer.from([3,0,0,0,1,2,3]), Buffer.from([0,0,0,0])];
+    for(const L of [out,inn]) parts.push(L?Buffer.concat([Buffer.from([1]),u64(L[0]),u64(L[1]),u64(L[2]),u64(L[3])]):Buffer.from([0]));
+    parts.push(fee==null?Buffer.from([0]):Buffer.concat([Buffer.from([1]),Buffer.from([fee&255,fee>>8])])); parts.push(Buffer.from([254]));
+    return {owner:R.program, d:Buffer.concat(parts)}; };
+  const {peerCfg}=await import('./bridge.mjs');
+  let c=peerCfg(mk(null,null,null),9); ok(c.cfgRead&&c.outLimit===null&&c.inLimit===null&&c.peerFeeBps===null, 'peer record with no limits and no fee');
+  c=peerCfg(mk([5000e9,1200e9,2e9,1790000000],null,25),9);
+  ok(c.cfgRead&&c.outLimit&&c.outLimit.cap===5000&&c.outLimit.tokens===1200&&c.outLimit.refill===2&&c.inLimit===null&&c.peerFeeBps===25, 'outbound limit and a 0.25% fee read in CPOOL');
+  ok(peerCfg({owner:R.program, d:mk(null,null,null).d.subarray(0,50)},9).cfgRead===false, 'a cut-short record is unread'); }
+const q1=(await readBridge(world({}),null)), q2=JSON.parse(JSON.stringify(q1));
+q2.routes[0].ctl.owner='0x'+'9'.repeat(40);
+r=(await readBridge(world({}),q2)).routes[0];
+ok(r.state==='open'&&r.warn.some(w=>/owner changed/.test(w))&&r.ctl.changes.length===1, 'a change of the adapter’s owner is a warning that stays, not a closed bridge');
 console.log(fails?fails+' FAILED of '+n:'all '+n+' passed');
 process.exit(fails?1:0);
