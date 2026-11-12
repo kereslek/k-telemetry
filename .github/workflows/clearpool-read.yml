@@ -1,0 +1,49 @@
+# Read Clearpool's public announcements and the pages they link to, as plain text, in a real browser
+# where a page is drawn by JavaScript. Public pages only; nothing of the deck's is read. Images and
+# screenshots of the pages are kept in notes/clearpool-read on the branch that ran it, to be read and
+# then removed.
+name: clearpool-read
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/clearpool-read.mjs', '.github/workflows/clearpool-read.yml']
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: 'Comma-separated URLs'
+        required: false
+        default: ''
+      depth:
+        description: '0 = the pages only, 1 = also the pages they link to'
+        required: false
+        default: '1'
+      follow:
+        description: 'Only follow links matching this (regex)'
+        required: false
+        default: 'bridge|swap|migrat|token|contract|security|solana|layerzero|cross-chain'
+permissions:
+  contents: write
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save --no-audit --no-fund playwright@1.48.2 && npx playwright install --with-deps chromium
+      - run: node scripts/clearpool-read.mjs
+        env:
+          READ_URLS: ${{ github.event.inputs.urls || 'https://clearpool.medium.com/cpool-clear-swap-migration-guide-8e1d42db59cf,https://clearpool.finance/bridge,https://clearpool.finance/swap,https://clearpool.finance/governance,https://docs.clearpool.finance,https://docs.clearpool.finance/clearpool/security/smart-contracts' }}
+          DEPTH: ${{ github.event.inputs.depth || '1' }}
+          FOLLOW: ${{ github.event.inputs.follow || 'bridge|swap|migrat|token|contract|security|solana|layerzero|cross-chain' }}
+          BROWSER: '1'
+          IMG_DIR: notes/clearpool-read
+      - name: Keep the images and screenshots
+        run: |
+          [ -d notes/clearpool-read ] || exit 0
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          git add notes/clearpool-read; git diff --cached --quiet && exit 0
+          git commit -q -m "clearpool-read: images and screenshots of the pages read"
+          for i in 1 2 3; do git pull -q --rebase origin "$GITHUB_REF_NAME" && git push -q origin "HEAD:$GITHUB_REF_NAME" && exit 0; sleep $((i*5)); done; exit 1

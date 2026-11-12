@@ -1,0 +1,46 @@
+# CPOOL → CLEAR MIGRATION WATCH (scripts/migration-watch.mjs): Clearpool's guide, docs and blog, the bridge on
+# both chains beside the relay's own reading, the swap on chain, and the exchanges, every six hours until the
+# swap closes. Written sealed for the deck; the log is public: dates, yes/no, counts and percentages. Any
+# change that matters ends the run failed, so GitHub emails the owner. A push to the dev branch reads and
+# prints only (DRY), on the dev branch's code.
+name: migration-watch
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/migration-watch.mjs', 'scripts/page-text.mjs', 'scripts/bridge.mjs', '.github/workflows/migration-watch.yml']
+permissions:
+  contents: write
+concurrency: { group: migration-watch, cancel-in-progress: false }
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ github.event_name == 'push' && github.ref || 'gh-pages' }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/bridge.test.mjs > /dev/null
+      - name: Watch
+        run: node scripts/migration-watch.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
+          DRY: ${{ github.event_name == 'push' && '1' || '0' }}
+          ALERT_FILE: .migration-alert
+      - name: Commit
+        if: github.event_name != 'push'
+        run: |
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          f=deck-r7k4x9/migration.json; [ -f "$f" ] || exit 0
+          git add -- "$f"; git diff --cached --quiet && exit 0
+          git commit -q -m "migration watch $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1
+      - name: Alert
+        run: |
+          [ -f .migration-alert ] || exit 0
+          echo "::error::CPOOL → CLEAR migration: something changed. Open the deck's MIGRATION panel."
+          cat .migration-alert; exit 1

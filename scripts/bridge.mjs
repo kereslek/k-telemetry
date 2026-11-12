@@ -36,7 +36,8 @@ export const ROUTES=[{ id:'eth-sol', token:'CPOOL', from:'Ethereum', to:'Solana'
      they happen. */
   seed:[{bn:21925082, t:1740507467000, open:true}, {bn:25032148, t:1778024315000, open:false}, {bn:26051451, t:1790302907000, open:true}] }];
 
-const SEL={peers:'0xbb0b6a53', blocked:'0x73318091', sendLib:'0xb96a277f', recvLib:'0x402f8468', balanceOf:'0x70a08231'};
+const SEL={peers:'0xbb0b6a53', blocked:'0x73318091', sendLib:'0xb96a277f', recvLib:'0x402f8468', balanceOf:'0x70a08231',
+  owner:'0x8da5cb5b', delegates:'0x587cde1e'};                   // owner(), EndpointV2.delegates(address)
 export const TOPIC={sent:'0x85496b760a4b7f8d66384b9df21b381f5d1b1e79f229a47aaf4c232edc2fe59a',   // OFTSent(bytes32,uint32,address,uint256,uint256)
   recv:'0xefed6d3500546b29533b128a29e3a94d70788727f0507505ac12eaf2e578fd9c',                     // OFTReceived(bytes32,uint32,address,uint256)
   peer:'0x238399d427b947898edb290f5ff0f9109849b1c3ba196a42e35f00c50a54b98b'};                    // PeerSet(uint32,bytes32)
@@ -68,6 +69,23 @@ function msgOf(m){
   const srcTx=txh('source'), dstTx=txh('destination');
   return {src, dst, guid, st, created, updated, srcTx, dstTx};
 }
+
+/* the Solana OFT's peer record for Ethereum, past the peer address: enforced options (two byte vectors),
+   then the outbound and inbound rate limiters and the fee, each optional (Borsh: a 1-byte tag first).
+   RateLimiter = capacity, tokens, refill per second, last refill time: four u64. Anything that does not
+   parse to the record's length is unread (null), not "no limit". */
+export function peerCfg(pa, dec){
+  const out={outLimit:null, inLimit:null, peerFeeBps:null, cfgRead:false};
+  if(!pa||!pa.d) return out; const d=pa.d; let o=40;
+  try{
+    for(let i=0;i<2;i++){ const n=d.readUInt32LE(o); o+=4+n; if(o>d.length) return out; }
+    const lim=()=>{ const tag=d[o++]; if(tag===0) return null; if(tag!==1) throw 0;
+      const v=[0,1,2,3].map(j=>d.readBigUInt64LE(o+8*j)); o+=32;
+      return {cap:Number(v[0])/10**dec, tokens:Number(v[1])/10**dec, refill:Number(v[2])/10**dec, last:Number(v[3])*1000}; };
+    const ob=lim(), ib=lim(); const ft=d[o++]; let fee=null; if(ft===1){ fee=d.readUInt16LE(o); o+=2; } else if(ft!==0) throw 0;
+    if(o+1>d.length) return out;                                    // the bump byte closes the record
+    return {outLimit:ob, inLimit:ib, peerFeeBps:fee, cfgRead:true};
+  }catch(e){ return out; } }
 
 /* a Solana transaction's CPOOL mints and burns (jsonParsed), as raw amounts */
 function tokenMoves(tx,mint){ const out={mint:[],burn:[]}; if(!tx) return out;
@@ -105,6 +123,21 @@ async function readRoute(R, io, prev){
   r.supply={sol:supply!=null?Number(supply)/10**R.solDecimals:null, locked:locked!=null?Number(locked/10n**12n)/1e6:null};
   r.checks.supply=supply!=null&&locked!=null?supply*k<=locked:null;
   if(r.checks.supply===false) r.why.push('more CPOOL on Solana than is locked on Ethereum');
+  /* who can change the bridge, and anything that would slow or charge the way back (none of it closes the
+     route by itself, so it is kept apart from the checks): the adapter's owner, who can set or clear its
+     peer; its LayerZero delegate, who can change the libraries; on Solana the store's admin and fee, and
+     the peer record's rate limits and fee (outbound = from Solana back to Ethereum) */
+  r.ctl={owner:lastAddr(await call(R.adapter,SEL.owner)), delegate:lastAddr(await call(EP,SEL.delegates+addrArg(R.adapter))),
+    solAdmin:stOk?hex(st.d.subarray(122,154)):null, solFeeBps:stOk?st.d.readUInt16LE(154):null, ...peerCfg(pa&&pa.owner===R.program?pa:null, R.solDecimals)};
+  const pc=prev&&prev.ctl, chg=[];
+  if(pc){ for(const [k2,label] of [['owner','the Ethereum adapter’s owner'],['delegate','the Ethereum adapter’s LayerZero delegate'],['solAdmin','the Solana store’s admin']])
+      if(pc[k2]&&r.ctl[k2]&&pc[k2]!==r.ctl[k2]) chg.push(label+' changed');
+    if(r.ctl.solFeeBps!=null&&pc.solFeeBps!=null&&r.ctl.solFeeBps!==pc.solFeeBps) chg.push('the Solana fee changed to '+r.ctl.solFeeBps/100+'%'); }
+  /* a change stays in view for 14 days: the relay reads every half hour, a one-read warning would be missed */
+  r.ctl.changes=[...((pc&&Array.isArray(pc.changes))?pc.changes:[]), ...chg.map(w=>({t:now, w}))].slice(-6);
+  r.warn=r.ctl.changes.filter(c=>now-c.t<14*864e5).map(c=>c.w);
+  if(r.ctl.outLimit&&r.ctl.outLimit.cap!=null) r.warn.push('the way back from Solana is rate-limited: '+Math.round(r.ctl.outLimit.cap)+' CPOOL at a time');
+  if(r.ctl.peerFeeBps) r.warn.push('crossing from Solana costs a '+r.ctl.peerFeeBps/100+'% fee');
 
   /* crossings: LayerZero Scan's newest messages for the adapter, the latest delivered each way checked on both chains */
   /* newest first, a page of 100 at a time, until the page reaches past 30 days (three pages at most) */
@@ -127,6 +160,13 @@ async function readRoute(R, io, prev){
     const oldest=Math.min(...M.map(x=>x.created||now));
     r.n30={to:toSol.filter(x=>x.created>=win).length, back:back.filter(x=>x.created>=win).length, partial:oldest>win&&items.length%100===0};
     r.waiting=all.filter(x=>!/DELIVERED/.test(x.st)&&x.created&&x.created<now-30*60e3).length;
+    /* how long a crossing takes, each way, over the window: LayerZero Scan's sent-to-delivered time
+       (its record's created and last-updated times), as a median, the slowest one in ten, and the slowest;
+       and how many crossed in the last 7 days (traffic back to Ethereum is what a migration looks like) */
+    const durOf=L=>{ const v=L.filter(x=>/DELIVERED/.test(x.st)&&x.created>=win&&x.updated>=x.created).map(x=>x.updated-x.created).sort((a,b)=>a-b);
+      return v.length?{n:v.length, med:v[Math.floor(v.length/2)], p90:v[Math.min(v.length-1,Math.floor(v.length*0.9))], max:v[v.length-1]}:null; };
+    r.dur={in:durOf(toSol), out:durOf(back)};
+    r.n7={to:toSol.filter(x=>x.created>=now-7*864e5).length, back:back.filter(x=>x.created>=now-7*864e5).length};
     const pickLast=L=>L.filter(x=>/DELIVERED/.test(x.st)).sort((a,b)=>(b.created||0)-(a.created||0))[0]||null;
     const verify=async(m,way)=>{ if(!m||!m.guid||!m.srcTx||!m.dstTx) return null;
       const evmTx=way==='in'?m.srcTx:m.dstTx, solTx=way==='in'?m.dstTx:m.srcTx;
