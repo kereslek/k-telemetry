@@ -140,10 +140,13 @@ const X={};
   X.mexc={cpool:await m('CPOOLUSDT'), clear:await m('CLEARUSDT')}; }
 { const k=async s=>{ const j=await getJ('https://api.kucoin.com/api/v2/symbols/'+s); return j?!!(j.data&&j.data.enableTrading):null; };
   X.kucoin={cpool:await k('CPOOL-USDT'), clear:await k('CLEAR-USDT')}; }
-{ const b=async s=>{ const j=await getJ('https://api.bitget.com/api/v2/spot/public/symbols?symbol='+s); return j?!!(Array.isArray(j.data)&&j.data[0]&&j.data[0].status==='online'):null; };
+/* an exchange that answers "no such pair" with an error status has still answered: not listed, not unread */
+async function getS(url){ try{ const r=await fetch(url,{headers:{accept:'application/json','user-agent':'k-telemetry-migration-watch'},signal:AbortSignal.timeout(20000)}); let j=null; try{ j=await r.json(); }catch(e){} return {st:r.status, j}; }catch(e){ return {st:0, j:null}; } }
+{ const b=async s=>{ const {st,j}=await getS('https://api.bitget.com/api/v2/spot/public/symbols?symbol='+s);
+    if(j&&Array.isArray(j.data)) return !!(j.data[0]&&j.data[0].status==='online'); return st>=400&&st<500&&j&&j.code?false:null; };
   X.bitget={cpool:await b('CPOOLUSDT'), clear:await b('CLEARUSDT')}; }
 { const y=async s=>{ const j=await getJ('https://api.bybit.com/v5/market/instruments-info?category=spot&symbol='+s); return j&&j.result?!!(j.result.list||[]).find(x=>x.symbol===s&&x.status==='Trading'):null; };
-  X.bybit={cpool:await y('CPOOLUSDT'), clear:await y('CLEARUSDT')}; }
+  X.bybit={cpool:await y('CPOOLUSDT'), clear:await y('CLEARUSDT')}; }    // Bybit refuses some cloud regions: unread there, never "not trading"
 const px=P.exch||{};
 for(const [ex,v] of Object.entries(X)){ const o=px[ex]||{};
   if(o.cpool===true&&v.cpool===false) alert('exCpool',ex+': the CPOOL pair stopped trading');
@@ -170,7 +173,7 @@ console.log('  bridge Solana ⇄ Ethereum: '+(bridge.state||'unread').toUpperCas
   +' · crossings 7 d: '+(bridge.n7?bridge.n7.to+' to Solana, '+bridge.n7.back+' back':'—')+' · stuck: '+(bridge.waiting??'—')
   +' · way back takes (median / slowest in ten): '+(way?Math.round(way.med/60e3)+' / '+Math.round(way.p90/60e3)+' min over '+way.n:'—')
   +' · rate limit back: '+(bridge.ctl?(bridge.ctl.outLimit?'yes':'none'):'unread')+' · fee: '+(bridge.ctl&&bridge.ctl.peerFeeBps!=null?bridge.ctl.peerFeeBps/100+'%':'none'));
-console.log('  swap: swapper '+yn(!!S.swapper)+' · paused '+yn(S.paused)+' · CPOOL swapped '+(S.pct!=null?S.pct.toFixed(2)+'% of supply':'—')+' · CLEAR connected to Solana: '+yn(S.clearSolPeer));
+console.log('  swap: swapper '+yn(!!S.swapper)+' · paused '+(S.paused==null?'no pause switch read':yn(S.paused))+' · CPOOL swapped '+(S.pct!=null?S.pct.toFixed(2)+'% of supply':'—')+' · CLEAR connected to Solana: '+yn(S.clearSolPeer));
 console.log('  exchanges, CPOOL pair trading / CLEAR pair trading: '+Object.entries(X).map(([k,v])=>k+' '+yn(v.cpool)+'/'+yn(v.clear)).join(' · ')+' · CPOOL minute-price feeds left: '+cpoolFeeds+' of 3');
 if(alerts.length){ console.log('\nALERTS ('+alerts.length+'):'); for(const a of alerts) console.log('  ! '+a.s); } else console.log('\nno alerts');
 if(!P.t&&!DRY) console.log('(first reading: changes are alerted from the next run on)');
