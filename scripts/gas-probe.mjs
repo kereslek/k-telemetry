@@ -20,7 +20,7 @@ const med=a=>pctl(a,50);
 
 /* ---------- 1. now ---------- */
 const PAGE=['https://eth.drpc.org','https://ethereum-rpc.publicnode.com','https://rpc.mevblocker.io','https://1rpc.io/eth','https://rpc.flashbots.net','https://eth.meowrpc.com'];
-const RELAY=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'];
+const RELAY=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://rpc.mevblocker.io'];
 let fh=null; for(const u of ['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth']){ fh=await rpc(u,'eth_feeHistory',['0x14','latest',[10,50,90]]); if(fh&&fh.baseFeePerGas) break; }
 let typical=null;
 if(fh&&fh.baseFeePerGas){

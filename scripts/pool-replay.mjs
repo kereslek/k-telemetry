@@ -88,7 +88,7 @@ const newState=()=>({cur:null, t:null, tick:null, L:0, pos:{}, raw:{}, recent:[]
 /* ---------- Ethereum: Uniswap v3 ---------- */
 /* Blockscout's own node first: the free public nodes now refuse history (a personal token, a 10,000-block cap,
    or nothing at all), and Blockscout answers both old logs and calls at old blocks. */
-const NODES=['https://eth.blockscout.com/api/eth-rpc','https://eth.drpc.org','https://ethereum-rpc.publicnode.com','https://1rpc.io/eth','https://eth.llamarpc.com'];
+const NODES=['https://eth.blockscout.com/api/eth-rpc','https://eth.drpc.org','https://ethereum-rpc.publicnode.com','https://1rpc.io/eth'];   // eth.llamarpc.com dropped: it refuses (HTTP 403)
 const BS='https://eth.blockscout.com';
 async function rpcRaw(u,method,params,ms=25000){ return j(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})},1,ms); }
 async function rpcAt(u,method,params,ms=25000){ const r=await rpcRaw(u,method,params,ms); return r&&r.result!==undefined&&!r.error?r.result:undefined; }

@@ -1,5 +1,7 @@
-# Can every data source the deck relies on be read right now? Market data only; the private Solana node is
-# asked one harmless question and never named. Run by hand, and weekly.
+# Can every data source the deck relies on be read right now? (scripts/sources-check.mjs) Market data only;
+# the private Solana node, when one is set, is asked one harmless question and never named. Weekly on
+# Monday 09:41 Budapest from gh-pages, and by hand. A source still failing after a second try ends the run
+# failed, so GitHub emails the owner.
 name: sources-check
 on:
   push:
@@ -10,6 +12,7 @@ on:
     - cron: '41 8 * * 1'
 permissions:
   contents: read
+concurrency: { group: sources-check, cancel-in-progress: false }
 jobs:
   check:
     runs-on: ubuntu-latest

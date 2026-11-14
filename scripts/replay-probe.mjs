@@ -40,7 +40,7 @@ async function candles(net, addr){
 
 /* ---------- Ethereum ---------- */
 const BS='https://eth.blockscout.com';
-const NODES=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth',BS+'/api/eth-rpc'];
+const NODES=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth',BS+'/api/eth-rpc'];
 const why=new Map();
 const host=u=>u.replace(/^https:\/\//,'').split('/')[0];
 async function rpcAt(u,method,params,ms=20000){

@@ -17,7 +17,7 @@ const LZ_SOL_ENDPOINT='76y77prsiCMvXMjuoZ5VRrhG5qYBrUMYTE5WgHqgjEn6';
 const TOKEN_PROGS=new Set(['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb']);
 const EID_NAME={30101:'Ethereum',30168:'Solana',30109:'Polygon',30110:'Arbitrum',30111:'Optimism',30184:'Base',30102:'BNB Chain',30106:'Avalanche',30181:'Mantle',30158:'Polygon zkEVM',30295:'Flare',30214:'Scroll',30165:'zkSync',30183:'Linea',30145:'Gnosis'};
 const eidName=e=>EID_NAME[e]||('eid '+e);
-const ETH_RPC=['https://eth.blockscout.com/api/eth-rpc','https://eth.drpc.org','https://ethereum-rpc.publicnode.com','https://1rpc.io/eth','https://eth.llamarpc.com'];
+const ETH_RPC=['https://eth.blockscout.com/api/eth-rpc','https://eth.drpc.org','https://ethereum-rpc.publicnode.com','https://1rpc.io/eth'];
 const SOL_RPC=[process.env.SOL_RPC_URL,'https://api.mainnet-beta.solana.com','https://solana-rpc.publicnode.com'].filter(Boolean);
 const sleep=ms=>new Promise(f=>setTimeout(f,ms));
 const now=Date.now(), H=3600e3, D=24*H;
@@ -343,7 +343,7 @@ say(''); say('— the relay’s Solana path, for the last crossing to Solana —
           say('  '+lab+', '+enc+': '+shape(t,enc)); } }
     }
     /* the Ethereum side as the relay asks it: its endpoints in order, the first answer taken even when it is "nothing" */
-    const ETH_RELAY=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'];
+    const ETH_RELAY=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://rpc.mevblocker.io'];
     const rawE=async(u,method,params)=>{ try{ const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(15000)});
       if(!r.ok) return {err:'HTTP '+r.status}; const j=await r.json(); return j.error?{err:'error '+(j.error.code??'')+' '+clean(j.error.message||'')}:{ok:true, result:j.result}; }catch(e){ return {err:'failed: '+clean(e)}; } };
     const evmRelay=async(method,params)=>{ let last=null; for(const u of ETH_RELAY){ const r=await rawE(u,method,params); if(r.ok) return r.result; last=r.err; } throw new Error(last||'no endpoint'); };
