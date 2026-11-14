@@ -19,7 +19,7 @@ const CLMM='CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
 /* One eth_call per minute (everything bundled through Multicall3), so any endpoint that answers
    a plain eth_call will do; batch requests were refused by some and rate-limited by others. */
 export const EVM_RPCS=['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://rpc.mevblocker.io',
-  'https://eth-mainnet.public.blastapi.io','https://rpc.flashbots.net','https://eth.llamarpc.com'];
+  'https://eth-mainnet.public.blastapi.io','https://rpc.flashbots.net'];   // eth.llamarpc.com dropped 14 Nov 2026: it refuses (HTTP 403)
 const MC3='0xca11bde05977b3631167028862be2a173976ca11';
 /* Keyless endpoints that answer a Cloudflare Worker (checked from the Workers runtime, 28 Sep):
    Solana's own api.mainnet-beta and drpc's free tier refuse it. A SOL_RPC_URL secret goes first. */
