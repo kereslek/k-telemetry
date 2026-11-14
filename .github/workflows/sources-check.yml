@@ -1,0 +1,27 @@
+# Can every data source the deck relies on be read right now? (scripts/sources-check.mjs) Market data only;
+# the private Solana node, when one is set, is asked one harmless question and never named. Weekly on
+# Monday 09:41 Budapest from gh-pages, and by hand. A source still failing after a second try ends the run
+# failed, so GitHub emails the owner.
+name: sources-check
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/sources-check.mjs', '.github/workflows/sources-check.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '41 8 * * 1'
+permissions:
+  contents: read
+concurrency: { group: sources-check, cancel-in-progress: false }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/sources-check.mjs
+        env:
+          SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}

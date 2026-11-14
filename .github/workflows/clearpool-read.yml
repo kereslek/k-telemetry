@@ -4,10 +4,7 @@
 # then removed.
 name: clearpool-read
 on:
-  push:
-    branches: [claude/new-session-argqhq]
-    paths: ['scripts/clearpool-read.mjs', '.github/workflows/clearpool-read.yml']
-  workflow_dispatch:
+  workflow_dispatch:      # by hand only: an edit to the reader must not re-read and re-commit pages
     inputs:
       urls:
         description: 'Comma-separated URLs'
@@ -41,6 +38,7 @@ jobs:
           BROWSER: '1'
           IMG_DIR: notes/clearpool-read
       - name: Keep the images and screenshots
+        if: github.ref_name == 'claude/new-session-argqhq'     # never on the published branch
         run: |
           [ -d notes/clearpool-read ] || exit 0
           git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"

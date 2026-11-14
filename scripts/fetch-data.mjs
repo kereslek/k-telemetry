@@ -50,7 +50,7 @@ const SOL_LIVE=[...SOL_KEYED,'https://solana-rpc.publicnode.com','https://api.ma
 const SOL_ARCHIVE=[...SOL_KEYED,'https://api.mainnet-beta.solana.com'];
 const NPM_STD='0xc36442b4a4522e871399cd717abdd847ab11fe88', FACT_STD='0x1f98431c8ad98523631ae4a59f267346ea31f984';
 const CHAINS = {
-  ethereum:{ tag:'ETH', rpcs:['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://eth.llamarpc.com','https://1rpc.io/eth','https://rpc.mevblocker.io'],
+  ethereum:{ tag:'ETH', rpcs:['https://ethereum-rpc.publicnode.com','https://eth.drpc.org','https://1rpc.io/eth','https://rpc.mevblocker.io'],   // eth.llamarpc.com dropped 14 Nov 2026: it refuses (HTTP 403)
     npm:NPM_STD, factory:FACT_STD, bph:300, startBlock:12369651, llama:'ethereum',
     weth:'0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
     stables:['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48','0xdac17f958d2ee523a2206206994597c13d831ec7','0x6b175474e89094c44da98b954eedeac495271d0f'] },
