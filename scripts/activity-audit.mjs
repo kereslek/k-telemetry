@@ -289,9 +289,11 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
 // a pool with own swaps is checked with the recorder below; a fall anywhere else is fees lost
 for(const [pool,[fallSum,nPos,peakSum,big,back]] of poolFalls){ if((takenBy.get(pool)||0)>0) continue;
   const pct=fallSum/Math.max(1e-9,peakSum)*100;
-  /* under a hundredth of a percent of the totals, in steps under a cent each, is rounding in the readings, not fees lost */
-  const noise=pct<0.01&&big<0.0001;
-  console.log((noise?'ok   ':'WARN ')+'a pool where '+nPos+' position(s)\u2019 fee totals fell with no own swap there: '+(noise?'rounding only':'fees lost')
+  /* fees are lost only when a total stays down. One that dipped and is back at its highest is the relay reading a
+     harvest on the chain a pass before its scan books what was collected (or an own swap's fee taken out and the
+     swap then booked); under a hundredth of a percent in steps under a hundredth of a percent is rounding */
+  const allBack=back===nPos, noise=pct<0.01&&big<0.0001;
+  console.log((allBack||noise?'ok   ':'WARN ')+'a pool where '+nPos+' position(s)\u2019 fee totals fell with no own swap there: '+(allBack?'dipped and came back, nothing lost':noise?'rounding only':'fees lost')
     +' · the falls: '+pct.toFixed(4)+'% of those totals · largest single step: '+(big*100).toFixed(4)+'% · back at their highest now: '+back+' of '+nPos); }
 /* Own swaps through the deck's own pools, checked with the minute recorder (own-swap-check.mjs): over
    readings from before each swap to the one that took its fee back out, what the recorder measured
