@@ -76,7 +76,7 @@ for(const id of Object.keys(fees.closedPos||{}).filter(x=>/^\d+$/.test(x))){
 const ownSol=new Map((data.sol||[]).map(p=>[p.poolId,p.id.slice(0,12)+' '+(p.pairLabel||'')+' '+(p.feeLabel||'')]));
 console.log('own pools: '+ownEth.size+' Ethereum, '+(data.sol||[]).length+' Solana positions');
 
-const found=[], elsewhere=[], solTx=new Map(), other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, lastTx=0;
+const found=[], elsewhere=[], solTx=new Map(), other={eth:0,sol:0}, kinds={v3:0,v4:0,v2:0,transfer:0,other:0}, coin={out:0,own:0,cex:0,in:0,pos:0}; let ethSent=0, ethIn=0, extOut=0, intMove=0, cexOut=0, posIn=0, lastTx=0;
 const SWAP_V4='0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', SWAP_V2='0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822', XFER='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; let solSeen=0, solMine=0;
 // ---- Ethereum
 const lcx={n:0, tx:new Set(), last:0};   // LCX arriving in the deck's wallets today (counts and venues only)
@@ -95,13 +95,19 @@ for(const w of WE){
       ethSent++; const tops=new Set(((lg&&lg.items)||[]).map(x=>x.topics&&x.topics[0]));
       if(tops.has(SWAP_V3)) kinds.v3++; else if(tops.has(SWAP_V4)) kinds.v4++; else if(tops.has(SWAP_V2)) kinds.v2++; else if(tops.has(XFER)) kinds.transfer++; else kinds.other++;
       // ETH itself sent, not paid into a swap: a card top-up, an exchange deposit, a move between the deck's wallets
-      if(val&&!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2)) (WE.includes(to)?coin.own++:CXE.has(to)?coin.cex++:coin.out++);
+      /* paid into one of the deck's own positions (a new one or a top-up: the position manager's IncreaseLiquidity
+         in the same transaction) is the owner's money staying in the deck, not leaving it */
+      const intoPos=tops.has(EV.increase);
+      if(val&&!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2)) (intoPos?coin.pos++:WE.includes(to)?coin.own++:CXE.has(to)?coin.cex++:coin.out++);
       lastTx=Math.max(lastTx, Date.parse(tx.timestamp)||0);
       // tokens sent to an address that is not one of the deck's: leaving the tracked wallets
       if(!tops.has(SWAP_V3)&&!tops.has(SWAP_V4)&&!tops.has(SWAP_V2))
         for(const x of ((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===XFER&&x.topics[2]&&!x.topics[3])){
           const from='0x'+String(x.topics[1]).slice(26).toLowerCase(), to='0x'+String(x.topics[2]).slice(26).toLowerCase();
-          if(from===w && CXE.has(to)) cexOut++; else if(from===w && !WE.includes(to)) extOut++; else if(from===w) intMove++; }
+          if(from===w && CXE.has(to)) cexOut++; else if(from===w && WE.includes(to)) intMove++; else if(from===w && intoPos) posIn++; else if(from===w) extOut++; }
+      /* a Uniswap v4 or v2-style swap the wallet made: never through the deck's own (v3) pools, but the owner's
+         swap all the same, and the minute recorder lists it as YOU: kept with the swaps made elsewhere */
+      if(!tops.has(SWAP_V3)&&(tops.has(SWAP_V4)||tops.has(SWAP_V2))){ other.eth++; elsewhere.push({chain:'eth', t:Date.parse(tx.timestamp), k:tx.hash}); }
       const sw=((lg&&lg.items)||[]).filter(x=>x.topics&&x.topics[0]===SWAP_V3);
       for(const s of sw){ const pool=String(s.address.hash).toLowerCase();
         if(!ownEth.has(pool)) { other.eth++; elsewhere.push({chain:'eth', t:Date.parse(tx.timestamp), k:tx.hash}); continue; }
@@ -235,8 +241,8 @@ let drops=0, worst=0; for(let i=1;i<ticks.length;i++){ const d=ticks[i][1]-ticks
 { const fellT=fellBy(ticks.map(x=>x[1])), own=drops&&fellT<=takenAll+0.02;
   console.log((drops&&!own?'WARN ':'ok   ')+'month-to-date fee readings today: '+ticks.length+' · steps down: '+drops+(drops?' (largest '+(worst*100).toFixed(2)+'% of the total'+recovery(ticks.map(x=>x[1]))+')'
     +(own?' · no more than the own-swap fees taken out of income, as it should':' · MORE than the own-swap fees taken out'):'')); }
-console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets, '+cexOut+' to your exchange deposit addresses');
-console.log('ETH itself sent from the deck\u2019s wallets: '+coin.out+' to outside addresses, '+coin.own+' between its own wallets, '+coin.cex+' to your exchange deposit addresses · arrived from outside: '+coin.in);
+console.log('token transfers out of the deck\u2019s Ethereum wallets: '+extOut+' to outside addresses, '+intMove+' between its own wallets, '+cexOut+' to your exchange deposit addresses, '+posIn+' into your own positions');
+console.log('ETH itself sent from the deck\u2019s wallets: '+coin.out+' to outside addresses, '+coin.own+' between its own wallets, '+coin.cex+' to your exchange deposit addresses, '+coin.pos+' into your own positions · arrived from outside: '+coin.in);
 console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' to its own wallets, '+solMove.cex+' to your exchange deposit addresses, '+solMove.out+' to outside addresses'+(solMove.other?', '+solMove.other+' unclear':''));
 /* Solana positions the deck's wallets touched today: a harvest (or a withdrawal, which collects the
    fees with it) moves fees from unclaimed to collected, so the position's booked fee total must
@@ -275,11 +281,18 @@ console.log('solana transfers sent by the deck\u2019s wallets: '+solMove.own+' t
    own-swap fees applied there */
 { const hist=(fees.posHist||[]).filter(x=>x[0]>=START-3600e3);
   for(const [id,pool] of [...(data.sol||[]).map(q=>[q.id,q.poolId]), ...(data.eth||[]).map(q=>[String(q.id),q.pool])]){
-    const f=fellBy(hist.map(x=>x[1][id]).filter(v=>v!=null)); if(!(f>0.005)) continue;
-    const k=String(pool||'').toLowerCase(), e2=poolFalls.get(k)||[0,0]; e2[0]+=f; e2[1]++; poolFalls.set(k,e2); } }
+    const ser=hist.map(x=>x[1][id]).filter(v=>v!=null), f=fellBy(ser); if(!(f>0.005)) continue;
+    /* how big, as ratios only: the falls against the position's total, its largest single step, and whether it came back */
+    let big=0; for(let i=1;i<ser.length;i++) if(ser[i]<ser[i-1]) big=Math.max(big,(ser[i-1]-ser[i])/Math.max(1e-9,ser[i-1]));
+    const peak=Math.max(...ser), now=ser[ser.length-1];
+    const k=String(pool||'').toLowerCase(), e2=poolFalls.get(k)||[0,0,0,0,0]; e2[0]+=f; e2[1]++; e2[2]+=peak; e2[3]=Math.max(e2[3],big); e2[4]+=(now>=peak-0.01?1:0); poolFalls.set(k,e2); } }
 // a pool with own swaps is checked with the recorder below; a fall anywhere else is fees lost
-for(const [pool,[fallSum,nPos]] of poolFalls){ if((takenBy.get(pool)||0)>0) continue;
-  console.log('WARN a pool where '+nPos+' position(s)\u2019 fee totals fell with no own swap there: fees lost'); }
+for(const [pool,[fallSum,nPos,peakSum,big,back]] of poolFalls){ if((takenBy.get(pool)||0)>0) continue;
+  const pct=fallSum/Math.max(1e-9,peakSum)*100;
+  /* under a hundredth of a percent of the totals, in steps under a cent each, is rounding in the readings, not fees lost */
+  const noise=pct<0.01&&big<0.0001;
+  console.log((noise?'ok   ':'WARN ')+'a pool where '+nPos+' position(s)\u2019 fee totals fell with no own swap there: '+(noise?'rounding only':'fees lost')
+    +' · the falls: '+pct.toFixed(4)+'% of those totals · largest single step: '+(big*100).toFixed(4)+'% · back at their highest now: '+back+' of '+nPos); }
 /* Own swaps through the deck's own pools, checked with the minute recorder (own-swap-check.mjs): over
    readings from before each swap to the one that took its fee back out, what the recorder measured
    landing in the positions less how much their booked total rose is what was taken out, and it must
