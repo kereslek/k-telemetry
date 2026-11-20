@@ -10,6 +10,7 @@ on:
       from: { description: 'first day, YYYY-MM-DD (UTC); empty carries on from the last run’s (1 August the first time)', required: false, default: '' }
       only: { description: 'eth, sol or both (empty)', required: false, default: '' }
       back: { description: 'build a longer replay beside the page’s, from the first day given (1 = yes); it takes the page’s place once it reaches the present', required: false, default: '' }
+      redo: { description: 'with back = 1: read one chain again from the first day (eth or sol), the other carried over from the page’s replay', required: false, default: '' }
   schedule:
     - cron: '41 3,15 * * *'   # 05:41 and 17:41 Budapest (CEST), after the census
 permissions:
@@ -46,6 +47,7 @@ jobs:
           SOL_RPC_URL: ${{ secrets.SOL_RPC_URL }}
           REBUILD: ${{ github.event.inputs.back == '1' && github.event.inputs.rebuild || '' }}
           FROM: ${{ github.event.inputs.back == '1' && github.event.inputs.from || '' }}
+          REDO: ${{ github.event.inputs.back == '1' && github.event.inputs.redo || '' }}
           ONLY: ${{ github.event.inputs.only || '' }}
           BUDGET_MIN: ${{ github.event_name == 'schedule' && '40' || '270' }}
       - name: Commit
