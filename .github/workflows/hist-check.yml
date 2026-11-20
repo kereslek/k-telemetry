@@ -22,7 +22,8 @@ jobs:
         with: { ref: gh-pages, fetch-depth: 0, path: gp }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: cp scripts/hist-drop-check.mjs scripts/lock.mjs gp/scripts/ && cd gp && node scripts/hist-drop-check.mjs
+      # the history file lives in the store (git keeps one copy a day): the newest is read first
+      - run: cp scripts/hist-drop-check.mjs scripts/lock.mjs scripts/store.mjs gp/scripts/ && cd gp && node scripts/store.mjs pull --read && node scripts/hist-drop-check.mjs
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
           FROM: ${{ github.event.inputs.from || '' }}
