@@ -1258,6 +1258,71 @@
   .fpd-big .fb-s b{color:var(--text-secondary);font-weight:600}
   .fpd-big .fb-s .brl{color:#e0b453;display:block;margin-top:2px}
   .fpd-big .fb-none{font-size:11px;color:var(--text-muted)}
+  /* TOP 100 FEES EARNED: the BIGGEST box's third choice and its button, the list, and its page of its own */
+  .fb-sw.t3{grid-template-columns:1fr 1fr 1fr} .fb-sw.t3 i{width:calc(33.333% - .67px)} .fb-sw[data-w="top"] i{transform:translateX(200%)}
+  .fb-sw button[data-w="top"]{color:#d9b54a} .fb-sw button[data-w="top"][aria-checked="true"]{color:#f2c94c}
+  .fb-top{appearance:none;display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin-top:2px;padding:7px 9px;border-radius:6px;cursor:pointer;
+    border:1px solid rgba(242,201,76,.45);background:linear-gradient(180deg,rgba(242,201,76,.10),rgba(242,201,76,.02));font:700 9.5px var(--mono);letter-spacing:.14em;color:var(--text-primary);text-align:left}
+  #quickNav button.qn-top{color:#f2c94c;border-color:rgba(242,201,76,.45)}
+  .fb-top small{font:400 11px var(--sans);letter-spacing:0;color:var(--text-secondary);white-space:nowrap}
+  .fb-top:hover{border-color:rgba(242,201,76,.75)} .fb-top:focus-visible{outline:1px solid #f2c94c;outline-offset:2px}
+  .fb-s .t1rk{color:#f2c94c;font-weight:600}
+  .t100{margin:14px 0 4px;border:1px solid rgba(242,201,76,.42);border-radius:9px;background:var(--panel-2);overflow:hidden;min-width:0}
+  .t100[hidden]{display:none} #t100{scroll-margin-top:calc(var(--nav-h,34px) + 12px)}
+  .t1-h{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);background:radial-gradient(120% 160% at 0% 0%,rgba(242,201,76,.10),transparent 55%)}
+  .t1-k{font:700 10.5px var(--mono);letter-spacing:.2em;color:#f2c94c} .t1-s{flex:1 1 220px;min-width:0;font-size:12px;color:var(--text-secondary)} .t1-s b{color:var(--text-primary)}
+  .t1-x{appearance:none;font:700 10px var(--mono);letter-spacing:.1em;color:var(--text-muted);border:1px solid var(--line);border-radius:5px;padding:5px 9px;background:none;cursor:pointer;white-space:nowrap;text-decoration:none;min-height:30px;display:inline-flex;align-items:center}
+  .t1-x:hover{color:var(--text-primary)}
+  .t1-none{padding:14px 12px;font-size:12.5px;line-height:1.5;color:var(--text-secondary)}
+  .t1-f{display:flex;gap:7px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line-soft);overflow-x:auto;scrollbar-width:none}
+  .t1-f::-webkit-scrollbar{display:none}
+  .t1-c{appearance:none;flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--line);border-radius:12px;background:none;cursor:pointer;font:11px var(--mono);color:var(--text-secondary);min-height:28px}
+  .t1-c i{width:7px;height:7px;border-radius:50%} .t1-c.on{border-color:var(--accent);color:var(--text-primary)}
+  .t1-sp{flex:1 0 6px}
+  .t1-g{flex:none;display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .t1-g button{appearance:none;border:0;background:none;cursor:pointer;font:700 9px var(--mono);letter-spacing:.1em;color:var(--text-muted);padding:6px 9px;white-space:nowrap;min-height:28px}
+  .t1-g button.on{color:var(--text-primary);background:rgba(53,214,232,.16)}
+  .t1-r{display:grid;grid-template-columns:40px 96px 132px minmax(0,1fr) 96px 78px 52px;gap:8px;align-items:start;padding:8px 12px;border-bottom:1px solid var(--line-soft);font:12.5px var(--mono);color:var(--text-secondary);cursor:pointer}
+  .t1-r:not(.t1-hd):hover{background:rgba(53,214,232,.04)} .t1-r:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+  .t1-r.op{background:rgba(242,201,76,.05)} .t1-r.lv{box-shadow:inset 2px 0 0 #f2c94c}
+  .t1-hd{cursor:default;font:400 9.5px var(--mono);letter-spacing:.14em;color:var(--text-muted);padding-top:7px;padding-bottom:7px;border-bottom-color:var(--line)}
+  .t1-r .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .t1-rk{font-weight:700;color:var(--text-muted)} .t1-rk.g1{color:#f2c94c} .t1-rk.g2{color:#d6dde3} .t1-rk.g3{color:#d08b52}
+  .t1-fee{color:var(--text-primary);font-weight:800;font-size:13.5px}
+  .t1-wh{white-space:nowrap} .t1-wh small{display:block;font-size:10.5px;color:var(--text-muted)}
+  .t1-tw{min-width:0} .t1-tr{display:inline-flex;align-items:center;gap:3px;white-space:nowrap;max-width:100%;overflow:hidden}
+  .t1-tr i{width:7px;height:7px;border-radius:50%;margin-right:3px;flex:none} .t1-tr b{font-weight:600;color:var(--text-primary)} .t1-tr b.sd{color:var(--status-critical)} .t1-tr b.bt{color:var(--status-good)}
+  .t1-tr small{font-size:10.5px;color:var(--text-muted);margin-left:3px}
+  .t1-tw .leg{display:inline-flex;align-items:center;gap:3px;white-space:nowrap} .t1-tw .leg i{width:7px;height:7px;border-radius:50%;margin-right:2px;flex:none}
+  .t1-tw .leg b{font-weight:600;color:var(--text-primary)} .t1-tw .leg b.sd{color:var(--status-critical)} .t1-tw .leg b.bt{color:var(--status-good)} .t1-tw .leg small{font-size:10.5px;color:var(--text-muted);margin-left:2px} .t1-tw .leg em{font-style:normal;font-weight:700;color:var(--text-secondary)}
+  .t1-tw .legw{display:inline-flex;flex-direction:column}
+  .t1-new{display:inline-block;font:700 8.5px/1.5 var(--mono);letter-spacing:.08em;color:#f2c94c;border:1px solid rgba(242,201,76,.6);border-radius:3px;padding:0 4px;vertical-align:1px}
+  .t1-a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent);font:11px var(--mono);white-space:nowrap}
+  .t1-ln{display:none}
+  .t1-d{padding:4px 12px 12px 60px;background:rgba(242,201,76,.05);border-bottom:1px solid var(--line)}
+  .t1-dg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .t1-dg div{border:1px solid var(--line-soft);border-radius:6px;padding:7px 9px;font-size:11.5px;color:var(--text-muted);background:var(--panel);min-width:0}
+  .t1-dg span{display:block} .t1-dg b{display:block;color:var(--text-primary);font:600 12.5px var(--mono);margin-top:2px} .t1-dg small{display:block;font-size:10.5px;margin-top:2px}
+  .t1-pl{margin-top:7px;font:12px var(--mono);color:var(--text-secondary)} .t1-pl b{color:var(--text-primary)} .t1-pl small{color:var(--text-muted)}
+  .t1-dn{margin-top:7px;font-size:11.5px;line-height:1.45;color:var(--text-muted)}
+  .t1-ft{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:9px 12px;font:11px var(--mono);color:var(--text-muted)}
+  .t1-ft button{appearance:none;border:0;background:none;cursor:pointer;font:700 10px var(--mono);letter-spacing:.12em;color:var(--accent);padding:4px 2px;min-height:28px}
+  @media (max-width:760px){
+    .t1-hd{display:none}
+    .t1-r{grid-template-columns:28px minmax(0,1fr) auto;gap:3px 8px;padding:10px 12px}
+    .t1-rk{grid-row:1 / span 3;padding-top:1px} .t1-tw{grid-column:2;grid-row:1} .t1-fee{grid-column:3;grid-row:1;font-size:14.5px}
+    .t1-wh,.t1-sz,.t1-sh{display:none} .t1-ln{display:block;grid-column:2 / -1;grid-row:2;font:11px var(--sans);color:var(--text-muted)} .t1-ln b{color:var(--text-secondary);font-weight:600}
+    .t1-tx{grid-column:2 / -1;grid-row:3}
+    .t1-d{padding:4px 12px 12px}
+    .t1-dg{grid-template-columns:1fr 1fr}
+  }
+  /* the list on a page of its own (?view=top100): everything else hidden, as the clock's own window does */
+  html.view-top100 body *{visibility:hidden}
+  html.view-top100 .t100.v,html.view-top100 .t100.v *,html.view-top100 .lock-screen,html.view-top100 .lock-screen *{visibility:visible}
+  html.view-top100 body{overflow:hidden}
+  html.view-top100 .t100.v{position:fixed;inset:0;z-index:900;margin:0;border:0;border-radius:0;overflow:auto;background:var(--bg);padding:max(12px,env(safe-area-inset-top)) max(12px,3vw) 24px}
+  html.view-top100 .t100.v .t1-h{border:1px solid rgba(242,201,76,.42);border-radius:9px 9px 0 0}
+  html.view-top100 #rnWelcome,html.view-top100 #toLive{display:none!important}
 
   /* ---- touch and legibility (UX audit) ---- */
   @media (max-width:760px){
@@ -2784,7 +2849,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.42';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.43';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -2910,6 +2975,7 @@ const TZ='Europe/Budapest';
 const VIEW=new URLSearchParams(location.search).get('view');
 if(VIEW==='pulse'){ document.documentElement.classList.add('view-pulse'); document.title='Fee pulse · 60 min'; }
 if(VIEW==='history'){ document.documentElement.classList.add('view-history'); document.title='Portfolio history'; }
+if(VIEW==='top100'){ document.documentElement.classList.add('view-top100'); document.title='Top 100 fees earned'; }
 const fmtT=(t,withSec=true)=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour12:false,hour:'2-digit',minute:'2-digit',...(withSec?{second:'2-digit'}:{})});
 const tzAbbr=t=>{try{return new Intl.DateTimeFormat('en-GB',{timeZone:TZ,timeZoneName:'short'}).formatToParts(t?new Date(t):new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return 'CET';}};
 /* Days and months are Budapest's too: the relay keys its ledgers that way, so "today", a month's
@@ -11354,6 +11420,9 @@ function buildQuickNav(){
     });
     track.append(b);
   }
+  /* TOP 100: not a section of its own; it opens the list under the 60-minute clock */
+  { const b=document.createElement('button'); b.type='button'; b.className='qn-top'; b.textContent='🏆 TOP 100'; b.title='Open your top 100 fees earned';
+    b.addEventListener('click',t100Show); const fp=track.querySelector('button[data-nav="feepulse"]'); if(fp) fp.after(b); else track.append(b); }
   setMore(false);                                   // always opens as one row; ALL is for this visit
   watchSections(nav, panels);
   measureChrome();
@@ -11530,6 +11599,8 @@ async function loadPulse(){
   try{
     const r=await fetch(PULSE_URL+'/m?n='+(pulseSeen.needN||60)+'&live=1'+(LOCK.tok?'&k='+LOCK.tok:''),{cache:'no-store'}); if(!r.ok) return;
     state.pulse=await r.json(); pulseSeen.needN=null;
+    // the top 100, while open: a trade the recorder just read joins it (redrawn only when the list changed)
+    try{ if(T100.el&&(T100.open||VIEW==='top100')) t100Render(); }catch(e){}
     if(!document.hidden) markSeen();
     // swap in place: the tile link and the panel section, nothing else re-renders (and the link only when it changed)
     const a=document.querySelector('.fp-link60'), h=feePulseLink60();
@@ -11541,7 +11612,7 @@ async function loadPulse(){
     /* The minute dial updates itself in place, so its marks keep moving without a redraw; the
        ledger fallback (or a switch between the two) is rebuilt. */
     if(w && w._sync && pulseMins()) w._sync();
-    else if(w){ const d=document.createElement('div'); d.style.width=w.clientWidth+'px'; w.parentElement.insertBefore(d,w); renderFeePulse60(d); w.remove(); d.replaceWith(d.firstElementChild); }
+    else if(w){ const d=document.createElement('div'); d.style.width=w.clientWidth+'px'; w.parentElement.insertBefore(d,w); renderFeePulse60(d); w.remove(); d.replaceWith(d.firstElementChild); t100Place(); }
   }catch(e){}
   finally{ pulseBusy=false; }
 }
@@ -11962,6 +12033,141 @@ function feePulseLink60(){
     +'<span class="fpl-head"><span>FEE PULSE · 60 MINUTES</span><i>›</i></span>'
     +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
 }
+/* ================= TOP 100 FEES EARNED =================
+   The hundred trades that paid you most since 1 August: kept by the swap replay as it reads every swap in your
+   pools (scripts/top-core.mjs → top-<slug>.json, sealed), and the trades the minute recorder has read since the
+   replay last ran on top of it, so a new best is in the list the same day. Your own swaps through your own pools
+   are never in it (what you paid yourself is not income). Closed until you ask for it: the TOP 100 choice in the
+   BIGGEST box or the button under it, the TOP 100 chip in the jump row, or a page of its own (?view=top100). */
+const T100={el:null, open:false, sort:'fee', per:'all', pool:'*', shown:20, sel:null, at:0, asking:false, key:''};
+try{ const s=JSON.parse(localStorage.getItem('kt.t100')||'{}'); if(s.sort==='fee'||s.sort==='date') T100.sort=s.sort; if(['all','90','30'].includes(s.per)) T100.per=s.per; T100.open=!!s.open; }catch(e){}
+const t100Save=()=>{ try{ localStorage.setItem('kt.t100',JSON.stringify({sort:T100.sort, per:T100.per, open:T100.open})); }catch(e){} };
+let bigHook=null;   // the BIGGEST box's own redraw, set by the 60-minute clock
+function loadTop(force){
+  const slug=activeProfile()?.slug||'main';
+  if(T100.asking||(!force&&state.top!==undefined&&state.topSlug===slug&&Date.now()-T100.at<15*60e3)) return;
+  T100.asking=true;
+  lfetch('top-'+slug+'.json?nc='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(j=>{ state.top=j&&j.v===1&&Array.isArray(j.rows)?j:null; })
+    .finally(()=>{ state.topSlug=slug; T100.asking=false; T100.at=Date.now(); T100.key=''; t100Render(); try{ if(bigHook) bigHook(); }catch(e){} });
+}
+const t100Lab=r=>poolLabelOf(r.chain,r.pool)||((r.name||'pool')+(r.fee!=null?' '+(r.fee*100).toFixed(2).replace(/\.?0+$/,'')+'%':''));
+/* the list as shown: the replay's hundred, the minute recorder's newer trades among them, ranked by what each paid you */
+function t100Rows(){
+  const T=state.top; if(!T) return null;
+  const rows=T.rows.map(r=>({...r, lbl:t100Lab(r), k:'r'+r.t+(r.x||'')}));
+  const P=state.pulse, mine=(P&&Array.isArray(P.mine))?P.mine:[], cut=T.upTo||0; let live=0;
+  for(const t of pulseTrades()){
+    if(!(t.usd>0)||t.t<=cut) continue;
+    const labs=new Set((t.pools||[]).map(x=>x[0]));
+    // one the replay has already read, or one of your own swaps (its fee came back to you): not counted again
+    if(rows.some(r=>!r.live&&labs.has(r.lbl)&&Math.abs(r.t-t.t)<=120000)) continue;
+    if(mine.some(m=>m&&m.own&&labs.has(m.own)&&Math.abs(m.t-t.t)<=120000)) continue;
+    const g=t.legs&&t.legs[0];
+    rows.push({t:t.t, usd:t.usd, live:true, lbl:t.lbl, leg:g||null, size:g&&g.px&&g.px[1]>0?g.px[1]:null, k:'l'+t.k}); live++; }
+  rows.sort((a,b)=>b.usd-a.usd||a.t-b.t);
+  const list=rows.slice(0,100); list.forEach((r,i)=>{ r.rank=i+1; });
+  return {T, list, live:list.filter(r=>r.live).length}; }
+/* where a trade of today's sits among them: its rank, or null */
+function t100RankOf(t){
+  const R=t100Rows(); if(!R||!t) return null; const labs=new Set((t.pools||[]).map(x=>x[0]));
+  const r=R.list.find(x=>x.live?x.k==='l'+t.k:(labs.has(x.lbl)&&Math.abs(x.t-t.t)<=120000)); return r?r.rank:null; }
+const t100When=t=>{ const d=new Date(t); return {d:d.toLocaleString('en-GB',{timeZone:TZ,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).replace(',',''), w:d.toLocaleDateString('en-GB',{timeZone:TZ,weekday:'short'})}; };
+const t100Pct=x=>(x>=0?'+':'−')+Math.abs(x*100).toFixed(Math.abs(x)<0.1?1:0)+'%';
+function t100Trade(r){
+  if(r.live) return r.leg?legHtml({...r.leg, px:null}):'<span class="t1-tr"><i style="background:'+poolColor(r.lbl)+'"></i><b>'+esc(r.lbl||'pool')+'</b></span>';
+  const f=r.fee!=null?(r.fee*100).toFixed(2).replace(/\.?0+$/,'')+'%':'', dot='<i style="background:'+poolColor(r.lbl)+'"></i>';
+  // the deck's one reading order (ETH and SOL first, a stablecoin last; the arrow turns), as LATEST FEES
+  if(r.sold&&r.bought) return legSpan(dot, r.sold, r.bought, esc(f), null);
+  return '<span class="t1-tr">'+dot+'<b>'+esc(r.lbl||'pool')+'</b></span>'; }
+const t100Tx=r=>!r.x?'':'<a class="t1-a" href="'+(r.chain==='eth'?'https://etherscan.io/tx/':'https://solscan.io/tx/')+encodeURIComponent(r.x)+'" target="_blank" rel="noopener noreferrer" title="The transaction, on the chain’s explorer">tx ↗</a>';
+function t100Pos(r){
+  return (r.pos||[]).map(([id,f])=>{ let q=null; for(const p of state.positions.values()){ if(p&&(String(p.id)===String(id)||p.nftMint===id)){ q=p; break; } }
+    const href=r.chain==='eth'?'https://app.uniswap.org/positions/v3/ethereum/'+encodeURIComponent(id):'https://solscan.io/token/'+encodeURIComponent(id);
+    return '<div class="t1-pl">⮑ <b>+'+fmtUsd(r.usd*f,2)+'</b> '+esc(q?q.pairLabel+' '+q.feeLabel:t100Lab(r))+' · position …'+esc(String(id).slice(-4))+(q?'':' <small>(closed since)</small>')
+      +' <a class="t1-a" href="'+href+'" target="_blank" rel="noopener noreferrer">open ↗</a></div>'; }).join(''); }
+function t100Detail(r){
+  if(r.live) return '<div class="t1-d"><div class="t1-dn">Read by the minute recorder '+Math.max(1,Math.round((Date.now()-r.t)/60000))+' min ago. Its size, your share, the positions that earned it and its transaction come with the next swap replay (twice a day).</div></div>';
+  const box=(k,v,s)=>'<div><span>'+k+'</span><b>'+v+'</b>'+(s?'<small>'+s+'</small>':'')+'</div>';
+  return '<div class="t1-d"><div class="t1-dg">'
+    +box('The price it left', r.move!=null?esc(r.bought||'?')+' '+t100Pct(r.move):'—', 'against '+esc(r.sold||'?'))
+    +box('You were in range', (r.pos||[]).length?'yes · '+r.pos.length+' position'+(r.pos.length>1?'s':''):'—', r.share!=null?Math.round(r.share*100)+'% of the liquidity at the price':'')
+    +box('The 30 minutes after', r.echo!=null?'+'+fmtUsd(r.echo,2):'—', 'what the trades after it paid you')
+    +box('That day', r.dayUsd!=null?fmtUsd(r.dayUsd,2):'—', 'all your pools')
+    +'</div>'+t100Pos(r)+(r.est?'<div class="t1-dn">Valued at today’s price: there is no volume figure for its day yet.</div>':'')+'</div>'; }
+function t100Render(){
+  const E=T100.el; if(!E) return;
+  const R=t100Rows(), view=VIEW==='top100';
+  const key=JSON.stringify([T100.open||view, state.top===undefined?'u':state.top?state.top.t:'n', R?R.list.map(r=>r.k+':'+r.usd).join(','):'', T100.sort, T100.per, T100.pool, T100.shown, T100.sel, view]);
+  if(key===T100.key) return; T100.key=key;
+  E.hidden=!(T100.open||view); if(E.hidden){ E.innerHTML=''; return; }
+  const close=view?'<a class="t1-x" href="'+location.pathname+'">OPEN THE DECK ↗</a>':'<button type="button" class="t1-x" data-t1="close" aria-label="Close the top 100">✕ CLOSE</button>';
+  const head=sub=>'<div class="t1-h"><span class="t1-k">🏆 TOP 100 · FEES EARNED</span><span class="t1-s">'+sub+'</span>'+close+'</div>';
+  if(state.top===undefined){ E.innerHTML=head('reading…'); loadTop(); return; }
+  if(!R){ E.innerHTML=head('being built')+'<div class="t1-none">The swap replay is reading every trade in your pools since 1 August to find the hundred that paid you most. That takes a few of its runs; the list appears here the moment it reaches today.</div>'; return; }
+  const {T,list,live}=R, now=Date.now(), from=T.from?new Date(T.from+'T12:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'}):'1 Aug';
+  const ago=m=>m<2?'just now':m<120?Math.round(m)+' min ago':Math.round(m/60)+' h ago';
+  const sub='since '+from+' · these 100 paid you <b>'+fmtUsd(T.sum,0)+'</b>'+(T.part!=null?', <b>'+Math.round(T.part*100)+'%</b> of all your fees':'')
+    +' · read '+ago((now-T.t)/60000)+(live?' · <b>'+live+'</b> newer from the minute recorder':'');
+  const pools=[...new Set(list.map(r=>r.lbl))];
+  const chip=(v,txt,dot)=>'<button type="button" class="t1-c'+(T100.pool===v?' on':'')+'" data-t1="pool" data-v="'+esc(v)+'">'+(dot?'<i style="background:'+poolColor(v)+'"></i>':'')+esc(txt)+'</button>';
+  const seg=(k,opts)=>'<span class="t1-g">'+opts.map(([v,t])=>'<button type="button" data-t1="'+k+'" data-v="'+v+'" class="'+(T100[k]===v?'on':'')+'">'+t+'</button>').join('')+'</span>';
+  const pdays={all:Infinity,'90':90,'30':30}[T100.per];
+  let L=list.filter(r=>(T100.pool==='*'||r.lbl===T100.pool)&&(pdays===Infinity||now-r.t<=pdays*864e5));
+  if(T100.sort==='date') L=[...L].sort((a,b)=>b.t-a.t);
+  const show=L.slice(0,T100.shown);
+  let h=head(sub)+'<div class="t1-f">'+chip('*','ALL POOLS')+pools.map(p=>chip(p,p,true)).join('')+'<span class="t1-sp"></span>'
+    +seg('sort',[['fee','BY FEE'],['date','BY DATE']])+seg('per',[['all','SINCE '+from.toUpperCase()],['90','90 D'],['30','30 D']])+'</div>';
+  h+='<div class="t1-l"><div class="t1-r t1-hd"><span>#</span><span class="n">YOU EARNED</span><span>WHEN · BUDAPEST</span><span>THE TRADE</span><span class="n">TRADE SIZE</span><span class="n">YOUR SHARE</span><span></span></div>';
+  if(!show.length) h+='<div class="t1-none">None of the hundred '+(T100.pool!=='*'?'in this pool ':'')+(pdays!==Infinity?'in the last '+pdays+' days':'')+'.</div>';
+  for(const r of show){ const w=t100When(r.t), op=T100.sel===r.k, sz=r.size!=null?'≈'+fmtUsd(r.size,0):'—', sh=r.share!=null?Math.round(r.share*100)+'%':'—';
+    h+='<div class="t1-r'+(op?' op':'')+(r.live?' lv':'')+'" data-k="'+esc(r.k)+'" tabindex="0" role="button" aria-expanded="'+op+'"><span class="t1-rk g'+r.rank+'">'+r.rank+'</span>'
+      +'<span class="n t1-fee">+'+fmtUsd(r.usd,2)+'</span><span class="t1-wh">'+w.d+'<small>'+w.w+'</small></span><span class="t1-tw">'+t100Trade(r)+(r.live?' <span class="t1-new">'+(bpDay(r.t)===bpDay(now)?'TODAY':'NEW')+'</span>':'')+'</span>'
+      +'<span class="n t1-sz">'+sz+'</span><span class="n t1-sh">'+sh+'</span><span class="t1-tx">'+t100Tx(r)+'</span>'
+      +'<span class="t1-ln">'+w.d+' · <b>'+sz+'</b>'+(r.size!=null?' trade':'')+(r.share!=null?' · your share <b>'+sh+'</b>':'')+'</span></div>';
+    if(op) h+=t100Detail(r); }
+  h+='</div><div class="t1-ft"><span>'+(L.length?'1–'+show.length+' of '+L.length:'')+'</span><span>'
+    +(L.length>show.length?'<button type="button" data-t1="more">SHOW 20 MORE ▾</button> · <button type="button" data-t1="all">ALL '+L.length+'</button> · ':'')
+    +'<button type="button" data-t1="csv">DOWNLOAD CSV</button></span></div>';
+  E.innerHTML=h; }
+function t100Csv(){
+  const R=t100Rows(); if(!R) return; const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const lines=[['rank','when (Budapest)','pool','sold','bought','you earned (USD)','trade size (USD)','your share','the 30 min after (USD)','transaction'].map(q).join(',')];
+  for(const r of R.list) lines.push([r.rank, t100When(r.t).d, r.lbl, r.sold||'', r.bought||'', r.usd, r.size??'', r.share!=null?Math.round(r.share*100)+'%':'', r.echo??'', r.x||''].map(q).join(','));
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([lines.join('\n')+'\n'],{type:'text/csv'})); a.download='top-100-fees-earned.csv';
+  document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500); }
+function t100Click(e){
+  const b=e.target.closest('[data-t1]');
+  if(b){ const k=b.dataset.t1, v=b.dataset.v;
+    if(k==='close'){ T100.open=false; t100Save(); if(bigHook) bigHook(); }
+    else if(k==='sort'||k==='per'){ T100[k]=v; T100.shown=20; t100Save(); }
+    else if(k==='pool'){ T100.pool=v; T100.shown=20; }
+    else if(k==='more') T100.shown+=20; else if(k==='all') T100.shown=100; else if(k==='csv'){ t100Csv(); return; }
+    t100Render(); return; }
+  if(e.target.closest('a')) return;
+  const r=e.target.closest('.t1-r[data-k]'); if(!r) return;
+  T100.sel=T100.sel===r.dataset.k?null:r.dataset.k; t100Render(); }
+/* where the list sits: under the clock on a wide screen, under the BIGGEST box on a phone, the whole page in ?view=top100 */
+function t100Place(){
+  if(!T100.el){ const d=document.createElement('div'); d.className='t100'; d.id='t100'; d.hidden=true; d.addEventListener('click',t100Click);
+    d.addEventListener('keydown',e=>{ if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.t1-r[data-k]')){ e.preventDefault(); t100Click(e); } });
+    T100.el=d; addEventListener('resize',()=>{ clearTimeout(T100.rz); T100.rz=setTimeout(t100Place,200); }); }
+  const E=T100.el;
+  if(VIEW==='top100'){ E.classList.add('v'); if(E.parentElement!==document.body) document.body.append(E); }
+  else { const fp=document.getElementById('fp60'); if(!fp) return;
+    const big=fp.querySelector('.fpd-big'), grid=fp.querySelector('.fpd-grid'), narrow=matchMedia('(max-width:760px)').matches;
+    const after=big&&narrow?big:grid;
+    if(after){ if(after.nextElementSibling!==E) after.after(E); } else if(E.parentElement!==fp) fp.append(E); }
+  loadTop(); t100Render(); }
+/* open it, from anywhere: the FEE PULSE panel opened, the list under the clock, brought into view */
+function t100Show(){
+  T100.open=true; t100Save();
+  const p=document.querySelector('.panel[data-panel="feepulse"]'); if(p) openPanel(p);
+  t100Place(); if(bigHook) bigHook();
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  const find=()=>T100.el&&!T100.el.hidden?T100.el:document.getElementById('fp60');
+  // landed under the jump row, and put right again if the page grows under it while it scrolls (as the section chips do)
+  requestAnimationFrame(()=>{ const t=find(); if(!t) return; try{ t.scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'}); }catch(e){ t.scrollIntoView(); } settleJump(find); }); }
 function renderFeePulse60(host){
   if(pulseMins()) return renderFeePulse60m(host);
   const S=feeMinStats();
@@ -12203,12 +12409,23 @@ function renderFeePulse60m(host){
   /* the biggest trade of today (since midnight Budapest) or of the last 24 hours, from the recorder's
      whole day (worker big.js), with a tiny switch between the two; the choice is kept on this device */
   const big=el('div','fpd-big');
-  let bigWin='d24'; try{ const v=localStorage.getItem('kt.bigWin'); if(v==='today'||v==='d24') bigWin=v; }catch(e){}
-  big.innerHTML='<div class="fb-h"><span class="fb-k">BIGGEST</span><span class="fb-sw" role="radiogroup" aria-label="Biggest trade of"><i></i>'
-    +'<button type="button" role="radio" data-w="today">TODAY</button><button type="button" role="radio" data-w="d24">24 H</button></span></div><div class="fb-b"></div>';
-  const bigSw=big.querySelector('.fb-sw'), bigB=big.querySelector('.fb-b');
+  let bigWin='d24'; try{ const v=localStorage.getItem('kt.bigWin'); if(v==='today'||v==='d24'||v==='top') bigWin=v; }catch(e){}
+  /* a third choice, TOP 100: the best since 1 August, and the list of the hundred under the clock (the button
+     under the box opens and closes that list from any of the three) */
+  big.innerHTML='<div class="fb-h"><span class="fb-k">BIGGEST</span><span class="fb-sw t3" role="radiogroup" aria-label="Biggest trade of"><i></i>'
+    +'<button type="button" role="radio" data-w="today">TODAY</button><button type="button" role="radio" data-w="d24">24 H</button><button type="button" role="radio" data-w="top">TOP 100</button></span></div><div class="fb-b"></div>'
+    +'<button type="button" class="fb-top" aria-controls="t100"></button>';
+  const bigSw=big.querySelector('.fb-sw'), bigB=big.querySelector('.fb-b'), bigTop=big.querySelector('.fb-top');
   const renderBig=()=>{
     bigSw.dataset.w=bigWin; for(const b of bigSw.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.w===bigWin));
+    const R1=t100Rows(), b1=R1&&R1.list[0], from=state.top&&state.top.from?new Date(state.top.from+'T12:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'}):'1 Aug';
+    bigTop.innerHTML='🏆 TOP 100 FEES EARNED<small>'+(state.top===undefined?'reading…':!b1?'being built':'best +'+fmtUsd(b1.usd,2))+' · '+(T100.open?'close ▴':'open the list ▾')+'</small>';
+    bigTop.setAttribute('aria-expanded',String(T100.open));
+    if(bigWin==='top'){
+      if(state.top===undefined){ bigB.innerHTML='<span class="fb-none">Reading the top 100…</span>'; return; }
+      if(!b1){ bigB.innerHTML='<span class="fb-none">The top 100 is being built: the swap replay is reading every trade in your pools since 1 August.</span>'; return; }
+      bigB.innerHTML='<div class="fb-r">'+t100Trade(b1)+'<span class="fb-v">+'+fmtUsd(b1.usd,2)+'</span><span class="fb-s">'+t100When(b1.t).d+' · <span class="t1rk">#1 since '+from+'</span>'
+        +(b1.size!=null?' · <b>≈'+fmtUsd(b1.size,0)+' trade</b>':'')+'</span></div>'; return; }
     const P=state.pulse, B=P&&P.big, raw=B&&B[bigWin];
     if(!P){ bigB.innerHTML='<span class="fb-none">The minute record is not loaded yet.</span>'; return; }
     if(!B){ bigB.innerHTML='<span class="fb-none">—</span>'; return; }
@@ -12219,11 +12436,15 @@ function renderFeePulse60m(host){
     const more=t.legs.length>1?' · +'+(t.legs.length-1)+' pool'+(t.legs.length>2?'s':''):'';
     bigB.innerHTML='<div class="fb-r">'+(g?legHtml({...g, px:null}):'<span class="fb-none">pool not recorded</span>')
       +'<span class="fb-v">'+(bl?'<span class="bx" title="'+brTitle+'">⇄</span>':'')+'+'+fmtUsd(t.usd,2)+'</span>'
-      +'<span class="fb-s">'+hl(t.t)+' · '+ago+sz+more+(bl?'<span class="brl">'+esc(brText(bl))+'</span>':'')+'</span></div>'; };
+      +'<span class="fb-s">'+hl(t.t)+' · '+ago+sz+more+(()=>{ const rk=t100RankOf(t); return rk?' · <span class="t1rk">#'+rk+' of your top 100</span>':''; })()+(bl?'<span class="brl">'+esc(brText(bl))+'</span>':'')+'</span></div>'; };
+  bigHook=renderBig;
   bigSw.addEventListener('click',e=>{ const b=e.target.closest('button[data-w]'); if(!b||b.dataset.w===bigWin) return;
-    bigWin=b.dataset.w; try{ localStorage.setItem('kt.bigWin',bigWin); }catch(err){} renderBig(); });
+    bigWin=b.dataset.w; try{ localStorage.setItem('kt.bigWin',bigWin); }catch(err){}
+    if(bigWin==='top'&&!T100.open){ T100.open=true; t100Save(); t100Place(); } renderBig(); });
   bigSw.addEventListener('keydown',e=>{ if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return; e.preventDefault();
-    bigWin=bigWin==='d24'?'today':'d24'; try{ localStorage.setItem('kt.bigWin',bigWin); }catch(err){} renderBig(); bigSw.querySelector('[data-w="'+bigWin+'"]').focus(); });
+    const W3=['today','d24','top']; bigWin=W3[(W3.indexOf(bigWin)+(e.key==='ArrowRight'?1:2))%3]; try{ localStorage.setItem('kt.bigWin',bigWin); }catch(err){}
+    if(bigWin==='top'&&!T100.open){ T100.open=true; t100Save(); t100Place(); } renderBig(); bigSw.querySelector('[data-w="'+bigWin+'"]').focus(); });
+  bigTop.addEventListener('click',()=>{ T100.open=!T100.open; t100Save(); t100Place(); renderBig(); });
   side.append(read,stats,qm,big,lh,list);
   renderBig();
   wrap.append(el('div','arch-note','Recorded every minute around the clock from each pool\'s fee counter; collecting, adding or withdrawing never counts as income. '
@@ -12801,6 +13022,7 @@ function renderFeePulse(){
     +(days.some(x=>x.est)?' · faint bars: 1–4 Aug, one reading spread evenly':'')+'.'));
   renderFeePulse24(host);
   if(keepIt){ host.append(keep); keep._sync(); } else renderFeePulse60(host);
+  t100Place();
 }
 /* The last 24 hours, one bar per clock hour, under the day history: the same reading of the
    ledger as the FEE PULSE · 24 HOURS link on the income tile, drawn large enough to read. */
