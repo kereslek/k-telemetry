@@ -24,6 +24,8 @@ jobs:
         with: { ref: gh-pages }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      # the top hundred's arithmetic on made-up swaps first: a broken one never reads real data
+      - run: node scripts/top-core.test.mjs > /dev/null
       # the replay the page reads, carried on (not when a dispatch asks only for the longer one)
       - if: github.event.inputs.back != '1'
         run: node scripts/pool-replay.mjs
@@ -49,7 +51,7 @@ jobs:
       - name: Commit
         run: |
           git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
-          for f in deck-r7k4x9/pools-replay-main.json deck-r7k4x9/pools-replay-back-main.json; do
+          for f in deck-r7k4x9/pools-replay-main.json deck-r7k4x9/pools-replay-back-main.json deck-r7k4x9/top-main.json; do
             if [ -f "$f" ] || git ls-files --error-unmatch "$f" >/dev/null 2>&1; then git add -A -- "$f"; fi
           done
           git diff --cached --quiet && exit 0

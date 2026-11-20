@@ -213,6 +213,27 @@ try{
     else if(ab.none) WARN('ARBITRAGE STUDY: no study published yet (the panel says so: '+(ab.drawn?'yes':'NO')+')');
     else ((ab.drawn&&ab.ageH<=30&&ab.complete&&!ab.look)?OK:WARN)('ARBITRAGE STUDY: drawn '+(ab.drawn?'yes':'NO')+' · '+ab.ageH+' h old · window read whole: '+(ab.complete?'yes':'not yet')+' · '+ab.trades+' trades · checks '+ab.ok+' agree, '+ab.look+' to look at, of '+ab.n+' · '+ab.pairs+' pool pair(s) studied'); }
   catch(e){ WARN('ARBITRAGE STUDY: '+String(e.message||e).slice(0,60)); }
+  /* TOP 100 FEES EARNED: the sealed hundred is whole and in order, and the TOP 100 chip opens the list at both widths
+     without a sideways scroll. Counts and yes/no only: never a trade, an amount or a pool. */
+  try{ let tp=null;
+    for(const w of [390,1300]){ await pg.setViewportSize({width:w,height:w<500?844:900});
+      const r=await pg.evaluate(async()=>{ if(typeof t100Show!=='function') return null; t100Show();
+        for(let i=0;i<40&&state.top===undefined;i++) await new Promise(r=>setTimeout(r,250)); await new Promise(r=>setTimeout(r,600));
+        const T=state.top, E=document.getElementById('t100');
+        const o={drawn:!!E&&!E.hidden, rows:E?E.querySelectorAll('.t1-r[data-k]').length:0, hs:document.documentElement.scrollWidth>innerWidth+1, building:!!(E&&/being built/.test(E.textContent))};
+        if(T){ const R=T.rows, F=Date.parse(T.from+'T00:00:00Z');
+          Object.assign(o,{n:R.length, ageH:Math.round((Date.now()-T.t)/36e5), order:R.every((x,i)=>i===0||R[i-1].usd>=x.usd), inWin:R.every(x=>x.t>=F&&x.t<=T.t), pos:R.every(x=>x.usd>0),
+            sum:Math.abs(R.reduce((a,x)=>a+x.usd,0)-T.sum)<=0.05+R.length*0.005, part:T.part==null||(T.part>0&&T.part<=1), est:R.filter(x=>x.est).length, tx:R.filter(x=>x.x).length}); }
+        T100.open=false; t100Save(); t100Render(); if(bigHook) bigHook(); return o; });
+      if(!r){ FAIL('TOP 100: the list is MISSING from the page'); tp=null; break; }
+      if(r.hs) FAIL('TOP 100 at '+w+': the page scrolls sideways with the list open');
+      tp=tp||r; tp['at'+w]=r; }
+    if(tp&&tp.n==null) WARN('TOP 100: not published yet (the swap replay is building it) · the list says so: '+(tp.at390.building&&tp.at1300.building?'yes':'NO'));
+    else if(tp){ const good=tp.n>0&&tp.n<=100&&tp.order&&tp.inWin&&tp.pos&&tp.sum&&tp.part, drawn=[390,1300].every(w=>tp['at'+w].drawn&&tp['at'+w].rows>=Math.min(20,tp.n));
+      (good&&drawn&&tp.ageH<=30?OK:good&&drawn?WARN:FAIL)('TOP 100: '+tp.n+' trade(s) · '+tp.ageH+' h old · '+(tp.order?'in order':'NOT in order')+' · '+(tp.inWin?'all inside its window':'some OUTSIDE its window')
+        +' · total '+(tp.sum?'adds up':'does NOT add up')+' · share of all fees '+(tp.part?'within 0–100%':'OUT OF RANGE')+' · '+tp.est+' valued at today’s price · '+tp.tx+' with a transaction link'
+        +' · the chip opens it at 390 and 1300: '+(drawn?'yes':'NO')); } }
+  catch(e){ WARN('TOP 100: '+String(e.message||e).slice(0,60)); }
   /* MARKET vs YOUR POOLS: the strip sits right above the playbook, its three tiles drawn, every
      correlation between −1 and 1, and the hourly records it reads arriving (counts only). */
   try{ const mk=await pg.evaluate(()=>{ const p=document.querySelector('[data-panel="mkt"]'); if(!p||typeof mkData!=='function') return null;
