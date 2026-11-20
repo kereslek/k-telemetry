@@ -91,7 +91,9 @@ function tradesOf(all, ev, evStart){
    from the last saved one and nothing is lost, only stamped later.
    A Solana reading asks its server once per ten accounts (the public servers take no more in one ask), so
    the live gap is 2.5 s for each of those asks: the servers see the same rate of asks however many
-   positions there are, the rate they took for months when one ask held them all. */
+   positions there are, the rate they took for months when one ask held them all. A reading that priced none
+   of the Solana pools (every server refused) doubles the gap before the next live one, up to a minute; one
+   that priced any puts it back. The minute's own reading is never held back. */
 const FAST={sol:2500, eth:11000};
 const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
 /* Your own swaps are not income. A swap of yours through one of your own pools pays its fee to
@@ -182,7 +184,8 @@ export class Pulse {
     const m=await this.load();
     if(u.searchParams.get('live')==='1'){
       const now=Date.now(), jobs=[]; this.watchAt=now;
-      for(const c of ['sol','eth']) if(now-this.lastRead[c]>=FAST[c]*(c==='sol'?Math.max(1,this.solAsks||1):1)) jobs.push(this.readChain(c));
+      const gap={sol:FAST.sol*Math.max(1,this.solAsks||1)*Math.min(8,2**(this.solFails||0)), eth:FAST.eth};
+      for(const c of ['sol','eth']) if(now-this.lastRead[c]>=gap[c]) jobs.push(this.readChain(c));
       // answer within 2.5 s either way; a slow read finishes on its own and shows on the next ask
       if(jobs.length) await Promise.race([Promise.allSettled(jobs), new Promise(r=>setTimeout(r,2500))]);
       if(Date.now()-this.savedAt>MIN) await this.save().catch(()=>{});
@@ -461,6 +464,7 @@ export class Pulse {
     const pools={...(m.meta.pools||{})};
     for(const c of chains){ const pl=[...new Set(ps.filter(p=>p.chain===c).map(p=>p.pool))];
       pools[c]=[pl.filter(x=>cur.pools&&cur.pools[x]&&cur.pools[x].P>0).length, pl.length]; }
+    if(chains.includes('sol')&&pools.sol&&pools.sol[1]) this.solFails=pools.sol[0]?0:(this.solFails||0)+1;
     m.meta={N:all.length, last:Math.max(m.meta.last||0,cur.t), read:fresh, err:Object.values(this.err).filter(Boolean), ownOut, pools};
     return {slot:Math.floor(cur.t/MIN)*MIN, got, ...m.meta};
   }

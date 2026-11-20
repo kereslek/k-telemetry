@@ -47,6 +47,16 @@ ok(answered===8 && calls.every(([h])=>h==='capped.example'), 'in groups of ten, 
   ok(!(await ask(5000,3)) && await ask(8000,3), 'three asks a reading: Solana read again after 7.5 s, not after 5');
   ok(await ask(3000,1) && !(await ask(2000,1)), 'one ask a reading: every 2.5 s, as before');
   ok(await ask(3000,undefined), 'before the first reading says: 2.5 s');
+  P.solFails=1; ok(!(await ask(10000,3)) && await ask(16000,3), 'after a reading every server refused: 15 s');
+  P.solFails=5; ok(!(await ask(50000,3)) && await ask(61000,3), 'after many: a minute at most');
+  P.solFails=0;
+}
+// a group every server refuses ends the reading: one round of the servers, not one per group
+{ calls=[]; slowLeft=0; let threw=false;
+  const deny=globalThis.fetch; globalThis.fetch=async(url,opt)=>{ calls.push(url); return new Response('{"error":"rate"}',{status:429}); };
+  try{ await accounts([A,C], keys); }catch(e){ threw=true; }
+  globalThis.fetch=deny;
+  ok(threw && calls.length===2, 'every server refusing: the reading ends after the first group ('+calls.length+' asks)');
 }
 // readGrowth passes on how many asks the Solana reading took (none when no Solana position is read)
 { const {readGrowth}=await import('../src/sampler.js');

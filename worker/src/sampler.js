@@ -41,11 +41,12 @@ export async function one(rpcs, method, params){
 /* getMultipleAccounts in groups of ten, joined in order. The public servers cap one ask: publicnode refuses more than
    ten accounts (HTTP 403), so one ask for every position, pool and tick array failed there and fell through to the
    servers behind it, the last of which answers five times a minute: enough for the minute's reading, not for the
-   live dial. Groups of ten are answered by the first server. */
+   live dial. Groups of ten are answered by the first server. One after another: a group every server refuses ends
+   the reading there, so a refused reading costs one round of the servers, not one per group. */
 export async function accounts(rpcs, keys){
-  const groups=[]; for(let i=0;i<keys.length;i+=10) groups.push(keys.slice(i,i+10));
-  const got=await Promise.all(groups.map(g=>one(rpcs,'getMultipleAccounts',[g,{encoding:'base64'}])));
-  const value=[]; got.forEach((r,k)=>{ const v=(r&&r.value)||[]; for(let j=0;j<groups[k].length;j++) value.push(v[j]??null); });
+  const value=[];
+  for(let i=0;i<keys.length;i+=10){ const g=keys.slice(i,i+10), r=await one(rpcs,'getMultipleAccounts',[g,{encoding:'base64'}]);
+    const v=(r&&r.value)||[]; for(let j=0;j<g.length;j++) value.push(v[j]??null); }
   return {value};
 }
 
