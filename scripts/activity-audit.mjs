@@ -4,6 +4,7 @@
    fees from unclaimed to collected, it does not lose them). The deck is locked and this log is
    public: only counts and yes/no are printed, never a wallet, a transaction, a pool or an amount. */
 import crypto from 'node:crypto';
+import {freshest} from './store.mjs';   // the relay's working files: the store's copy when newer than the published one
 import { positionsFrom } from '../worker/src/sampler.js';
 import { tracked, solSwapOf } from '../worker/src/mine.js';
 import { ownSwapLines } from './own-swap-check.mjs';
@@ -21,7 +22,7 @@ const PULSE='https://kt-pulse.kereslek.workers.dev';
 const open=e=>{ if(!(e&&e.lock===1)) return e; const all=Buffer.from(e.ct,'base64'), d=crypto.createDecipheriv('aes-256-gcm',KEY,Buffer.from(e.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
   return JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')); };
 const t=Date.now();
-const [cfg,data,fees,costs,ledger,replay]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json','ledger-main.json','pools-replay-main.json'].map(f=>j(SITE+f+'?t='+t)))).map(x=>x?open(x):null);
+const [cfg,data,fees,costs,ledger,replay]=(await Promise.all(['config.json','data-main.json','fees-main.json','costs-main.json','ledger-main.json','pools-replay-main.json'].map(async f=>freshest(f, await j(SITE+f+'?t='+t))))).map(x=>x?open(x):null);
 const W=cfg.profiles.flatMap(p=>p.wallets||[]), WE=W.filter(x=>x.chain==='ethereum').map(x=>x.address.toLowerCase()), WS=W.filter(x=>x.chain==='solana').map(x=>x.address);
 // holdings-only wallets: the relay watches what they hold and does not sweep them for swaps
 const HOLD=new Set(W.filter(x=>x.role==='hold').map(x=>String(x.address).toLowerCase()));

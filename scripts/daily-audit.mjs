@@ -18,6 +18,7 @@ const LIVE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/';
    derived key, the sealed files are opened here, and — because this log is public — every line
    is printed with amounts, pairs, positions and addresses cut out. Pass or fail still shows. */
 import crypto from 'node:crypto';
+import {freshest} from './store.mjs';   // the relay's working files: the store's copy when newer than the published one
 const PASS=String(process.env.DECK_PASSPHRASE||'').trim();
 let LOCKED=false, KEY=null, BITS=null, TOK=null, LOCKMETA=null;
 try{ LOCKMETA=await (await fetch(LIVE+'lock.json?t='+Date.now())).json(); }catch(e){}
@@ -57,7 +58,7 @@ await pg.waitForTimeout(8000);
 const build=await pg.evaluate(()=>typeof BUILD!=='undefined'?BUILD:null);
 OK('page build '+build);
 
-const relay=openJ(await (await fetch(LIVE+'data-main.json?t='+Date.now())).json());
+const relay=openJ(await freshest('data-main.json', await (await fetch(LIVE+'data-main.json?t='+Date.now())).json().catch(()=>null)));
 if(LOCKED) (await pg.$('.lock-screen') ? FAIL : OK)('the page opened with the derived key (no lock screen)');
 const relayAge=(Date.now()-relay.t)/60000;
 // the history chart's TOTAL view: points carrying wallets and NFTs, and the daily totals before them
@@ -386,7 +387,7 @@ if(LOCKED){ try{ const a=await (await fetch('https://kt-pulse.kereslek.workers.d
   try{ const r=await fetch('https://kt-pulse.kereslek.workers.dev/auth/log?t='+Date.now()); (r.status===403?OK:FAIL)('access log refuses a request without the token'); }catch(e){} }
 for(const f of ['config.json','costs-main.json','ledger-main.json','fees-main.json','balances-main.json']){
   if(!LOCKED) break;
-  try{ const j=await (await fetch(LIVE+f+'?t='+Date.now())).json(); (j&&j.lock===1?OK:FAIL)(f+' is published sealed'); }catch(e){ WARN(f+' unreadable'); } }
+  try{ const j=await freshest(f, await (await fetch(LIVE+f+'?t='+Date.now())).json().catch(()=>null)); (j&&j.lock===1?OK:FAIL)(f+' is published sealed'); }catch(e){ WARN(f+' unreadable'); } }
 
 /* The page and this audit must hold the same relay pass. Pages publishes each push a little after it
    lands, so a pass committed just as the audit starts reaches the page but not the audit's first read,

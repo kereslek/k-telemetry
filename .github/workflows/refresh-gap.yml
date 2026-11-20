@@ -53,13 +53,15 @@ jobs:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
         run: |
           STALE_MIN=20
-          AGE=$(node -e "
+          # how old the newest payload is: the store's copy (every pass) once the store is on, else git's
+          if [ -f deck-r7k4x9/store-on.json ] && [ -f scripts/store.mjs ]; then AGE=$(node scripts/store.mjs age data-main.json)
+          else AGE=$(node -e "
             const fs=require('fs');
             try{
               const d=JSON.parse(fs.readFileSync('deck-r7k4x9/data-main.json','utf8'));
               console.log(Math.round((Date.now()-d.t)/60000));
             }catch(e){ console.log(99999); }   // unreadable payload counts as stale
-          ")
+          "); fi
           echo "published payload is ${AGE} min old (threshold ${STALE_MIN})"
           if [ "$AGE" -lt "$STALE_MIN" ]; then
             echo "primary refresh is keeping up — nothing to do"
@@ -67,5 +69,8 @@ jobs:
           fi
           echo "filling the gap"
           git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
+          rm -f /tmp/kt-store-push
+          if [ -f scripts/store.mjs ]; then node scripts/store.mjs pull || { echo "the store did not answer: no gap fill on the copies in git"; exit 0; }; fi
           node scripts/fetch-data.mjs
+          if [ -f scripts/store.mjs ]; then node scripts/store.mjs push || exit 0; fi
           bash scripts/commit-data.sh

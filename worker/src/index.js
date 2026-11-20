@@ -13,9 +13,11 @@ import {biggest} from './big.js';
 import {positionsFrom, readGrowth, earned, poolTraded, SOL_RPCS, EVM_RPCS, one} from './sampler.js';
 import {TOKENS, DEFAULT_CFG, readToken, opportunities, step} from './gaps.js';
 import {scanMine} from './mine.js';
+import {histInit, archiveMin, putEv, adjustOldEv, histRange, histInfo, HIST_SPAN_MAX} from './hist.js';
+import {storeInit, storeList, storeGet, storePut} from './store.js';
 
 const KEEP=1440, MAX_SPAN=30, MIN=60000;
-const cors={'access-control-allow-origin':'*','x-robots-tag':'noindex'};
+const cors={'access-control-allow-origin':'*','x-robots-tag':'noindex','access-control-expose-headers':'x-gen'};
 
 /* Trades, as the dashboard shows them. While someone is watching, readings come every few seconds
    and each one that found fees is an event, stamped at the middle of the span it covers. A run of
@@ -108,9 +110,33 @@ export class Pulse {
     if(this.mem) return this.mem;
     const [prev,mins,cache,meta,ev,evStart,own,selfSeen,poolPrev,mine,mineSt,pxLog]=await Promise.all(['prev','mins','cache','meta','ev','evStart','own','selfSeen','poolPrev','mine','mineSt','pxLog'].map(k=>this.s.get(k)));
     // another request may have loaded it while this one waited
-    if(!this.mem) this.mem={prev:prev||{}, mins:mins||{}, cache:cache||{}, meta:meta||{}, ev:ev||[], evStart:evStart??null, own:own||[], selfSeen:selfSeen||{}, poolPrev:poolPrev||{},
+    if(!this.mem){ this.mem={prev:prev||{}, mins:mins||{}, cache:cache||{}, meta:meta||{}, ev:ev||[], evStart:evStart??null, own:own||[], selfSeen:selfSeen||{}, poolPrev:poolPrev||{},
                             mine:mine||[], mineSt:mineSt||{}, pxLog:pxLog||{}};
+      // the long memory starts with the readings held now (the minutes join it as they leave the 24 hours)
+      const ev0=this.mem.ev; this.hist(sql=>{ if(!sql.exec('SELECT COUNT(*) AS n FROM hev').toArray()[0].n) for(const e of ev0) putEv(sql,e); }); }
     return this.mem;
+  }
+  /* the long memory (hist.js), never in the way of the recording: a failure is noted and the reading goes on */
+  hist(fn){
+    try{ const sql=this.s.sql; if(!this.histOk){ histInit(sql); this.histOk=true; } fn(sql); this.err.hist=null; return true; }
+    catch(e){ this.err.hist='history: '+String(e&&e.message||e).slice(0,120); return false; }
+  }
+  async histReq(u){
+    const m=await this.load(), now=Date.now();
+    const to=Number(u.searchParams.get('to'))||now; let from=Number(u.searchParams.get('from'))||to-2*864e5;
+    if(!(to>from)) return Response.json({err:'range'},{status:400});
+    from=Math.max(from, to-HIST_SPAN_MAX);
+    let out=null; this.hist(sql=>{ out={...histRange(sql,from,to,m.mins), info:histInfo(sql)}; });
+    return out?Response.json({now, from, to, ...out}):Response.json({err:this.err.hist||'history'},{status:503});
+  }
+  /* the relay's working files (store.js), on their own instance ('store') */
+  async storeReq(req,u){
+    const sql=this.s.sql; if(!this.storeOk){ storeInit(sql); this.storeOk=true; }
+    if(req.method==='POST'){ const r=storePut(sql, fn=>this.s.transactionSync(fn), await req.text()); return Response.json(r,{status:r.status}); }
+    if(u.pathname==='/f') return Response.json({now:Date.now(), ...storeList(sql)});
+    const f=storeGet(sql, decodeURIComponent(u.pathname.slice(3)));
+    return f?new Response(f.body,{headers:{'content-type':'application/json','x-gen':String(f.gen)}})
+      :new Response('{"none":1}',{status:404,headers:{'content-type':'application/json'}});
   }
   async save(){
     const m=this.mem; if(!m) return;
@@ -122,6 +148,8 @@ export class Pulse {
   async fetch(req){
     const u=new URL(req.url);
     if(u.pathname.startsWith('/auth/')) return this.auth(req,u);
+    if(u.pathname==='/f'||u.pathname.startsWith('/f/')) return this.storeReq(req,u);
+    if(u.pathname==='/h') return this.histReq(u);
     if(u.pathname==='/gapstick'){
       // asked on demand (the token-holder's "read now"), a reading under 30 s old is answered as is
       const via=u.searchParams.get('via')||'cron', last=await this.s.get('gapsRun');
@@ -171,19 +199,26 @@ export class Pulse {
     let src=this.src||await this.s.get('src');
     if(!src || Date.now()-src.at>10*MIN){
       try{
-        const r=await fetch(this.env.SRC_URL+'?t='+Date.now(),{cf:{cacheTtl:0}});
-        if(!r.ok) throw new Error('src HTTP '+r.status);
-        src={at:Date.now(), ps:positionsFrom(await this.open(await r.json())), wallets:src&&src.wallets||{sol:[],eth:[]}, selfPend:src&&src.selfPend||[]};
-        const base=this.env.SRC_URL.replace(/data-main\.json.*$/,'');
+        const base=this.env.SRC_URL.replace(/[^/]*$/,''), srcName=this.env.SRC_URL.slice(base.length).replace(/\?.*$/,'');
+        const d=await this.srcFile(base, srcName); if(!d) throw new Error('src not served');
+        src={at:Date.now(), ps:positionsFrom(await this.open(d)), wallets:src&&src.wallets||{sol:[],eth:[]}, selfPend:src&&src.selfPend||[]};
         try{ const c=await this.open(await (await fetch(base+'config.json?t='+Date.now(),{cf:{cacheTtl:0}})).json()), w=(c.profiles&&c.profiles[0]&&c.profiles[0].wallets)||[];
           src.wallets={sol:w.filter(x=>x.chain==='solana').map(x=>x.address), eth:w.filter(x=>x.chain==='ethereum').map(x=>String(x.address).toLowerCase())}; }catch(e){}
-        try{ const c=await this.open(await (await fetch(base+'costs-main.json?t='+Date.now(),{cf:{cacheTtl:0}})).json()); if(Array.isArray(c.selfPend)) src.selfPend=c.selfPend; }catch(e){}
+        try{ const c=await this.open(await this.srcFile(base,'costs-main.json')); if(Array.isArray(c.selfPend)) src.selfPend=c.selfPend; }catch(e){}
         await this.s.put('src',src);
         this.src=src; if(this.mem) this.reconcile(this.mem);
       }catch(e){ if(!src) throw e; }
     }
     this.src=src;
     return src.ps;
+  }
+  /* a relay file: the store's copy (every pass) and the published one (a daily snapshot, or every pass before the
+     store), the newer by its readable time */
+  async srcFile(base, name){
+    let a=null, b=null;
+    try{ const r=await this.env.PULSE.get(this.env.PULSE.idFromName('store')).fetch('https://store/f/'+name); if(r.ok) a=await r.json(); }catch(e){}
+    try{ const r=await fetch(base+name+'?t='+Date.now(),{cf:{cacheTtl:0}}); if(r.ok) b=await r.json(); }catch(e){}
+    return a&&b?((a.t||0)>=(b.t||0)?a:b):(a||b);
   }
   solRpcs(){ return this.env.SOL_RPC_URL?[this.env.SOL_RPC_URL,...SOL_RPCS]:SOL_RPCS; }
   /* The relay's files are sealed when the deck is locked (scripts/lock.mjs). This worker is given
@@ -293,12 +328,13 @@ export class Pulse {
       if(left>0){ row[0]+=left; if(lbl){ row[2]=row[2]||{}; row[2][lbl]=(row[2][lbl]||0)+left; } left=0; break; }
       const avail=lbl&&row[2]&&row[2][lbl]!=null?row[2][lbl]:row[0], take=Math.min(-left,avail,row[0]); if(!(take>0)) continue;
       row[0]-=take; if(lbl&&row[2]&&row[2][lbl]!=null){ row[2][lbl]-=take; if(row[2][lbl]<0.0005) delete row[2][lbl]; } left+=take; }
-    let d=delta;
+    let d=delta; const touched=[], before=m.ev.length?m.ev[0][0]:Infinity;
     for(const ev of m.ev){ if(Math.abs(d)<0.0005) break; if(!(ev[1]-5000<=t && ev[0]+5000>=t)) continue;
       const pools=ev[3]||(ev[3]={});
-      if(d>0){ ev[2]+=d; if(lbl) pools[lbl]=(pools[lbl]||0)+d; d=0; break; }
+      if(d>0){ ev[2]+=d; if(lbl) pools[lbl]=(pools[lbl]||0)+d; d=0; touched.push(ev); break; }
       const avail=lbl&&pools[lbl]!=null?pools[lbl]:ev[2], take=Math.min(-d,avail,ev[2]); if(!(take>0)) continue;
-      ev[2]-=take; if(lbl&&pools[lbl]!=null){ pools[lbl]-=take; if(pools[lbl]<0.0005) delete pools[lbl]; } d+=take; }
+      ev[2]-=take; if(lbl&&pools[lbl]!=null){ pools[lbl]-=take; if(pools[lbl]<0.0005) delete pools[lbl]; } d+=take; touched.push(ev); }
+    this.hist(sql=>{ for(const ev of touched) putEv(sql,ev); if(Math.abs(d)>=0.0005) adjustOldEv(sql, t, lbl, d, before); });
     m.ev=m.ev.filter(ev=>ev[2]>=TRADE_MIN);
   }
 
@@ -399,12 +435,16 @@ export class Pulse {
     if(evUsd>=TRADE_MIN){ const r=x=>Math.round(x*1e6)/1e6;
       m.ev.push([cur.t, evFrom, r(evUsd), Object.fromEntries(Object.entries(evPools).map(([k,v])=>[k,r(v)])),
                  Object.fromEntries(Object.entries(evSide).map(([k,v])=>[k,[r(v[0]),r(v[1])]])),
-                 Object.fromEntries(Object.entries(evPx).map(([k,v])=>[k,[v[0], v[1]!=null?Math.round(v[1]*100)/100:null]]))]); }
+                 Object.fromEntries(Object.entries(evPx).map(([k,v])=>[k,[v[0], v[1]!=null?Math.round(v[1]*100)/100:null]]))]);
+      const e=m.ev[m.ev.length-1]; this.hist(sql=>putEv(sql,e)); }
     for(const c of chains) this.lastRead[c]=cur.t;
     // forget positions that are no longer listed, minutes older than a day, events older than three hours
     for(const id of Object.keys(prev)) if(!all.some(p=>p.id===id)) delete prev[id];
     const cut=Math.floor(cur.t/MIN)*MIN-KEEP*MIN;
-    for(const t of Object.keys(mins)){ if(Number(t)<cut) delete mins[t]; else { const v=mins[t]; v[0]=Math.round(v[0]*1e6)/1e6; v[1]=Math.round(v[1]*100)/100;
+    // a minute leaving the 24 hours goes to the long memory first; one that could not be written waits (two hours at most)
+    const old=Object.keys(mins).filter(t=>Number(t)<cut);
+    const kept=!old.length||this.hist(sql=>{ for(const t of old) archiveMin(sql,t,mins[t]); });
+    for(const t of Object.keys(mins)){ if(Number(t)<cut&&(kept||Number(t)<cut-2*60*MIN)) delete mins[t]; else if(Number(t)<cut) continue; else { const v=mins[t]; v[0]=Math.round(v[0]*1e6)/1e6; v[1]=Math.round(v[1]*100)/100;
       if(v[2]) for(const k in v[2]) v[2][k]=Math.round(v[2][k]*1e6)/1e6; } }
     const evCut=Math.max(cur.t-EV_KEEP, m.ev.length>EV_MAX?m.ev[m.ev.length-EV_MAX][0]:0);
     if(m.ev.length && m.ev[0][0]<evCut){ m.ev=m.ev.filter(x=>x[0]>=evCut); if(m.evStart!=null) m.evStart=Math.max(m.evStart,evCut); }
@@ -514,6 +554,21 @@ export default {
       const r=u.pathname==='/gaps/run'?await stub.fetch('https://pulse/gapstick?via=ask')
         :await stub.fetch('https://pulse'+u.pathname, req.method==='POST'?{method:'POST', body:await req.text()}:{});
       return new Response(r.body,{status:r.status,headers:{...cors,'content-type':'application/json','cache-control':'no-store'}});
+    }
+    /* the long memory (/h) and the relay's working files (/f): read with the deck's token; a pass's files are written
+       with the relay's own key, sent in a header (never in an address), which the page does not hold */
+    if(u.pathname==='/h'||u.pathname==='/f'||u.pathname.startsWith('/f/')){
+      const J=(o,st)=>new Response(JSON.stringify(o),{status:st,headers:{...cors,'content-type':'application/json','cache-control':'no-store'}});
+      const write=req.method==='POST';
+      if(write){ if(u.pathname!=='/f') return J({err:'POST /f only'},405);
+        if(!env.STORE_TOKEN) return J({err:'store off'},503);
+        if(req.headers.get('x-store-key')!==env.STORE_TOKEN) return J({locked:1},403); }
+      else if(env.PULSE_TOKEN && u.searchParams.get('k')!==env.PULSE_TOKEN) return J({locked:1},403);
+      u.searchParams.delete('k');
+      const stub=env.PULSE.get(env.PULSE.idFromName(u.pathname==='/h'?'main':'store'));
+      const r=await stub.fetch('https://pulse'+u.pathname+u.search, write?{method:'POST', body:await req.text()}:{});
+      const h={...cors,'content-type':'application/json','cache-control':'no-store'}; const g=r.headers.get('x-gen'); if(g) h['x-gen']=g;
+      return new Response(r.body,{status:r.status,headers:h});
     }
     if(u.pathname!=='/m') return new Response('Not found',{status:404,headers:cors});
     /* Locked deck: only a page that opened the lock knows the token (derived with the key). */

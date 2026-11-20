@@ -10,6 +10,7 @@
    3. What the costs on the meter assume (harvest 130k gas, re-range 520k) against the median gas
       of the last few hundred calls to Uniswap v3's position manager, sorted by what each call did. */
 import crypto from 'node:crypto';
+import {freshest} from './store.mjs';   // the relay's working files: the store's copy when newer than the published one
 const sleep=ms=>new Promise(f=>setTimeout(f,ms));
 async function get(u,opt){ for(let k=0;k<3;k++){ try{ const r=await fetch(u,{...opt,signal:AbortSignal.timeout(20000)}); if(r.ok) return await r.json(); }catch(e){} await sleep(1200*(k+1)); } return null; }
 const rpc=async(url,method,params=[])=>{ const j=await get(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})}); return j&&j.result!=null?j.result:null; };
@@ -38,7 +39,7 @@ for(const [who,list] of [['the page',PAGE],['the relay',RELAY]]){
 
 /* ---------- 2. the deck's own readings, as statistics ---------- */
 { const PASS=String(process.env.DECK_PASSPHRASE||'').trim(), SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/';
-  const L=PASS?await get(SITE+'lock.json?t='+Date.now()):null, D=L?await get(SITE+'data-main.json?t='+Date.now()):null;
+  const L=PASS?await get(SITE+'lock.json?t='+Date.now()):null, D=L?await freshest('data-main.json', await get(SITE+'data-main.json?t='+Date.now())):null;
   let hist=null;
   if(L&&D&&D.lock===1){ try{ const K=crypto.pbkdf2Sync(PASS,Buffer.from(L.salt,'base64'),L.iter,64,'sha256').subarray(0,32), all=Buffer.from(D.ct,'base64');
     const d=crypto.createDecipheriv('aes-256-gcm',K,Buffer.from(D.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
@@ -135,7 +136,7 @@ for(const [who,list] of [['the page',PAGE],['the relay',RELAY]]){
 /* ---------- 6. the deck's own readings by hour of day (Budapest), and its spikes ----------
    Market data only (gas prices and Solana's going rate as statistics); nothing of the owner's. */
 { const PASS=String(process.env.DECK_PASSPHRASE||'').trim(), SITE='https://kereslek.github.io/k-telemetry/deck-r7k4x9/';
-  const L=PASS?await get(SITE+'lock.json?t='+Date.now()):null, D=L?await get(SITE+'data-main.json?t='+Date.now()):null;
+  const L=PASS?await get(SITE+'lock.json?t='+Date.now()):null, D=L?await freshest('data-main.json', await get(SITE+'data-main.json?t='+Date.now())):null;
   let H=null; if(L&&D&&D.lock===1){ try{ const K=crypto.pbkdf2Sync(PASS,Buffer.from(L.salt,'base64'),L.iter,64,'sha256').subarray(0,32), all=Buffer.from(D.ct,'base64');
     const d=crypto.createDecipheriv('aes-256-gcm',K,Buffer.from(D.iv,'base64')); d.setAuthTag(all.subarray(all.length-16));
     H=JSON.parse(Buffer.concat([d.update(all.subarray(0,all.length-16)),d.final()]).toString('utf8')).history||null; }catch(e){} }

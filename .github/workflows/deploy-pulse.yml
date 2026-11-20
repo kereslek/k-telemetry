@@ -21,7 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with: { node-version: 22 }
+      # the recorder's own tests first (worker/test): a broken recorder never deploys
+      - name: Tests
+        working-directory: worker
+        run: for t in test/*.test.mjs; do node --no-warnings "$t" > /dev/null || { echo "::error::$t failed"; exit 1; }; echo "$t passed"; done
       - name: Token present?
         id: tok
         run: |
@@ -67,12 +71,15 @@ jobs:
           node -e '
             const c=require("crypto"), L=JSON.parse(require("fs").readFileSync("/tmp/lock.json","utf8"));
             const b=c.pbkdf2Sync(process.env.DECK_PASSPHRASE.trim(), Buffer.from(L.salt,"base64"), L.iter, 64, "sha256");
-            require("fs").writeFileSync("/tmp/k", b.subarray(0,32).toString("base64")); require("fs").writeFileSync("/tmp/t", b.subarray(32).toString("hex"));'
-          echo "::add-mask::$(cat /tmp/k)"; echo "::add-mask::$(cat /tmp/t)"
+            require("fs").writeFileSync("/tmp/k", b.subarray(0,32).toString("base64")); require("fs").writeFileSync("/tmp/t", b.subarray(32).toString("hex"));
+            // the relay's write key for the store (scripts/store.mjs derives the same): the page never holds it
+            require("fs").writeFileSync("/tmp/w", c.createHmac("sha256", b.subarray(0,32)).update("kt-store-write").digest("hex"));'
+          echo "::add-mask::$(cat /tmp/k)"; echo "::add-mask::$(cat /tmp/t)"; echo "::add-mask::$(cat /tmp/w)"
           npx --yes wrangler@4 secret put DECK_KEY < /tmp/k
           npx --yes wrangler@4 secret put PULSE_TOKEN < /tmp/t
+          npx --yes wrangler@4 secret put STORE_TOKEN < /tmp/w
           echo "PULSE_K=$(cat /tmp/t)" >> $GITHUB_ENV
-          rm -f /tmp/k /tmp/t
+          rm -f /tmp/k /tmp/t /tmp/w
       - name: Verify it records
         if: steps.tok.outputs.ok == '1'
         run: |
@@ -80,6 +87,13 @@ jobs:
           echo "PULSE_URL $URL" ; echo "Pulse endpoint: $URL" >> $GITHUB_STEP_SUMMARY
           # Locked: ask with the token, and print nothing the recorder holds — this log is public.
           if [ -n "$PULSE_K" ]; then
+            # the long memory and the relay's store: status codes and counts only
+            B="${URL%/m?n=10}"
+            echo "history without the token: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$B/h") (403 expected)"
+            echo "history: $(curl -sS -m 30 "$B/h?k=$PULSE_K" | jq -c '{minutes:(.mins|length), readings:(.ev|length), archived:.info.mins, kept_readings:.info.ev}' 2>/dev/null || echo unreadable)"
+            echo "store without the token: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$B/f") (403 expected)"
+            echo "store upload without the key: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' -X POST --data 'x' "$B/f") (403 expected)"
+            echo "store: $(curl -sS -m 30 "$B/f?k=$PULSE_K" | jq -c '{version:.ver, files:(.files|length)}' 2>/dev/null || echo unreadable)"
             code=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$URL"); echo "without the token: HTTP $code (403 expected)"
             for i in $(seq 1 30); do sleep 20
               n=$(curl -sS -m 15 "$URL&k=$PULSE_K" | jq -r '.mins|length' 2>/dev/null || echo 0)

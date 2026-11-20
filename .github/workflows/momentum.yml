@@ -38,7 +38,10 @@ jobs:
             i=$((i+1)); start=$(date +%s)
             echo "::group::pass $i"
             git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
+            # the relay's working files: the newest are in the store (scripts/store.mjs), git holds a day's copy
+            [ -f scripts/store.mjs ] && node scripts/store.mjs pull --read
             if node scripts/momentum.mjs; then
+              [ -f scripts/store.mjs ] && { node scripts/store.mjs restore || true; }
               git add deck-r7k4x9/momentum-main.json deck-r7k4x9/momentum-px-main.json
               if git diff --cached --quiet; then ok=$((ok+1)); else
                 git commit -q -m "momentum $(date -u +%Y-%m-%dT%H:%MZ)"
