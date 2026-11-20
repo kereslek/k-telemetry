@@ -193,12 +193,17 @@ async function receiptOf(h, blk){
 const rcWhy=[];
 /* who sent a transaction (lowercase), the same way: the deck's own swaps are known by their sender, whatever
    Blockscout's wallet lists answer */
-const senders=new Map();
-async function senderOf(h){ h=String(h).toLowerCase(); if(senders.has(h)) return senders.get(h);
-  let f=null;
-  for(let k=0;k<3&&!f;k++){ const tx=await erpc('eth_getTransactionByHash',[h]); if(tx&&tx.from) f=String(tx.from).toLowerCase(); else { if(over()) break; await sleep(1000*(k+1)); } }
-  if(!f){ const r=await j(BS+'/api/v2/transactions/'+h,{},2,45000); if(r&&r.from&&r.from.hash) f=String(r.from.hash).toLowerCase(); }
-  if(f) senders.set(h,f); return f; }
+const senders=new Map(), sendWhy=[];
+async function senderOf(h, slow){ h=String(h).toLowerCase(); if(senders.has(h)) return senders.get(h);
+  let f=null; const why={unknown:0, refused:0, v2:null, v1:null};
+  for(let k=0;k<3&&!f;k++){ for(const u of NODES){ const r=await rpcRaw(u,'eth_getTransactionByHash',[h]); if(r&&r.result&&r.result.from){ f=String(r.result.from).toLowerCase(); break; }
+      if(r&&r.result===null&&!r.error) why.unknown++; else why.refused++; }
+    if(!f){ if(over()) break; await sleep((slow?4000:1000)*(k+1)); } }
+  const st=async u=>{ try{ const r=await fetch(u,{signal:AbortSignal.timeout(45000)}); return {s:r.status, j:r.ok?await r.json().catch(()=>null):null}; }catch(e){ return {s:'timeout', j:null}; } };
+  if(!f){ const r=await st(BS+'/api/v2/transactions/'+h); why.v2=r.s; if(r.j&&r.j.from&&r.j.from.hash) f=String(r.j.from.hash).toLowerCase(); }
+  if(!f){ const r=await st(BS+'/api?module=transaction&action=gettxinfo&txhash='+h); why.v1=r.s; const x=r.j&&r.j.result; if(x&&x.from) f=String(x.from).toLowerCase(); }
+  if(f) senders.set(h,f); else if(slow) sendWhy.push(why);
+  return f; }
 
 async function ethSide(out, prevPools){
   const tipHex=await erpc('eth_blockNumber',[]); if(!tipHex){ out.notes.push('eth: no node answered'); return; }
@@ -269,9 +274,15 @@ async function ethSide(out, prevPools){
       continue; }
     // the deck's own swaps by their sender as well as by its wallets' lists
     const swH=[...new Set(logs.filter(l=>l.topics[0]===TOP.swap).map(l=>String(l.transactionHash).toLowerCase()))].filter(h=>!own.set.has(h));
-    const sx=await mapLimit(swH,6,senderOf); let sMiss=0;
+    const sx=await mapLimit(swH,6,h=>senderOf(h));
+    // those not served in the rush: asked again one at a time, slowly, twice
+    for(let pass=0;pass<2&&!over();pass++){ const left=swH.map((h,i)=>sx[i]?null:i).filter(i=>i!=null); if(!left.length) break;
+      await sleep(15000); for(const i of left){ sx[i]=await senderOf(swH[i], pass===1); if(over()) break; } }
+    let sMiss=0;
     swH.forEach((h,i)=>{ if(!sx[i]) sMiss++; else if(WAL.eth.has(sx[i])){ own.set.add(h); stats.eth.ownBySender=(stats.eth.ownBySender||0)+1; } });
-    if(sMiss){ stats.unread++; out.notes.push('eth: the sender of '+sMiss+' swap(s) not served; a pool kept as it was'); continue; }
+    if(sMiss){ stats.unread++; out.notes.push('eth: the sender of '+sMiss+' swap(s) not served; a pool kept as it was');
+      for(const w of sendWhy) console.log('  sender not served: the nodes said unknown '+w.unknown+'×, refused '+w.refused+'× · Blockscout: '+w.v2+', its older interface '+w.v1);
+      continue; }
     for(const l of logs){ const t=timeOf(l,L.anchors); if(t==null) continue;
       if(l.topics[0]===TOP.swap){ const d=l.data, a0=sInt(word(d,0)), a1=sInt(word(d,1)), sp=Number(BigInt('0x'+word(d,2)))/2**96, Lq=Number(BigInt('0x'+word(d,3))), tick=i24(word(d,4));
         const P=sp*sp, w=a0>0n?Number(a0):(P>0?Number(a1)/P:0); const ownS=own.set.has(String(l.transactionHash).toLowerCase());
