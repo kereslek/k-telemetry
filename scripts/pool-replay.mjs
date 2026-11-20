@@ -169,12 +169,20 @@ async function ownTxs(fromB){
 /* a transaction's receipt: each node in turn, twice more after a pause, then Blockscout's record of its logs; null only
    when none of them serves it (the pool is then not booked this run, rather than booked without it) */
 async function receiptOf(h){
-  for(let k=0;k<3;k++){ const rc=await erpc('eth_getTransactionReceipt',[h]); if(rc&&Array.isArray(rc.logs)) return rc; if(over()) return null; await sleep(1200*(k+1)); }
+  const why={unknown:0, refused:0, logs:null, tx:null};
+  for(let k=0;k<3;k++){ for(const u of NODES){ const r=await rpcRaw(u,'eth_getTransactionReceipt',[h]);
+      if(r&&r.result&&Array.isArray(r.result.logs)) return r.result; if(r&&r.result===null&&!r.error) why.unknown++; else why.refused++; }
+    if(over()) break; await sleep(1500*(k+1)); }
+  const st=async u=>{ try{ const r=await fetch(u,{signal:AbortSignal.timeout(45000)}); return {s:r.status, j:r.ok?await r.json().catch(()=>null):null}; }catch(e){ return {s:'timeout', j:null}; } };
   const logs=[]; let next=null;
-  for(let n=0;n<6;n++){ const r=await j(BS+'/api/v2/transactions/'+h+'/logs'+(next?'?'+new URLSearchParams(next):''),{},3,45000); if(!r||!Array.isArray(r.items)) return null;
-    for(const it of r.items) logs.push({address:it.address?.hash||'', topics:(it.topics||[]).filter(x=>x!=null), data:it.data||'0x'});
-    if(!r.next_page_params) return {logs}; next=r.next_page_params; }
+  for(let n=0;n<6;n++){ const r=await st(BS+'/api/v2/transactions/'+h+'/logs'+(next?'?'+new URLSearchParams(next):'')); if(n===0) why.logs=r.s;
+    if(!r.j||!Array.isArray(r.j.items)) break;
+    for(const it of r.j.items) logs.push({address:it.address?.hash||'', topics:(it.topics||[]).filter(x=>x!=null), data:it.data||'0x'});
+    if(!r.j.next_page_params) return {logs}; next=r.j.next_page_params; }
+  // not served anywhere: how each source answered, for the log (no hash, no pool)
+  why.tx=(await st(BS+'/api/v2/transactions/'+h)).s; rcWhy.push(why);
   return null; }
+const rcWhy=[];
 /* who sent a transaction (lowercase), the same way: the deck's own swaps are known by their sender, whatever
    Blockscout's wallet lists answer */
 const senders=new Map();
@@ -247,7 +255,9 @@ async function ethSide(out, prevPools){
       if(xs.length) mineIn.set(h,xs); return true; });
     // a deposit or withdrawal whose receipt was not served could be the deck's: the pool waits for the next run rather than lose it
     const rcMiss=lpTx.length-rcs.filter(Boolean).length;
-    if(rcMiss){ stats.unread++; stats.eth.rcMiss=(stats.eth.rcMiss||0)+rcMiss; out.notes.push('eth: '+rcMiss+' deposit or withdrawal receipt(s) not served; a pool kept as it was'); continue; }
+    if(rcMiss){ stats.unread++; stats.eth.rcMiss=(stats.eth.rcMiss||0)+rcMiss; out.notes.push('eth: '+rcMiss+' deposit or withdrawal receipt(s) not served; a pool kept as it was');
+      for(const w of rcWhy) console.log('  receipt not served: the nodes said unknown '+w.unknown+'×, refused '+w.refused+'× · Blockscout: its logs '+w.logs+', the transaction '+w.tx);
+      continue; }
     // the deck's own swaps by their sender as well as by its wallets' lists
     const swH=[...new Set(logs.filter(l=>l.topics[0]===TOP.swap).map(l=>String(l.transactionHash).toLowerCase()))].filter(h=>!own.set.has(h));
     const sx=await mapLimit(swH,6,senderOf); let sMiss=0;
