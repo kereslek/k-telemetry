@@ -397,7 +397,8 @@ let rel=relay;
 { /* the page reads the relay from raw GitHub as well as the published site, whichever is newer (the site
      can lag a push by minutes): this audit reads both the same way, for the pass the page holds */
   const RAWL=LIVE.replace(/^https:\/\/([^./]+)\.github\.io\/([^/]+)\//,'https://raw.githubusercontent.com/$1/$2/gh-pages/');
-  const at=async u=>{ try{ return openJ(await (await fetch(u+'data-main.json?t='+Date.now(),{cache:'no-store'})).json()); }catch(e){ return null; } };
+  // and, as the page does, the store's copy when it is newer (git holds one copy a day)
+  const at=async u=>{ try{ return openJ(await freshest('data-main.json', await (await fetch(u+'data-main.json?t='+Date.now(),{cache:'no-store'})).json().catch(()=>null))); }catch(e){ return null; } };
   let pageT=await pg.evaluate(()=>state.relayAt||0);
   for(let k=0;k<12&&pageT&&rel.t!==pageT;k++){ let newest=null;
     for(const u of [RAWL, LIVE]){ const x=await at(u); if(x&&(!newest||x.t>newest.t)) newest=x; if(x&&x.t===pageT){ rel=x; break; } }
