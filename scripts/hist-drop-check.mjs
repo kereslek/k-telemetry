@@ -65,6 +65,7 @@ if(runs.length){
       for(const k of ks){ const b=B.o[k], g=G.o[k]; const gu=g?g.usd:0, bu=b?b.usd:0; if(Math.abs(gu-bu)<Math.max(50,0.02*Math.abs(gu))) continue;
         diff.push({k, s:(b||g).s, ch:(b||g).ch, share:gu>0?(gu-bu)/gu:null, aR:g&&g.a?(b?b.a/g.a:0):null, pR:g&&g.px&&b&&b.px?b.px/g.px:null, gone:!b, noPx:!!b&&b.px==null, w:Math.abs(gu-bu)}); }
       diff.sort((x,y)=>y.w-x.w);
-      for(const x of diff.slice(0,6)) console.log('     '+x.s+' ('+x.ch+', wallet): '+(x.gone?'missing from the read':'amount '+rx(x.aR)+', price '+(x.noPx?'none':rx(x.pR))));
+      // the log is public: a holding is named by its rank in this list, never by token or chain
+      for(const [i,x] of diff.slice(0,6).entries()) console.log('     wallet holding '+(i+1)+': '+(x.gone?'missing from the read':'amount '+rx(x.aR)+', price '+(x.noPx?'none':rx(x.pR))));
       if(!diff.length) console.log('     no wallet holding moved much: the drop is elsewhere'); } }
 }
