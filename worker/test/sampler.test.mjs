@@ -35,4 +35,22 @@ calls=[]; slowLeft=5; answered=0;
 for(let k=0;k<8;k++){ try{ await accounts([A,B,C], keys); answered++; }catch(e){} }
 ok(answered===8 && calls.every(([h])=>h==='capped.example'), 'in groups of ten, eight times in a minute: all answered by the first server');
 
+/* the live dial spaces its Solana readings by the asks one takes: 2.5 s each, so the servers see the same rate */
+{ const {Pulse}=await import('../src/index.js');
+  const db=new (await import('node:sqlite')).DatabaseSync(':memory:'), kv=new Map();
+  const sql={ exec(q,...b){ const st=db.prepare(q); const rows=/^\s*(SELECT|WITH)/i.test(q)?st.all(...b):(st.run(...b),[]); return {toArray:()=>rows, one:()=>rows[0]}; } };
+  const S={ sql, async get(k){ return Array.isArray(k)?new Map(k.map(x=>[x,kv.get(x)])):kv.get(k); },
+    async put(k,v){ if(typeof k==='object') for(const [a,b] of Object.entries(k)) kv.set(a,b); else kv.set(k,v); }, transactionSync(fn){ return fn(); } };
+  const P=new Pulse({storage:S}, {SRC_URL:'https://x.invalid/deck/data-main.json'});
+  P.positions=async()=>[]; let reads=[]; P.readChain=c=>{ reads.push(c); P.lastRead[c]=Date.now(); return Promise.resolve(); };
+  const ask=async(solAgo,asks)=>{ reads=[]; P.solAsks=asks; P.lastRead={sol:Date.now()-solAgo, eth:Date.now()}; await P.fetch(new Request('https://pulse/m?live=1')); return reads.includes('sol'); };
+  ok(!(await ask(5000,3)) && await ask(8000,3), 'three asks a reading: Solana read again after 7.5 s, not after 5');
+  ok(await ask(3000,1) && !(await ask(2000,1)), 'one ask a reading: every 2.5 s, as before');
+  ok(await ask(3000,undefined), 'before the first reading says: 2.5 s');
+}
+// readGrowth passes on how many asks the Solana reading took (none when no Solana position is read)
+{ const {readGrowth}=await import('../src/sampler.js');
+  const r=await readGrowth([], {}, {chains:['sol']});
+  ok(r.asks===null && Array.isArray(r.err) && !r.err.length, 'no Solana positions: no asks, no error');
+}
 console.log(fails?fails+' FAILED of '+n:'all '+n+' passed'); process.exit(fails?1:0);

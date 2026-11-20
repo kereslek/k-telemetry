@@ -88,7 +88,10 @@ function tradesOf(all, ev, evStart){
    of its own: when no page asks, the minute cron is the only reader, exactly as before.
    The record lives in memory between asks and is written to storage at most once a minute, so
    fast reading costs no storage writes; if the object is evicted, the next reading is measured
-   from the last saved one and nothing is lost, only stamped later. */
+   from the last saved one and nothing is lost, only stamped later.
+   A Solana reading asks its server once per ten accounts (the public servers take no more in one ask), so
+   the live gap is 2.5 s for each of those asks: the servers see the same rate of asks however many
+   positions there are, the rate they took for months when one ask held them all. */
 const FAST={sol:2500, eth:11000};
 const SWAP_V3='0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67';
 /* Your own swaps are not income. A swap of yours through one of your own pools pays its fee to
@@ -179,7 +182,7 @@ export class Pulse {
     const m=await this.load();
     if(u.searchParams.get('live')==='1'){
       const now=Date.now(), jobs=[]; this.watchAt=now;
-      for(const c of ['sol','eth']) if(now-this.lastRead[c]>=FAST[c]) jobs.push(this.readChain(c));
+      for(const c of ['sol','eth']) if(now-this.lastRead[c]>=FAST[c]*(c==='sol'?Math.max(1,this.solAsks||1):1)) jobs.push(this.readChain(c));
       // answer within 2.5 s either way; a slow read finishes on its own and shows on the next ask
       if(jobs.length) await Promise.race([Promise.allSettled(jobs), new Promise(r=>setTimeout(r,2500))]);
       if(Date.now()-this.savedAt>MIN) await this.save().catch(()=>{});
@@ -377,6 +380,7 @@ export class Pulse {
     const all=await this.positions(), ps=all.filter(p=>chains.includes(p.chain));
     const solRpcs=this.env.SOL_RPC_URL?[this.env.SOL_RPC_URL,...SOL_RPCS]:SOL_RPCS;
     const cur=await readGrowth(ps, m.cache, {solRpcs, solFirst:!!this.env.SOL_RPC_URL, chains});
+    if(cur.asks) this.solAsks=cur.asks;
     for(const c of chains) this.err[c]=cur.err.length?cur.err.join(' | '):null;
     // pools that earned anything in this reading, measured against the last one (nothing booked yet)
     const earning={};

@@ -23,7 +23,8 @@ export const EVM_RPCS=['https://ethereum-rpc.publicnode.com','https://eth.drpc.o
 const MC3='0xca11bde05977b3631167028862be2a173976ca11';
 /* Keyless endpoints that answer a Cloudflare Worker (checked from the Workers runtime, 28 Sep):
    Solana's own api.mainnet-beta and drpc's free tier refuse it. A SOL_RPC_URL secret goes first. */
-export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://rpc.solanatracker.io/public','https://solana.leorpc.com/?api_key=FREE','https://solana-mainnet.gateway.tatum.io'];
+// rpc.solanatracker.io/public left on 20 Nov 2026: its free endpoint is closed (HTTP 401 on every ask)
+export const SOL_RPCS=['https://solana-rpc.publicnode.com','https://solana.leorpc.com/?api_key=FREE','https://solana-mainnet.gateway.tatum.io'];
 const M256=(1n<<256n)-1n, M128=(1n<<128n)-1n;
 
 /* ---------- plumbing ---------- */
@@ -181,6 +182,7 @@ async function growthSol(ps, cache, rpcs){
     plan.push({p, pos:add(p.pda), pool:add(p.pool), lo:{i:add(lo.addr),idx:lo.idx}, up:{i:add(up.addr),idx:up.idx}});
   }
   const r=await accounts(rpcs,accs);
+  out._asks=Math.ceil(accs.length/10);   // asks one reading takes, so the live dial can space its readings to match
   const buf=r.value.map(a=>a?b64(a.data[0]):null);
   const poolOut={};
   for(const pl of pools){ const ob=at[pl]!=null?buf[at[pl]]:null, c=cache[pl], C=c&&cache['cfg:'+c.cfg], p=ps.find(x=>x.pool===pl);
@@ -225,8 +227,8 @@ export async function readGrowth(ps, cache, opt={}){
     on('eth')?growthEvm(ps.filter(p=>p.chain==='eth'), cache, rot(opt.evmRpcs||EVM_RPCS,k)):{},
     on('sol')?growthSol(ps.filter(p=>p.chain==='sol'), cache, [...sol.slice(0,fixed),...rot(sol.slice(fixed),k)]):{}]);
   const ev=e.status==='fulfilled'?e.value:{}, sv=s.status==='fulfilled'?s.value:{};
-  const pools={...(ev._pools||{}), ...(sv._pools||{})}; delete ev._pools; delete sv._pools;
-  return { t, pools, g:{...ev, ...sv},
+  const pools={...(ev._pools||{}), ...(sv._pools||{})}, asks=sv._asks||null; delete ev._pools; delete sv._pools; delete sv._asks;
+  return { t, pools, g:{...ev, ...sv}, asks,
            err:[e,s].filter(x=>x.status==='rejected').map(x=>String(x.reason&&x.reason.message||x.reason)) };
 }
 
