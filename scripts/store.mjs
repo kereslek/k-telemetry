@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
+import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {initLock, lockOn, lockToken, lockKeyB64} from './lock.mjs';
 
@@ -36,9 +37,15 @@ const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 let tokens=null;
-function keys(){
+const SITE=(process.env.SITE_URL||'https://kereslek.github.io/k-telemetry/deck-r7k4x9/').replace(/\/?$/,'/');
+async function keys(){
   if(tokens) return tokens;
-  try{ if(!lockOn()) initLock(OUT); }catch(e){ return tokens={off:'lock: '+String(e.message||e).slice(0,80)}; }
+  try{ if(!lockOn()){
+      // a checkout without the lock (a job run from another branch): the published one, which holds only the salt
+      let dir=OUT; if(!fs.existsSync(OUT+'/lock.json')){ const r=await fetch(SITE+'lock.json?t='+Date.now(),{signal:AbortSignal.timeout(30000)});
+        if(!r.ok) throw new Error('lock.json not served'); dir=fs.mkdtempSync(path.join(os.tmpdir(),'kt-lock-')); fs.writeFileSync(dir+'/lock.json', await r.text()); }
+      initLock(dir); } }
+  catch(e){ return tokens={off:'lock: '+String(e.message||e).slice(0,80)}; }
   if(!lockOn()) return tokens={off:'the deck is not locked'};
   return tokens={read:lockToken(), write:crypto.createHmac('sha256', Buffer.from(lockKeyB64(),'base64')).update('kt-store-write').digest('hex')};
 }
@@ -54,9 +61,9 @@ async function ask(path, opt={}, text=false){
 const local=()=>fs.readdirSync(OUT).filter(f=>MANAGED.test(f)).sort();
 const manifest=()=>{ try{ const m=JSON.parse(fs.readFileSync(MANIFEST,'utf8')); return m&&m.files?m:{t:0, files:{}}; }catch(e){ return {t:0, files:{}}; } };
 const writeManifest=(gens)=>fs.writeFileSync(MANIFEST, JSON.stringify({t:Date.now(), files:Object.fromEntries(Object.entries(gens).sort())})+'\n');
-export async function storeList(){ const K=keys(); if(K.off) return null; const r=await ask('/f?k='+K.read); return r&&r.status===200&&r.body?r.body:null; }
+export async function storeList(){ const K=await keys(); if(K.off) return null; const r=await ask('/f?k='+K.read); return r&&r.status===200&&r.body?r.body:null; }
 /* one file's text from the store (sealed as the relay wrote it), or null */
-export async function storeText(name){ const K=keys(); if(K.off||!MANAGED.test(name)) return null;
+export async function storeText(name){ const K=await keys(); if(K.off||!MANAGED.test(name)) return null;
   const r=await ask('/f/'+name+'?k='+K.read, {}, true); return r&&r.status===200?{gen:r.gen, text:r.body}:null; }
 /* the newer of the store's copy and one fetched elsewhere (the published site), by the readable time `t` */
 export async function freshest(name, other){
@@ -65,7 +72,7 @@ export async function freshest(name, other){
 }
 
 async function pull(read){
-  const K=keys();
+  const K=await keys();
   if(K.off){ console.log('store: '+K.off+' — the files stay in git'); fs.writeFileSync(STATE, JSON.stringify({off:1})); return 0; }
   const L=await storeList();
   if(!L){ if(read){ console.log('::warning::store: did not answer — reading the copies in git (up to a day old)'); return 0; }
@@ -86,7 +93,7 @@ async function push(){
   const S=(()=>{ try{ return JSON.parse(fs.readFileSync(STATE,'utf8')); }catch(e){ return null; } })();
   if(!S){ console.log('store: no pull before this pass — refused'); fs.writeFileSync(FLAG,'race'); return 3; }
   if(S.off){ fs.writeFileSync(FLAG,'legacy'); return 0; }
-  const K=keys(), gen=Date.now(), changed=[];
+  const K=await keys(), gen=Date.now(), changed=[];
   for(const f of local()){ const t=fs.readFileSync(OUT+'/'+f,'utf8'); if(S.shas[f]!==sha(t)) changed.push([f,t]); }
   const due=Date.now()-(manifest().t||0)>SNAP_EVERY, gens={...S.gens};
   for(const [f] of changed) gens[f]=gen;
@@ -105,7 +112,7 @@ async function push(){
 
 /* a pass that ran without a pull (a job started before the store, or a script that skipped it) */
 async function guard(){
-  const K=keys(); if(K.off) return 0;
+  const K=await keys(); if(K.off) return 0;
   const L=await storeList(); if(!L){ console.log('store: did not answer — a pass run without the store is not committed'); return 1; }
   const M=manifest();
   const newer=Object.entries(L.files).filter(([n,f])=>MANAGED.test(n)&&f.gen>(M.files[n]||0)).length;
