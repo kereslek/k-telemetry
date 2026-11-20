@@ -264,14 +264,19 @@ async function ethSide(out, prevPools){
        its place there, from a node and then from Blockscout's log query; one not found holds the pool back */
     const noTx=L.logs.filter(l=>!HASH_OK(l.transactionHash));
     if(noTx.length){ stats.eth.noTx=(stats.eth.noTx||0)+noTx.length; let left=0;
-      for(const b of [...new Set(noTx.map(l=>bn(l.blockNumber)))]){ const hb='0x'+b.toString(16); let got=null;
-        for(const u of NODES){ const r=await rpcAt(u,'eth_getLogs',[{address:id, fromBlock:hb, toBlock:hb}],30000); if(Array.isArray(r)){ got=r; break; } }
-        if(!got){ const all=[]; let ok=true; for(const t0 of [TOP.swap,TOP.mint,TOP.burn]){ const x=await j(BS+'/api?'+new URLSearchParams({module:'logs',action:'getLogs',address:id,topic0:t0,fromBlock:String(b),toBlock:String(b)}),{},3,45000);
-            if(Array.isArray(x?.result)) all.push(...x.result); else if(!(x&&x.status==='0'&&/no (records|logs) found/i.test(String(x.message||'')))){ ok=false; break; } }
-          if(ok) got=all; }
-        for(const l of noTx.filter(l=>bn(l.blockNumber)===b)){ const m=got&&got.find(g=>bn(g.logIndex)===bn(l.logIndex)&&(g.topics||[])[0]===l.topics[0]);
-          if(m&&HASH_OK(m.transactionHash)) l.transactionHash=m.transactionHash; else left++; } }
-      if(left){ stats.unread++; out.notes.push('eth: '+left+' record(s) served without their transaction and not found again in their block; a pool kept as it was'); continue; } }
+      // their blocks, gathered into windows of nearby blocks so one query serves many
+      const blks=[...new Set(noTx.map(l=>bn(l.blockNumber)))].sort((a,b)=>a-b), wins=[];
+      for(const b of blks){ const w=wins[wins.length-1]; if(w&&b-w[0]<1000) w[1]=b; else wins.push([b,b]); }
+      stats.eth.noTxBlocks=(stats.eth.noTxBlocks||0)+blks.length; stats.eth.noTxWins=(stats.eth.noTxWins||0)+wins.length;
+      const found=new Map(), key=(b,i)=>b+':'+i, take=xs=>{ for(const g of xs||[]) if(HASH_OK(g.transactionHash)) found.set(key(bn(g.blockNumber),bn(g.logIndex)),g); };
+      const nodeRange=async(a,z)=>{ for(const u of NODES){ const r=await rpcAt(u,'eth_getLogs',[{address:id, topics:[[TOP.swap,TOP.mint,TOP.burn]], fromBlock:'0x'+a.toString(16), toBlock:'0x'+z.toString(16)}],15000); if(Array.isArray(r)) return r; } return null; };
+      for(const [a,z] of wins){ if(over()) break;
+        const r=await nodeRange(a,z); if(r){ take(r); continue; }
+        // the window refused: block by block, a node and then Blockscout's log query
+        for(const b of blks.filter(b=>b>=a&&b<=z)){ if(over()) break; const x=await nodeRange(b,b); if(x){ take(x); continue; }
+          for(const t0 of [TOP.swap,TOP.mint,TOP.burn]){ const y=await j(BS+'/api?'+new URLSearchParams({module:'logs',action:'getLogs',address:id,topic0:t0,fromBlock:String(b),toBlock:String(b)}),{},2,30000); if(Array.isArray(y?.result)) take(y.result); } } }
+      for(const l of noTx){ const m=found.get(key(bn(l.blockNumber),bn(l.logIndex))); if(m&&(m.topics||[])[0]===l.topics[0]) l.transactionHash=m.transactionHash; else left++; }
+      if(left){ stats.unread++; out.notes.push('eth: '+left+' record(s) served without their transaction and not found again in their block'+(over()?' (out of time)':'')+'; a pool kept as it was'); continue; } }
     const logs=L.logs.sort((a,b)=>bn(a.blockNumber)-bn(b.blockNumber)||bn(a.logIndex)-bn(b.logIndex));
     // which of the position manager's deposits and withdrawals were the deck's: the receipt names the position
     const lpTx=[...new Set(logs.filter(l=>l.topics[0]!==TOP.swap&&('0x'+l.topics[1].slice(-40)).toLowerCase()===NPM).map(l=>l.transactionHash))];
@@ -550,7 +555,7 @@ writeJ(OUT+'/'+FILE, out);
 if(BACK&&caught){ delete out.redo; writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(OUT+'/'+FILE); }
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
 console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':SEEDED?' ('+(redo==='eth'?'Ethereum':'Solana')+' read again from the first day, the rest carried over from the page’s)':prev?' (carried on from the last run)':' (first run)')+(redo&&!SEEDED?' · '+(redo==='eth'?'Ethereum':'Solana')+' being read again':'')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
-console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender, '+(stats.eth.ownByPos||0)+' by a position of the deck’s changed in the same transaction) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.noTx?' · '+stats.eth.noTx+' record(s) served without their transaction, looked up in their block':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
+console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender, '+(stats.eth.ownByPos||0)+' by a position of the deck’s changed in the same transaction) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.noTx?' · '+stats.eth.noTx+' record(s) served without their transaction, looked up in '+stats.eth.noTxBlocks+' block(s), '+stats.eth.noTxWins+' window(s)':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
 console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served · '+(stats.sol.quiet||0)+' with no record of the pool’s, '+(stats.sol.trunc||0)+' with the log cut short');
 console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.length);
 console.log('  top 100 fees earned: pools tracked from the first day '+tracked.filter(p=>Array.isArray(p.state.top)&&p.state.topFrom===T0).length+' of '+tracked.length
