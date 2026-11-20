@@ -168,11 +168,19 @@ async function ownTxs(fromB){
 
 /* a transaction's receipt: each node in turn, twice more after a pause, then Blockscout's record of its logs; null only
    when none of them serves it (the pool is then not booked this run, rather than booked without it) */
-async function receiptOf(h){
-  const why={unknown:0, refused:0, logs:null, tx:null};
+async function receiptOf(h, blk){
+  const why={unknown:0, refused:0, blk:null, logs:null, tx:null};
   for(let k=0;k<3;k++){ for(const u of NODES){ const r=await rpcRaw(u,'eth_getTransactionReceipt',[h]);
       if(r&&r.result&&Array.isArray(r.result.logs)) return r.result; if(r&&r.result===null&&!r.error) why.unknown++; else why.refused++; }
     if(over()) break; await sleep(1500*(k+1)); }
+  /* a transaction too big for a node to return whole (a batch of many positions): only what is needed of it, the
+     position manager's deposits and withdrawals in its own block, from a node and then from Blockscout */
+  if(blk!=null){ const hb='0x'+blk.toString(16), mine=xs=>xs.filter(l=>String(l.transactionHash||l.transaction_hash||'').toLowerCase()===String(h).toLowerCase());
+    for(const u of NODES){ const r=await rpcAt(u,'eth_getLogs',[{address:NPM, topics:[[TOP.inc,TOP.dec]], fromBlock:hb, toBlock:hb}],30000); if(Array.isArray(r)){ why.blk='node'; return {logs:mine(r)}; } }
+    const got=[]; let ok=true;
+    for(const t0 of [TOP.inc,TOP.dec]){ const r=await j(BS+'/api?'+new URLSearchParams({module:'logs',action:'getLogs',address:NPM,topic0:t0,fromBlock:String(blk),toBlock:String(blk)}),{},3,45000);
+      if(Array.isArray(r?.result)) got.push(...r.result.map(l=>({...l, address:NPM}))); else if(r&&r.status==='0'&&/no (records|logs) found/i.test(String(r.message||''))) continue; else { ok=false; break; } }
+    if(ok){ why.blk='blockscout'; return {logs:mine(got)}; } }
   const st=async u=>{ try{ const r=await fetch(u,{signal:AbortSignal.timeout(45000)}); return {s:r.status, j:r.ok?await r.json().catch(()=>null):null}; }catch(e){ return {s:'timeout', j:null}; } };
   const logs=[]; let next=null;
   for(let n=0;n<6;n++){ const r=await st(BS+'/api/v2/transactions/'+h+'/logs'+(next?'?'+new URLSearchParams(next):'')); if(n===0) why.logs=r.s;
@@ -248,15 +256,16 @@ async function ethSide(out, prevPools){
     const logs=L.logs.sort((a,b)=>bn(a.blockNumber)-bn(b.blockNumber)||bn(a.logIndex)-bn(b.logIndex));
     // which of the position manager's deposits and withdrawals were the deck's: the receipt names the position
     const lpTx=[...new Set(logs.filter(l=>l.topics[0]!==TOP.swap&&('0x'+l.topics[1].slice(-40)).toLowerCase()===NPM).map(l=>l.transactionHash))];
+    const blkOf=new Map(logs.map(l=>[l.transactionHash, bn(l.blockNumber)]));
     const mineIn=new Map();   // tx → [{id, dL}]
-    const rcs=await mapLimit(lpTx,4,async h=>{ const rc=await receiptOf(h); stats.eth.receipts++; if(!rc) return null;
+    const rcs=await mapLimit(lpTx,4,async h=>{ const rc=await receiptOf(h, blkOf.get(h)); stats.eth.receipts++; if(!rc) return null;
       const xs=[]; for(const g of rc.logs||[]) if(String(g.address).toLowerCase()===NPM&&(g.topics[0]===TOP.inc||g.topics[0]===TOP.dec)){ const tid=BigInt(g.topics[1]).toString();
         if(ids.has(tid)) xs.push({id:tid, dL:(g.topics[0]===TOP.inc?1:-1)*Number(BigInt('0x'+word(g.data,0)))}); }
       if(xs.length) mineIn.set(h,xs); return true; });
     // a deposit or withdrawal whose receipt was not served could be the deck's: the pool waits for the next run rather than lose it
     const rcMiss=lpTx.length-rcs.filter(Boolean).length;
     if(rcMiss){ stats.unread++; stats.eth.rcMiss=(stats.eth.rcMiss||0)+rcMiss; out.notes.push('eth: '+rcMiss+' deposit or withdrawal receipt(s) not served; a pool kept as it was');
-      for(const w of rcWhy) console.log('  receipt not served: the nodes said unknown '+w.unknown+'×, refused '+w.refused+'× · Blockscout: its logs '+w.logs+', the transaction '+w.tx);
+      for(const w of rcWhy) console.log('  receipt not served: the nodes said unknown '+w.unknown+'×, refused '+w.refused+'× · its block’s position records not served either · Blockscout: its logs '+w.logs+', the transaction '+w.tx);
       continue; }
     // the deck's own swaps by their sender as well as by its wallets' lists
     const swH=[...new Set(logs.filter(l=>l.topics[0]===TOP.swap).map(l=>String(l.transactionHash).toLowerCase()))].filter(h=>!own.set.has(h));
