@@ -344,8 +344,8 @@ try{ const cfg=openJ(await (await fetch(LIVE+'config.json?t='+Date.now())).json(
     ((N.suiFrom==='tradeport'&&age<30)?OK:WARN)('Sui NFTs: '+sc.length+' collections, '+sc.filter(c=>c.valueUsd!=null).length+' priced · source '+(N.suiFrom||'chain')+(age!=null?' · read '+age.toFixed(0)+'h ago':''));
     const H=N.hist||{}; OK('NFT floor history: '+Object.keys(H).length+' collections · longest '+Math.max(0,...Object.values(H).map(h=>h.length))+' day(s)');
     // the unstake reminder watches the Ika-chan floor: it has to be found among the Sui collections
-    (sc.some(c=>(/::ika_chan_nft::IkaChanNft/.test(c.type||'')||/ika[\s_-]*chan|squid[\s_-]*market/i.test(c.name||''))&&c.floor>0)?OK:WARN)('Ika-chan collection priced in the NFT list (the unstake reminder watches it): '+(sc.some(c=>(/::ika_chan_nft::IkaChanNft/.test(c.type||'')||/ika[\s_-]*chan|squid[\s_-]*market/i.test(c.name||''))&&c.floor>0)?'yes':'NO'));
-    const I=relay.ink; (I&&Array.isArray(I.wallets)&&I.wallets.length&&(Date.now()-I.t)<30*3600e3?OK:WARN)('Ink Sack record: '+(I?I.wallets.length+' wallet(s), read '+((Date.now()-I.t)/3600e3).toFixed(0)+'h ago':'missing')); } }
+    (sc.some(c=>(/::ika_chan_nft::IkaChanNft/.test(c.type||'')||/ika[\s_-]*chan|squid[\s_-]*market/i.test(c.name||''))&&c.floor>0)?OK:WARN)('the Sui collection the unstake reminder watches is priced in the NFT list: '+(sc.some(c=>(/::ika_chan_nft::IkaChanNft/.test(c.type||'')||/ika[\s_-]*chan|squid[\s_-]*market/i.test(c.name||''))&&c.floor>0)?'yes':'NO'));
+    const I=relay.ink; (I&&Array.isArray(I.wallets)&&I.wallets.length&&(Date.now()-I.t)<30*3600e3?OK:WARN)('Sui staking record: '+(I?I.wallets.length+' wallet(s), read '+((Date.now()-I.t)/3600e3).toFixed(0)+'h ago':'missing')); } }
 catch(e){ WARN('wallet list / balances check failed'); }
 // the relay's own errors this pass, by category only (the first word; the rest can name a wallet)
 { const cat={}; for(const e of relay.errors||[]){ const k=(String(e).match(/^[A-Za-z]+(?: (?:sui|tron|ethereum|solana))?/)||['other'])[0]; cat[k]=(cat[k]||0)+1; }

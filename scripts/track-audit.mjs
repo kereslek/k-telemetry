@@ -259,9 +259,10 @@ console.log('\n— gauges —');
     const inZone=g.inRange&&drawn!=null&&(drawn<z0-0.005||drawn>1-z1+0.005), close=g.down<=w||g.up<=w;
     if(g.inRange&&drawn!=null&&inZone!==close&&Math.abs(Math.min(g.down,g.up)-w)>0.5) alarming++;
     if(g.gap!=null){ gapped++; if(g.mark) marks++; }
-    OK('card #'+(i+1)+': gauge reads '+(g.txt||'—')+' (needle at '+r(drawn)+') · the bar under it puts the price at '+r(bar)+' · the linear share of the price span would be '+r(g.lin)
-      +' · '+(g.inRange?'a '+g.down.toFixed(1)+'% fall or a '+g.up.toFixed(1)+'% rise reaches an edge':'out of range')+' · '+g.sev+' · range '+g.wide.toFixed(g.wide<10?2:0)+'× wide'
-      +(g.inv?' · shown inverted':'')+(g.gap!=null?' · pool '+(g.gap>0?'+':'−')+Math.abs(g.gap).toFixed(1)+'% vs market: at the market price it would read '+r(g.mLog):''));
+    // the log is public: a range's width, its distance to the edges or its pool's gap to the market would let a
+    // position be matched on-chain, so each card says only how it reads, never a number
+    OK('card #'+(i+1)+': '+(g.inRange?'in range':'out of range')+' · needle and the bar under it '+(d>0.02?'DIFFER':'agree')
+      +(g.inv?' · shown inverted':'')+(g.gap!=null?' · pool off the market, mark '+(g.mark?'shown':'MISSING'):''));
   });
   ((disagree||alarming||marks<gapped)?WARN:OK)(G.length+' range gauge(s) · '+disagree+' where the needle and the bar under it differ by more than 2 points · '+alarming+' where the amber end and a '+w+'% move to the edge disagree'
     +' · the market mark on '+marks+' of '+gapped+' pool(s) off the market');

@@ -67,17 +67,20 @@ for(const w of wallets){
   }
   res.tp.wallets.push(row);
   const fl=row.cols.reduce((a,c)=>a+(c.floor||0)*c.n,0);
-  console.log('a wallet on TradePort: '+(ok?'read':'NOT READ')+' · NFTs '+row.n+' · collections '+row.cols.length+' · with a floor '+row.cols.filter(c=>c.floor>0).length+' · with a type '+row.cols.filter(c=>c.type).length+(row.outside?' · counted by TradePort outside the owned collections and left out: '+row.outside:'')
-    +(row.value>0?' · sum of floors vs TradePort’s wallet value: '+(fl/row.value).toFixed(2):''));
+  // the log is public: one wallet's own counts would let it be told apart, so each wallet says only whether it was read
+  console.log('a wallet on TradePort: '+(ok?'read':'NOT READ'));
 }
 await b.close();
 res.tp.ok=res.tp.wallets.some(x=>x.ok);
+{ const W=res.tp.wallets, cols=W.flatMap(x=>x.cols||[]);
+  console.log('TradePort: '+W.filter(x=>x.ok).length+' of '+W.length+' wallet(s) read · '+new Set(cols.map(c=>c.id)).size+' collection(s), '+new Set(cols.filter(c=>c.floor>0).map(c=>c.id)).size+' with a floor'); }
 console.log('SUI/USD rate from TradePort: '+(res.tp.rate>0?'yes':'no'));
 
 for(const w of wallets){
   try{ const r=await inkSack(w.address); if(r){ res.ink.push({tail:tail(w.address), ...r});
-      console.log('a wallet in Ink Sack: drizzlets '+(r.drizzlets!=null?'yes':'no')+' · NFTs staked '+r.nftsStaked+' · iSUI locks '+r.isui.length+' · IKA locks '+r.ika.length+' · IKA drop '+(r.drop?'yes':'no')); } }
-  catch(e){ console.log('Ink Sack read failed for a wallet: '+String(e.message||e).slice(0,60)); res.inkErr=true; }
+      console.log('a wallet’s staking record: read'); } }
+  catch(e){ console.log('a wallet’s staking record: not read ('+String(e.message||e).replace(/0x[0-9a-fA-F]{6,}/g,'0x…').replace(/\b\d{4,}\b/g,'#…').slice(0,60)+')'); res.inkErr=true; }
 }
+console.log('staking records read: '+res.ink.length+' of '+wallets.length+' wallet(s)');
 writeJ(OUT+'/sui-daily.json', res);
 if(!res.tp.ok) { console.log('TradePort could not be read for any wallet'); process.exitCode=1; }
