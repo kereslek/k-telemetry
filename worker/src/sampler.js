@@ -37,6 +37,16 @@ export async function one(rpcs, method, params){
   for(const u of rpcs){ try{ const j=await post(u,{jsonrpc:'2.0',id:1,method,params}); if(j.error) throw new Error(u.split('/')[2]+' '+j.error.message); return j.result; }catch(e){ errs.push(String(e.message||e)); } }
   throw new Error(errs.join(' | ')||'no rpc');
 }
+/* getMultipleAccounts in groups of ten, joined in order. The public servers cap one ask: publicnode refuses more than
+   ten accounts (HTTP 403), so one ask for every position, pool and tick array failed there and fell through to the
+   servers behind it, the last of which answers five times a minute: enough for the minute's reading, not for the
+   live dial. Groups of ten are answered by the first server. */
+export async function accounts(rpcs, keys){
+  const groups=[]; for(let i=0;i<keys.length;i+=10) groups.push(keys.slice(i,i+10));
+  const got=await Promise.all(groups.map(g=>one(rpcs,'getMultipleAccounts',[g,{encoding:'base64'}])));
+  const value=[]; got.forEach((r,k)=>{ const v=(r&&r.value)||[]; for(let j=0;j<groups[k].length;j++) value.push(v[j]??null); });
+  return {value};
+}
 
 /* ---------- Ethereum: Uniswap v3 ---------- */
 const word=(hex,i)=>BigInt('0x'+(hex.slice(2+64*i,2+64*(i+1))||'0'));
@@ -149,14 +159,14 @@ async function growthSol(ps, cache, rpcs){
   // fee settings were kept has no `cfg` and is read again, or it would never get a price)
   if(ps.some(p=>!cache[p.id]) || pools.some(pl=>!cache[pl]||!cache[pl].cfg)){
     const accs=[...ps.map(p=>p.pda),...pools];
-    const r=await one(rpcs,'getMultipleAccounts',[accs,{encoding:'base64'}]);
+    const r=await accounts(rpcs,accs);
     ps.forEach((p,i)=>{ const a=r.value[i]; if(!a) return; const b=b64(a.data[0]); cache[p.id]={tl:leI32(b,73),tu:leI32(b,77)}; });
     pools.forEach((pl,i)=>{ const a=r.value[ps.length+i]; if(!a) return; const b=b64(a.data[0]); cache[pl]={sp:leU16(b,235), cfg:b58e(b.slice(9,41))}; });
   }
   /* The pool's fee settings (AmmConfig): trade fee and the protocol and fund cuts, in millionths. */
   const noCfg=pools.filter(pl=>cache[pl]&&cache[pl].cfg&&cache['cfg:'+cache[pl].cfg]==null);
   if(noCfg.length){ const ks=[...new Set(noCfg.map(pl=>cache[pl].cfg))];
-    const r=await one(rpcs,'getMultipleAccounts',[ks,{encoding:'base64'}]);
+    const r=await accounts(rpcs,ks);
     ks.forEach((k,i)=>{ const a=r.value[i]; if(!a) return; const b=b64(a.data[0]);
       cache['cfg:'+k]={proto:leU32(b,43), trade:leU32(b,47), fund:leU32(b,53)}; }); }
   const taOf=async(pl,t)=>{ const per=cache[pl].sp*60, start=Math.floor(t/per)*per, k='ta:'+pl+':'+start;
@@ -170,7 +180,7 @@ async function growthSol(ps, cache, rpcs){
     const lo=await taOf(p.pool,cache[p.id].tl), up=await taOf(p.pool,cache[p.id].tu);
     plan.push({p, pos:add(p.pda), pool:add(p.pool), lo:{i:add(lo.addr),idx:lo.idx}, up:{i:add(up.addr),idx:up.idx}});
   }
-  const r=await one(rpcs,'getMultipleAccounts',[accs,{encoding:'base64'}]);
+  const r=await accounts(rpcs,accs);
   const buf=r.value.map(a=>a?b64(a.data[0]):null);
   const poolOut={};
   for(const pl of pools){ const ob=at[pl]!=null?buf[at[pl]]:null, c=cache[pl], C=c&&cache['cfg:'+c.cfg], p=ps.find(x=>x.pool===pl);
