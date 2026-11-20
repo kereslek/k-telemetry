@@ -79,6 +79,7 @@ jobs:
           npx --yes wrangler@4 secret put PULSE_TOKEN < /tmp/t
           npx --yes wrangler@4 secret put STORE_TOKEN < /tmp/w
           echo "PULSE_K=$(cat /tmp/t)" >> $GITHUB_ENV
+          echo "STORE_K=$(cat /tmp/w)" >> $GITHUB_ENV
           rm -f /tmp/k /tmp/t /tmp/w
       - name: Verify it records
         if: steps.tok.outputs.ok == '1'
@@ -92,7 +93,10 @@ jobs:
             echo "history without the token: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$B/h") (403 expected)"
             echo "history: $(curl -sS -m 30 "$B/h?k=$PULSE_K" | jq -c '{minutes:(.mins|length), readings:(.ev|length), archived:.info.mins, kept_readings:.info.ev}' 2>/dev/null || echo unreadable)"
             echo "store without the token: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$B/f") (403 expected)"
+            sleep 15   # a secret just set takes a moment to reach the running worker
             echo "store upload without the key: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' -X POST --data 'x' "$B/f") (403 expected)"
+            # the key accepted, nothing written: a malformed upload with the right key is refused as malformed
+            echo "store upload with the key, malformed on purpose: HTTP $(curl -sS -m 15 -o /dev/null -w '%{http_code}' -X POST -H "x-store-key: $STORE_K" --data 'x' "$B/f") (400 expected)"
             echo "store: $(curl -sS -m 30 "$B/f?k=$PULSE_K" | jq -c '{version:.ver, files:(.files|length)}' 2>/dev/null || echo unreadable)"
             code=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$URL"); echo "without the token: HTTP $code (403 expected)"
             for i in $(seq 1 30); do sleep 20
