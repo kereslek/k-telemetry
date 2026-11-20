@@ -2863,7 +2863,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.45';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.46';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3423,11 +3423,12 @@ const SOL_KNOWN   = {
 cfg.solWallets = store.get('solWallets', []);
 /* Checked from a browser on this site (4 Oct 2026): api.mainnet-beta now answers 403 "Access
    forbidden" to browsers, drpc's free plan no longer carries Solana, and no free endpoint lets a
-   browser list a wallet's token accounts any more. These four read accounts, which is all the
-   live view needs once the relay has said which accounts to read. */
+   browser list a wallet's token accounts any more. These read accounts, which is all the live view
+   needs once the relay has said which accounts to read. On 20 Nov 2026 publicnode began refusing
+   more than ten accounts in one ask (HTTP 403), so accounts are asked for ten at a time, and
+   solanatracker's free endpoint closed (HTTP 401 on every ask), so it is no longer asked. */
 const SOL_RPCS = [...store.get('extraSolRpcs', []),
   'https://solana-rpc.publicnode.com',
-  'https://rpc.solanatracker.io/public',
   'https://solana.leorpc.com/?api_key=FREE',
   'https://solana-mainnet.gateway.tatum.io',
 ];
@@ -3495,8 +3496,8 @@ async function solRpc(method, params, timeout=15000){
 }
 async function solGetMultiple(pubkeys){
   const out=[];
-  for(let i=0;i<pubkeys.length;i+=100){
-    const res=await solRpc('getMultipleAccounts',[pubkeys.slice(i,i+100),{encoding:'base64'}]);
+  for(let i=0;i<pubkeys.length;i+=10){
+    const res=await solRpc('getMultipleAccounts',[pubkeys.slice(i,i+10),{encoding:'base64'}]);
     out.push(...res.value);
   }
   return out;
