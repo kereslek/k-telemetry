@@ -1,0 +1,21 @@
+# What the minute recorder says about its own readings: pools priced per chain (counts) and its kept errors with
+# every address, hash, long number and dollar figure taken out. The log is public.
+name: recorder-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/recorder-probe.mjs', '.github/workflows/recorder-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/recorder-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
