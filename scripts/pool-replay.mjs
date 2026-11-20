@@ -26,6 +26,9 @@ const OUT='deck-r7k4x9', SLUG=process.env.PROFILE||'main';
 const BACK=process.env.BACK==='1', FILE='pools-replay-'+(BACK?'back-':'')+SLUG+'.json';
 const FROM_IN=String(process.env.FROM||'').trim();
 const REBUILD=process.env.REBUILD==='1', START=Date.now(), BUDGET=(+process.env.BUDGET_MIN||70)*60e3;
+/* REDO=eth or sol (with BACK=1): that chain read again from the first day beside the page's replay, the other chain's
+   pools carried over from it; it takes the page's place only once the chain read again has reached the present */
+const REDO=['eth','sol'].includes(String(process.env.REDO||'').trim())?String(process.env.REDO).trim():'';
 const over=()=>Date.now()-START>BUDGET;
 const LCXN='0x8cd41041505885ef0ad3858181d66f17be8aae7e', CPOOL='AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg';
 const D=864e5;
@@ -42,6 +45,7 @@ const rd=f=>{ try{ return readJ(OUT+'/'+f); }catch(e){ return null; } };
 const data=rd('data-'+SLUG+'.json'), census=rd('pools-'+SLUG+'.json'), bc=rd('blockcache.json')||{}, daily=rd('daily-'+SLUG+'.json'), fees=rd('fees-'+SLUG+'.json')||{}, cfg=rd('config.json')||{};
 if(!data||!census){ console.log('the relay’s data or the census could not be read: nothing done'); process.exit(1); }
 let prev=REBUILD?null:rd(FILE); if(prev&&prev.v!==1) prev=null;
+const SEEDED=!prev&&BACK&&REDO&&!REBUILD; if(SEEDED){ prev=rd('pools-replay-'+SLUG+'.json'); if(prev&&prev.v!==1) prev=null; }
 const FROM=FROM_IN||prev?.from||'2026-08-01', T0=Date.parse(FROM+'T00:00:00Z');
 if(!/^\d{4}-\d\d-\d\d$/.test(FROM)||!isFinite(T0)){ console.log('the first day is not a date (YYYY-MM-DD): nothing done'); process.exit(1); }
 if(prev&&prev.from!==FROM) prev=null;
@@ -162,6 +166,24 @@ async function ownTxs(fromB){
   for(let round=0; round<3&&left.length; round++){ const again=[]; for(const w of left){ if(await ask(w)) ok++; else again.push(w); await sleep(600+round*1400); } left=again; if(left.length) await sleep(5000); }
   return {set:s, ok, of:WAL.eth.size}; }
 
+/* a transaction's receipt: each node in turn, twice more after a pause, then Blockscout's record of its logs; null only
+   when none of them serves it (the pool is then not booked this run, rather than booked without it) */
+async function receiptOf(h){
+  for(let k=0;k<3;k++){ const rc=await erpc('eth_getTransactionReceipt',[h]); if(rc&&Array.isArray(rc.logs)) return rc; if(over()) return null; await sleep(1200*(k+1)); }
+  const logs=[]; let next=null;
+  for(let n=0;n<6;n++){ const r=await j(BS+'/api/v2/transactions/'+h+'/logs'+(next?'?'+new URLSearchParams(next):''),{},3,45000); if(!r||!Array.isArray(r.items)) return null;
+    for(const it of r.items) logs.push({address:it.address?.hash||'', topics:(it.topics||[]).filter(x=>x!=null), data:it.data||'0x'});
+    if(!r.next_page_params) return {logs}; next=r.next_page_params; }
+  return null; }
+/* who sent a transaction (lowercase), the same way: the deck's own swaps are known by their sender, whatever
+   Blockscout's wallet lists answer */
+const senders=new Map();
+async function senderOf(h){ h=String(h).toLowerCase(); if(senders.has(h)) return senders.get(h);
+  let f=null;
+  for(let k=0;k<3&&!f;k++){ const tx=await erpc('eth_getTransactionByHash',[h]); if(tx&&tx.from) f=String(tx.from).toLowerCase(); else { if(over()) break; await sleep(1000*(k+1)); } }
+  if(!f){ const r=await j(BS+'/api/v2/transactions/'+h,{},2,45000); if(r&&r.from&&r.from.hash) f=String(r.from.hash).toLowerCase(); }
+  if(f) senders.set(h,f); return f; }
+
 async function ethSide(out, prevPools){
   const tipHex=await erpc('eth_blockNumber',[]); if(!tipHex){ out.notes.push('eth: no node answered'); return; }
   const tip=bn(tipHex)-3, tipT=await blockTs(tip);
@@ -219,10 +241,18 @@ async function ethSide(out, prevPools){
     // which of the position manager's deposits and withdrawals were the deck's: the receipt names the position
     const lpTx=[...new Set(logs.filter(l=>l.topics[0]!==TOP.swap&&('0x'+l.topics[1].slice(-40)).toLowerCase()===NPM).map(l=>l.transactionHash))];
     const mineIn=new Map();   // tx → [{id, dL}]
-    await mapLimit(lpTx,4,async h=>{ const rc=await erpc('eth_getTransactionReceipt',[h]); stats.eth.receipts++; if(!rc) return;
+    const rcs=await mapLimit(lpTx,4,async h=>{ const rc=await receiptOf(h); stats.eth.receipts++; if(!rc) return null;
       const xs=[]; for(const g of rc.logs||[]) if(String(g.address).toLowerCase()===NPM&&(g.topics[0]===TOP.inc||g.topics[0]===TOP.dec)){ const tid=BigInt(g.topics[1]).toString();
         if(ids.has(tid)) xs.push({id:tid, dL:(g.topics[0]===TOP.inc?1:-1)*Number(BigInt('0x'+word(g.data,0)))}); }
-      if(xs.length) mineIn.set(h,xs); });
+      if(xs.length) mineIn.set(h,xs); return true; });
+    // a deposit or withdrawal whose receipt was not served could be the deck's: the pool waits for the next run rather than lose it
+    const rcMiss=lpTx.length-rcs.filter(Boolean).length;
+    if(rcMiss){ stats.unread++; stats.eth.rcMiss=(stats.eth.rcMiss||0)+rcMiss; out.notes.push('eth: '+rcMiss+' deposit or withdrawal receipt(s) not served; a pool kept as it was'); continue; }
+    // the deck's own swaps by their sender as well as by its wallets' lists
+    const swH=[...new Set(logs.filter(l=>l.topics[0]===TOP.swap).map(l=>String(l.transactionHash).toLowerCase()))].filter(h=>!own.set.has(h));
+    const sx=await mapLimit(swH,6,senderOf); let sMiss=0;
+    swH.forEach((h,i)=>{ if(!sx[i]) sMiss++; else if(WAL.eth.has(sx[i])){ own.set.add(h); stats.eth.ownBySender=(stats.eth.ownBySender||0)+1; } });
+    if(sMiss){ stats.unread++; out.notes.push('eth: the sender of '+sMiss+' swap(s) not served; a pool kept as it was'); continue; }
     for(const l of logs){ const t=timeOf(l,L.anchors); if(t==null) continue;
       if(l.topics[0]===TOP.swap){ const d=l.data, a0=sInt(word(d,0)), a1=sInt(word(d,1)), sp=Number(BigInt('0x'+word(d,2)))/2**96, Lq=Number(BigInt('0x'+word(d,3))), tick=i24(word(d,4));
         const P=sp*sp, w=a0>0n?Number(a0):(P>0?Number(a1)/P:0); const ownS=own.set.has(String(l.transactionHash).toLowerCase());
@@ -232,6 +262,8 @@ async function ethSide(out, prevPools){
         const xs=mineIn.get(l.transactionHash); if(xs){ const k=xs.findIndex(x=>Math.sign(x.dL)===sign&&Math.abs(Math.abs(x.dL)-amt)<=amt*1e-9+1);
           if(k>=0){ const x=xs.splice(k,1)[0]; onMine(st,{t,k:x.id,lo,hi,dL:x.dL}); stats.eth.mine++; } } } }
     if(tipT) standing(st,tipT);
+    // the top hundred: any entry not yet checked by its sender is, and one of the deck's own is taken out
+    if(Array.isArray(st.top)) for(const c of st.top.filter(c=>!c.v&&c.x)){ const f=await senderOf(c.x); if(!f) continue; if(WAL.eth.has(f)){ st.top.splice(st.top.indexOf(c),1); stats.eth.topOwn=(stats.eth.topOwn||0)+1; } else c.v=1; }
     st.cur=tip; st.done=true; st.at=Date.now(); st.recent=(st.recent||[]).filter(x=>x[0]>Date.now()-26*3600e3);
     pools.set(id,st); stats.eth.pools++;
   }
@@ -424,10 +456,13 @@ async function minuteCheck(out){
 const K=id=>/^0x/i.test(String(id))?String(id).toLowerCase():String(id);
 const prevPools=new Map((prev?.pools||[]).map(p=>[K(p.id),p]));
 const out={v:1, t:Date.now(), slug:SLUG, from:FROM, pools:[], checks:[], notes:[]};
+// the chain read again: its pools start afresh (and are not carried over); the mark stays with the longer replay until it takes over
+const redo=SEEDED?REDO:(BACK&&prev?.redo)||'';
+if(redo){ out.redo=redo; if(SEEDED) for(const [k,p] of [...prevPools]) if((p.chain==='eth')===(redo==='eth')) prevPools.delete(k); }
 if(process.env.ONLY!=='sol') await ethSide(out, prevPools);
 if(process.env.ONLY!=='eth') await solSide(out, prevPools);
 // a pool not read this run keeps what it had
-for(const p of prev?.pools||[]) if(!out.pools.some(q=>K(q.id)===K(p.id))) out.pools.push(p);
+for(const p of prev?.pools||[]) if(!out.pools.some(q=>K(q.id)===K(p.id))&&!(SEEDED&&(p.chain==='eth')===(redo==='eth'))) out.pools.push(p);
 for(const R of out.pools) if(R.state){ R.days={}; for(const [d,a] of Object.entries(R.state.raw||{})) R.days[d]=dayOut(a); }
 checks(out); await minuteCheck(out);
 /* A pool's rebuilt days are used by the page only once they have earned it: at least one of your own
@@ -449,13 +484,16 @@ async function symsOf(R){
   const r=await srpc('getAccountInfo',[R.id,{encoding:'base64'}]); const d=r&&r.value?Buffer.from(r.value.data[0],'base64'):null; if(!d||d.length<137) return null;
   const m0=b58(d.subarray(73,105)), m1=b58(d.subarray(105,137)); return [SYM[m0]||'?', SYM[m1]||'?']; }
 // a backfill that has reached the present takes the place of the replay the page reads
-const caught=out.pools.filter(p=>p.state&&p.mine).every(p=>p.state.done)&&out.pools.some(p=>p.state&&p.mine);
+const caught=out.pools.filter(p=>p.state&&p.mine).every(p=>p.state.done)&&out.pools.some(p=>p.state&&p.mine)
+  &&(!redo||out.pools.some(p=>p.chain===redo&&p.mine&&p.state&&p.state.done));
 /* written once every pool of the deck's has been tracked from the first day (a rebuild only when it has reached
    the present): until then the page says the list is being built, never shows half of it as the whole */
 const tracked=out.pools.filter(p=>p.state&&p.mine);
 const topWhole=tracked.length>0&&tracked.every(p=>Array.isArray(p.state.top)&&p.state.topFrom===T0);
+// every Ethereum entry checked by its sender first: the deck's own swaps never in the list
+const topUnchecked=tracked.filter(p=>p.chain==='eth').reduce((n,p)=>n+(p.state.top||[]).filter(c=>!c.v).length,0);
 let topN=null;
-if(topWhole&&(!BACK||caught)){
+if(topWhole&&!topUnchecked&&(!BACK||caught)){
   for(const R of tracked) if(!Array.isArray(R.state.syms)||R.state.syms.includes('?')){ const sy=await symsOf(R).catch(()=>null); if(sy) R.state.syms=sy; }
   const px=new Map(); for(const p of data.eth||[]) if(p.pool) px.set(String(p.pool).toLowerCase(),{d0:p.d0, u0:p.usd0});
   for(const p of data.sol||[]) if(p.poolId) px.set(String(p.poolId).toLowerCase(),{d0:p.d0, u0:p.usd0});
@@ -463,14 +501,14 @@ if(topWhole&&(!BACK||caught)){
   writeJ(OUT+'/top-'+SLUG+'.json', {v:1, t:Date.now(), from:FROM, upTo:Math.min(...tracked.map(p=>p.state.t||0)), ...T});
   topN={n:T.rows.length, est:T.rows.filter(x=>x.est).length, syms:tracked.filter(p=>Array.isArray(p.state.syms)).length}; }
 writeJ(OUT+'/'+FILE, out);
-if(BACK&&caught){ writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(OUT+'/'+FILE); }
+if(BACK&&caught){ delete out.redo; writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(OUT+'/'+FILE); }
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
-console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':prev?' (carried on from the last run)':' (first run)')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
-console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)');
+console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':SEEDED?' ('+(redo==='eth'?'Ethereum':'Solana')+' read again from the first day, the rest carried over from the page’s)':prev?' (carried on from the last run)':' (first run)')+(redo&&!SEEDED?' · '+(redo==='eth'?'Ethereum':'Solana')+' being read again':'')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
+console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
 console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served · '+(stats.sol.quiet||0)+' with no record of the pool’s, '+(stats.sol.trunc||0)+' with the log cut short');
 console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.length);
 console.log('  top 100 fees earned: pools tracked from the first day '+tracked.filter(p=>Array.isArray(p.state.top)&&p.state.topFrom===T0).length+' of '+tracked.length
-  +(topN?' · written: '+topN.n+' trade(s), '+topN.est+' valued at today\u2019s price (no volume for their day), token order known for '+topN.syms+' pool(s)':' · not written'+(topWhole?' (the rebuild has not reached the present yet)':' (waits for a rebuild from the first day)')));
+  +(topUnchecked?' · '+topUnchecked+' Ethereum entr'+(topUnchecked===1?'y':'ies')+' not yet checked by sender':'')+(topN?' · written: '+topN.n+' trade(s), '+topN.est+' valued at today\u2019s price (no volume for their day), token order known for '+topN.syms+' pool(s)':' · not written'+(topWhole?' (the rebuild has not reached the present yet)':' (waits for a rebuild from the first day)')));
 console.log('  checks: '+cnt('ok')+' agree, '+cnt('look')+' to look at, '+cnt('na')+' not comparable yet · pools of the deck’s trusted for the page: '+out.pools.filter(p=>p.trust).length+' of '+out.pools.filter(p=>p.mine&&p.days).length);
 // each check by kind, status and gap only: which pool, token or amount it concerns stays in the sealed file
 const KIND={cover:'rebuilt days',counters:'vs fee counters',share:'vs share readings',liq:'pool liquidity, two records',month:'vs month total',minute:'vs minute record'};
