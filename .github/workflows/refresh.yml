@@ -60,7 +60,11 @@ jobs:
             i=$((i+1)); start=$(date +%s)
             echo "::group::pass $i"
             git fetch -q origin gh-pages && git reset -q --hard origin/gh-pages
-            if node scripts/fetch-data.mjs && bash scripts/commit-data.sh; then
+            # the relay's working files come from the store (scripts/store.mjs) and go back to it
+            rm -f /tmp/kt-store-push
+            if [ -f scripts/store.mjs ] && ! node scripts/store.mjs pull; then
+              echo "pass $i skipped: the store did not answer (it never runs on the copies in git)"
+            elif node scripts/fetch-data.mjs && { [ ! -f scripts/store.mjs ] || node scripts/store.mjs push; } && bash scripts/commit-data.sh; then
               ok=$((ok+1)); echo "pass $i ok"
             else
               echo "pass $i failed (continuing)"

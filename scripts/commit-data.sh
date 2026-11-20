@@ -20,22 +20,46 @@ set -e
 git config user.name "lp-hud-bot"
 git config user.email "bot@users.noreply.github.com"
 
+# The relay's eleven working files live in the minute recorder's store (scripts/store.mjs) once
+# deck-r7k4x9/store-on.json exists. What `store.mjs push` decided for this pass:
+#   ok        in the store: not committed here (their checked-out copies are restored)
+#   snapshot  in the store, and the day's copy goes to git with its manifest (store-gen.json)
+#   fallback  the store did not take them: git keeps them this once, with their manifest
+#   race      something newer landed in the store meanwhile: nothing from this pass is committed
+#   (none)    a pass run the old way, without a pull: committed only if the store holds nothing newer
+#             than the copies it began from (store.mjs guard, which also hands them to the store)
+MANAGED_RE='^deck-r7k4x9/((data|ledger|hist|fees|costs|balances|daily)(-[a-z0-9-]+)?|blockcache|relay-log|relay-timing)\.json$'
+FLAG="${STORE_FLAG:-/tmp/kt-store-push}"
+MODE=$(cat "$FLAG" 2>/dev/null || true); rm -f "$FLAG"
+if [ -z "$MODE" ] && [ -f deck-r7k4x9/store-on.json ] && [ -f scripts/store.mjs ]; then
+  if node scripts/store.mjs guard; then MODE=legacy
+  else echo "a pass run without the store's files: nothing committed"; exit 1; fi
+fi
+if [ "$MODE" = race ]; then echo "lost a race in the store — the next pass regenerates"; exit 1; fi
+
 # One add per group, each tolerant. A single combined add is fatal if ANY glob matches nothing —
 # so a profile that has not produced a ledger yet, or a pass where fetch-data died before writing
 # fees, would abort the commit and lose the files that WERE written.
 # daily-*.json is the per-position day record the attribution is computed from; it is cumulative,
 # not regenerated, so a pass that fails to commit it loses that day.
+if [ "$MODE" = ok ]; then
+  # in the store: the copies here go back to what git holds, so a rebase below has a clean tree
+  git ls-files deck-r7k4x9 | grep -E "$MANAGED_RE" | xargs -r git checkout -q HEAD -- 2>/dev/null || true
+else
 for g in data ledger hist fees costs balances- daily- ; do
   git add deck-r7k4x9/"$g"*.json 2>/dev/null || true
 done
 # blockcache.json persists mint blocks + the wallet transfer-scan checkpoint. Tolerant: the script
 # writes it inside a try/catch, so a missing file must never fail the data commit.
 git add deck-r7k4x9/blockcache.json 2>/dev/null || true
+# the relay's sealed log, and how long the pass took and its slowest steps (names and seconds only)
+git add deck-r7k4x9/relay-log.json deck-r7k4x9/relay-timing.json 2>/dev/null || true
+# when each of them was produced, so the store and git can tell which copy is newer
+git add deck-r7k4x9/store-gen.json 2>/dev/null || true
+fi
 
-# The lock's salt and check (written once, on the first locked pass) and the relay's sealed log.
-git add deck-r7k4x9/lock.json deck-r7k4x9/relay-log.json 2>/dev/null || true
-# how long the pass took and its slowest steps (names and seconds only)
-git add deck-r7k4x9/relay-timing.json 2>/dev/null || true
+# The lock's salt and check (written once, on the first locked pass).
+git add deck-r7k4x9/lock.json 2>/dev/null || true
 # The fee seeds beside the relay, once the first locked pass has sealed them (never in the clear).
 for f in scripts/fee-*.json; do grep -q '"lock":1' "$f" 2>/dev/null && git add "$f" || true; done
 

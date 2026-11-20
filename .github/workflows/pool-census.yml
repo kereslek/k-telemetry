@@ -17,6 +17,10 @@ jobs:
         with: { ref: gh-pages }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      # the relay's working files: the newest are in the store (scripts/store.mjs), git holds a day's copy
+      - run: node scripts/store.mjs pull --read
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
       - run: node scripts/pool-census.mjs
         env:
           DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
@@ -25,6 +29,7 @@ jobs:
         run: |
           [ -f deck-r7k4x9/pools-main.json ] || exit 0
           git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          node scripts/store.mjs restore || true   # git's copies back before committing (see store.mjs)
           git add deck-r7k4x9/pools-main.json
           git diff --cached --quiet && exit 0
           git commit -q -m "pool census $(date -u +%Y-%m-%dT%H:%MZ)"

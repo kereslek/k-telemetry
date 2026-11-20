@@ -2647,13 +2647,27 @@ const RAW_BASE=(()=>{ try{
   if(!/\.github\.io$/.test(location.hostname)) return null;
   const seg=location.pathname.split('/').filter(Boolean), dir=seg.slice(1, location.pathname.endsWith('/')?seg.length:seg.length-1).join('/');
   return seg.length?'https://raw.githubusercontent.com/'+location.hostname.split('.')[0]+'/'+seg[0]+'/gh-pages/'+(dir?dir+'/':''):null; }catch(e){ return null; } })();
+/* The relay's working files live in the minute recorder's store, written every pass; git, and so the site, keeps
+   one copy a day (scripts/store.mjs). For those, the store's copy is asked too, with the token, and the newest of
+   all wins: the site still answers when the store does not. */
+const STORE_FILE=/^(?:(?:data|ledger|hist|fees|costs|balances|daily)(?:-[a-z0-9-]+)?|blockcache|relay-log|relay-timing)\.json$/;
+const storeBase=()=>{ try{ return PULSE_URL; }catch(e){ return null; } };   // declared further down the page
 async function fetchFresh(url, opts){
-  if(!RAW_BASE || /^[a-z]+:/i.test(url)) return fetch(url, opts);
+  const name=String(url).split('?')[0], sb=storeBase();
+  const fromStore=sb&&LOCK.tok&&STORE_FILE.test(name)?fetch(sb+'/f/'+name+'?k='+LOCK.tok,{cache:'no-store'}).then(r=>r.ok?r:null).catch(()=>null):null;
   const tOf=async r=>{ try{ const j=await r.clone().json(); return j&&typeof j.t==='number'?j.t:0; }catch(e){ return -1; } };
-  const [a,b]=await Promise.allSettled([fetch(RAW_BASE+url,{cache:'no-store'}), fetch(url,opts)]);
-  const ra=a.status==='fulfilled'&&a.value.ok?a.value:null, rb=b.status==='fulfilled'&&b.value.ok?b.value:null;
-  if(ra&&rb){ const [ta,tb]=await Promise.all([tOf(ra),tOf(rb)]); return ta>=tb?ra:rb; }
-  return ra||rb||(b.status==='fulfilled'?b.value:a.value);
+  let best;
+  if(!RAW_BASE || /^[a-z]+:/i.test(url)){ try{ best=await fetch(url, opts); }catch(e){ if(!fromStore) throw e; best=null; } }
+  else {
+    const [a,b]=await Promise.allSettled([fetch(RAW_BASE+url,{cache:'no-store'}), fetch(url,opts)]);
+    const ra=a.status==='fulfilled'&&a.value.ok?a.value:null, rb=b.status==='fulfilled'&&b.value.ok?b.value:null;
+    if(ra&&rb){ const [ta,tb]=await Promise.all([tOf(ra),tOf(rb)]); best=ta>=tb?ra:rb; }
+    else best=ra||rb||(b.status==='fulfilled'?b.value:a.status==='fulfilled'?a.value:null);
+  }
+  const s=fromStore?await fromStore:null;
+  if(s){ if(!best||!best.ok) return s; const [ts,tb]=await Promise.all([tOf(s),tOf(best)]); return ts>=tb?s:best; }
+  if(!best) throw new Error('not served');
+  return best;
 }
 async function lfetch(url, opts){
   const r=await fetchFresh(url, opts); if(!r.ok) return r;
@@ -2849,7 +2863,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.44';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.45';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [

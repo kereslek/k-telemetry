@@ -10,6 +10,7 @@
    every line passes a last check for anything that looks like one. Run by hand: track-audit.yml. */
 import {chromium} from 'playwright';
 import crypto from 'node:crypto';
+import {freshest} from './store.mjs';   // the relay's working files: the store's copy when newer than the published one
 
 /* an error's message can quote the data it choked on (a JSON parse error does): if the audit
    stops, the log gets the error's kind and line only */
@@ -36,7 +37,7 @@ const pct=x=>x==null||!isFinite(x)?'—':(x>=0?'+':'−')+Math.abs(x*100).toFixe
 const age=ms=>ms==null||!isFinite(ms)?'—':ms<90e3?Math.round(ms/1e3)+' s':ms<5400e3?Math.round(ms/60e3)+' min':(ms/3600e3).toFixed(1)+' h';
 const sleep=ms=>new Promise(f=>setTimeout(f,ms));
 const get=async(u,ms=20000)=>{ for(let k=0;k<3;k++){ try{ const r=await fetch(u,{signal:AbortSignal.timeout(ms), headers:{accept:'application/json', 'user-agent':'k-telemetry-track-audit'}}); if(r.ok) return await r.json(); if(r.status===429) await sleep(4000); }catch(e){} await sleep(1500*(k+1)); } return null; };
-const sealed=async f=>{ try{ const r=await fetch(LIVE+f+'?t='+Date.now()); return r.ok?openJ(await r.json()):null; }catch(e){ return null; } };
+const sealed=async f=>{ try{ const r=await fetch(LIVE+f+'?t='+Date.now()); return openJ(await freshest(f, r.ok?await r.json():null)); }catch(e){ return null; } };
 const now=Date.now(), OFF=0.02;
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Budapest',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
