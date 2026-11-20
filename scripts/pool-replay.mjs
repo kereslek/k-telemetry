@@ -147,7 +147,7 @@ async function bsPaged(address, kinds, from){
   for(let n=0;n<2000;n++){ if(over()) return null;
     const r=await j(BS+'/api/v2/addresses/'+address+'/logs'+(next?'?'+new URLSearchParams(next):''),{},3,45000); if(!r||!Array.isArray(r.items)) return null;
     for(const it of r.items){ if((it.block_number||0)<from) return out;
-      const t0=(it.topics||[])[0]; if(kinds.includes(t0)) out.push({blockNumber:'0x'+Number(it.block_number).toString(16), logIndex:'0x'+Number(it.index||0).toString(16), transactionHash:it.transaction_hash, topics:(it.topics||[]).filter(x=>x!=null), data:it.data||'0x'}); }
+      const t0=(it.topics||[])[0]; if(kinds.includes(t0)) out.push({blockNumber:'0x'+Number(it.block_number).toString(16), logIndex:'0x'+Number(it.index||0).toString(16), transactionHash:it.transaction_hash||it.tx_hash||null, topics:(it.topics||[]).filter(x=>x!=null), data:it.data||'0x'}); }
     if(!r.next_page_params) return out; next=r.next_page_params; }
   return null; }
 function timeOf(l, anchors){
@@ -168,7 +168,9 @@ async function ownTxs(fromB){
 
 /* a transaction's receipt: each node in turn, twice more after a pause, then Blockscout's record of its logs; null only
    when none of them serves it (the pool is then not booked this run, rather than booked without it) */
+const HASH_OK=h=>/^0x[0-9a-f]{64}$/i.test(String(h||''));
 async function receiptOf(h, blk){
+  if(!HASH_OK(h)) return null;
   const why={unknown:0, refused:0, blk:null, logs:null, tx:null};
   for(let k=0;k<3;k++){ for(const u of NODES){ const r=await rpcRaw(u,'eth_getTransactionReceipt',[h]);
       if(r&&r.result&&Array.isArray(r.result.logs)) return r.result; if(r&&r.result===null&&!r.error) why.unknown++; else why.refused++; }
@@ -194,7 +196,7 @@ const rcWhy=[];
 /* who sent a transaction (lowercase), the same way: the deck's own swaps are known by their sender, whatever
    Blockscout's wallet lists answer */
 const senders=new Map(), sendWhy=[];
-async function senderOf(h, slow){ h=String(h).toLowerCase(); if(senders.has(h)) return senders.get(h);
+async function senderOf(h, slow){ h=String(h).toLowerCase(); if(!HASH_OK(h)) return null; if(senders.has(h)) return senders.get(h);
   let f=null; const why={unknown:0, refused:0, v2:null, v1:null};
   for(let k=0;k<3&&!f;k++){ for(const u of NODES){ const r=await rpcRaw(u,'eth_getTransactionByHash',[h]); if(r&&r.result&&r.result.from){ f=String(r.result.from).toLowerCase(); break; }
       if(r&&r.result===null&&!r.error) why.unknown++; else why.refused++; }
@@ -258,6 +260,18 @@ async function ethSide(out, prevPools){
       if(x){ const anchors=[...L.anchors]; for(let b=st.cur+1; b<=tip; b+=20000){ const t=await blockTs(b); if(t) anchors.push([b,t]); } const tt=await blockTs(tip); if(tt) anchors.push([tip,tt]);
         anchors.sort((a,b)=>a[0]-b[0]); L={logs:x.filter(l=>bn(l.blockNumber)<=tip), anchors, partial:false}; out.notes.push('eth: a pool read from Blockscout’s pages'); } }
     if(L.partial){ stats.unread++; out.notes.push('eth: a pool’s records were not all served this run; kept as it was'); continue; }
+    /* a record served without its transaction (Blockscout's pages have left it out): found again in its own block, by
+       its place there, from a node and then from Blockscout's log query; one not found holds the pool back */
+    const noTx=L.logs.filter(l=>!HASH_OK(l.transactionHash));
+    if(noTx.length){ stats.eth.noTx=(stats.eth.noTx||0)+noTx.length; let left=0;
+      for(const b of [...new Set(noTx.map(l=>bn(l.blockNumber)))]){ const hb='0x'+b.toString(16); let got=null;
+        for(const u of NODES){ const r=await rpcAt(u,'eth_getLogs',[{address:id, fromBlock:hb, toBlock:hb}],30000); if(Array.isArray(r)){ got=r; break; } }
+        if(!got){ const all=[]; let ok=true; for(const t0 of [TOP.swap,TOP.mint,TOP.burn]){ const x=await j(BS+'/api?'+new URLSearchParams({module:'logs',action:'getLogs',address:id,topic0:t0,fromBlock:String(b),toBlock:String(b)}),{},3,45000);
+            if(Array.isArray(x?.result)) all.push(...x.result); else if(!(x&&x.status==='0'&&/no (records|logs) found/i.test(String(x.message||'')))){ ok=false; break; } }
+          if(ok) got=all; }
+        for(const l of noTx.filter(l=>bn(l.blockNumber)===b)){ const m=got&&got.find(g=>bn(g.logIndex)===bn(l.logIndex)&&(g.topics||[])[0]===l.topics[0]);
+          if(m&&HASH_OK(m.transactionHash)) l.transactionHash=m.transactionHash; else left++; } }
+      if(left){ stats.unread++; out.notes.push('eth: '+left+' record(s) served without their transaction and not found again in their block; a pool kept as it was'); continue; } }
     const logs=L.logs.sort((a,b)=>bn(a.blockNumber)-bn(b.blockNumber)||bn(a.logIndex)-bn(b.logIndex));
     // which of the position manager's deposits and withdrawals were the deck's: the receipt names the position
     const lpTx=[...new Set(logs.filter(l=>l.topics[0]!==TOP.swap&&('0x'+l.topics[1].slice(-40)).toLowerCase()===NPM).map(l=>l.transactionHash))];
@@ -536,7 +550,7 @@ writeJ(OUT+'/'+FILE, out);
 if(BACK&&caught){ delete out.redo; writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(OUT+'/'+FILE); }
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
 console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':SEEDED?' ('+(redo==='eth'?'Ethereum':'Solana')+' read again from the first day, the rest carried over from the page’s)':prev?' (carried on from the last run)':' (first run)')+(redo&&!SEEDED?' · '+(redo==='eth'?'Ethereum':'Solana')+' being read again':'')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
-console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender, '+(stats.eth.ownByPos||0)+' by a position of the deck’s changed in the same transaction) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
+console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender, '+(stats.eth.ownByPos||0)+' by a position of the deck’s changed in the same transaction) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.noTx?' · '+stats.eth.noTx+' record(s) served without their transaction, looked up in their block':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
 console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served · '+(stats.sol.quiet||0)+' with no record of the pool’s, '+(stats.sol.trunc||0)+' with the log cut short');
 console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.length);
 console.log('  top 100 fees earned: pools tracked from the first day '+tracked.filter(p=>Array.isArray(p.state.top)&&p.state.topFrom===T0).length+' of '+tracked.length
