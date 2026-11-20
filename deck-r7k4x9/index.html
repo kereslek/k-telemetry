@@ -2849,7 +2849,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.43';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.44';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -12034,7 +12034,7 @@ function feePulseLink60(){
     +'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">'+avgLine+bars+'</svg></button>';
 }
 /* ================= TOP 100 FEES EARNED =================
-   The hundred trades that paid you most since 1 August: kept by the swap replay as it reads every swap in your
+   The hundred trades that paid you most since the swap replay’s first day: kept by the swap replay as it reads every swap in your
    pools (scripts/top-core.mjs → top-<slug>.json, sealed), and the trades the minute recorder has read since the
    replay last ran on top of it, so a new best is in the list the same day. Your own swaps through your own pools
    are never in it (what you paid yourself is not income). Closed until you ask for it: the TOP 100 choice in the
@@ -12104,7 +12104,7 @@ function t100Render(){
   const close=view?'<a class="t1-x" href="'+location.pathname+'">OPEN THE DECK ↗</a>':'<button type="button" class="t1-x" data-t1="close" aria-label="Close the top 100">✕ CLOSE</button>';
   const head=sub=>'<div class="t1-h"><span class="t1-k">🏆 TOP 100 · FEES EARNED</span><span class="t1-s">'+sub+'</span>'+close+'</div>';
   if(state.top===undefined){ E.innerHTML=head('reading…'); loadTop(); return; }
-  if(!R){ E.innerHTML=head('being built')+'<div class="t1-none">The swap replay is reading every trade in your pools since 1 August to find the hundred that paid you most. That takes a few of its runs; the list appears here the moment it reaches today.</div>'; return; }
+  if(!R){ E.innerHTML=head('being built')+'<div class="t1-none">The swap replay is reading every trade in your pools from its first day to find the hundred that paid you most. That takes a run or two; the list appears here the moment it reaches today, with the day it starts from.</div>'; return; }
   const {T,list,live}=R, now=Date.now(), from=T.from?new Date(T.from+'T12:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'}):'1 Aug';
   const ago=m=>m<2?'just now':m<120?Math.round(m)+' min ago':Math.round(m/60)+' h ago';
   const sub='since '+from+' · these 100 paid you <b>'+fmtUsd(T.sum,0)+'</b>'+(T.part!=null?', <b>'+Math.round(T.part*100)+'%</b> of all your fees':'')
@@ -12410,7 +12410,7 @@ function renderFeePulse60m(host){
      whole day (worker big.js), with a tiny switch between the two; the choice is kept on this device */
   const big=el('div','fpd-big');
   let bigWin='d24'; try{ const v=localStorage.getItem('kt.bigWin'); if(v==='today'||v==='d24'||v==='top') bigWin=v; }catch(e){}
-  /* a third choice, TOP 100: the best since 1 August, and the list of the hundred under the clock (the button
+  /* a third choice, TOP 100: the best since the replay’s first day, and the list of the hundred under the clock (the button
      under the box opens and closes that list from any of the three) */
   big.innerHTML='<div class="fb-h"><span class="fb-k">BIGGEST</span><span class="fb-sw t3" role="radiogroup" aria-label="Biggest trade of"><i></i>'
     +'<button type="button" role="radio" data-w="today">TODAY</button><button type="button" role="radio" data-w="d24">24 H</button><button type="button" role="radio" data-w="top">TOP 100</button></span></div><div class="fb-b"></div>'
@@ -12423,7 +12423,7 @@ function renderFeePulse60m(host){
     bigTop.setAttribute('aria-expanded',String(T100.open));
     if(bigWin==='top'){
       if(state.top===undefined){ bigB.innerHTML='<span class="fb-none">Reading the top 100…</span>'; return; }
-      if(!b1){ bigB.innerHTML='<span class="fb-none">The top 100 is being built: the swap replay is reading every trade in your pools since 1 August.</span>'; return; }
+      if(!b1){ bigB.innerHTML='<span class="fb-none">The top 100 is being built: the swap replay is reading every trade in your pools from its first day.</span>'; return; }
       bigB.innerHTML='<div class="fb-r">'+t100Trade(b1)+'<span class="fb-v">+'+fmtUsd(b1.usd,2)+'</span><span class="fb-s">'+t100When(b1.t).d+' · <span class="t1rk">#1 since '+from+'</span>'
         +(b1.size!=null?' · <b>≈'+fmtUsd(b1.size,0)+' trade</b>':'')+'</span></div>'; return; }
     const P=state.pulse, B=P&&P.big, raw=B&&B[bigWin];
