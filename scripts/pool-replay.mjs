@@ -200,8 +200,8 @@ async function senderOf(h, slow){ h=String(h).toLowerCase(); if(senders.has(h)) 
       if(r&&r.result===null&&!r.error) why.unknown++; else why.refused++; }
     if(!f){ if(over()) break; await sleep((slow?4000:1000)*(k+1)); } }
   const st=async u=>{ try{ const r=await fetch(u,{signal:AbortSignal.timeout(45000)}); return {s:r.status, j:r.ok?await r.json().catch(()=>null):null}; }catch(e){ return {s:'timeout', j:null}; } };
-  if(!f){ const r=await st(BS+'/api/v2/transactions/'+h); why.v2=r.s; if(r.j&&r.j.from&&r.j.from.hash) f=String(r.j.from.hash).toLowerCase(); }
-  if(!f){ const r=await st(BS+'/api?module=transaction&action=gettxinfo&txhash='+h); why.v1=r.s; const x=r.j&&r.j.result; if(x&&x.from) f=String(x.from).toLowerCase(); }
+  if(!f){ const r=await st(BS+'/api/v2/transactions/'+h); why.v2=r.s+(r.s===200&&!(r.j&&r.j.from&&r.j.from.hash)?(r.j?' without a sender':' unreadable'):''); if(r.j&&r.j.from&&r.j.from.hash) f=String(r.j.from.hash).toLowerCase(); }
+  for(let k=0;k<(slow?3:1)&&!f;k++){ if(k) await sleep(4000*k); const r=await st(BS+'/api?module=transaction&action=gettxinfo&txhash='+h); why.v1=r.s; const x=r.j&&r.j.result; if(x&&x.from) f=String(x.from).toLowerCase(); if(r.s!==429) break; }
   if(f) senders.set(h,f); else if(slow) sendWhy.push(why);
   return f; }
 
@@ -272,7 +272,9 @@ async function ethSide(out, prevPools){
     if(rcMiss){ stats.unread++; stats.eth.rcMiss=(stats.eth.rcMiss||0)+rcMiss; out.notes.push('eth: '+rcMiss+' deposit or withdrawal receipt(s) not served; a pool kept as it was');
       for(const w of rcWhy) console.log('  receipt not served: the nodes said unknown '+w.unknown+'×, refused '+w.refused+'× · its block’s position records not served either · Blockscout: its logs '+w.logs+', the transaction '+w.tx);
       continue; }
-    // the deck's own swaps by their sender as well as by its wallets' lists
+    /* the deck's own swaps: a swap in the same transaction as a change to one of the deck's positions (a zap: swap and
+       deposit in one) is the deck's own whoever the node says sent it; then by their sender as well as by its wallets' lists */
+    for(const h of mineIn.keys()){ const k=String(h).toLowerCase(); if(!own.set.has(k)&&logs.some(l=>l.topics[0]===TOP.swap&&String(l.transactionHash).toLowerCase()===k)){ own.set.add(k); stats.eth.ownByPos=(stats.eth.ownByPos||0)+1; } }
     const swH=[...new Set(logs.filter(l=>l.topics[0]===TOP.swap).map(l=>String(l.transactionHash).toLowerCase()))].filter(h=>!own.set.has(h));
     const sx=await mapLimit(swH,6,h=>senderOf(h));
     // those not served in the rush: asked again one at a time, slowly, twice
@@ -534,7 +536,7 @@ writeJ(OUT+'/'+FILE, out);
 if(BACK&&caught){ delete out.redo; writeJ(OUT+'/pools-replay-'+SLUG+'.json', out); fs.unlinkSync(OUT+'/'+FILE); }
 const cnt=s=>out.checks.filter(c=>c.st===s).length;
 console.log((BACK?'swap replay, the longer one built beside the page’s,':'swap replay')+' since '+FROM+(REBUILD?' (rebuilt from the start)':SEEDED?' ('+(redo==='eth'?'Ethereum':'Solana')+' read again from the first day, the rest carried over from the page’s)':prev?' (carried on from the last run)':' (first run)')+(redo&&!SEEDED?' · '+(redo==='eth'?'Ethereum':'Solana')+' being read again':'')+' · '+Math.round((Date.now()-START)/60000)+' min'+(BACK?(caught?' · reached the present: it is now the one the page reads':' · not yet at the present'):''));
-console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
+console.log('  Ethereum: '+stats.eth.pools+' pool(s) read · '+stats.eth.swaps+' swap records, '+stats.eth.lp+' liquidity changes ('+stats.eth.mine+' of the deck’s), '+stats.eth.own+' own swap(s) set aside ('+(stats.eth.ownBySender||0)+' known by their sender, '+(stats.eth.ownByPos||0)+' by a position of the deck’s changed in the same transaction) · '+stats.eth.chunks+' chunk(s), '+stats.eth.refused+' refused · '+stats.eth.receipts+' receipt(s)'+(stats.eth.rcMiss?', '+stats.eth.rcMiss+' not served':'')+(stats.eth.topOwn?' · '+stats.eth.topOwn+' own swap(s) taken out of the top hundred':''));
 console.log('  Solana: '+stats.sol.pools+' pool(s) read · '+stats.sol.txs+' transactions, '+stats.sol.swaps+' swap records, '+stats.sol.lp+' liquidity changes ('+stats.sol.mine+' of the deck’s), '+stats.sol.own+' own swap(s) set aside · '+stats.sol.refused+' not served · '+(stats.sol.quiet||0)+' with no record of the pool’s, '+(stats.sol.trunc||0)+' with the log cut short');
 console.log('  pools not read this run: '+stats.unread+' · notes: '+out.notes.length);
 console.log('  top 100 fees earned: pools tracked from the first day '+tracked.filter(p=>Array.isArray(p.state.top)&&p.state.topFrom===T0).length+' of '+tracked.length
