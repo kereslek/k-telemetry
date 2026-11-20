@@ -14,7 +14,8 @@
        reads (the shape of a misread, not of a market), is left out rather than charted.
 
    The result is sealed into <out>/recon-<slug>.json for the page. The log is public: dates,
-   counts, ratios, token tickers and market prices only — never an amount, address or ID. */
+   counts and ratios only — never an amount, address, ID, ticker or price (a holding is named by
+   its rank at the high, and its price is given against the price 24 h before). */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -376,7 +377,7 @@ const result={ v:1, t:Date.now(), slug:SLUG, n:snaps.length, nKept:kept.length, 
   else console.log('self-check: the published series carries the corrected high exactly'); }
 writeJ(OUT+'/recon-'+SLUG+'.json', result);
 
-/* ---------------- 8. the public log: dates, counts, ratios, tickers ---------------- */
+/* ---------------- 8. the public log: dates, counts, ratios ---------------- */
 const line=(name,p,base,corrected)=>{
   if(!p){ console.log('  '+name+': nothing to read'); return; }
   const s=p.s, parts=[], T=p.v||1;
@@ -408,40 +409,45 @@ if(peaks.raw){
 }
 if(peaks.raw){
   const t=peaks.raw.s.t, hp=(k,tt)=>{ const arr=hourMed.get(k); if(!arr) return null; const h=Math.floor(tt/H); let b=null; for(const [hh,v] of arr){ if(Math.abs(hh-h)<=2&&(!b||Math.abs(hh-h)<Math.abs(b[0]-h))) b=[hh,v]; } return b?b[1]:null; };
-  const fp=x=>x==null?'—':x>=100?'$'+x.toFixed(0):x>=1?'$'+x.toFixed(2):'$'+x.toPrecision(3);
-  for(const x of top3(peaks.raw.s).slice(0,3)){
+  // holding 1 is the biggest at the high; a price would name the token, so each is against its own 24 h before
+  const vs=(x,b)=>x==null||b==null||!(b>0)||!isFinite(x)?'—':rx(x/b);
+  for(const [i,x] of top3(peaks.raw.s).slice(0,3).entries()){
     const k=Object.keys(peaks.raw.s.agg).find(kk=>peaks.raw.s.agg[kk].s===x.s&&chainOfKey(kk)===x.ch)||[...hourMed.keys()].find(kk=>chainOfKey(kk)===x.ch&&peaks.raw.s.legs.some(l=>(l.k0===kk&&l.s0===x.s)||(l.k1===kk&&l.s1===x.s)));
     if(!k) continue;
-    console.log('  market price of '+x.s+' ('+chainName(x.ch)+'): 24 h before '+fp(hp(k,t-DAY))+' · at the high '+fp(hp(k,t))+' · 24 h after '+fp(hp(k,t+DAY))+' · now '+fp(hp(k,snaps[snaps.length-1].t)));
+    const b=hp(k,t-DAY);
+    console.log('  market price of holding '+(i+1)+', against 24 h before the high: at the high '+vs(hp(k,t),b)+' · 24 h after '+vs(hp(k,t+DAY),b)+' · now '+vs(hp(k,snaps[snaps.length-1].t),b));
   }
 }
 /* An exchange's own candles for the biggest holdings at the high: whether the move the relay
    priced was the market's, or only its price feed's. */
 if(peaks.raw){
   const t=peaks.raw.s.t, seen=new Set();
-  for(const x of top3(peaks.raw.s)){
+  for(const [i,x] of top3(peaks.raw.s).entries()){
     const sym=String(x.s||'').replace(/^W(ETH|BTC|SOL)$/,'$1').toUpperCase(); if(seen.has(sym)||!/^[A-Z0-9]{2,10}$/.test(sym)) continue; seen.add(sym);
+    const who='  Coinbase, holding '+(i+1);
     try{
       const iso=ms=>new Date(ms).toISOString().replace(/\.\d+Z$/,'Z');
       const r=await fetch('https://api.exchange.coinbase.com/products/'+sym+'-USD/candles?granularity=3600&start='+iso(t-30*H)+'&end='+iso(t+6*H),{headers:{'user-agent':'kt-reconcile'},signal:AbortSignal.timeout(15000)});
-      if(!r.ok){ console.log('  Coinbase '+sym+'-USD: HTTP '+r.status); continue; }
-      const c=await r.json(); if(!Array.isArray(c)||!c.length){ console.log('  Coinbase '+sym+'-USD: no candles'); continue; }
+      if(!r.ok){ console.log(who+': HTTP '+r.status); continue; }
+      const c=await r.json(); if(!Array.isArray(c)||!c.length){ console.log(who+': no candles'); continue; }
       const near=c.filter(k=>Math.abs(k[0]*1000-t)<=3*H), before=c.filter(k=>Math.abs(k[0]*1000-(t-DAY))<=H);
       const hi=Math.max(...near.map(k=>k[2])), lo=Math.min(...near.map(k=>k[1])), b=before.length?before[0][4]:null;
-      const fp=x=>x==null||!isFinite(x)?'—':x>=100?'$'+x.toFixed(0):x>=1?'$'+x.toFixed(2):'$'+x.toPrecision(3);
-      console.log('  Coinbase '+sym+'-USD: 24 h before '+fp(b)+' · within 3 h of the high: low '+fp(lo)+', high '+fp(hi));
-    }catch(e){ console.log('  Coinbase '+sym+'-USD: not reached'); }
+      const vb=x=>b>0&&isFinite(x)?rx(x/b):'—';
+      console.log(who+', against its close 24 h before the high: within 3 h of the high, low '+vb(lo)+', high '+vb(hi));
+    }catch(e){ console.log(who+': not reached'); }
   }
 }
 for(const [name,p] of [['TOKEN EXPOSURE peak',peaks.tb],['as-recorded peak',peaks.raw]]){
   if(!p) continue; const t=top3(p.s);
-  console.log('  biggest holdings at the '+name+': '+t.map(x=>x.s+' ('+chainName(x.ch)+', '+x.where+') '+pct(Math.abs(x.usd)/p.v)+(x.r!=null&&(x.r>1.5||x.r<0.67)?' at '+rx(x.r)+' its own market':'')).join(' · '));
+  console.log('  biggest holdings at the '+name+': '+t.map((x,i)=>'holding '+(i+1)+' ('+x.where+') '+pct(Math.abs(x.usd)/p.v)+(x.r!=null&&(x.r>1.5||x.r<0.67)?' at '+rx(x.r)+' its own market':'')).join(' · '));
 }
 console.log('\nWHAT THE CORRECTION TOOK OUT ('+episodes.length+' episodes)');
 const byKind={}; for(const e of episodes){ byKind[e.kind]=(byKind[e.kind]||0)+1; }
 console.log('  by kind: '+Object.entries(byKind).map(([k,n])=>k+' ×'+n).join(', '));
+// a token is named by a letter given in order of first appearance here (the same token keeps its letter), never by ticker or chain
+const anon=new Map(), tokOf=e=>{ const k=e.ch+':'+e.s; if(!anon.has(k)) anon.set(k,'token '+String.fromCharCode(65+anon.size%26)+(anon.size>=26?Math.floor(anon.size/26):'')); return anon.get(k); };
 for(const e of episodes.filter(e=>e.kind!=='spike'&&e.kind!=='chain-down').slice(0,14))
-  console.log('  '+bud(e.t0)+(e.t1-e.t0>H?' → '+bud(e.t1):'')+' · '+e.kind+' · '+e.s+' ('+chainName(e.ch)+') · '+e.n+' read(s)'
+  console.log('  '+bud(e.t0)+(e.t1-e.t0>H?' → '+bud(e.t1):'')+' · '+e.kind+' · '+tokOf(e)+' · '+e.n+' read(s)'
     +(e.kind==='pol-as-eth'?' · priced as ETH'+(polPx.size?'':' (no POL price reached: counted at 0)'):e.kind==='price'||e.kind==='lp-price'?' · priced '+rx(e.ratio)+' its market':'')+' · up to '+pct(e.share)+' of the total as recorded');
 const sp=episodes.filter(e=>e.kind==='spike'), cd=episodes.filter(e=>e.kind==='chain-down');
 console.log('  spikes left out: '+sp.length+' episode(s), '+sp.reduce((a,e)=>a+e.n,0)+' read(s); chain-down reads left out: '+cd.reduce((a,e)=>a+e.n,0));
