@@ -2885,7 +2885,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.54';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.55';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -12367,10 +12367,10 @@ function screenFx(v, from, o={}){
     const ring=add('sfx-ring',{left:x+'px',top:y+'px',width:2*far+'px',height:2*far+'px'});
     run(ring,[{transform:'translate(-50%,-50%) scale(0.01)',opacity:1},{transform:'translate(-50%,-50%) scale(1)',opacity:.12}],{duration:dur,easing:'cubic-bezier(.25,.6,.4,1)'});
     // each panel the ring reaches lights up: a glow laid over its edge and faded, so the panel is never repainted
-    if(!document.documentElement.classList.contains('view-pulse')) for(const el of document.querySelectorAll('.tile,.panel')){
-      const b=el.getBoundingClientRect(); if(b.bottom<0||b.top>H||b.right<0||b.left>W||!b.width) continue;
+    if(!document.documentElement.classList.contains('view-pulse')) { const rects=[...document.querySelectorAll('.tile,.panel')].map(el=>el.getBoundingClientRect());
+      for(const b of rects){ if(b.bottom<0||b.top>H||b.right<0||b.left>W||!b.width) continue;
       const d=Math.hypot(b.left+b.width/2-x,b.top+b.height/2-y), at=dur*Math.pow(Math.min(1,d/far),1.1)*0.85;
-      run(add('sfx-lit',{left:b.left+'px',top:b.top+'px',width:b.width+'px',height:b.height+'px'}),[{opacity:0},{opacity:1,offset:.2},{opacity:0}],{duration:2000,delay:at}); } };
+      run(add('sfx-lit',{left:b.left+'px',top:b.top+'px',width:b.width+'px',height:b.height+'px'}),[{opacity:0},{opacity:1,offset:.2},{opacity:0}],{duration:2000,delay:at}); } } };
   // the whole-screen moment is centred on the screen, not on the dial
   const X=W/2, Y=H*0.42, col=/^#[0-9a-f]{6}$/i.test(o.col||'')?o.col:'#35d6e8';
   const amount=(dur,still)=>{
@@ -12495,9 +12495,9 @@ function renderFeePulse60m(host){
   const totT=mk('text',{x:C,y:C-4,'text-anchor':'middle'},'fpd-total',''); svg.append(totT);
   const subH=mk('text',{x:C,y:C+16,'text-anchor':'middle'},'fpd-sub','THIS HOUR'); svg.append(subH);
   const subT=mk('text',{x:C,y:C+33,'text-anchor':'middle'},'fpd-sub2',''); svg.append(subT);
-  const glint=mk('circle',{r:5,fill:'#fff',opacity:0}); svg.append(glint);
+  const glint=mk('circle',{r:5,fill:'#fff','fill-opacity':0}); svg.append(glint);
   const layer=mk('g',{}); svg.append(layer);                       // the trades, above the faces and rings
-  const veil=mk('circle',{cx:C,cy:C,r:R+16,fill:'#000',opacity:0,'pointer-events':'none'}); svg.append(veil);
+  const veil=mk('circle',{cx:C,cy:C,r:R+16,fill:'#000','fill-opacity':0,'pointer-events':'none'}); svg.append(veil);
   const trails=mk('g',{'pointer-events':'none'}); svg.insertBefore(trails,layer);   // light trails, under the marks
   /* birth effects stay inside a circle just outside the dial, never over the text around it. They are drawn in an svg of
      their own laid over the dial (same viewBox), so the hundreds of changes a second they make while a fee arrives never
@@ -12624,34 +12624,36 @@ function renderFeePulse60m(host){
     birthing=false; };
   /* ---- the pieces of a birth ---- */
   const sweepAnim=()=>{ try{ return sw.getAnimations()[0]||null; }catch(err){ return null; } };
-  const typeTo=(text,from)=>{ let i=from.length; const go=()=>{ if(!wrap.isConnected) return; read.innerHTML='▸ '+esc(text.slice(0,i))+'<span class="fpd-cur"></span>'; if(i<text.length){ i++; setTimeout(go,26); } }; go(); };
+  const typeTo=(text,from)=>{ if(!wrap.isConnected) return; read.innerHTML='▸ <span></span><span class="fpd-cur"></span>'; const sp=read.firstElementChild; let i=from.length; sp.textContent=text.slice(0,i);
+    const n=text.length-from.length; if(n<=0) return;
+    tween(26*n,p=>{ if(!wrap.isConnected) return; const j=p>=1?text.length:from.length+Math.floor(p*n); if(j!==i){ i=j; sp.textContent=text.slice(0,i); } }); };
   const flare=(x,y,dur)=>{ const g=mk('g',{}); g.append(mk('line',{x1:x-70,y1:y,x2:x+70,y2:y,stroke:'#fff','stroke-width':1.6,'stroke-linecap':'round'}),
       mk('line',{x1:x,y1:y-42,x2:x,y2:y+42,stroke:'#fff','stroke-width':1.2,'stroke-linecap':'round'}), mk('circle',{cx:x,cy:y,r:9,fill:'#fff'})); fx.append(g);
     return tween(dur,p=>{ const s=p<.2?p/.2:1-(p-.2)/.8; g.setAttribute('opacity',(s*.95).toFixed(3));
       g.setAttribute('transform',`translate(${x} ${y}) scale(${(0.4+0.8*ez.out(Math.min(1,p*2.5))).toFixed(3)} 1) translate(${-x} ${-y})`); }).then(()=>g.remove()); };
   const rings=(x,y,col,{n,dur,gap,reach,push})=>{
     for(let i=0;i<n;i++){ const c=mk('circle',{cx:x,cy:y,r:4,fill:'none',stroke:i?col:'#35d6e8','stroke-width':2.6}); fx.append(c);
-      tween(dur,p=>{ const rr=4+reach*ez.out(p); c.setAttribute('r',rr.toFixed(1)); c.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); c.setAttribute('stroke-width',(2.6*(1-p)+0.3).toFixed(2));
+      tween(dur,p=>{ const rr=4+reach*ez.out(p); c.setAttribute('r',rr.toFixed(1)); c.setAttribute('stroke-opacity',(0.9*(1-p)).toFixed(3)); c.setAttribute('stroke-width',(2.6*(1-p)+0.3).toFixed(2));
         // the first ring shoves the other marks aside as it passes; they spring back
         if(push&&i===0) for(const o of live.values()){ if(!o.show||o.glide<1) continue; const ag=(Date.now()-o.t.at)/60000, [ox,oy]=pt(Math.max(0,ag),R), dx=ox-x, dy=oy-y, dist=Math.hypot(dx,dy)||1;
           const k=7*Math.exp(-Math.pow((rr-dist)/16,2))*(1-p); o.push=[dx/dist*k,dy/dist*k]; } },i*gap).then(()=>{ c.remove(); if(push&&i===0) for(const o of live.values()) o.push=null; }); }
     const echo=mk('circle',{cx:C,cy:C,r:20,fill:'none',stroke:'#35d6e8','stroke-width':1.2}); fx.append(echo);
-    tween(dur*0.8,p=>{ echo.setAttribute('r',(20+(R-20)*ez.out(p)).toFixed(1)); echo.setAttribute('opacity',(0.45*(1-p)).toFixed(3)); },180).then(()=>echo.remove()); };
+    tween(dur*0.8,p=>{ echo.setAttribute('r',(20+(R-20)*ez.out(p)).toFixed(1)); echo.setAttribute('stroke-opacity',(0.45*(1-p)).toFixed(3)); },180).then(()=>echo.remove()); };
   const goldWaves=n=>{ for(let i=0;i<n;i++){ const g=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:'#f5c451','stroke-width':3.5}); fx.append(g);
-      tween(1300,p=>{ g.setAttribute('r',(R+4+46*ez.out(p)).toFixed(1)); g.setAttribute('opacity',(0.95*(1-p)).toFixed(3)); g.setAttribute('stroke-width',(3.5*(1-p)+.3).toFixed(2)); },i*260).then(()=>g.remove()); }
+      tween(1300,p=>{ g.setAttribute('r',(R+4+46*ez.out(p)).toFixed(1)); g.setAttribute('stroke-opacity',(0.95*(1-p)).toFixed(3)); g.setAttribute('stroke-width',(3.5*(1-p)+.3).toFixed(2)); },i*260).then(()=>g.remove()); }
     const ring=svg.querySelector('.fpd-ring'); if(ring){ ring.style.stroke='#f5c451'; tween(1400,p=>{ ring.style.strokeOpacity=String(1-p*.45); }).then(()=>{ ring.style.stroke=''; ring.style.strokeOpacity=''; }); } };
-  const goldRain=()=>{ for(let i=0;i<26;i++){ const c=mk('circle',{r:2,fill:'#f5c451',opacity:0}); fx.append(c); const x0=C-70+Math.random()*140, y0=C-120-Math.random()*40;
-      tween(900+Math.random()*500,p=>{ const q=ez.inOut(p); c.setAttribute('cx',(x0+(C-x0)*q).toFixed(1)); c.setAttribute('cy',(y0+(C-12-y0)*q).toFixed(1)); c.setAttribute('opacity',(p<.8?1:(1-p)/.2).toFixed(3)); },i*45).then(()=>c.remove()); } };
+  const goldRain=()=>{ for(let i=0;i<26;i++){ const c=mk('circle',{r:2,fill:'#f5c451','fill-opacity':0}); fx.append(c); const x0=C-70+Math.random()*140, y0=C-120-Math.random()*40;
+      tween(900+Math.random()*500,p=>{ const q=ez.inOut(p); c.setAttribute('cx',(x0+(C-x0)*q).toFixed(1)); c.setAttribute('cy',(y0+(C-12-y0)*q).toFixed(1)); c.setAttribute('fill-opacity',(p<.8?1:(1-p)/.2).toFixed(3)); },i*45).then(()=>c.remove()); } };
   const goldEdge=()=>{ if(document.documentElement.classList.contains('view-pulse')) return; const panel=wrap.closest('.panel')||wrap, b=panel.getBoundingClientRect();
     let L=document.getElementById('sfx'); if(!L){ L=document.createElement('div'); L.id='sfx'; L.setAttribute('aria-hidden','true'); document.body.append(L); }
     const o=document.createElement('div'); o.className='sfx-lit'; Object.assign(o.style,{left:b.left+'px',top:b.top+'px',width:b.width+'px',height:b.height+'px',boxShadow:'0 0 0 1px #f5c451,0 0 38px rgba(245,196,81,.5)'}); L.append(o);
     try{ o.animate([{opacity:.55},{opacity:1,offset:.45},{opacity:0}],{duration:3200,easing:'ease-out',fill:'both'}).onfinish=()=>o.remove(); }catch(err){ o.remove(); } };
   const stream=(x,y,col,{n,dur,orbit})=>Promise.all([...Array(n)].map((_,i)=>(async()=>{
-      const c=mk('circle',{r:2.3,fill:lift(col,.45),opacity:0}); fx.append(c);
+      const c=mk('circle',{r:2.3,fill:lift(col,.45),'fill-opacity':0}); fx.append(c);
       const a0=(i/n)*Math.PI*2, side=(i%2?1:-1)*(16+Math.random()*34), qx=(x+C)/2+side, qy=(y+C)/2;
-      if(orbit) await tween(orbit,p=>{ const a=a0+p*Math.PI*2, rr=22*ez.out(Math.min(1,p*2)); c.setAttribute('cx',(x+Math.cos(a)*rr).toFixed(1)); c.setAttribute('cy',(y+Math.sin(a)*rr).toFixed(1)); c.setAttribute('opacity',Math.min(1,p*3).toFixed(3)); });
+      if(orbit) await tween(orbit,p=>{ const a=a0+p*Math.PI*2, rr=22*ez.out(Math.min(1,p*2)); c.setAttribute('cx',(x+Math.cos(a)*rr).toFixed(1)); c.setAttribute('cy',(y+Math.sin(a)*rr).toFixed(1)); c.setAttribute('fill-opacity',Math.min(1,p*3).toFixed(3)); });
       const sx=orbit?x+Math.cos(a0)*22:x, sy=orbit?y+Math.sin(a0)*22:y;
-      await tween(dur,p=>{ const q=ez.inOut(p), u=1-q; c.setAttribute('cx',(u*u*sx+2*u*q*qx+q*q*C).toFixed(1)); c.setAttribute('cy',(u*u*sy+2*u*q*qy+q*q*(C-12)).toFixed(1)); c.setAttribute('opacity',(p<.85?1:(1-p)/.15).toFixed(3)); },orbit?0:i*30);
+      await tween(dur,p=>{ const q=ez.inOut(p), u=1-q; c.setAttribute('cx',(u*u*sx+2*u*q*qx+q*q*C).toFixed(1)); c.setAttribute('cy',(u*u*sy+2*u*q*qy+q*q*(C-12)).toFixed(1)); c.setAttribute('fill-opacity',(p<.85?1:(1-p)/.15).toFixed(3)); },orbit?0:i*30);
       c.remove(); })()));
   const countUp=(usd,dur,roll)=>{
     D.counting=true;
@@ -12663,13 +12665,13 @@ function renderFeePulse60m(host){
     return tween(dur,p=>{ const q=ez.out(p), v=v0+(v1-v0)*q, now=performance.now(), tx=p>=1||now-lastTxt>=33; if(tx) lastTxt=now; const f=setTotal(v,tx);
       if(roll && p<1 && tx){ const txt=fmtUsd(v,2); totT.textContent=''; [...txt].forEach((ch,i)=>{ const t=mk('tspan',{},null,ch); if(i>=txt.length-4+Math.floor(p*3)) t.setAttribute('opacity',(0.55+0.45*Math.random()).toFixed(2)); totT.append(t); }); }
       if(v1>v0){ const s=1+0.12*Math.sin(Math.PI*Math.min(1,p*1.6)); totT.setAttribute('transform',`translate(${C} ${C-12}) scale(${s.toFixed(3)}) translate(${-C} ${-(C-12)})`);
-        const [gx,gy]=pt(f*60,r2); glint.setAttribute('cx',gx); glint.setAttribute('cy',gy); glint.setAttribute('opacity',(Math.sin(p*Math.PI)*.95).toFixed(3)); } })
-    .then(()=>{ totT.removeAttribute('transform'); glint.setAttribute('opacity',0); setTotal(v1); D.counting=false; }); };
+        const [gx,gy]=pt(f*60,r2); glint.setAttribute('cx',gx); glint.setAttribute('cy',gy); glint.setAttribute('fill-opacity',(Math.sin(p*Math.PI)*.95).toFixed(3)); } })
+    .then(()=>{ totT.removeAttribute('transform'); glint.setAttribute('fill-opacity',0); setTotal(v1); D.counting=false; }); };
   const lap=col=>{ const L=2*Math.PI*R, arc=mk('circle',{cx:C,cy:C,r:R,fill:'none',stroke:col,'stroke-width':3,'stroke-linecap':'round',transform:`rotate(-90 ${C} ${C})`}); fx.append(arc);
-    tween(1300,p=>{ const head=L*ez.inOut(p), seg=L*0.08; arc.setAttribute('stroke-dasharray',`${seg.toFixed(1)} ${L}`); arc.setAttribute('stroke-dashoffset',(-(head-seg)).toFixed(1)); arc.setAttribute('opacity',(p<.9?1:(1-p)/.1).toFixed(3)); }).then(()=>arc.remove()); };
-  const trailGlide=(e,dur)=>{ const path=mk('path',{fill:'none',stroke:e.col,'stroke-width':4,'stroke-linecap':'round',opacity:.9}); trails.append(path);
+    tween(1300,p=>{ const head=L*ez.inOut(p), seg=L*0.08; arc.setAttribute('stroke-dasharray',`${seg.toFixed(1)} ${L}`); arc.setAttribute('stroke-dashoffset',(-(head-seg)).toFixed(1)); arc.setAttribute('stroke-opacity',(p<.9?1:(1-p)/.1).toFixed(3)); }).then(()=>arc.remove()); };
+  const trailGlide=(e,dur)=>{ const path=mk('path',{fill:'none',stroke:e.col,'stroke-width':4,'stroke-linecap':'round','stroke-opacity':.9}); trails.append(path);
     const draw=()=>{ const ag=Math.max(0.01,((Date.now()-e.t.at)/60000)*e.glide), [x0,y0]=pt(0,R), [x1,y1]=pt(ag,R); path.setAttribute('d',`M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}`); };
-    tween(dur,draw).then(()=>tween(3200,p=>{ draw(); path.setAttribute('opacity',(0.9*(1-p)).toFixed(3)); path.setAttribute('stroke-width',(4*(1-p)+.5).toFixed(2)); }).then(()=>path.remove())); };
+    tween(dur,draw).then(()=>tween(3200,p=>{ draw(); path.setAttribute('stroke-opacity',(0.9*(1-p)).toFixed(3)); path.setAttribute('stroke-width',(4*(1-p)+.5).toFixed(2)); }).then(()=>path.remove())); };
   let tapeWc=0, tapeWt=0; const tapeW=()=>{ const n=performance.now(); if(n-tapeWt>1000){ tapeWt=n; tapeWc=tape.getBoundingClientRect().width||300;
       if(!tape.querySelector('.fpd-tnow')){ tape.append(mk('line',{x1:0,x2:'100%',y1:11,y2:11},'fpd-tline')); tape.append(mk('circle',{cy:11,r:2.6},'fpd-tnow')); }
       const nw=tape.querySelector('.fpd-tnow'); nw.setAttribute('cx',tapeWc-4); }
@@ -12721,7 +12723,7 @@ function renderFeePulse60m(host){
     typeTo(lead+' …','');
     const fade=hideSweep(), a0=(Date.now()%7000)/7000*360, lock=brackets(x,y);
     try{ strikeEl.animate([{transform:`rotate(${a0}deg)`,opacity:0},{transform:`rotate(${a0+8}deg)`,opacity:.55,offset:.3},{transform:`rotate(${a0+20}deg)`,opacity:.55}],{duration:1000,fill:'forwards'}); }catch(err){}
-    await tween(1000,p=>{ veil.setAttribute('opacity',(0.32*ez.out(p)).toFixed(3)); lock(p); D.pulse=p; });
+    await tween(1000,p=>{ veil.setAttribute('fill-opacity',(0.32*ez.out(p)).toFixed(3)); lock(p); D.pulse=p; });
     // 2 — impact, slowed
     try{ strikeEl.getAnimations().forEach(a=>a.cancel()); }catch(err){}
     whip(a0+20,1100); await tween(330,()=>{});
@@ -12734,7 +12736,7 @@ function renderFeePulse60m(host){
     tween(2600,p=>{ ft.setAttribute('y',(y+8-26*ez.out(p)).toFixed(1)); ft.setAttribute('opacity',(p<.6?1:1-(p-.6)/.4).toFixed(3)); },150).then(()=>ft.remove());
     typeTo(lead+' · +'+fmtUsd(usd,2)+' · '+pool, lead+' ');
     lock(1,true); D.pulse=0;
-    tween(900,p=>{ veil.setAttribute('opacity',(0.32*(1-p)).toFixed(3)); },500);
+    tween(900,p=>{ veil.setAttribute('fill-opacity',(0.32*(1-p)).toFixed(3)); },500);
     await tween(1200,()=>{});
     // 3 — payoff
     const pair=pool.split(' ').slice(0,3).join(' ');
@@ -12764,7 +12766,7 @@ function renderFeePulse60m(host){
       if(!e){
         const h=mk('circle',{r:0},'fpd-halo'), d=mk('circle',{r:0,tabindex:0,role:'button'},'fpd-dot'), a=mk('text',{'text-anchor':'middle'},'fpd-amt','');
         const hit=mk('circle',{r:16,fill:'transparent'},'fpd-hit');      // a finger-sized target over a small mark
-        d.style.transition='none'; layer.append(h,d,a,hit);
+        d.style.transition='none'; h.style.opacity='1'; layer.append(h,d,a,hit);
         // a trade that arrives while the dial is on screen is born at now and glides to its time;
         // one already there when the dial is drawn simply sits at its time
         // one that came in while you were away waits in place, dark, for the catch-up sweep to paint it
@@ -12798,22 +12800,23 @@ function renderFeePulse60m(host){
     D.typical=typical; D.target=total;
     if(!births.length && !D.counting) setTotal(total);
     fill.style.display=typical?'':'none';
-    if(!sweeping) say(sel&&live.get(sel)?live.get(sel).t:null);      // the catch-up sweep writes its own line
+    if(!sweeping&&!birthing) say(sel&&live.get(sel)?live.get(sel).t:null);      // the catch-up sweep writes its own line
     // stats, quiet meter, latest fees
     const last=TR[0], quiet=last?Math.max(0,Math.floor((Date.now()-last.endAt)/60000)):null;
     const cell=(k,v)=>'<div><span>'+k+'</span><b>'+v+'</b></div>';
-    stats.innerHTML=cell('Trades this hour',String(inHour.length))
+    const setHtml=(el,h)=>{ if(el._h!==h){ el._h=h; el.innerHTML=h; } };
+    setHtml(stats,cell('Trades this hour',String(inHour.length))
       +cell('Last trade',last?(quiet<1?'just now':quiet<120?quiet+' min ago':hl(last.t)):'—')
-      +cell('Typical hour',typical!=null?fmtUsd(typical,2):'—');
+      +cell('Typical hour',typical!=null?fmtUsd(typical,2):'—'));
     const gaps=(P&&P.gaps)||[], hrs=P&&P.from?Math.min(24,Math.round((Date.now()-P.from)/3600000)):0;
-    if(quiet==null) qm.innerHTML='<span class="unit">No trade recorded yet.</span>';
-    else if(quiet<1) qm.innerHTML='<b class="up">Trading now</b> <span class="unit">· a trade in the last minute</span>';
-    else if(gaps.length<5) qm.innerHTML='Quiet for <b>'+quiet+' min</b> <span class="unit">· not enough lulls on record yet to compare</span>';
+    if(quiet==null) setHtml(qm,'<span class="unit">No trade recorded yet.</span>');
+    else if(quiet<1) setHtml(qm,'<b class="up">Trading now</b> <span class="unit">· a trade in the last minute</span>');
+    else if(gaps.length<5) setHtml(qm,'Quiet for <b>'+quiet+' min</b> <span class="unit">· not enough lulls on record yet to compare</span>');
     else { const pct=Math.round(gaps.filter(g=>g<quiet).length/gaps.length*100), med=[...gaps].sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
       const tone=pct>=80?'hot':pct>=50?'warm':'calm';
-      qm.innerHTML='<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
+      setHtml(qm,'<div class="fpd-qline">Quiet for <b>'+quiet+' min</b> · longer than <b>'+pct+'%</b> of lulls in the last '+hrs+' h'
         +' <span class="unit">(typical lull '+med+' min)</span></div>'
-        +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'; }
+        +'<div class="fpd-qbar '+tone+'"><i style="width:'+Math.max(2,pct)+'%"></i></div>'); }
     const rows=TR.slice(0,12), MINE=pulseMine(), from=rows.length?rows[rows.length-1].at-60000:Date.now()-60*60000;
     const items=[...rows.map(t=>({at:t.at, t})), ...MINE.filter(x=>x.t>=from).map(x=>({at:x.t, x}))].sort((a,b)=>b.at-a.at);
     list.innerHTML=items.length?'':'<li class="empty">No trades recorded yet.</li>';
@@ -12894,7 +12897,7 @@ function renderFeePulse60m(host){
     read.innerHTML='▸ <b>'+(first?'FIRST SWEEP':'CATCHING UP')+'</b> <span class="unit">· '+(fresh.length?fresh.length+' new since '+hl(from):'nothing new since '+hl(from))+' · tap the dial to skip</span>';
     const frame=(dur,fn)=>new Promise(res=>{ const T=performance.now(); const go=ts=>{ if(!wrap.isConnected) return res(); const p=skip?1:Math.min(1,(ts-T)/dur); fn(p); if(p<1) requestAnimationFrame(go); else res(); }; requestAnimationFrame(go); });
     // 1 — power-up: a line of light that opens into a ring, the face going dark behind it
-    await frame(700,p=>{ veil.setAttribute('opacity',(0.6*ez.out(Math.min(1,p*1.6))).toFixed(3)); clearCv();
+    await frame(700,p=>{ veil.setAttribute('fill-opacity',(0.6*ez.out(Math.min(1,p*1.6))).toFixed(3)); clearCv();
       pc.save(); pc.globalCompositeOperation='lighter';
       if(p<.4){ const q=ez.out(p/.4), w=(R+16)*q; pc.fillStyle='rgba(200,250,255,.9)'; pc.shadowColor='#35d6e8'; pc.shadowBlur=14; pc.fillRect(C-w,C-1,2*w,2); }
       else { const q=(p-.4)/.6, rr=(R+16)*ez.out(q); pc.strokeStyle='rgba(190,246,255,'+(0.9*(1-q)).toFixed(3)+')'; pc.lineWidth=2.2; pc.shadowColor='#35d6e8'; pc.shadowBlur=16;
@@ -12904,7 +12907,7 @@ function renderFeePulse60m(host){
     // 2 — one revolution from twelve
     let n=0, shown=base, lastA=0;
     const ping=(x,y,col,reach,i)=>{ const c=mk('circle',{cx:x,cy:y,r:3,fill:'none',stroke:col,'stroke-width':2}); fx.append(c);
-      tween(1300,q=>{ c.setAttribute('r',(3+reach*ez.out(q)).toFixed(1)); c.setAttribute('opacity',(0.9*(1-q)).toFixed(3)); c.setAttribute('stroke-width',(2*(1-q)+.3).toFixed(2)); },i*240).then(()=>c.remove()); };
+      tween(1300,q=>{ c.setAttribute('r',(3+reach*ez.out(q)).toFixed(1)); c.setAttribute('stroke-opacity',(0.9*(1-q)).toFixed(3)); c.setAttribute('stroke-width',(2*(1-q)+.3).toFixed(2)); },i*240).then(()=>c.remove()); };
     const paint=e=>{ e.painted=1; const age=Math.max(0,(Date.now()-e.t.at)/60000), [x,y]=pt(age,R), col=e.col, isN=isNew(e), bigT=sfxTier(e.t.usd)>0;
       pc.save(); pc.globalCompositeOperation='lighter';
       if(isN){
@@ -12951,7 +12954,7 @@ function renderFeePulse60m(host){
     dw.removeEventListener('click',onSkip); edge.remove();
     for(const e of all){ if(!e.painted) paint(e); delete e.painted; }
     // 3 — back to the live dial: the dark lifts, the live beam fades in, the afterglow dies away
-    tween(800,q=>{ veil.setAttribute('opacity',(0.6*(1-q)).toFixed(3)); }).then(()=>{ layer.after(veil); });
+    tween(800,q=>{ veil.setAttribute('fill-opacity',(0.6*(1-q)).toFixed(3)); }).then(()=>{ layer.after(veil); });
     try{ sw.style.animationDelay=(-(Date.now()%7000))+'ms'; if(fade) fade.cancel(); sw.animate([{opacity:0},{opacity:1}],{duration:1400,easing:'ease-out'}); }catch(err){}
     try{ cv.animate([{opacity:1},{opacity:0}],{duration:2800,easing:'ease-in',fill:'forwards'}).onfinish=()=>{ clearCv(); cv.getAnimations().forEach(a=>a.cancel()); }; }catch(err){ clearCv(); }
     await tween(skip?0:600,()=>{});
@@ -12973,8 +12976,8 @@ function renderFeePulse60m(host){
     const sa=(n,k,v)=>{ const c=n._a||(n._a={}); if(c[k]!==v){ c[k]=v; n.setAttribute(k,v); } };
     const ss=(n,k,v)=>{ const c=n._s||(n._s={}); if(c[k]!==v){ c[k]=v; n.style[k]=v; } };
     const turn=ts=>{
-      if(!wrap.isConnected) return;
-      for(const t of tw.slice()){ const p=(ts-t.t0)/t.dur; if(p<0) continue; t.fn(Math.min(1,p)); if(p>=1){ tw.splice(tw.indexOf(t),1); t.res(); } }
+      if(!wrap.isConnected){ if(io){ io.disconnect(); io=null; } return; }
+      for(const t of tw.slice()){ const p=(ts-t.t0)/t.dur; if(p<0) continue; try{ t.fn(Math.min(1,p)); }catch(err){ tw.splice(tw.indexOf(t),1); t.res(); continue; } if(p>=1){ tw.splice(tw.indexOf(t),1); t.res(); } }
       if(tw.length || birthing || ts-last>=250){ last=ts;
         sa(nowDot,'r',(3.6+(D.pulse?2.2*D.pulse*Math.abs(Math.sin(ts/90)):0)).toFixed(2));
         const now=Date.now();
@@ -12994,7 +12997,7 @@ function renderFeePulse60m(host){
           const lit=0.05+0.95*(e.lit??1);                                                 // dark until the sweep paints it
           ss(e.d,'opacity',(e.show?op*lit:0).toFixed(2));
           sa(e.h,'cx',X); sa(e.h,'cy',Y); sa(e.h,'r',(r*(2.2+1.8*fresh+2.2*flash)).toFixed(1));
-          ss(e.h,'opacity',(e.show?(op*(0.3+0.65*fresh)+0.5*flash)*lit:0).toFixed(2));
+          ss(e.h,'fillOpacity',(e.show?(op*(0.3+0.65*fresh)+0.5*flash)*lit:0).toFixed(2));
           if(e.lbl && e.show && e.glide>=1 && lit>0.9 && !sweeping){ const [lx,ly]=pt(pos,R-e.r-15); sa(e.a,'x',lx.toFixed(1)); sa(e.a,'y',(ly+3.5).toFixed(1)); ss(e.a,'display',''); ss(e.a,'opacity',op.toFixed(2)); }
           else ss(e.a,'display','none');
         }
