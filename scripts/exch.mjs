@@ -77,8 +77,11 @@ export async function exchLedger({cex, wallets, io, st, now=Date.now(), budgetMs
   }
 
   // a value for each, at its own time (a price at a moment never changes, so it is asked once)
-  for(const r of st.rows){ if(late()) break; if(r.usd!=null||r.px===false) continue;
-    const p=await io.usdAt(r.ch, r.tok, Math.floor(r.t/1000)); if(p>0){ r.px=p; r.usd=Math.round(p*r.amt*100)/100; } else if(now-r.t>3*864e5) r.px=false; }
+  // one failed ask is not an answer (a price feed refusing a burst of asks on the first run): a transfer is left
+  // unvalued for good only after six tries, and only once it is three days old
+  for(const r of st.rows){ if(late()) break; if(r.usd!=null||(r.px===false&&(r.tries||0)>=6)) continue;
+    const p=await io.usdAt(r.ch, r.tok, Math.floor(r.t/1000)); r.tries=(r.tries||0)+1;
+    if(p>0){ r.px=p; r.usd=Math.round(p*r.amt*100)/100; } else if(r.tries>=6&&now-r.t>3*864e5) r.px=false; }
   for(const r of st.rows) if(!r.sym) r.sym=io.sym(r.ch, r.tok)||null;
   st.rows.sort((a,b)=>b.t-a.t);
   st.at=now;
