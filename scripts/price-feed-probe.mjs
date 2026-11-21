@@ -22,6 +22,7 @@ for(const [name,ids] of [['SOL and USDC',[SOL,USDC]],['the positions’ tokens',
   const L=await ask('https://coins.llama.fi/prices/current/'+ids.map(m=>'solana:'+m).join(','));
   const ln=L.j&&L.j.coins?ids.filter(m=>L.j.coins['solana:'+m]&&L.j.coins['solana:'+m].price>0).length:0;
   console.log('DefiLlama coins, '+name+': HTTP '+L.st+' · priced '+ln+' of '+ids.length+(ln<ids.length?' · says: '+scrub(L.t):''));
+  if(L.j&&L.j.coins) console.log('  DefiLlama confidence and age, each token: '+ids.map(m=>{ const c=L.j.coins['solana:'+m]; return c?(c.confidence!=null?c.confidence.toFixed(2):'—')+' / '+Math.round((Date.now()-c.timestamp*1000)/60000)+' min':'none'; }).join(' · '));
 }
 // the relay's own Jupiter errors this pass, identifiers taken out
 if(d) for(const e of (d.errors||[]).filter(e=>/jup|price/i.test(typeof e==='string'?e:JSON.stringify(e))).slice(0,4)) console.log('  relay said: '+scrub(typeof e==='string'?e:JSON.stringify(e)));
