@@ -1,0 +1,20 @@
+# What can a stranger read? Runs with no secret at all: every published file from the live site must come back
+# sealed, and every door of the minute recorder must stay shut without the token. The log is public: answer codes
+# and pass/fail only.
+name: outside-probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/checkout@v4
+        with: { path: dev }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node dev/scripts/outside-probe.mjs
