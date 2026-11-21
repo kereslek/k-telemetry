@@ -2865,7 +2865,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.51';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.52';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3004,7 +3004,17 @@ const bpMonth=t=>bpDay(t).slice(0,7);
 const bpOff=t=>{ const o=bpParts(t); return Date.UTC(+o.year,+o.month-1,+o.day,+o.hour,+o.minute,+o.second)-Math.floor(t/1000)*1000; };
 const bpMidnight=(y,m,d)=>{ const g=Date.UTC(y,m-1,d); return g-bpOff(g-bpOff(g)); };   // m 1-based; overflow ok
 const bpDayStart=k=>bpMidnight(+k.slice(0,4),+k.slice(5,7),+k.slice(8,10));
-const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* A token's symbol is whatever its creator chose, and anyone can send a token or a pool position to the owner's
+   wallet, which this page then lists: a symbol could carry markup that runs here and reads the saved key. So every
+   symbol is cut, where it enters the page, to letters, digits, currency signs and . _ + - … ? (24 at most). */
+const cleanSym = s => { const t=String(s==null?'':s).normalize('NFKC').replace(/[^\p{L}\p{N}\p{Sc} ._+\-…?]/gu,'').trim().slice(0,24); return t||'?'; };
+function cleanPos(p){
+  if(!p || typeof p!=='object') return p;
+  for(const k of ['m0','m1']) if(p[k] && typeof p[k]==='object' && p[k].symbol!=null) p[k].symbol=cleanSym(p[k].symbol);
+  if(p.pairLabel!=null) p.pairLabel=String(p.pairLabel).split(' / ').map(cleanSym).join(' / ');
+  return p;
+}
 const pad32 = h => h.replace(/^0x/,'').padStart(64,'0');
 const hexToBig = h => { if(h==null||h==='0x') throw new Error('empty answer (0x) from the node'); return BigInt(h); };
 const word = (data, i) => '0x' + data.replace(/^0x/,'').slice(i*64, (i+1)*64);
@@ -3125,7 +3135,7 @@ async function getTokenMeta(addrs){
     const res = await rpcBatch(calls, {strict:true});
     need.forEach((a,i)=>{
       const symRes = res[i*2], decRes = res[i*2+1];
-      const symbol = symRes.error ? '???' : decodeString(symRes.result);
+      const symbol = symRes.error ? '???' : cleanSym(decodeString(symRes.result));
       const decimals = decRes.error ? 18 : Number(hexToBig(decRes.result));
       tokenMeta.set(a, {symbol: symbol==='WETH'?'ETH':symbol, decimals, raw:symbol});
     });
@@ -3520,7 +3530,7 @@ async function solMeta(mints){
     try{
       const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
       const hit=Array.isArray(js)?js.find(t=>t.id===m):null;
-      solTokenMeta.set(m,{symbol:hit?.symbol||m.slice(0,4)+'…'});
+      solTokenMeta.set(m,{symbol:cleanSym(hit?.symbol||m.slice(0,4)+'…')});
     }catch(e){ solTokenMeta.set(m,{symbol:m.slice(0,4)+'…'}); }
   }
 }
@@ -3953,9 +3963,10 @@ function overlayRelay(p){
 const parityLogged=new Set();
 function parityNote(p, kind, msg){
   const k=p.id+':'+kind; if(parityLogged.has(k)) return; parityLogged.add(k);
-  try{ log(kind.startsWith('liq')?'info':'warning', 'Live/relay check · '+(p.pairLabel||'')+' '+(typeof posRef==='function'?posRef(p):p.id)+': '+msg+'.'); }catch(e){}
+  try{ log(kind.startsWith('liq')?'info':'warning', 'Live/relay check · '+esc(p.pairLabel||'')+' '+(typeof posRef==='function'?posRef(p):p.id)+': '+msg+'.'); }catch(e){}
 }
 function linifyRangePos(p){
+  cleanPos(p);   // relay and cached positions pass here: their symbols are cleaned like the live ones
   if(p && p.price!=null && p.priceLower!=null && p.priceUpper!=null && p.priceUpper!==p.priceLower)
     p.rangePos = (p.price-p.priceLower)/(p.priceUpper-p.priceLower);
   /* A Solana position whose history has been read back to its opening carries its true lifetime
@@ -4298,7 +4309,7 @@ async function scanInner(isBoot){
     // fully offline: fall back to the LAST KNOWN snapshot instead of zeroes
     const snap=store.get('lastSnap',null);
     if(snap && Array.isArray(snap.ps) && snap.ps.length){
-      state.positions=new Map(snap.ps.map(p=>{ p.cached=true; return [p.id,p]; }));
+      state.positions=new Map(snap.ps.map(p=>{ p.cached=true; cleanPos(p); return [p.id,p]; }));
       state.ethUsd=state.ethUsd??snap.ethUsd; state.btcUsd=state.btcUsd??snap.btcUsd;
       state.gasGwei=state.gasGwei??snap.gasGwei; state.block=state.block??snap.block; state.solPrio=state.solPrio??snap.solPrio; state.btcFee=state.btcFee??snap.btcFee; state.bridge=state.bridge??snap.bridge;
       state.ethUsdChg24=state.ethUsdChg24??snap.ethUsdChg24;
@@ -4645,7 +4656,7 @@ function evaluateAlerts(){
     const lad = ladderOf(p);
     if(lad && p.inRange){
       if(state.alertsSeen[p.id]!=='ladder'){ state.alertsSeen[p.id]='ladder';
-        log('info', p.pairLabel+' '+posRef(p)+' is a range order'
+        log('info', esc(p.pairLabel)+' '+posRef(p)+' is a range order'
           +(lad.filled!=null?' — '+fmtPct(lad.filled*100,lad.filled<0.01?2:0)+' filled':'')+'.'); }
       continue;
     }
@@ -4655,15 +4666,15 @@ function evaluateAlerts(){
       if(prev !== undefined){ // don't spam on first load
         const de = dispEdge(p), edge = de.edge==='lower'?'LOWER':'UPPER';
         const msg = {
-          good: p.pairLabel+' '+posRef(p)+' back IN RANGE.',
-          warning: p.pairLabel+' '+posRef(p)+' approaching '+edge+' edge — exits on a '+de.sign+fmtPct(de.pct,1)+' price move.',
-          serious: p.pairLabel+' '+posRef(p)+' CRITICAL — exits on a '+de.sign+fmtPct(de.pct,1)+' price move ('+edge+' edge).',
-          critical: p.pairLabel+' '+posRef(p)+' is OUT OF RANGE — no fees accruing.',
+          good: esc(p.pairLabel)+' '+posRef(p)+' back IN RANGE.',
+          warning: esc(p.pairLabel)+' '+posRef(p)+' approaching '+edge+' edge — exits on a '+de.sign+fmtPct(de.pct,1)+' price move.',
+          serious: esc(p.pairLabel)+' '+posRef(p)+' CRITICAL — exits on a '+de.sign+fmtPct(de.pct,1)+' price move ('+edge+' edge).',
+          critical: esc(p.pairLabel)+' '+posRef(p)+' is OUT OF RANGE — no fees accruing.',
         }[sev];
         log(sev==='good'?'good':(sev==='warning'?'warning':'critical'), msg);
         notify(sev, msg);
       } else if(sev!=='good'){
-        log(sev==='warning'?'warning':'critical', p.pairLabel+' '+posRef(p)+' status: '+SEV_LABEL[sev]+(p.inRange?' (exits on a '+dispEdge(p).sign+fmtPct(dispEdge(p).pct,1)+' price move)':''));
+        log(sev==='warning'?'warning':'critical', esc(p.pairLabel)+' '+posRef(p)+' status: '+SEV_LABEL[sev]+(p.inRange?' (exits on a '+dispEdge(p).sign+fmtPct(dispEdge(p).pct,1)+' price move)':''));
       }
     }
   }
@@ -5955,7 +5966,7 @@ function edgePrecedent(p){
 }
 function edgePhrase(p){
   const e=edgeMove(p);
-  const pair=(p.m0&&p.m0.symbol?p.m0.symbol:'?')+'/'+(p.m1&&p.m1.symbol?p.m1.symbol:'?');
+  const pair=esc(p.m0&&p.m0.symbol?p.m0.symbol:'?')+'/'+esc(p.m1&&p.m1.symbol?p.m1.symbol:'?');
   if(!e) return 'is near its edge';
   const pr=edgePrecedent(p);
   let t=pair+' has to <b>'+e.dir+' '+e.pct.toFixed(1)+'%</b> before this stops earning';
