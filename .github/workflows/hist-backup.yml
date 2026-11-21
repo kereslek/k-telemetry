@@ -1,0 +1,31 @@
+# A daily sealed copy of the minute recorder's long memory (its SQL history), one file per UTC day under
+# deck-r7k4x9/backup/. The log is public: days, counts and coverage only.
+name: hist-backup
+on:
+  schedule:
+    - cron: '17 2 * * *'   # 03:17 Budapest (CET)
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: hist-backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: gh-pages }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/hist-backup.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+      - name: Commit
+        run: |
+          git config user.name "lp-hud-bot"; git config user.email "bot@users.noreply.github.com"
+          git add deck-r7k4x9/backup
+          git diff --cached --quiet && exit 0
+          git commit -q -m "minute history backup $(date -u +%Y-%m-%d)"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin gh-pages && git push -q origin HEAD:gh-pages && exit 0; sleep $((i*5)); done; exit 1
