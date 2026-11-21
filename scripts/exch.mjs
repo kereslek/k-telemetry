@@ -14,6 +14,9 @@
 const LAMPORTS=1e9, SOLK='native';
 
 export async function exchLedger({cex, wallets, io, st, now=Date.now(), budgetMs=40000, pages=3}){
+  // a record kept in an older form is read again from the first transaction (the sender's address and the exchange's
+  // own transfers are only known from reading each transaction)
+  if(st.v!==2){ for(const k of ['rows','addr','seen','sweep']) delete st[k]; st.v=2; }
   st.rows=st.rows||[]; st.addr=st.addr||{}; st.sweep=st.sweep||{};
   let t0=Date.now(); const late=()=>Date.now()-t0>budgetMs, err=[];
   // the transfers already kept and still without a value, on their own time first (reading the past can use a run's

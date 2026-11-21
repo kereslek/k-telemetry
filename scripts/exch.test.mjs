@@ -86,4 +86,9 @@ const solIo=()=>({
   for(let k=0;k<6;k++) await exchLedger({cex:[], wallets:[], io, st});
   ok(st.rows.find(x=>x.k==='y').px===false && st.rows.find(x=>x.k==='x').px!==false, 'after six tries the three-day-old one is left unvalued for good; the day-old one is still asked');
 }
+/* a record kept in the older form is read again from the start */
+{ const st={rows:[{k:'old',t:1,ch:'sol',tok:'native',amt:1,usd:null,from:'other'}], addr:{'sol:x':{done:1}}, seen:{a:1}, at:1};
+  await exchLedger({cex:[], wallets:[], io:{usdAt:async()=>null, sym:()=>null}, st});
+  ok(st.v===2 && st.rows.length===0 && Object.keys(st.addr).length===0 && !st.seen, 'a record in the older form is cleared, to be read again from the first transaction');
+}
 console.log(fails?fails+' FAILED of '+n:'all '+n+' passed'); process.exit(fails?1:0);
