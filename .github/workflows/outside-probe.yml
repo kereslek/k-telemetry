@@ -3,6 +3,9 @@
 # and pass/fail only.
 name: outside-probe
 on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/outside-probe.mjs', '.github/workflows/outside-probe.yml']
   workflow_dispatch:
 permissions:
   contents: read
