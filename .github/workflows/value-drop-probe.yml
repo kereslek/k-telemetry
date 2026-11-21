@@ -1,0 +1,22 @@
+# Where did the positions' value go? The relay's positions now against yesterday's copies, split into prices,
+# changes in the positions and positions no longer read. The log is public: ratios, shares, counts and times only.
+name: value-drop-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/value-drop-probe.mjs', '.github/workflows/value-drop-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/value-drop-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
+          GITHUB_TOKEN: ${{ github.token }}
