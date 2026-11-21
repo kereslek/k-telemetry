@@ -77,7 +77,7 @@ const solIo=()=>({
 
 /* a price not found: asked again on later runs; left unvalued for good only after six tries, once three days old */
 { const st={rows:[{k:'x',t:Date.now()-864e5,ch:'sol',tok:'Mx',amt:1,usd:null},{k:'y',t:Date.now()-5*864e5,ch:'sol',tok:'My',amt:1,usd:null},
-                  {k:'z',t:Date.now()-5*864e5,ch:'sol',tok:'Mz',amt:2,usd:null,px:false}], addr:{}};
+                  {k:'z',t:Date.now()-5*864e5,ch:'sol',tok:'Mz',amt:2,usd:null,px:false}], addr:{}, v:2};
   let up=false; const io={usdAt:async(ch,tok)=>up&&tok==='Mz'?3:null, sym:()=>null};
   await exchLedger({cex:[], wallets:[], io, st});
   ok(st.rows.find(x=>x.k==='y').px!==false, 'an old transfer whose price failed once is asked again, not given up');
