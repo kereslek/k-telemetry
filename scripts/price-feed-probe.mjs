@@ -23,6 +23,13 @@ for(const [name,ids] of [['SOL and USDC',[SOL,USDC]],['the positions’ tokens',
   const ln=L.j&&L.j.coins?ids.filter(m=>L.j.coins['solana:'+m]&&L.j.coins['solana:'+m].price>0).length:0;
   console.log('DefiLlama coins, '+name+': HTTP '+L.st+' · priced '+ln+' of '+ids.length+(ln<ids.length?' · says: '+scrub(L.t):''));
 }
+// the relay's own Jupiter errors this pass, identifiers taken out
+if(d) for(const e of (d.errors||[]).filter(e=>/jup|price/i.test(typeof e==='string'?e:JSON.stringify(e))).slice(0,4)) console.log('  relay said: '+scrub(typeof e==='string'?e:JSON.stringify(e)));
+// what a browser on the deck's site is allowed to read (CORS): the page asks these from the visitor's browser
+for(const u of ['https://lite-api.jup.ag/price/v3?ids='+SOL, 'https://lite-api.jup.ag/tokens/v2/search?query='+SOL, 'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd']){
+  try{ const r=await fetch(u,{headers:{origin:'https://kereslek.github.io', accept:'application/json'}, signal:AbortSignal.timeout(20000)});
+    console.log('from the deck\u2019s site, '+new URL(u).host+new URL(u).pathname+': HTTP '+r.status+' · browsers allowed: '+(r.headers.get('access-control-allow-origin')||'NO (no allow-origin header)')); }
+  catch(e){ console.log('from the deck\u2019s site, '+new URL(u).host+': no answer'); } }
 // the Jupiter endpoint that needs a key, to see whether the free one moved there
 const P=await ask('https://api.jup.ag/price/v3?ids='+SOL);
 console.log('Jupiter api.jup.ag price v3 (no key), SOL: HTTP '+P.st+' · '+scrub(P.t));
