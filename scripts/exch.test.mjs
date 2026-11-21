@@ -69,9 +69,15 @@ const solIo=()=>({
   ok(e&&near(e.amt,0.5)&&e.usd===1000&&e.from===EW&&b.from==='other'&&b.sym==='LCX', 'ETH itself valued, the sender named when it is one of the wallets, the token named from its record');
 }
 
-/* a price not found: tried again on later runs, given up three days after the transfer */
-{ const st={rows:[{k:'x',t:Date.now()-864e5,ch:'sol',tok:'Mx',amt:1,usd:null},{k:'y',t:Date.now()-5*864e5,ch:'sol',tok:'My',amt:1,usd:null}], addr:{}};
-  const r=await exchLedger({cex:[], wallets:[], io:{usdAt:async()=>null, sym:()=>null}, st});
-  ok(st.rows.find(x=>x.k==='x').px===undefined && st.rows.find(x=>x.k==='y').px===false && r.rows.every(x=>x.usd==null), 'no price yet: asked again next run; after three days, left unvalued for good');
+/* a price not found: asked again on later runs; left unvalued for good only after six tries, once three days old */
+{ const st={rows:[{k:'x',t:Date.now()-864e5,ch:'sol',tok:'Mx',amt:1,usd:null},{k:'y',t:Date.now()-5*864e5,ch:'sol',tok:'My',amt:1,usd:null},
+                  {k:'z',t:Date.now()-5*864e5,ch:'sol',tok:'Mz',amt:2,usd:null,px:false}], addr:{}};
+  let up=false; const io={usdAt:async(ch,tok)=>up&&tok==='Mz'?3:null, sym:()=>null};
+  await exchLedger({cex:[], wallets:[], io, st});
+  ok(st.rows.find(x=>x.k==='y').px!==false, 'an old transfer whose price failed once is asked again, not given up');
+  up=true; await exchLedger({cex:[], wallets:[], io, st});
+  ok(st.rows.find(x=>x.k==='z').usd===6, 'one marked unpriced by the old rule is asked again, and valued once the feed answers');
+  for(let k=0;k<6;k++) await exchLedger({cex:[], wallets:[], io, st});
+  ok(st.rows.find(x=>x.k==='y').px===false && st.rows.find(x=>x.k==='x').px!==false, 'after six tries the three-day-old one is left unvalued for good; the day-old one is still asked');
 }
 console.log(fails?fails+' FAILED of '+n:'all '+n+' passed'); process.exit(fails?1:0);
