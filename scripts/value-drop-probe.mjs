@@ -40,6 +40,15 @@ for(const m of moments){ if(m.miss||!m.d){ console.log('  '+hm(m.T)+': no copy')
   const ps=posOf(m.d), e=ps.filter(p=>p.ch==='eth'), so=ps.filter(p=>p.ch==='sol');
   console.log('  '+hm(m.t)+(m.now?' (now)':'')+' · '+rx(tot(ps)/V0)+' · positions '+ps.length+' ('+e.length+' Ethereum, '+so.length+' Solana) · unpriced '+ps.filter(p=>p.v==null).length+' · in range '+ps.filter(p=>p.inR).length); }
 
+// the rest of the portfolio beside the positions: wallets (idle, staked, lent, less owed) and NFTs at floor
+const parts0=d=>{ const ps=posOf(d), lp=tot(ps), f=ps.reduce((a,p)=>a+(p.f||0),0), w=d.idle&&d.idle.totalUsd!=null?+d.idle.totalUsd:null, n=d.nfts&&d.nfts.totalUsd!=null?+d.nfts.totalUsd:null;
+  return {lp, f, w, n, all:lp+f+(w||0)+(n||0), stale:!!(d.idle&&d.idle.stale)}; };
+const R0=parts0(ref.d);
+console.log('\nTHE WHOLE PORTFOLIO (positions, their unclaimed fees, wallets, NFTs), against '+hm(ref.t)+':');
+for(const m of moments){ if(m.miss||!m.d) continue; const P=parts0(m.d);
+  console.log('  '+hm(m.t)+(m.now?' (now)':'')+' · whole '+rx(P.all/R0.all)+' · positions '+rx(P.lp/R0.lp)+' · fees '+rx(R0.f?P.f/R0.f:null)+' · wallets '+rx(P.w!=null&&R0.w?P.w/R0.w:null)+(P.stale?' (wallet read stale)':'')
+    +' · NFTs '+rx(P.n!=null&&R0.n?P.n/R0.n:null)+' · positions are '+(P.all?(P.lp/P.all*100).toFixed(1):'—')+'% of the whole'); }
+
 // the relay's own 15-minute history, hourly, to see when it moved
 const hist=(NOW.history||[]).filter(h=>h&&h.t&&h.v!=null&&h.t>=ref.t-30*H).sort((a,b)=>a.t-b.t);
 const hv=t=>{ const h=hist.reduce((b,x)=>!b||Math.abs(x.t-t)<Math.abs(b.t-t)?x:b,null); return h&&Math.abs(h.t-t)<40*60e3?h.v:null; };
