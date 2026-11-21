@@ -1064,6 +1064,8 @@
   .ph-cleg{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
   .ph-cleg i{font-style:normal;display:inline-flex;align-items:center;gap:5px;white-space:nowrap} .ph-cleg i span{width:7px;height:7px;display:inline-block}
   .ph-cnote{font-size:9.5px;color:var(--text-muted)} .ph-mk{stroke:#b48cff;stroke-width:1;stroke-dasharray:2 3;opacity:.8}
+  .ph-mk.cex{stroke:#c9a2ff;stroke-width:1.2;stroke-dasharray:4 3;opacity:1} .ph-mtxt.cex{fill:#c9a2ff} .tv.cex{color:#c9a2ff}
+  .idle-exch{font-size:11px;color:#c9a2ff;padding:1px 6px 5px} .pb-row.cex .pb-l{color:#c9a2ff}
   .ph-svg{display:block;width:100%;height:auto;font-family:var(--mono)}
   .ph-grid{stroke:#13233a;stroke-width:1} .ph-vgrid{stroke:#0f1e33;stroke-width:1}
   .ph-ax{font-size:10px;fill:#6f8a9c} .ph-base{stroke:#8ea6b7;stroke-width:1;stroke-dasharray:3 4;opacity:.55}
@@ -2863,7 +2865,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.49';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.50';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -4157,6 +4159,7 @@ async function scanInner(isBoot){
           if(d.costMonth) state.costMonth = d.costMonth;
           if(d.tickers) state.tickers = d.tickers;
           if(d.quotes) state.quotes = d.quotes;
+          state.exch = d.exch||null;
           if(d.btcUsd!=null) state.btcUsd = d.btcUsd;
           if(d.btcUsdChg24!=null) state.btcUsdChg24 = d.btcUsdChg24;
           if(state.gasGwei==null && d.gasGwei!=null) state.gasGwei = d.gasGwei;
@@ -7178,6 +7181,10 @@ function renderIdle(){
         +(chg==null?'<span class="unit">—</span>':(chg>=0?'+':'−')+Math.abs(chg).toFixed(1)+'%')+'</span>'
       +'<span class="idle-usd">'+(r.priced?(r.usd<0?'−'+fmtUsd(-r.usd,2):fmtUsd(r.usd,2)):'<span class="unit">unpriced</span>')+'</span>';
     cell.append(row);
+    { const same=x=>(x.ch==='sol')===(r.chain==='sol') && (x.tok==='native'?(r.addr==='native'||!r.addr):String(x.tok).toLowerCase()===String(r.addr||'').toLowerCase());
+      const xr=exchRows().filter(x=>Date.now()-x.t<864e5&&same(x)).sort((a,b)=>a.t-b.t);
+      if(xr.length&&!r.debt) cell.append(el('div','idle-exch','⇢ '+esc(exchAmt(xr.reduce((a,x)=>a+x.amt,0),xr[0].sym||r.sym))+' sent to your exchange'
+        +(bpDay(xr[0].t)===bpDay(Date.now())?' today':' since yesterday')+', '+xr.map(x=>exchHm(x.t)).join(', '))); }
     tbl.append(cell);
   }
   { const held=rows.filter(x=>!x.debt).length; if(held>SHOWN) tbl.append(el('div','flow-omit',(held-SHOWN)+' smaller holdings not listed.')); }
@@ -9431,6 +9438,18 @@ function drawTotalPools(host, all, opt){
   draw();
   if(typeof ResizeObserver==='function'){ let last=box.clientWidth; const ro=new ResizeObserver(()=>{ if(!box.isConnected){ ro.disconnect(); return; } const w=box.clientWidth; if(Math.abs(w-last)>2){ last=w; draw(); } }); ro.observe(box); }
 }
+/* Sent to the owner's exchange (the relay's record, scripts/exch.mjs): what left the deck's own wallets for the
+   exchange deposit address, valued when it was sent. It explains a step down in the total, which is the owner's
+   money moving, not a loss. A transfer from an address the deck does not read stays in the record, for a
+   reconciliation with the exchange's own figures, but cannot explain anything here. */
+const exchRows=()=>((state.exch&&state.exch.rows)||[]).filter(x=>x&&x.from&&x.from!=='other'&&x.t>0&&x.amt>0);
+const exchAmt=(a,sym)=>(a>=1000?a.toLocaleString('en-US',{maximumFractionDigits:0}):a>=1?a.toFixed(2):a.toPrecision(3))+' '+(sym||'?');
+const exchHm=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hour12:false});
+function exchDays(t0,t1){ const by=new Map();
+  for(const x of exchRows()) if(x.t>=t0&&x.t<=t1){ const d=bpDay(x.t), g=by.get(d)||{t:0, rows:[]}; g.rows.push(x); g.t=Math.max(g.t,x.t); by.set(d,g); }
+  return [...by.values()].map(g=>{ const tok=new Map(); for(const x of g.rows){ const k=x.ch+':'+x.tok, e=tok.get(k)||{amt:0, sym:x.sym}; e.amt+=x.amt; tok.set(k,e); }
+    const usd=g.rows.reduce((a,x)=>a+(x.usd||0),0), T=[...tok.values()], times=g.rows.map(x=>x.t).sort((a,b)=>a-b);
+    return {t:g.t, n:g.rows.length, usd, priced:g.rows.every(x=>x.usd!=null), lab:T.length===1?exchAmt(T[0].amt,T[0].sym):fmtUsd(usd,0), what:T.map(e=>exchAmt(e.amt,e.sym)).join(' + '), times}; }); }
 /* Month by month, from the total at the month's first read to its last (the running month to
    now): what the pools earned from other traders, what you paid, what prices did to what you
    held at the start, and the rest — money moved in or out, wallets added to the read, NFTs first
@@ -9462,11 +9481,13 @@ function renderPoolBridge(host, T){
     o.pools=r.part?sumDays(r.m,r.d0):(curFee?(fm.mtd||0):(pf?pf.total:sumDays(r.m,r.d0)));
     o.self=curFee?(fm.selfBack||0):((pf&&pf.self)||0);
     o.costs=r.part?null:costOf(r.m);
-    o.rest=(o.e-o.s)-o.pools+(o.costs||0)-o.mkt;
+    const xr=exchRows().filter(x=>x.t>=o.t0&&x.t<=o.t1&&x.usd!=null); o.cex=-xr.reduce((a,x)=>a+x.usd,0); o.cexN=xr.length;
+    o.rest=(o.e-o.s)-o.pools+(o.costs||0)-o.mkt-o.cex;
     return o; });
   const A={s:rows[0].s, e:rows[rows.length-1].e, t0:rows[0].t0, t1:rows[rows.length-1].t1,
-    pools:rows.reduce((a,r)=>a+r.pools,0), costs:rows.reduce((a,r)=>a+(r.costs||0),0), mkt:rows.reduce((a,r)=>a+r.mkt,0), self:rows.reduce((a,r)=>a+(r.self||0),0)};
-  A.rest=(A.e-A.s)-A.pools+A.costs-A.mkt;
+    pools:rows.reduce((a,r)=>a+r.pools,0), costs:rows.reduce((a,r)=>a+(r.costs||0),0), mkt:rows.reduce((a,r)=>a+r.mkt,0), self:rows.reduce((a,r)=>a+(r.self||0),0),
+    cex:rows.reduce((a,r)=>a+r.cex,0), cexN:rows.reduce((a,r)=>a+r.cexN,0)};
+  A.rest=(A.e-A.s)-A.pools+A.costs-A.mkt-A.cex;
   const sg=v=>(v>=0?'+':'−')+fmtUsd(Math.abs(v),0), pc=(v,b)=>b>0?(v>=0?'+':'−')+Math.abs(v/b*100).toFixed(1)+'%':'';
   const line=(lab,sub,v,base,mx,cls)=>{ const r=el('div','pb-row'+(v==null?' na':'')+(cls?' '+cls:''));
     const w=v==null||!(mx>0)?0:Math.max(Math.abs(v)>=0.5?1.5:0, Math.min(50,Math.abs(v)/mx*50));
@@ -9478,11 +9499,12 @@ function renderPoolBridge(host, T){
     const c=el('div','pb-card'+(all?' all':'')), d=o.e-o.s;
     c.append(el('div','pb-top','<span class="pb-m">'+title+(tag?'<i>'+tag+'</i>':'')+'</span>'
       +'<span class="pb-se">'+dd(o.t0)+' <b>'+fmtUsd(o.s,0)+'</b> → '+(o.cur||all?'now':dd(o.t1))+' <b>'+fmtUsd(o.e,0)+'</b> · <span class="'+(d>=0?'up':'down')+'">'+pc(d,o.s)+'</span></span>'));
-    const mx=Math.max(Math.abs(o.pools),Math.abs(o.costs||0),Math.abs(o.mkt),Math.abs(o.rest),1);
+    const mx=Math.max(Math.abs(o.pools),Math.abs(o.costs||0),Math.abs(o.mkt),Math.abs(o.rest),Math.abs(o.cex||0),1);
     c.append(line('POOLS','fees other traders paid you · your own swaps taken out',o.pools,o.s,mx));
     c.append(line('COSTS',o.costs==null?'gas and swap fees — not split by day, so inside “other” this month':'gas and swap fees you paid',o.costs==null?null:-o.costs,o.s,mx));
     c.append(line('PRICES','what prices did to what you held at the start'+(o.live?' (today’s prices)':''),o.mkt,o.s,mx));
-    c.append(line('MONEY IN / OUT &amp; OTHER','deposits, withdrawals, wallets and NFTs added, LP rebalancing vs holding',o.rest,o.s,mx));
+    if(o.cexN) c.append(line('⇢ SENT TO YOUR EXCHANGE',o.cexN+' transfer'+(o.cexN>1?'s':'')+' from your wallets, valued when sent',o.cex,o.s,mx,'cex'));
+    c.append(line('MONEY IN / OUT &amp; OTHER',(o.cexN?'other ':'')+'deposits, withdrawals, wallets and NFTs added, LP rebalancing vs holding',o.rest,o.s,mx));
     c.append(line('<b>CHANGE</b>','',d,o.s,Math.max(mx,Math.abs(d)),'sum'));
     const notes=[];
     if(o.self>=0.5) notes.push('own-swap fees taken out of POOLS: '+fmtUsd(o.self,2));
@@ -9618,6 +9640,11 @@ function drawHistory(host, all, opt){
     if(s.some(x=>x.rc)) for(const st of ((state.recon&&state.recon.steps)||[]).filter(x=>Math.abs(x.w1-x.w0)>=5&&x.t>t0&&x.t<t1)){ const xx=X(st.t);
         svg.append(mk('line',{x1:xx,x2:xx,y1:padT,y2:H-padB,class:'ph-mk'}));
         const lft=xx<padL+150; const tx=mk('text',{x:lft?xx+4:xx-4,y:H-padB-18,'text-anchor':lft?'start':'end',class:'ph-mtxt'}); tx.textContent=st.w1+' wallets read from here'; svg.append(tx); }
+    // sent to the owner's exchange: one mark a day, so the step down there is not read as a loss
+    const exG=s.some(x=>x.w!=null)?exchDays(t0,t1):[];
+    for(const g of exG){ const xx=X(g.t);
+        svg.append(mk('line',{x1:xx,x2:xx,y1:padT,y2:H-padB,class:'ph-mk cex'}));
+        const lft=xx<padL+170; const tx=mk('text',{x:lft?xx+4:xx-4,y:padT+11,'text-anchor':lft?'start':'end',class:'ph-mtxt cex'}); tx.textContent='⇢ EXCHANGE · −'+g.lab; svg.append(tx); }
     // the window's start, dashed, so the climb is read against where it began
     svg.append(mk('line',{x1:padL,x2:W-padR,y1:Y(v0),y2:Y(v0),class:'ph-base'}));
     svg.append(mk('polyline',{points:line, class:'ph-line '+(up?'up':'down')}));
@@ -9646,7 +9673,9 @@ function drawHistory(host, all, opt){
         +(p.w!=null?'<div class="tv" style="color:var(--text-muted)">LP + fees '+fmtUsd(p.lp,0)+' · wallets '+fmtUsd(p.w,0)+' · NFTs '+(p.n!=null?fmtUsd(p.n,0):'not counted yet')+(p.day?' · daily point':'')+'</div>':'')
         +(p.rc&&p.raw!=null&&Math.abs(p.raw-p.v)>Math.max(50,0.02*p.v)?'<div class="tv" style="color:var(--text-muted)">read then as '+fmtUsd(p.raw,0)+' — '+(p.raw>p.v?'a misread above it, taken out':'a short read, corrected')+'</div>':'')
         +'<div class="tv"><span class="'+(dv>=0?'up':'down')+'">'+(dv>=0?'+':'−')+fmtUsd(Math.abs(dv),0)+' · '+(dv>=0?'+':'−')+Math.abs(dvp).toFixed(2)+'%</span> since the window began'
-        +(d1!=null&&p.t-s[0].t>=864e5?' · <span class="'+(d1>=0?'up':'down')+'">'+(d1>=0?'+':'−')+Math.abs(d1).toFixed(2)+'%</span> in 24 h':'')+'</div>'); };
+        +(d1!=null&&p.t-s[0].t>=864e5?' · <span class="'+(d1>=0?'up':'down')+'">'+(d1>=0?'+':'−')+Math.abs(d1).toFixed(2)+'%</span> in 24 h':'')+'</div>'
+        +(()=>{ const g=exG.find(g=>Math.abs(g.t-p.t)<=Math.max(45*60e3,(t1-t0)/90)); return g?'<div class="tv cex">⇢ Sent to your exchange · '+esc(g.what)+(g.priced?' ('+fmtUsd(g.usd,0)+')':'')
+          +' in '+g.n+' transfer'+(g.n>1?'s':'')+' · '+g.times.map(exchHm).join(', ')+' · the step here is this, not a loss</div>':''; })()); };
     const off=()=>{ for(const e of [cx,cy,dot,yt]) e.style.display='none'; hideTip(); };
     svg.addEventListener('pointermove',at); svg.addEventListener('pointerdown',at); svg.addEventListener('pointerleave',off);
     box.replaceChildren(svg);
@@ -13854,6 +13883,7 @@ async function init(){
       if(d.stableOff!==undefined) state.stableOff=d.stableOff;
       if(d.tickers) state.tickers=d.tickers;
       if(d.quotes) state.quotes=d.quotes;
+      state.exch=d.exch||null;
       if(d.btcUsd!=null) state.btcUsd=d.btcUsd;
       if(d.btcUsdChg24!=null) state.btcUsdChg24=d.btcUsdChg24;
       if(d.solPrio) state.solPrio=d.solPrio;
