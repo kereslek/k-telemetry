@@ -12,12 +12,13 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-        with: { ref: gh-pages }
+        with: { ref: gh-pages, fetch-depth: 0 }
       - uses: actions/checkout@v4
         with: { path: dev }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: node dev/scripts/outside-probe.mjs
+        env: { HIST: '1' }
