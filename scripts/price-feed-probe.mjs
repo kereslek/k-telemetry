@@ -16,6 +16,11 @@ if(d){ const Q=Array.isArray(d.quotes)?d.quotes:[], c=Q.find(q=>q.label==='CPOOL
   console.log('price tiles in the relay file: '+Q.length+' · CPOOL / USD (SOL): '+(c?'yes, from '+c.src:'MISSING')); }
 if(d&&d.exch&&d.exch.rows){ const U=d.exch.rows.filter(r=>r.usd==null&&r.kind!=='exchange'); console.log('  exchange record, the exchange\u2019s own (gas, rent): '+d.exch.rows.filter(r=>r.kind==='exchange').length); if(U.length) console.log('  exchange record, unvalued: '+U.length+' ('+U.filter(r=>r.tok==='native').length+' native coin, '+U.filter(r=>r.tok!=='native').length+' token) · on '+[...new Set(U.map(r=>r.ch))].join(', ')); }
 if(d&&d.exch!==undefined){ const X=d.exch; console.log('exchange record: '+(!X?'none':'read '+Math.round((Date.now()-(X.t||0))/60000)+' min ago · addresses '+X.n+' · history read to its start: '+(X.whole?'yes':'not yet')+' · every transfer valued: '+(X.rows.filter(r=>r.kind!=='exchange').every(r=>r.usd!=null)?'yes':'not all'))); }
+/* the page cuts every token symbol to letters, digits, currency signs and . _ + - … ? (v40.52): how many of the relay's
+   own symbols that changes (a changed one would read differently on the page). Counts only. */
+if(d){ const clean=s=>{ const t=String(s==null?'':s).normalize('NFKC').replace(/[^\p{L}\p{N}\p{Sc} ._+\-…?]/gu,'').trim().slice(0,24); return t||'?'; };
+  const syms=[...new Set([...(d.eth||[]),...(d.sol||[])].flatMap(p=>[p.m0&&p.m0.symbol, p.m1&&p.m1.symbol]).concat(((d.idle&&d.idle.rows)||[]).map(r=>r&&r.symbol)).filter(x=>x!=null).map(String))];
+  console.log('symbols the page\u2019s cleaning would change: '+syms.filter(x=>clean(x)!==x).length+' of '+syms.length); }
 if(d) console.log('relay errors this pass (first word, count): '+Object.entries((d.errors||[]).reduce((a,e)=>{ const k=scrub(typeof e==='string'?e:(e&&(e.k||e.where||e.msg))||'?').split(/[\s:]/)[0].slice(0,24); a[k]=(a[k]||0)+1; return a; },{})).map(([k,n])=>k+' ×'+n).join(', '));
 
 for(const [name,ids] of [['SOL and USDC',[SOL,USDC]],['the positions’ tokens',mints]]){
