@@ -2863,7 +2863,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.48';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.49';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -12191,7 +12191,10 @@ function t100Show(){
   const p=document.querySelector('.panel[data-panel="feepulse"]'); if(p) openPanel(p);
   t100Place(); if(bigHook) bigHook();
   const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
-  const find=()=>T100.el&&!T100.el.hidden?T100.el:document.getElementById('fp60');
+  /* once the list is closed the jump has nowhere to go: it stops. It used to fall back to the 60-minute dial and kept
+     pulling the page there for seconds, over a scroll to the top made meanwhile (the floating MOMENTUM button then
+     showed at the top of the page, and the daily audit failed on it) */
+  const find=()=>!T100.open?null:T100.el&&!T100.el.hidden?T100.el:document.getElementById('fp60');
   // landed under the jump row, and put right again if the page grows under it while it scrolls (as the section chips do)
   requestAnimationFrame(()=>{ const t=find(); if(!t) return; try{ t.scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'}); }catch(e){ t.scrollIntoView(); } settleJump(find); }); }
 function renderFeePulse60(host){
