@@ -20,7 +20,12 @@ if(d&&d.exch!==undefined){ const X=d.exch; console.log('exchange record: '+(!X?'
    own symbols that changes (a changed one would read differently on the page). Counts only. */
 if(d){ const clean=s=>{ const t=String(s==null?'':s).normalize('NFKC').replace(/[^\p{L}\p{N}\p{Sc} ._+\-…?]/gu,'').trim().slice(0,24); return t||'?'; };
   const syms=[...new Set([...(d.eth||[]),...(d.sol||[])].flatMap(p=>[p.m0&&p.m0.symbol, p.m1&&p.m1.symbol]).concat(((d.idle&&d.idle.rows)||[]).map(r=>r&&r.symbol)).filter(x=>x!=null).map(String))];
-  console.log('symbols the page\u2019s cleaning would change: '+syms.filter(x=>clean(x)!==x).length+' of '+syms.length); }
+  console.log('symbols the page\u2019s cleaning would change: '+syms.filter(x=>clean(x)!==x).length+' of '+syms.length);
+  // each changed one by kind only, never the symbol: where it sits, whether it carries value, what kind of characters go
+  const P=new Set([...(d.eth||[]),...(d.sol||[])].flatMap(p=>[p.m0&&p.m0.symbol, p.m1&&p.m1.symbol]).map(String)), R=((d.idle&&d.idle.rows)||[]);
+  syms.filter(x=>clean(x)!==x).forEach((x,i)=>{ const rows=R.filter(r=>String(r.symbol)===x), gone=[...x.normalize('NFKC')].filter(c=>!/[\p{L}\p{N}\p{Sc} ._+\-…?]/u.test(c));
+    const kinds=[...new Set(gone.map(c=>/\p{Extended_Pictographic}/u.test(c)?'emoji':/[<>"'&]/.test(c)?'markup':/\s/.test(c)?'space':/\p{P}/u.test(c)?'punctuation':/\p{S}/u.test(c)?'symbol':'other'))];
+    console.log('  changed '+(i+1)+': in a position: '+(P.has(x)?'yes':'no')+' · wallet rows: '+rows.length+' · valued: '+(rows.some(r=>(r.usd||0)>0)?'yes':'no')+' · characters cut: '+gone.length+' ('+kinds.join(', ')+')'+(x.length>24?' · longer than 24':'')); }); }
 if(d) console.log('relay errors this pass (first word, count): '+Object.entries((d.errors||[]).reduce((a,e)=>{ const k=scrub(typeof e==='string'?e:(e&&(e.k||e.where||e.msg))||'?').split(/[\s:]/)[0].slice(0,24); a[k]=(a[k]||0)+1; return a; },{})).map(([k,n])=>k+' ×'+n).join(', '));
 
 for(const [name,ids] of [['SOL and USDC',[SOL,USDC]],['the positions’ tokens',mints]]){
