@@ -84,9 +84,11 @@
   }
   .reactor{grid-area:logo;width:38px;height:38px;flex:none;position:relative}
   .brand{grid-area:brand;min-width:0}
-  .reactor svg{width:100%;height:100%;filter:drop-shadow(0 0 6px var(--accent-glow))}
-  .reactor .spin{transform-origin:50% 50%;animation:spin 14s linear infinite}
-  .reactor .spin2{transform-origin:50% 50%;animation:spin 8s linear infinite reverse}
+  .reactor svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 6px var(--accent-glow))}
+  /* the two turning rings are svgs of their own, turned whole, so the compositor turns them; a ring turned inside one
+     svg repainted the logo, its glow included, on every frame for as long as the page was open */
+  .reactor svg.spin{transform-origin:50% 50%;animation:spin 14s linear infinite;will-change:transform}
+  .reactor svg.spin2{transform-origin:50% 50%;animation:spin 8s linear infinite reverse;will-change:transform}
   @keyframes spin{to{transform:rotate(360deg)}}
   .brand h1{font-size:15px;letter-spacing:.28em;font-weight:600;color:var(--accent);text-shadow:0 0 12px var(--accent-glow);white-space:nowrap}
   .brand .sub{font-size:9px;letter-spacing:.34em;color:var(--text-muted);margin-top:2px;white-space:nowrap}
@@ -352,15 +354,21 @@
   #toLive::after{content:"LIVE";display:block;font-size:8px;letter-spacing:.14em}
   #toLive[hidden]{display:none}
   #toLive svg{width:17px;height:17px;overflow:visible}
+  /* the icon is three svgs stacked: the ring, the hand and the dot, so the compositor turns the hand and fades the dot
+     (turned inside one svg they repainted the button every frame) */
+  #toLive .tl-ic{position:relative;display:block;width:17px;height:17px}
+  #toLive .tl-ic svg{position:absolute;inset:0}
   #toLive .tl-ring{fill:none;stroke:currentColor;stroke-width:1.6;opacity:.7}
-  #toLive .tl-hand{stroke:currentColor;stroke-width:1.9;stroke-linecap:round;transform-origin:12px 12px;transform-box:view-box;animation:tlSweep 7s linear infinite}
-  #toLive .tl-now{fill:var(--status-good);animation:tlNow 2s ease-in-out infinite}
+  #toLive .tl-hand{fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;transform-origin:50% 50%;animation:tlSweep 7s linear infinite;will-change:transform}
+  #toLive .tl-now{fill:var(--status-good);animation:tlNow 2s ease-in-out infinite;will-change:opacity}
   #toLive.go .tl-hand{animation:tlSweep .55s cubic-bezier(.3,.7,.2,1) 1}
   #toLive .tl-ping{position:absolute;inset:-1px;border-radius:3px;border:1.5px solid var(--ping,var(--accent));opacity:0;pointer-events:none}
   #toLive.hit{border-color:var(--ping,var(--accent));box-shadow:0 0 18px color-mix(in srgb,var(--ping,var(--accent)) 55%,transparent)}
   #toLive.hit .tl-ping{animation:tlPing 1.1s ease-out}
   #toLive.hit .tl-now{fill:var(--ping,var(--status-good))}
   @keyframes tlSweep{to{transform:rotate(360deg)}}
+  /* not shown (faded out, still laid out): its hand and dot hold still instead of repainting it every frame */
+  #toLive:not(.show) .tl-hand,#toLive:not(.show) .tl-now{animation-play-state:paused}
   @keyframes tlNow{50%{opacity:.35}}
   @keyframes tlPing{0%{opacity:.95;transform:scale(1)}100%{opacity:0;transform:scale(1.55)}}
   /* the amount, beside the button, while the clock is off screen */
@@ -1030,8 +1038,11 @@
   .fpd-sub{fill:var(--text-muted);font:10px var(--mono);letter-spacing:.2em}
   .fpd-sub2{fill:var(--text-secondary);font:10.5px var(--mono)}
   .fpd-now{fill:var(--accent)}
-  .fpd-ping{fill:var(--accent);animation:fpdPing 1.8s ease-out infinite;transform-box:fill-box;transform-origin:center}
-  @keyframes fpdPing{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(4)}}
+  /* the ping at now: an HTML dot over the dial's twelve (centre (150,32), radius 4 in the viewBox -26 -10 352 322), pulsed by
+     the compositor; as an SVG shape pulsed by CSS it repainted the whole dial on every frame, idle or not */
+  .fpd-ping{position:absolute;left:50%;top:13.0435%;width:2.2727%;height:2.4845%;border-radius:50%;background:var(--accent);pointer-events:none;
+    transform:translate(-50%,-50%);animation:fpdPing 1.8s ease-out infinite;will-change:transform,opacity}
+  @keyframes fpdPing{0%{opacity:.9;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(4)}}
   /* The sweep is an HTML layer over the dial, not an SVG shape: a CSS transform on a plain element
      is rotated by the compositor on its own thread, so it keeps turning smoothly while the page
      is busy (redrawing marks, loading data, scrolling). An SVG group is animated on the main thread
@@ -1141,6 +1152,7 @@
     background:conic-gradient(from 0deg,rgba(53,214,232,0) 0deg 318deg,rgba(53,214,232,.42) 356deg,rgba(255,255,255,.95) 359.2deg,rgba(53,214,232,0) 360deg);
     will-change:transform,opacity;transform:rotate(0deg) translateZ(0);backface-visibility:hidden;-webkit-backface-visibility:hidden}
   .fpd-dw{will-change:transform}
+  .fpd-fxsvg{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible}
   /* the first sweep's beam edge: centre (150,150) to radius 132 in the SVG's viewBox -26 -10 352 322; 7 units wide, a 1.5-unit core */
   .fpd-edge{position:absolute;left:50%;top:8.696%;height:40.994%;width:1.989%;transform-origin:50% 100%;transform:translateX(-50%);pointer-events:none;border-radius:999px;
     background:linear-gradient(90deg,rgba(53,214,232,.22) 0 39%,#e2fdff 39% 61%,rgba(53,214,232,.22) 61%);will-change:transform}
@@ -1173,9 +1185,12 @@
     background:radial-gradient(closest-side,rgba(245,196,81,.34),rgba(245,196,81,.14) 55%,rgba(245,196,81,0))}
   /* the whole-screen moment: the room dims, light turns behind the amount, a core blooms, sparks fly */
   .sfx-veil{inset:0;background:#02050b;opacity:0}
-  .sfx-rays{transform:translate(-50%,-50%);width:170vmax;height:170vmax;border-radius:50%;opacity:0;will-change:transform,opacity;
+  /* the rays end where their mask does: 69.7vmax from the middle (58% of the mask's corner radius, 120vmax). The layer is
+     140vmax across, just past that, with the mask's stops moved to the same distances, so the same rays turn on about a
+     third fewer pixels (it was 170vmax across) */
+  .sfx-rays{transform:translate(-50%,-50%);width:140vmax;height:140vmax;border-radius:50%;opacity:0;will-change:transform,opacity;
     background:repeating-conic-gradient(from 0deg,rgba(255,226,150,0) 0deg 5.2deg,rgba(255,226,150,.2) 6.3deg 8deg,rgba(255,226,150,0) 9deg);
-    -webkit-mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.55) 22%,transparent 58%);mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.55) 22%,transparent 58%)}
+    -webkit-mask-image:radial-gradient(circle closest-side,#000 0,rgba(0,0,0,.55) 37.7%,transparent 99.6%);mask-image:radial-gradient(circle closest-side,#000 0,rgba(0,0,0,.55) 37.7%,transparent 99.6%)}
   .sfx-bloom{transform:translate(-50%,-50%);width:74vmin;height:74vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
     background:radial-gradient(circle,rgba(255,252,240,.95) 0,rgba(255,226,150,.6) 16%,rgba(245,196,81,.22) 38%,rgba(245,196,81,0) 66%)}
   .sfx-cv{left:0;top:0;width:100%;height:100%}
@@ -2098,13 +2113,13 @@
 
 <div class="loading-overlay" id="bootScreen">
   <div class="reactor" style="width:90px;height:90px">
-    <svg viewBox="0 0 100 100">
+    <svg viewBox="0 0 100 100" aria-hidden="true">
       <circle cx="50" cy="50" r="46" fill="none" stroke="#13233a" stroke-width="1"/>
-      <circle class="spin" cx="50" cy="50" r="40" fill="none" stroke="#35d6e8" stroke-width="2" stroke-dasharray="50 30 10 40" opacity=".8"/>
-      <circle class="spin2" cx="50" cy="50" r="30" fill="none" stroke="#1a7f92" stroke-width="3" stroke-dasharray="20 14"/>
       <circle cx="50" cy="50" r="16" fill="none" stroke="#35d6e8" stroke-width="1.5"/>
       <circle cx="50" cy="50" r="7" fill="#35d6e8" opacity=".9"/>
     </svg>
+    <svg class="spin" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40" fill="none" stroke="#35d6e8" stroke-width="2" stroke-dasharray="50 30 10 40" opacity=".8"/></svg>
+    <svg class="spin2" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="30" fill="none" stroke="#1a7f92" stroke-width="3" stroke-dasharray="20 14"/></svg>
   </div>
   <div class="boot">INITIALIZING LP COMMAND</div>
   <div class="bootlog" id="bootLog"></div>
@@ -2112,11 +2127,9 @@
 
 <header>
   <div class="reactor">
-    <svg viewBox="0 0 100 100">
-      <circle class="spin" cx="50" cy="50" r="42" fill="none" stroke="#35d6e8" stroke-width="3" stroke-dasharray="55 25 12 40" opacity=".85"/>
-      <circle class="spin2" cx="50" cy="50" r="29" fill="none" stroke="#1a7f92" stroke-width="4" stroke-dasharray="22 15"/>
-      <circle cx="50" cy="50" r="12" fill="#35d6e8" opacity=".9"/>
-    </svg>
+    <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="12" fill="#35d6e8" opacity=".9"/></svg>
+    <svg class="spin" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="#35d6e8" stroke-width="3" stroke-dasharray="55 25 12 40" opacity=".85"/></svg>
+    <svg class="spin2" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="29" fill="none" stroke="#1a7f92" stroke-width="4" stroke-dasharray="22 15"/></svg>
   </div>
   <div class="brand">
     <h1>ARC // LP COMMAND</h1>
@@ -2147,7 +2160,7 @@
 </header>
 <nav id="quickNav" aria-label="Jump to section"></nav>
 <button id="toTop" type="button" aria-label="Back to top" title="Back to top" hidden>▲</button>
-<button id="toLive" type="button" aria-label="Go to the live 60-minute fee clock" title="Live fee clock · L" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="tl-ring" cx="12" cy="12" r="9.5"/><path class="tl-hand" d="M12 12V3.6"/><circle class="tl-now" cx="12" cy="2.5" r="1.7"/></svg><span class="tl-ping" aria-hidden="true"></span></button>
+<button id="toLive" type="button" aria-label="Go to the live 60-minute fee clock" title="Live fee clock · L" hidden><span class="tl-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle class="tl-ring" cx="12" cy="12" r="9.5"/></svg><svg class="tl-hand" viewBox="0 0 24 24"><path d="M12 12V3.6"/></svg><svg class="tl-now" viewBox="0 0 24 24"><circle cx="12" cy="2.5" r="1.7"/></svg></span><span class="tl-ping" aria-hidden="true"></span></button>
 
 <main>
   <div id="quickAdd"><span style="color:var(--accent)">⊕</span><span class="qa-t">TRACK MORE — drop or paste a wallet (0x… / Solana) or a Uniswap position #</span><input id="quickAddInput" placeholder="0x… · So1… · 1234567" spellcheck="false"><button class="hbtn" id="quickAddBtn">ADD</button></div>
@@ -2872,7 +2885,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.53';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.54';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -12372,8 +12385,9 @@ function screenFx(v, from, o={}){
     b.append(k,n,p);
     const fin='+'+fmtUsd(v,2); n.style.fontSize=Math.round(Math.max(30,Math.min(136,W*.15,W*.88/(.62*fin.length))))+'px';
     if(still) n.textContent=fin;
-    else { const t0=performance.now(), cd=1300, tick=ts=>{ if(!b.isConnected) return; const q=Math.min(1,(ts-t0)/cd);
-        n.textContent=q<1?'+'+fmtUsd(v*(1-Math.pow(1-q,3)),2):fin; if(q<1) requestAnimationFrame(tick); }; n.textContent='+'+fmtUsd(0,2); requestAnimationFrame(tick); }
+    // the amount counts up with its digits rewritten at most 30 times a second: each rewrite redraws the large glowing type
+    else { const t0=performance.now(), cd=1300; let last=-1e9; const tick=ts=>{ if(!b.isConnected) return; const q=Math.min(1,(ts-t0)/cd);
+        if(q>=1||ts-last>=33){ last=ts; n.textContent=q<1?'+'+fmtUsd(v*(1-Math.pow(1-q,3)),2):fin; } if(q<1) requestAnimationFrame(tick); }; n.textContent='+'+fmtUsd(0,2); requestAnimationFrame(tick); }
     run(b, still?[{opacity:0},{opacity:1,offset:.12},{opacity:1,offset:.8},{opacity:0}]
       :[{opacity:0,transform:'translate(-50%,-50%) scale(1.6)',easing:'cubic-bezier(.2,.8,.2,1)'},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.1},
         {opacity:1,transform:'translate(-50%,-50%) scale(1.02)',offset:.8,easing:'ease-in'},{opacity:0,transform:'translate(-50%,-50%) scale(.96)'}],{duration:dur}); };
@@ -12403,7 +12417,7 @@ function screenFx(v, from, o={}){
       const reach=Math.max(.6,Math.min(1.3,Math.hypot(W,H)/1500)), pal=['255,226,150','245,196,81','255,248,232'], mine=rgbOf(col), P=[];
       const burst=(n,at,k)=>{ for(let i=0;i<n;i++){ const a=Math.random()*6.2832, sp=(240+Math.random()*900)*k*reach;
         P.push({x:X,y:Y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-80*Math.random(),at,life:1.3+Math.random()*1.8,w:1.1+Math.random()*2.4,
-          c:Math.random()<.3?mine:pal[Math.random()*3|0],tw:Math.random()*6.28}); } };
+          c:Math.random()<.3?mine:pal[Math.random()*3|0],tw:Math.random()*6.28}); P[P.length-1].cs='rgb('+P[P.length-1].c+')'; } };
       const n=Math.round(Math.min(180,70+W*H/8000)); burst(Math.round(n*.68),0,1); burst(Math.round(n*.32),1,.75);
       const t0=performance.now(); let prev=t0;
       const step=ts=>{ if(!cv.isConnected) return; const t=(ts-t0)/1000, dt=Math.min(.05,(ts-prev)/1000); prev=ts;
@@ -12411,7 +12425,9 @@ function screenFx(v, from, o={}){
         for(const q of P){ if(t<q.at){ alive++; continue; } const age=t-q.at; if(age>q.life) continue; alive++;
           const drag=Math.pow(.18,dt), px=q.x, py=q.y; q.vx*=drag; q.vy=q.vy*drag+380*dt; q.x+=q.vx*dt; q.y+=q.vy*dt;
           const f=1-age/q.life, a=Math.max(0,Math.pow(f,1.2)*(.7+.3*Math.sin(q.tw+age*20)));
-          g.strokeStyle='rgba('+q.c+','+a.toFixed(3)+')'; g.lineWidth=q.w; g.beginPath(); g.moveTo(px-(q.x-px)*1.5,py-(q.y-py)*1.5); g.lineTo(q.x,q.y); g.stroke(); }
+          // the colour is fixed per spark and its fade is the alpha: no colour text built and parsed per spark per frame
+          g.globalAlpha=a; g.strokeStyle=q.cs; g.lineWidth=q.w; g.beginPath(); g.moveTo(px-(q.x-px)*1.5,py-(q.y-py)*1.5); g.lineTo(q.x,q.y); g.stroke(); }
+        g.globalAlpha=1;
         if(alive) requestAnimationFrame(step); else cv.remove(); };
       requestAnimationFrame(step); } }
   amount(4600,false);
@@ -12483,10 +12499,14 @@ function renderFeePulse60m(host){
   const layer=mk('g',{}); svg.append(layer);                       // the trades, above the faces and rings
   const veil=mk('circle',{cx:C,cy:C,r:R+16,fill:'#000',opacity:0,'pointer-events':'none'}); svg.append(veil);
   const trails=mk('g',{'pointer-events':'none'}); svg.insertBefore(trails,layer);   // light trails, under the marks
-  // birth effects stay inside a circle just outside the dial, never over the text around it
-  { const cp=mk('clipPath',{id:'fpdClip'+uid}); cp.append(mk('circle',{cx:C,cy:C,r:R+46})); defs.append(cp); }
-  const fx=mk('g',{'pointer-events':'none','clip-path':`url(#fpdClip${uid})`}); svg.append(fx);       // birth effects, above the trades
-  const [nx,ny]=pt(0,R); svg.append(mk('circle',{cx:nx,cy:ny,r:4},'fpd-ping')); const nowDot=mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'); svg.append(nowDot);
+  /* birth effects stay inside a circle just outside the dial, never over the text around it. They are drawn in an svg of
+     their own laid over the dial (same viewBox), so the hundreds of changes a second they make while a fee arrives never
+     touch the dial's svg: it is not laid out or repainted for them */
+  const fxSvg=mk('svg',{viewBox:'-26 -10 352 322','aria-hidden':'true'},'fpd-fxsvg');
+  { const d2=mk('defs',{}), cp=mk('clipPath',{id:'fpdClip'+uid}); cp.append(mk('circle',{cx:C,cy:C,r:R+46})); d2.append(cp); fxSvg.append(d2); }
+  const fx=mk('g',{'pointer-events':'none','clip-path':`url(#fpdClip${uid})`}); fxSvg.append(fx);       // birth effects, above the trades
+  const [nx,ny]=pt(0,R); const nowDot=mk('circle',{cx:nx,cy:ny,r:3.6},'fpd-now'); svg.append(nowDot);
+  const pingEl=el('div','fpd-ping'); pingEl.setAttribute('aria-hidden','true');
   /* The sweep's phase comes from the clock, not from when this dial was drawn, so a redraw
      carries on where the last one was. */
   const dw=el('div','fpd-dw'), sw=el('div','fpd-sweep'), strikeEl=el('div','fpd-strike'); sw.setAttribute('aria-hidden','true'); strikeEl.setAttribute('aria-hidden','true');
@@ -12495,7 +12515,7 @@ function renderFeePulse60m(host){
   const mx=el('button','fpd-max','↗'); mx.type='button'; mx.title='Open the clock in its own window';
   mx.setAttribute('aria-label','Open the 60-minute clock in a new window');
   mx.addEventListener('click',e=>{ e.stopPropagation(); window.open(location.pathname+'?view=pulse','ktPulse','popup=1,width=1000,height=900'); });
-  dw.append(svg,sw,strikeEl,cv,mx); grid.append(dw);
+  dw.append(svg,fxSvg,pingEl,sw,strikeEl,cv,mx); grid.append(dw);
   // ---- beside the dial: the reading, the quiet, the latest fees
   const side=el('div','fpd-side'); grid.append(side);
   const read=el('div','fp-read fpd-read'), stats=el('div','fpd-stats'), qm=el('div','fpd-quiet'), lh=el('div','fpd-lh'), list=el('ul','fpd-feed');
@@ -12572,10 +12592,13 @@ function renderFeePulse60m(host){
       for(const r of P.mins){ if(r[1]==null) continue; const a=r[0], b=a+60000; if(b<=from) continue; add+=r[1]*(b-Math.max(a,from))/60000; } }
     return {v:base+(covered?add:0), base, add:covered?add:0, tick, covered}; };
   const setToday=v=>{ D.todayShown=v; todayEl.textContent=v==null?'—':fmtUsd(v,2); };
-  const setTotal=v=>{ D.shown=v; totT.textContent=fmtUsd(v,2);
-    const f=D.typical?Math.min(1,v/D.typical):0;
-    fill.setAttribute('stroke-dasharray',`${(circ*f).toFixed(1)} ${circ.toFixed(1)}`); fill.setAttribute('class','fpd-fill'+(D.typical&&v>=D.typical?' over':''));
-    subT.textContent=D.typical?Math.round(v/D.typical*100)+'% of a typical hour':''; return f; };
+  /* the ring moves on every frame; its words (the total and the share of a typical hour) are rewritten only when `text`
+     is not false, so a count-up can change its digits 30 times a second rather than on every frame */
+  let fillCls='';
+  const setTotal=(v,text)=>{ D.shown=v;
+    const f=D.typical?Math.min(1,v/D.typical):0, cls='fpd-fill'+(D.typical&&v>=D.typical?' over':'');
+    fill.setAttribute('stroke-dasharray',`${(circ*f).toFixed(1)} ${circ.toFixed(1)}`); if(cls!==fillCls){ fillCls=cls; fill.setAttribute('class',cls); }
+    if(text!==false){ totT.textContent=fmtUsd(v,2); subT.textContent=D.typical?Math.round(v/D.typical*100)+'% of a typical hour':''; } return f; };
   /* ---- birth: radar contact ----
      A trade that arrives while the dial is open is born at now. The beam whips to twelve and
      strikes, the dial kicks, a flare and three sonar rings go out, the mark springs in white-hot
@@ -12632,11 +12655,13 @@ function renderFeePulse60m(host){
       c.remove(); })()));
   const countUp=(usd,dur,roll)=>{
     D.counting=true;
+    // digits change at most 30 times a second (and on the last frame); the ring and the glint move on every frame
+    let lastToday=-1e9, lastTxt=-1e9;
     if(D.today!=null){ const t0=D.todayShown??D.today, t1=Math.max(t0,Math.min(D.today,t0+usd));
-      tween(dur,p=>setToday(t0+(t1-t0)*ez.out(p))); }
+      tween(dur,p=>{ const n=performance.now(); if(p>=1||n-lastToday>=33){ lastToday=n; setToday(t0+(t1-t0)*ez.out(p)); } }); }
     const v0=D.shown, v1=Math.max(v0,Math.min(D.target,v0+usd*1.0001));
-    return tween(dur,p=>{ const q=ez.out(p), v=v0+(v1-v0)*q, f=setTotal(v);
-      if(roll && p<1){ const txt=fmtUsd(v,2); totT.textContent=''; [...txt].forEach((ch,i)=>{ const t=mk('tspan',{},null,ch); if(i>=txt.length-4+Math.floor(p*3)) t.setAttribute('opacity',(0.55+0.45*Math.random()).toFixed(2)); totT.append(t); }); }
+    return tween(dur,p=>{ const q=ez.out(p), v=v0+(v1-v0)*q, now=performance.now(), tx=p>=1||now-lastTxt>=33; if(tx) lastTxt=now; const f=setTotal(v,tx);
+      if(roll && p<1 && tx){ const txt=fmtUsd(v,2); totT.textContent=''; [...txt].forEach((ch,i)=>{ const t=mk('tspan',{},null,ch); if(i>=txt.length-4+Math.floor(p*3)) t.setAttribute('opacity',(0.55+0.45*Math.random()).toFixed(2)); totT.append(t); }); }
       if(v1>v0){ const s=1+0.12*Math.sin(Math.PI*Math.min(1,p*1.6)); totT.setAttribute('transform',`translate(${C} ${C-12}) scale(${s.toFixed(3)}) translate(${-C} ${-(C-12)})`);
         const [gx,gy]=pt(f*60,r2); glint.setAttribute('cx',gx); glint.setAttribute('cy',gy); glint.setAttribute('opacity',(Math.sin(p*Math.PI)*.95).toFixed(3)); } })
     .then(()=>{ totT.removeAttribute('transform'); glint.setAttribute('opacity',0); setTotal(v1); D.counting=false; }); };
@@ -12899,7 +12924,6 @@ function renderFeePulse60m(host){
       }
       pc.restore(); };
     let lastT=performance.now();
-    // the beam's edge lives in the SVG and is moved, never drawn into the phosphor, so it leaves no spokes
     /* the beam's edge is an HTML layer turned by the compositor, in step with the phosphor's clock (an SVG line here
        redrew the whole dial on every frame of the sweep) */
     const edge=el('div','fpd-edge'); edge.setAttribute('aria-hidden','true'); dw.insertBefore(edge,cv);
@@ -12927,7 +12951,7 @@ function renderFeePulse60m(host){
     dw.removeEventListener('click',onSkip); edge.remove();
     for(const e of all){ if(!e.painted) paint(e); delete e.painted; }
     // 3 — back to the live dial: the dark lifts, the live beam fades in, the afterglow dies away
-    tween(800,q=>{ veil.setAttribute('opacity',(0.6*(1-q)).toFixed(3)); }).then(()=>{ svg.insertBefore(veil,fx); });
+    tween(800,q=>{ veil.setAttribute('opacity',(0.6*(1-q)).toFixed(3)); }).then(()=>{ layer.after(veil); });
     try{ sw.style.animationDelay=(-(Date.now()%7000))+'ms'; if(fade) fade.cancel(); sw.animate([{opacity:0},{opacity:1}],{duration:1400,easing:'ease-out'}); }catch(err){}
     try{ cv.animate([{opacity:1},{opacity:0}],{duration:2800,easing:'ease-in',fill:'forwards'}).onfinish=()=>{ clearCv(); cv.getAnimations().forEach(a=>a.cancel()); }; }catch(err){ clearCv(); }
     await tween(skip?0:600,()=>{});
