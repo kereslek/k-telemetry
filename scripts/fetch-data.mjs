@@ -2070,8 +2070,11 @@ const main=async()=>{
     }catch(e){ logErr('quote lcx old',e); }
     push('CPOOL / USD (ETH)', T('CPOOL')?.usd, T('CPOOL')?.chg, 'feed');
     try{
-      const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL,15000);
-      const e=js&&js[CPOOL_SOL];
+      /* Jupiter refuses with HTTP 429 at busy times, and the tile used to vanish from the top of the page with it:
+         without Jupiter's price it shows DefiLlama's (fresh within the hour, confidence 0.9 or more) */
+      let e=null; try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL,15000); e=js&&js[CPOOL_SOL]; }catch(err){ logErr('quote cpool sol',err); }
+      if(!(e && e.usdPrice!=null)){ await solRefFor([CPOOL_SOL]); const r=solRef[CPOOL_SOL];
+        if(r&&r.p>0&&Date.now()-r.t<3600e3&&!(r.c!=null&&r.c<0.9)) push('CPOOL / USD (SOL)', r.p, tickChange('cpool:sol',r.p), 'llama-nojup'); }
       /* Jupiter's own 24h change is a percentage. Checked before trusting it: across three
          rehearsal passes its SOL figure read 6.45, 6.79 and 7.17 against the feed's 6.40, 6.71
          and 7.26. The relay's own samples stand in only when Jupiter leaves the field out. */

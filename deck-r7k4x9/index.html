@@ -2863,7 +2863,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.47';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.48';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -4941,7 +4941,8 @@ function renderHeader(){
     /* The relay's ordered quotes when it has them: two LCX contracts and CPOOL on each chain, each
        priced from its own market. An older payload has only the one-per-symbol list. */
     const src={pool:'its own Uniswap pool × ETH/USD', jupiter:'Jupiter — the price every Solana position here is valued at', feed:'DefiLlama',
-      'llama-sol':'DefiLlama, the exchanges\' price — Jupiter\'s was more than 2% off it, so every Solana position here is valued at this'};
+      'llama-sol':'DefiLlama, the exchanges\' price — Jupiter\'s was more than 2% off it, so every Solana position here is valued at this',
+      'llama-nojup':'DefiLlama, the exchanges\' price — Jupiter gave none this pass, so every Solana position here is valued at this'};
     const got=new Map();
     if(Array.isArray(state.quotes)&&state.quotes.length)
       state.quotes.forEach(q=>got.set(q.label,{usd:q.usd,chg:q.chg,tip:q.label+' · '+(src[q.src]||q.src||'')}));
