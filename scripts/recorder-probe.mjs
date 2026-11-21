@@ -25,4 +25,7 @@ for(let k=0;k<3;k++){
     +Object.entries(m.pools||{}).map(([c,v])=>c+' '+v[0]+' of '+v[1]).join(', ')+' · errors kept: '+(m.err||[]).length);
   for(const e of m.err||[]) console.log('   error: '+scrub(e).slice(0,400));
   if(m.fail) console.log('   last failed minute ('+Math.round((Date.now()-m.fail.at)/60000)+' min ago): '+scrub(m.fail.err).slice(0,400));
+  // which way the listed trades went (the colours of LATEST FEES): counts only, older and newer than the 3-hour live log
+  const T=Array.isArray(m.trades)?m.trades:[], old=T.filter(t=>Date.now()-t.t>3*3600e3), sd=a=>a.filter(t=>t.side&&Object.keys(t.side).length).length;
+  console.log('   trades listed: '+T.length+' · with their side: '+sd(T)+' · older than 3 h: '+old.length+', with their side: '+sd(old));
 }

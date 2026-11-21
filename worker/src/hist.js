@@ -41,9 +41,12 @@ export function histRange(sql, from, to, live){
   const mins=new Map();
   for(const r of sql.exec('SELECT t,usd,cov,pools FROM hmin WHERE t>=? AND t<? ORDER BY t', from, to).toArray()) mins.set(r.t,[r.t, r.usd, r.cov, P(r.pools)]);
   for(const [k,v] of Object.entries(live||{})){ const t=Number(k); if(t>=from&&t<to) mins.set(t,[t, v[0], v[1], v[2]||null]); }
-  const ev=sql.exec('SELECT t,a,usd,pools,side,px FROM hev WHERE t>=? AND t<? AND usd>=0.005 ORDER BY t', from, to).toArray()
+  return {mins:[...mins.values()].sort((a,b)=>a[0]-b[0]), ev:histEv(sql, from, to)};
+}
+/* the readings that found fees between two moments, oldest first, as the live record holds them */
+export function histEv(sql, from, to){
+  return sql.exec('SELECT t,a,usd,pools,side,px FROM hev WHERE t>=? AND t<? AND usd>=0.005 ORDER BY t', from, to).toArray()
     .map(r=>[r.t, r.a, r.usd, P(r.pools)||{}, P(r.side)||{}, P(r.px)||{}]);
-  return {mins:[...mins.values()].sort((a,b)=>a[0]-b[0]), ev};
 }
 /* how far back the history reaches, and how much it holds (counts only) */
 export function histInfo(sql){

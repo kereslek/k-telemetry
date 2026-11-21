@@ -9,11 +9,11 @@
    A reading that fails leaves that position's previous reading in place; the next good one
    covers the gap and its fees are spread evenly over the minutes it spans, so a missed minute
    never shows as a spike beside a hole. Gaps over 30 minutes are dropped, not smeared. */
-import {biggest} from './big.js';
 import {positionsFrom, readGrowth, earned, poolTraded, SOL_RPCS, EVM_RPCS, one} from './sampler.js';
 import {TOKENS, DEFAULT_CFG, readToken, opportunities, step} from './gaps.js';
 import {scanMine} from './mine.js';
-import {histInit, archiveMin, putEv, adjustOldEv, histRange, histInfo, HIST_SPAN_MAX} from './hist.js';
+import {histInit, archiveMin, putEv, adjustOldEv, histRange, histInfo, histEv, HIST_SPAN_MAX} from './hist.js';
+import {tradesOf, TRADE_MIN} from './trades.js';
 import {storeInit, storeList, storeGet, storePut} from './store.js';
 
 const KEEP=1440, MAX_SPAN=30, MIN=60000;
@@ -27,7 +27,7 @@ const cors={'access-control-allow-origin':'*','x-robots-tag':'noindex','access-c
    began are grouped the old way: a run of consecutive earning minutes is one trade. Newest first,
    with the pools they came from. The gaps between minute runs are the quiet stretches the lull
    meter compares against, and `from` says how far back the record reaches. */
-const TRADE_MIN=0.005, EV_KEEP=3*60*MIN, EV_MAX=5000;
+const EV_KEEP=3*60*MIN, EV_MAX=5000;
 /* Your own swaps as the dashboard shows them, newest first (mine.js): each through your own pool
    also with that pool's price just before and just after it, from this recorder's readings, and
    the part of its fee that came back to your positions (kept out of the record: never income). */
@@ -46,42 +46,6 @@ function mineOut(m){
     return {t:x.t, chain:x.chain, tok:x.tok, side:x.side, other:x.other, usd:x.usd, venue:x.venue, own:x.own||null,
             ...(px?{px}:{}), ...(back>=0.0005?{back:Math.round(back*100)/100}:{})}; });
 }
-function tradesOf(all, ev, evStart){
-  const r=x=>Math.round(x*1e4)/1e4, out=[];
-  const runs=[]; let cur=null;
-  for(const [t,usd,,pools] of all){
-    if(!(usd>=TRADE_MIN)){ cur=null; continue; }
-    if(cur && t-cur.end===MIN){ cur.usd+=usd; cur.end=t; if(usd>cur.peak){ cur.peak=usd; cur.t=t; } }
-    else { cur={t, start:t, end:t, peak:usd, usd, pools:{}}; runs.push(cur); }
-    if(pools) for(const k in pools) cur.pools[k]=(cur.pools[k]||0)+pools[k];
-  }
-  const gaps=[]; for(let i=1;i<runs.length;i++) gaps.push(Math.round((runs[i].start-runs[i-1].end)/MIN)-1);
-  // minutes before the event log covers them; the minute it began in is left to the events
-  const evMin=evStart!=null?Math.floor(evStart/MIN)*MIN:Infinity;
-  for(const x of runs) if(x.end<evMin) out.push({t:x.t, start:x.start, end:x.end, usd:x.usd, pools:x.pools});
-  let tr=null;
-  for(const [t,a,usd,pools,side,px] of ev){
-    const at=Math.round((a+t)/2);
-    // a reading's midpoint can fall before the previous one's when spans differ (12 s Ethereum, 3 s Solana)
-    if(tr && at-tr.end<=Math.max(5000,1.5*(t-a))){ tr.usd+=usd; tr.start=Math.min(tr.start,at); tr.end=Math.max(tr.end,at); if(usd>tr.peak){ tr.peak=usd; tr.t=at; } }
-    else { tr={k:at, t:at, start:at, end:at, peak:usd, usd, pools:{}, side:{}, px:{}, x:1}; out.push(tr); }
-    for(const k in pools||{}) tr.pools[k]=(tr.pools[k]||0)+pools[k];
-    for(const k in side||{}){ const s=tr.side[k]||(tr.side[k]=[0,0]); s[0]+=side[k][0]; s[1]+=side[k][1]; }
-    // the price after the trade's last reading, and the size summed over its readings
-    for(const k in px||{}){ const q=tr.px[k]||(tr.px[k]={p:null, usd:0, n:0}); q.p=px[k][0];
-      if(px[k][1]!=null){ q.usd+=px[k][1]; q.n++; } }
-  }
-  const fmt=e=>({...(e.x?{k:e.k,x:1}:{}), t:e.t, start:e.start, end:e.end, usd:r(e.usd),
-             pools:Object.fromEntries(Object.entries(e.pools).map(([k,v])=>[k,r(v)])),
-             ...(e.side&&Object.keys(e.side).length?{side:Object.fromEntries(Object.entries(e.side).map(([k,v])=>[k,[r(v[0]),r(v[1])]]))}:{}),
-             ...(e.px&&Object.keys(e.px).length?{px:Object.fromEntries(Object.entries(e.px).map(([k,v])=>[k,[v.p, v.n?Math.round(v.usd*100)/100:null]]))}:{})});
-  // the biggest of the last 24 hours and of today (Budapest), from every trade held, not only the 20 listed
-  const B=biggest(out, Date.now());
-  return { trades: out.slice(-20).reverse().map(fmt),
-           big:{d24:B.d24?fmt(B.d24):null, today:B.today?fmt(B.today):null, day0:B.day0},
-           gaps, from: all.length?all[0][0]:null };
-}
-
 /* Fast only while watching. The page asks for /m?live=1 every three seconds while it is open, and
    each of those asks reads Solana again if the last read is 2.5 s old and Ethereum if it is 11 s
    old (a block is 12 s; reading faster only reads the same block again). Nothing runs on a timer
@@ -125,6 +89,15 @@ export class Pulse {
   hist(fn){
     try{ const sql=this.s.sql; if(!this.histOk){ histInit(sql); this.histOk=true; } fn(sql); this.err.hist=null; return true; }
     catch(e){ this.err.hist='history: '+String(e&&e.message||e).slice(0,120); return false; }
+  }
+  /* The readings from before the live event log (3 hours) but inside the day, from the long memory: they say which way
+     each older trade went (its side) and its size, which the minutes alone do not. Read from SQL once in the life of this
+     object, then kept up to date from what leaves the live log, so the three-second asks read no rows. */
+  oldEv(m){
+    const now=Date.now(), from=now-(KEEP+1)*MIN;
+    if(!this.evOld){ let rows=null; const upTo=m.ev.length?m.ev[0][0]:now; this.hist(sql=>{ rows=histEv(sql, from, upTo); }); if(!rows) return []; this.evOld=rows; }
+    let i=0; while(i<this.evOld.length&&this.evOld[i][0]<from) i++; if(i) this.evOld.splice(0,i);
+    return this.evOld;
   }
   async histReq(u){
     const m=await this.load(), now=Date.now();
@@ -197,7 +170,7 @@ export class Pulse {
     const rows=all.filter(r=>r[0]>=since).map(r=>r[3]?r:r.slice(0,3));
     const fast=Date.now()-this.watchAt<10000;
     const pairs={}; for(const p of (this.src&&this.src.ps)||[]) if(p.lbl&&p.s0&&p.s1) pairs[p.lbl]=[p.s0,p.s1];
-    return Response.json({now:Date.now(), ...m.meta, fast, ...(fail?{fail}:{}), mins:rows, pairs, ...tradesOf(all, m.ev, m.evStart), mine:mineOut(m), mineScan:(m.mineSt&&m.mineSt.diag)||null});
+    return Response.json({now:Date.now(), ...m.meta, fast, ...(fail?{fail}:{}), mins:rows, pairs, ...tradesOf(all, m.ev, m.evStart, this.oldEv(m)), mine:mineOut(m), mineScan:(m.mineSt&&m.mineSt.diag)||null});
   }
 
   // the dashboard's own position list and prices, refreshed every ten minutes
@@ -454,7 +427,7 @@ export class Pulse {
     for(const t of Object.keys(mins)){ if(Number(t)<cut&&(kept||Number(t)<cut-2*60*MIN)) delete mins[t]; else if(Number(t)<cut) continue; else { const v=mins[t]; v[0]=Math.round(v[0]*1e6)/1e6; v[1]=Math.round(v[1]*100)/100;
       if(v[2]) for(const k in v[2]) v[2][k]=Math.round(v[2][k]*1e6)/1e6; } }
     const evCut=Math.max(cur.t-EV_KEEP, m.ev.length>EV_MAX?m.ev[m.ev.length-EV_MAX][0]:0);
-    if(m.ev.length && m.ev[0][0]<evCut){ m.ev=m.ev.filter(x=>x[0]>=evCut); if(m.evStart!=null) m.evStart=Math.max(m.evStart,evCut); }
+    if(m.ev.length && m.ev[0][0]<evCut){ if(this.evOld) for(const x of m.ev){ if(x[0]>=evCut) break; this.evOld.push(x); } m.ev=m.ev.filter(x=>x[0]>=evCut); if(m.evStart!=null) m.evStart=Math.max(m.evStart,evCut); }
     m.own=m.own.filter(r=>cur.t-r[0]<26*60*MIN);
     if(this.src) this.reconcile(m);
     const fresh=Object.values(prev).filter(x=>cur.t-x.t<90000).length;
