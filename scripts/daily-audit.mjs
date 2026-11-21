@@ -322,8 +322,9 @@ await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');
 // the exchange record (scripts/exch.mjs): read, whole and valued. Yes/no only: a count would say when something was sent
 if(relay.exch!==undefined){ const X=relay.exch;
-  (X&&X.t&&Date.now()-X.t<40*60e3&&X.whole&&X.rows.every(r=>r.usd!=null||Date.now()-r.t<864e5)?OK:WARN)('exchange record: '+(!X?'MISSING':(Date.now()-(X.t||0)<40*60e3?'read':'NOT read in 40 min')
-    +' · history read to its start: '+(X.whole?'yes':'not yet')+' · every transfer valued: '+(X.rows.every(r=>r.usd!=null)?'yes':'not all'))); }
+  const V=X?X.rows.filter(r=>r.kind!=='exchange'):[];   // the exchange's own (gas for its sweeps) are never valued
+  (X&&X.t&&Date.now()-X.t<40*60e3&&X.whole&&V.every(r=>r.usd!=null||Date.now()-r.t<864e5)?OK:WARN)('exchange record: '+(!X?'MISSING':(Date.now()-(X.t||0)<40*60e3?'read':'NOT read in 40 min')
+    +' · history read to its start: '+(X.whole?'yes':'not yet')+' · every transfer valued: '+(V.every(r=>r.usd!=null)?'yes':'not all'))); }
 // the minute recorder's long memory, copied sealed into git once a day (scripts/hist-backup.mjs): counts only
 { const yd=new Date(Math.floor(Date.now()/864e5)*864e5-864e5).toISOString().slice(0,10), has=fs.existsSync('deck-r7k4x9/backup/minutes-'+yd+'.json');
   let n=0; try{ n=fs.readdirSync('deck-r7k4x9/backup').filter(x=>/^minutes-\d{4}-\d{2}-\d{2}\.json$/.test(x)).length; }catch(e){}

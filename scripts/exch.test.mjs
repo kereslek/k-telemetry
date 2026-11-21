@@ -41,6 +41,12 @@ const solIo=()=>({
   sigs[CEX]=['S6','S2','S1']; gtCalls=[];
   r=await exchLedger({cex:[{chain:'solana',address:CEX}], wallets:[{chain:'solana',address:W1},{chain:'solana',address:W2}], io, st});
   ok(r.rows.length===4 && gtCalls.join()==='S6' && r.rows[0].k==='sol:S6:native', 'the next run reads only what is new, newest first in the record');
+  // the exchange topping its deposit address up for gas, from the address it sweeps to: its own, not a deposit, not valued
+  TX.S7=solTx(['Hot',CEX,'Sys'],[9e9,1e9,1],[8.98e9,1.01e9,1],[],[],T+2*86400); sigs[CEX]=['S7','S6','S2','S1'];
+  r=await exchLedger({cex:[{chain:'solana',address:CEX}], wallets:[{chain:'solana',address:W1},{chain:'solana',address:W2}], io, st});
+  const g=r.rows.find(x=>x.k==='sol:S7:native');
+  ok(g&&g.kind==='exchange'&&g.usd==null&&r.rows.find(x=>x.k==='sol:S1:native').kind==='wallet'&&r.rows.find(x=>x.k==='sol:S5:'+MRAY).kind==='other'&&r.rows.find(x=>x.k==='sol:S5:'+MRAY).src===X,
+    'SOL from the address the exchange sweeps to is the exchange’s own (gas), not valued; the sender’s address is kept for every transfer');
 }
 // a long history read a stretch per run, back to the first transaction
 { const many=Array.from({length:250},(_,i)=>'L'+(249-i));   // newest first

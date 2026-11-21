@@ -14,9 +14,14 @@
 const LAMPORTS=1e9, SOLK='native';
 
 export async function exchLedger({cex, wallets, io, st, now=Date.now(), budgetMs=40000, pages=3}){
-  st.rows=st.rows||[]; st.addr=st.addr||{};
-  const t0=Date.now(), late=()=>Date.now()-t0>budgetMs, err=[];
+  st.rows=st.rows||[]; st.addr=st.addr||{}; st.sweep=st.sweep||{};
+  let t0=Date.now(); const late=()=>Date.now()-t0>budgetMs, err=[];
+  // the transfers already kept and still without a value, on their own time first (reading the past can use a run's
+  // whole budget on the free servers, and valuing would then never come round)
+  await value(20000);
+  t0=Date.now();
   const have=new Set(st.rows.map(r=>r.k)), own=new Set((wallets||[]).map(w=>String(w.address).toLowerCase()));
+  // the sender kept as read (src); `from` names it when it is one of the deck's wallets, 'other' otherwise
   const add=r=>{ if(have.has(r.k)) return; have.add(r.k); st.rows.push(r); };
 
   for(const x of (cex||[])){
@@ -48,7 +53,9 @@ export async function exchLedger({cex, wallets, io, st, now=Date.now(), budgetMs
       for(const s of [...fresh,...old]){ if(late()) return;
         if(s.err||st.seen[s.signature]) continue;
         const tx=await io.sol('getTransaction',[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]); if(!tx||!tx.meta) continue;
-        for(const r of solIn(tx, owner, s.signature)) add({...r, from:own.has(String(r.from).toLowerCase())?r.from:r.from?'other':null});
+        for(const r of solIn(tx, owner, s.signature)) add({...r, src:r.from, from:own.has(String(r.from).toLowerCase())?r.from:r.from?'other':null});
+        // where the exchange sweeps to: what arrives from there (gas for its sweeps, rent handed back) is the exchange's own
+        for(const a of solOut(tx, owner)) st.sweep[a]=1;
         st.seen[s.signature]=1; }
       if(fresh.length) S.newest=fresh[0].signature;
     }
@@ -59,7 +66,7 @@ export async function exchLedger({cex, wallets, io, st, now=Date.now(), budgetMs
     for(const [kind,path] of [['tok','/token-transfers?type=ERC-20&filter=to'],['eth','/transactions?filter=to']]){
       const S=st.addr['eth:'+kind+':'+addr]=st.addr['eth:'+kind+':'+addr]||{};
       const base='https://eth.blockscout.com/api/v2/addresses/'+addr+path, nextOf=j=>j.next_page_params?base+'&'+new URLSearchParams(j.next_page_params):null;
-      const take=items=>{ let known=false; for(const it of items){ const r=ethRow(kind,it,addr); if(!r) continue; if(have.has(r.k)){ known=true; continue; } add({...r, from:own.has(r.from)?r.from:'other'}); } return known; };
+      const take=items=>{ let known=false; for(const it of items){ const r=ethRow(kind,it,addr); if(!r) continue; if(have.has(r.k)){ known=true; continue; } add({...r, src:r.from, from:own.has(r.from)?r.from:'other'}); } return known; };
       if(!S.started){
         // the first run: from the newest, as far as `pages` reach; the rest is the past still to read
         let url=base;
@@ -77,22 +84,40 @@ export async function exchLedger({cex, wallets, io, st, now=Date.now(), budgetMs
   }
 
   // a value for each, at its own time (a price at a moment never changes, so it is asked once)
-  // one failed ask is not an answer (a price feed refusing a burst of asks on the first run): a transfer is left
-  // unvalued for good only after six tries, and only once it is three days old
-  for(const r of st.rows){ if(late()) break; if(r.usd!=null||(r.px===false&&(r.tries||0)>=6)) continue;
-    const p=await io.usdAt(r.ch, r.tok, Math.floor(r.t/1000)); r.tries=(r.tries||0)+1;
-    if(p>0){ r.px=p; r.usd=Math.round(p*r.amt*100)/100; } else if(r.tries>=6&&now-r.t>3*864e5) r.px=false; }
+  await value(20000);
   for(const r of st.rows) if(!r.sym) r.sym=io.sym(r.ch, r.tok)||null;
+  /* a value for each, at its own time (a price at a moment never changes, so it is asked once). One failed ask is not
+     an answer (a price feed refusing a burst of asks): a transfer is left unvalued for good only after six tries, and
+     only once it is three days old. The exchange's own (gas for its sweeps, rent handed back) are not valued. */
+  async function value(ms){ const v0=Date.now();
+    for(const r of st.rows){ if(Date.now()-v0>ms) break; if(r.usd!=null||(r.px===false&&(r.tries||0)>=6)||kindOf(r)==='exchange') continue;
+      const p=await io.usdAt(r.ch, r.tok, Math.floor(r.t/1000)); r.tries=(r.tries||0)+1;
+      if(p>0){ r.px=p; r.usd=Math.round(p*r.amt*100)/100; } else if(r.tries>=6&&now-r.t>3*864e5) r.px=false; } }
+  function kindOf(r){ return r.from&&r.from!=='other'?'wallet':st.sweep[r.src]?'exchange':'other'; }
   st.rows.sort((a,b)=>b.t-a.t);
   st.at=now;
   return {...exchView(st, (cex||[]).length), err};
 }
-/* the kept record as the deck reads it, without reading anything new (the relay's passes in between) */
+/* the kept record as the deck reads it, without reading anything new (the relay's passes in between). `kind`: from one
+   of the deck's wallets, from the exchange's own addresses (gas for its sweeps, rent handed back: not the owner's
+   deposits), or from another address. */
 export function exchView(st, n){
-  const rows=(st.rows||[]).map(({k,t,ch,tok,sym,amt,usd,from,tx})=>({k,t,ch,tok,sym,amt,usd,from,tx}));
+  const sw=st.sweep||{}, kind=r=>r.from&&r.from!=='other'?'wallet':sw[r.src]?'exchange':'other';
+  const rows=(st.rows||[]).map(r=>({k:r.k, t:r.t, ch:r.ch, tok:r.tok, sym:r.sym, amt:r.amt, usd:r.usd, from:r.from, src:r.src||null, kind:kind(r), tx:r.tx}));
   return {t:st.at||null, n, rows, whole:Object.keys(st.addr||{}).length>0&&Object.values(st.addr).every(v=>v.done)};
 }
 
+/* where one Solana transaction took value from the owner's address and token accounts: the addresses whose SOL or
+   token balance went up while the owner's went down (the exchange sweeping its deposits out) */
+export function solOut(tx, owner){
+  const out=new Set(), keys=(tx.transaction&&tx.transaction.message&&tx.transaction.message.accountKeys||[]).map(k=>k.pubkey||k), i=keys.indexOf(owner);
+  if(i>=0&&tx.meta.postBalances[i]<tx.meta.preBalances[i]-10000) keys.forEach((k,j)=>{ if(j!==i&&tx.meta.postBalances[j]>tx.meta.preBalances[j]) out.add(k); });
+  const pre=new Map((tx.meta.preTokenBalances||[]).map(b=>[b.accountIndex,b])), amt=b=>b?Number(b.uiTokenAmount&&b.uiTokenAmount.uiAmountString||0):0;
+  const fell=new Set((tx.meta.postTokenBalances||[]).filter(b=>b.owner===owner&&amt(b)<amt(pre.get(b.accountIndex))).map(b=>b.mint));
+  for(const b of (tx.meta.preTokenBalances||[])) if(b.owner===owner&&amt(b)>0&&!(tx.meta.postTokenBalances||[]).some(p=>p.accountIndex===b.accountIndex)) fell.add(b.mint);
+  for(const b of (tx.meta.postTokenBalances||[])) if(fell.has(b.mint)&&b.owner&&b.owner!==owner&&amt(b)>amt(pre.get(b.accountIndex))) out.add(b.owner);
+  return [...out];
+}
 /* what one Solana transaction brought into the owner's address and token accounts (never what left them) */
 export function solIn(tx, owner, sig){
   const out=[], t=(tx.blockTime||0)*1000, keys=(tx.transaction&&tx.transaction.message&&tx.transaction.message.accountKeys||[]).map(k=>k.pubkey||k);

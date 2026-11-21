@@ -703,7 +703,7 @@ function guardSol(map){   // mint -> Jupiter price, replaced in place where Defi
 let solFilled=0;
 function fillSol(map, mints){
   for(const m of mints){ if(map[m]>0) continue; const r=solRef[m];
-    if(!r||!(r.p>0)||Date.now()-r.t>3600e3||(r.c!=null&&r.c<0.9)) continue; map[m]=r.p; solFilled++; }
+    if(!r||!(r.p>0)||Date.now()-r.t>6*3600e3||(r.c!=null&&r.c<0.9)) continue; map[m]=r.p; solFilled++; }   // six hours: an older price beats none
   return map;
 }
 const B58A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -2075,7 +2075,7 @@ const main=async()=>{
          without Jupiter's price it shows DefiLlama's (fresh within the hour, confidence 0.9 or more) */
       let e=null; try{ const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+CPOOL_SOL,15000); e=js&&js[CPOOL_SOL]; }catch(err){ logErr('quote cpool sol',err); }
       if(!(e && e.usdPrice!=null)){ await solRefFor([CPOOL_SOL]); const r=solRef[CPOOL_SOL];
-        if(r&&r.p>0&&Date.now()-r.t<3600e3&&!(r.c!=null&&r.c<0.9)) push('CPOOL / USD (SOL)', r.p, tickChange('cpool:sol',r.p), 'llama-nojup'); }
+        if(r&&r.p>0&&Date.now()-r.t<6*3600e3&&!(r.c!=null&&r.c<0.9)) push('CPOOL / USD (SOL)', r.p, tickChange('cpool:sol',r.p), 'llama-nojup'); }
       /* Jupiter's own 24h change is a percentage. Checked before trusting it: across three
          rehearsal passes its SOL figure read 6.45, 6.79 and 7.17 against the feed's 6.40, 6.71
          and 7.26. The relay's own samples stand in only when Jupiter leaves the field out. */
