@@ -15,6 +15,13 @@ console.log('relay file: '+(d?'read, pass '+Math.round((Date.now()-d.t)/60000)+'
 if(d){ const Q=Array.isArray(d.quotes)?d.quotes:[], c=Q.find(q=>q.label==='CPOOL / USD (SOL)');
   console.log('price tiles in the relay file: '+Q.length+' · CPOOL / USD (SOL): '+(c?'yes, from '+c.src:'MISSING')); }
 if(d&&d.exch&&d.exch.rows){ const U=d.exch.rows.filter(r=>r.usd==null&&r.kind!=='exchange'); console.log('  exchange record, the exchange\u2019s own (gas, rent): '+d.exch.rows.filter(r=>r.kind==='exchange').length); if(U.length) console.log('  exchange record, unvalued: '+U.length+' ('+U.filter(r=>r.tok==='native').length+' native coin, '+U.filter(r=>r.tok!=='native').length+' token) · on '+[...new Set(U.map(r=>r.ch))].join(', ')); }
+if(d&&d.exch&&d.exch.rows){ const by=k=>d.exch.rows.filter(r=>r.kind===k), nat=a=>a.filter(r=>r.tok==='native').length;
+  console.log('  exchange record by sender: your wallets '+by('wallet').length+' ('+nat(by('wallet'))+' native coin) · others '+by('other').length+' ('+nat(by('other'))+' native coin, '+new Set(by('other').map(r=>r.src)).size+' senders) · the exchange\u2019s own '+by('exchange').length); }
+// the relay's kept record (sealed blockcache): how many addresses the exchange sweeps to are known; counts only
+try{ const bc=await storeText('blockcache.json'); const B=bc?JSON.parse(open(JSON.parse(bc.text))):null, C=B&&B.cex?Object.values(B.cex):[];
+  for(const [i,st] of C.entries()){ const sw=st&&st.sweep?Object.keys(st.sweep):[];
+    console.log('  exchange record '+(i+1)+' kept: version '+(st&&st.v)+' · rows '+((st&&st.rows)||[]).length+' · sweep addresses known '+sw.length+' · accounts read to their start '+Object.values((st&&st.addr)||{}).filter(v=>v.done).length+' of '+Object.keys((st&&st.addr)||{}).length+' · transactions looked at '+Object.keys((st&&st.seen)||{}).length); }
+  if(!C.length) console.log('  exchange record kept: none in blockcache'); }catch(e){ console.log('  exchange record kept: not read ('+scrub(e.message||e).slice(0,60)+')'); }
 if(d&&d.exch!==undefined){ const X=d.exch; console.log('exchange record: '+(!X?'none':'read '+Math.round((Date.now()-(X.t||0))/60000)+' min ago · addresses '+X.n+' · history read to its start: '+(X.whole?'yes':'not yet')+' · every transfer valued: '+(X.rows.filter(r=>r.kind!=='exchange').every(r=>r.usd!=null)?'yes':'not all'))); }
 /* the page cuts every token symbol to letters, digits, currency signs and . _ + - … ? (v40.52): how many of the relay's
    own symbols that changes (a changed one would read differently on the page). Counts only. */
