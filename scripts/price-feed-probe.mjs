@@ -14,6 +14,7 @@ const mints=d?[...new Set((d.sol||[]).flatMap(p=>[p.mint0,p.mint1]).filter(Boole
 console.log('relay file: '+(d?'read, pass '+Math.round((Date.now()-d.t)/60000)+' min old · Solana positions '+(d.sol||[]).length+' · priced '+(d.sol||[]).filter(p=>p.valueUsd!=null).length+' · tokens in them '+mints.length:'NOT read'));
 if(d){ const Q=Array.isArray(d.quotes)?d.quotes:[], c=Q.find(q=>q.label==='CPOOL / USD (SOL)');
   console.log('price tiles in the relay file: '+Q.length+' · CPOOL / USD (SOL): '+(c?'yes, from '+c.src:'MISSING')); }
+if(d&&d.exch&&d.exch.rows){ const U=d.exch.rows.filter(r=>r.usd==null); if(U.length) console.log('  exchange record, unvalued: '+U.length+' ('+U.filter(r=>r.tok==='native').length+' native coin, '+U.filter(r=>r.tok!=='native').length+' token) · on '+[...new Set(U.map(r=>r.ch))].join(', ')); }
 if(d&&d.exch!==undefined){ const X=d.exch; console.log('exchange record: '+(!X?'none':'read '+Math.round((Date.now()-(X.t||0))/60000)+' min ago · addresses '+X.n+' · history read to its start: '+(X.whole?'yes':'not yet')+' · every transfer valued: '+(X.rows.every(r=>r.usd!=null)?'yes':'not all'))); }
 if(d) console.log('relay errors this pass (first word, count): '+Object.entries((d.errors||[]).reduce((a,e)=>{ const k=scrub(typeof e==='string'?e:(e&&(e.k||e.where||e.msg))||'?').split(/[\s:]/)[0].slice(0,24); a[k]=(a[k]||0)+1; return a; },{})).map(([k,n])=>k+' ×'+n).join(', '));
 
