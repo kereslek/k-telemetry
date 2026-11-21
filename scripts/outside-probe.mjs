@@ -32,6 +32,11 @@ res(sl+pl===files.length, 'published data files: '+files.length+' · sealed '+sl
 const other=execFileSync('git',['ls-files'],{encoding:'utf8'}).split('\n').filter(f=>/\.json$/.test(f)&&!f.startsWith('deck-r7k4x9/'));
 let os=0; for(const f of other){ if(sealed(fs.readFileSync(f,'utf8'))) os++; else console.log('FAIL '+f+': a JSON file in the repository, not sealed'); }
 res(os===other.length, 'other JSON files kept in the repository: '+other.length+' · sealed '+os);
+// the live page is the one the branch holds (a deploy can take a few minutes to reach the site)
+{ const want=(fs.readFileSync('deck-r7k4x9/index.html','utf8').match(/const BUILD = '([^']+)'/)||[])[1]; let got=null;
+  for(let k=0;k<20;k++){ const r=await get(SITE+'deck-r7k4x9/index.html?nc='+Date.now()); got=(r.t.match(/const BUILD = '([^']+)'/)||[])[1]; if(got===want) break; await new Promise(r=>setTimeout(r,15000)); }
+  res(got===want, 'the live page\u2019s build: '+got+' (the branch holds '+want+')');
+  const r=await get(SITE+'deck-r7k4x9/index.html?nc='+Date.now()); res(/const cleanSym = /.test(r.t)&&/'&#39;'/.test(r.t), 'the live page cleans token symbols and escapes quotes: '+(/const cleanSym = /.test(r.t)?'yes':'NO')); }
 // the page itself: no address-like string anywhere in its code
 { const r=await get(SITE+'deck-r7k4x9/index.html?nc='+Date.now()); const t=r.t.replace(/So11111111111111111111111111111111111111112|EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/g,'');
   const toks=[...new Set(t.match(/0x[0-9a-fA-F]{40}|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g)||[])];
