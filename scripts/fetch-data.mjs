@@ -11,6 +11,7 @@ import {readBridge, ROUTES} from './bridge.mjs';
 import {readLinks} from './bridge-links.mjs';
 import { suiHoldings, tronHoldings, IKA_TYPE } from './alt-chains.mjs';
 import { scanNfts, nftSummary, openseaOn } from './nfts.mjs';
+import { exchLedger, exchView } from './exch.mjs';
 const OUT='deck-r7k4x9';
 /* Sealed publishing when the DECK_PASSPHRASE secret is set (scripts/lock.mjs); plain otherwise. */
 initLock(OUT);
@@ -238,7 +239,7 @@ async function getLogsChunked(ck,filter,fromBlock,toBlock){
 /* One list, so a cache added here cannot be silently dropped by the loader. Adding a key to
    the initialiser and forgetting the loader's hand-written pick is exactly how `rivals` came
    back undefined on the first real run and took the whole competition block down with it. */
-const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge','bridgeLinks','mktHours'];
+const BC_KEYS=['mint','tscan','evh','mintInfo','tokMeta','depUsd','blkTs','rivals','shareHist','solPools','solHist','tickHist','balCache','enumCache','deadPos','nftHist','bridge','bridgeLinks','mktHours','cex'];
 let blockCache=Object.fromEntries(BC_KEYS.map(k=>[k,{}]));
 /* Only an explicit revert proves "this id did not exist yet". Everything else — including
    phrasings we have never seen — is treated as "the node could not answer" and retried.
@@ -4269,7 +4270,22 @@ const main=async()=>{
       if(nfts && nfts.totalUsd!=null) h.n=Math.round(nfts.totalUsd*100)/100;
       try{ writeJ(OUT+'/hist-'+profile.slug+'.json', history); }catch(e){ logErr('hist',e); }
     }
-    const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge, bridgeLinks, mktHours,
+    /* Everything that ever arrived at the owner's exchange deposit addresses (scripts/exch.mjs), read every ten
+       minutes and kept for good, sealed with the rest: "sent to your exchange" in the deck, and the starting point of
+       a reconciliation with the exchange's own records. */
+    let exch=null;
+    if((profile.cex||[]).length){
+      try{ const st=blockCache.cex[profile.slug]=blockCache.cex[profile.slug]||{};
+        if(Date.now()-(st.at||0)>10*60e3){
+          const llamaKey=(ch,tok)=>ch==='sol'?(tok==='native'?'coingecko:solana':'solana:'+tok):(tok==='native'?'coingecko:ethereum':'ethereum:'+tok);
+          exch=await exchLedger({cex:profile.cex, wallets:cfgProfile.wallets||[], st, budgetMs:40000, io:{sol, getJson,
+            usdAt:async(ch,tok,ts)=>{ const k=llamaKey(ch,tok); return (await llamaHistorical([k],ts))[k]??null; },
+            sym:(ch,tok)=>ch==='sol'?(tok==='native'?'SOL':SOL_KNOWN[tok]||(blockCache.tokMeta[tok]&&blockCache.tokMeta[tok].symbol)||null):(tok==='native'?'ETH':null)}});
+          for(const e of exch.err||[]) logErr('exch',new Error(e));
+        } else exch=exchView(st, profile.cex.length);
+      }catch(e){ logErr('exch',e); }
+    }
+    const data={ v:6, t:Date.now(), profile:profile.slug, exch, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge, bridgeLinks, mktHours,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
     console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded+' · because Jupiter gave none: '+solFilled);
