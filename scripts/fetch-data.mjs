@@ -640,7 +640,8 @@ const parseWhirlpool=b=>({ tickSpacing:leU16(b,41), feeRate:leU16(b,45), liquidi
 const TOKEN_PROG='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const SOL_MINT='So11111111111111111111111111111111111111112';
-const SOL_KNOWN={[SOL_MINT]:'SOL','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v':'USDC','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB':'USDT'};
+// CPOOL's name never waits on Jupiter's token search (refused with HTTP 429 at busy times, it left CPOOL shown as "AeXr…")
+const SOL_KNOWN={[SOL_MINT]:'SOL','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v':'USDC','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB':'USDT','AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg':'CPOOL'};
 /* Ethereum pools price their own tokens. A pool pairs a reference token (ETH, BTC, a dollar
    stablecoin), whose price comes from the feed, with a token valued at the pool's own rate against
    it: what the position could be swapped out at; the page does the same. Solana pools value at the
@@ -693,6 +694,15 @@ function guardSol(map){   // mint -> Jupiter price, replaced in place where Defi
   for(const [m,v] of Object.entries(map)){ const r=solRef[m];
     if(!(v>0)||!r||!(r.p>0)||Date.now()-r.t>3600e3||(r.c!=null&&r.c<0.9)) continue;
     if(Math.abs(v/r.p-1)>0.02){ map[m]=r.p; solGuarded++; } }
+  return map;
+}
+/* A mint Jupiter did not price takes DefiLlama's, when that is fresh and confident. Jupiter refuses with HTTP 429 at
+   busy times; on 21 Nov a pass that got nothing from it left all five Solana positions unpriced, and every total
+   counted them as nothing (the positions themselves untouched). */
+let solFilled=0;
+function fillSol(map, mints){
+  for(const m of mints){ if(map[m]>0) continue; const r=solRef[m];
+    if(!r||!(r.p>0)||Date.now()-r.t>3600e3||(r.c!=null&&r.c<0.9)) continue; map[m]=r.p; solFilled++; }
   return map;
 }
 const B58A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -789,7 +799,7 @@ async function fetchSolana(SOL_WALLETS){
       const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+oMints.join(','));
       for(const m of oMints){ if(js[m]?.usdPrice!=null) oPrices[m]=Number(js[m].usdPrice); }
     }catch(e){ logErr('jup orca',e); }
-    await solRefFor(oMints); guardSol(oPrices);
+    await solRefFor(oMints); guardSol(oPrices); fillSol(oPrices, oMints);
     for(const m of oMints){
       if(SOL_KNOWN[m]){ oSyms[m]=SOL_KNOWN[m]; continue; }
       try{ const js=await getJson('https://lite-api.jup.ag/tokens/v2/search?query='+m);
@@ -948,7 +958,7 @@ async function fetchSolana(SOL_WALLETS){
     const js=await getJson('https://lite-api.jup.ag/price/v3?ids='+mints.join(','));
     for(const m of mints){ if(js[m]?.usdPrice!=null) prices[m]=Number(js[m].usdPrice); }
   }catch(e){ logErr('jup',e); }
-  await solRefFor(mints); guardSol(prices);
+  await solRefFor(mints); guardSol(prices); fillSol(prices, mints);
   const symbols={};
   for(const m of mints){
     if(SOL_KNOWN[m]){ symbols[m]=SOL_KNOWN[m]; continue; }
@@ -3507,7 +3517,7 @@ const main=async()=>{
                for(const m of solMints.slice(i,i+80)) if(js[m]?.usdPrice!=null) jp[m]=Number(js[m].usdPrice); }
           catch(e){ logErr('jupBal',e); }
         }
-        await solRefFor(solMints); guardSol(jp);
+        await solRefFor(solMints); guardSol(jp); fillSol(jp, solMints);
       }
       // Resolve names/symbols for Solana mints. A wallet full of "AeXrLf…" is unreadable,
       // and for a token whose identity is in question the registered name is the fastest
@@ -4259,7 +4269,7 @@ const main=async()=>{
     const data={ v:6, t:Date.now(), profile:profile.slug, nfts, ink, chainStatus, history, totalDays, daily:profileDaily, pxChg:profilePxChg, uiBuild, feeMonth, costMonth, catMtd, catMonths, tokenFlow, tokenSeries, stableSeries, stableOff, ethUsdChg24, btcUsdChg24, tickers, quotes, block:blockNum, blocks:blockNums, ethUsd, btcUsd, gasGwei, solPrio, btcFee, bridge, bridgeLinks, mktHours,
       eth:evmPositions, sol:solPositions, topPools, idle, competition, errors:[...errors],
       mktRef:{t:Date.now(), src:'defillama', px:Object.fromEntries(Object.entries(solRef).filter(([,r])=>r&&r.p>0))} };
-    console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded);
+    console.log('solana prices taken from DefiLlama because Jupiter was more than 2% off it: '+solGuarded+' · because Jupiter gave none: '+solFilled);
     for(const p of data.eth) delete p.opTxs;   // internal bookkeeping — keep payload lean
     writeJ(OUT+'/data-'+profile.slug+'.json', data);
     if(cfgProfile===CONFIG.profiles[0]) writeJ(OUT+'/data.json', data);

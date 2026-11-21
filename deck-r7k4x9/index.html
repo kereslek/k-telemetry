@@ -2863,7 +2863,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.46';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.47';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -3419,6 +3419,7 @@ const SOL_KNOWN   = {
   [SOL_MINT]: {symbol:'SOL'},
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': {symbol:'USDC'},
   'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': {symbol:'USDT'},
+  'AeXrLftu8chuY4ctc6oDeG4dUx6Yr4aqeakUMFNvACdg': {symbol:'CPOOL'},   // never waits on Jupiter's token search
 };
 cfg.solWallets = store.get('solWallets', []);
 /* Checked from a browser on this site (4 Oct 2026): api.mainnet-beta now answers 403 "Access
@@ -3530,6 +3531,15 @@ function guardSolPx(px){
   for(const [m,v] of Object.entries(px)){ const r=R.px[m];
     if(!(v>0)||!r||!(r.p>0)||Date.now()-r.t>2*3600e3||(r.c!=null&&r.c<0.9)) continue;
     if(Math.abs(v/r.p-1)>0.02) px[m]=r.p; }
+  return px;
+}
+/* A mint Jupiter did not price takes DefiLlama's as the relay published it (mktRef), when that is fresh and
+   confident. Jupiter turns browsers away with HTTP 429 at busy times; without this the position counts as nothing
+   in every total while it sits untouched on the chain. */
+function fillSolPx(px, mints){
+  const R=state.mktRef; if(!R||!R.px) return px;
+  for(const m of mints){ if(px[m]>0) continue; const r=R.px[m];
+    if(!r||!(r.p>0)||Date.now()-r.t>2*3600e3||(r.c!=null&&r.c<0.9)) continue; px[m]=r.p; }
   return px;
 }
 async function solPrices(mints){
@@ -3644,7 +3654,7 @@ async function scanSol(){
   poolAccs.forEach((a,i)=>{ if(a) pools.set(poolIds[i], parsePoolState(b64ToBytes(a.data[0]))); else partial=true; });
   const mints=[...new Set([...pools.values()].flatMap(p=>[p.mint0,p.mint1]))];
   await solMeta(mints);
-  const prices=guardSolPx(await solPrices(mints));
+  const prices=fillSolPx(guardSolPx(await solPrices(mints)), mints);
   await raydiumPoolInfo(poolIds);
   const out=[];
   for(const {cat:c, pp} of found){
