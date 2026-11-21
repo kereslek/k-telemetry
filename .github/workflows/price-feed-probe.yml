@@ -1,0 +1,20 @@
+# Do the Solana price feeds answer? Answer codes and counts only (the log is public).
+name: price-feed-probe
+on:
+  push:
+    branches: [claude/new-session-argqhq]
+    paths: ['scripts/price-feed-probe.mjs', '.github/workflows/price-feed-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/price-feed-probe.mjs
+        env:
+          DECK_PASSPHRASE: ${{ secrets.DECK_PASSPHRASE }}
