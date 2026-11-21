@@ -320,6 +320,10 @@ try{
 }catch(e){ FAIL('RANGE POSITION gauges: '+String(e.message||e).slice(0,60)); }
 await pg.setViewportSize({width:1440,height:900});
 (relayAge>60?FAIL:OK)('relay data is '+relayAge.toFixed(0)+' min old');
+// the minute recorder's long memory, copied sealed into git once a day (scripts/hist-backup.mjs): counts only
+{ const yd=new Date(Math.floor(Date.now()/864e5)*864e5-864e5).toISOString().slice(0,10), has=fs.existsSync('deck-r7k4x9/backup/minutes-'+yd+'.json');
+  let n=0; try{ n=fs.readdirSync('deck-r7k4x9/backup').filter(x=>/^minutes-\d{4}-\d{2}-\d{2}\.json$/.test(x)).length; }catch(e){}
+  (has?OK:WARN)('minute history backup: '+n+' day(s) kept · yesterday\u2019s: '+(has?'yes':'NOT YET')); }
 /* the wallet list and the balances read from it, in counts per chain only */
 try{ const cfg=openJ(await (await fetch(LIVE+'config.json?t='+Date.now())).json()), ws=(cfg.profiles||[]).flatMap(p=>p.wallets||[]), by={};
   for(const w of ws) by[w.chain]=(by[w.chain]||0)+1;
