@@ -1141,6 +1141,9 @@
     background:conic-gradient(from 0deg,rgba(53,214,232,0) 0deg 318deg,rgba(53,214,232,.42) 356deg,rgba(255,255,255,.95) 359.2deg,rgba(53,214,232,0) 360deg);
     will-change:transform,opacity;transform:rotate(0deg) translateZ(0);backface-visibility:hidden;-webkit-backface-visibility:hidden}
   .fpd-dw{will-change:transform}
+  /* the first sweep's beam edge: centre (150,150) to radius 132 in the SVG's viewBox -26 -10 352 322; 7 units wide, a 1.5-unit core */
+  .fpd-edge{position:absolute;left:50%;top:8.696%;height:40.994%;width:1.989%;transform-origin:50% 100%;transform:translateX(-50%);pointer-events:none;border-radius:999px;
+    background:linear-gradient(90deg,rgba(53,214,232,.22) 0 39%,#e2fdff 39% 61%,rgba(53,214,232,.22) 61%);will-change:transform}
   .fpd-amt-birth{font-size:15px;fill:#fff;stroke-width:4px}
   .fpd-sub-hot{fill:var(--text-primary);letter-spacing:.06em}
   .fpd-strip{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:4px;padding:8px 12px;margin:4px 0 12px;max-width:976px;
@@ -1162,20 +1165,24 @@
   #sfx{position:fixed;inset:0;pointer-events:none;z-index:9000;overflow:hidden}
   #sfx>*{position:absolute;pointer-events:none}
   .sfx-wash{inset:0}
-  .sfx-flash{inset:0;background:#fff6dc;opacity:0;mix-blend-mode:screen}
-  .sfx-ring{border-radius:50%;border:2px solid #f5c451;box-shadow:0 0 22px rgba(245,196,81,.7),inset 0 0 22px rgba(245,196,81,.35);transform:translate(-50%,-50%)}
+  .sfx-flash{inset:0;background:#fff6dc;opacity:0;will-change:opacity}
+  .sfx-ring{border-radius:50%;border:2.5px solid #f5c451;box-shadow:0 0 22px rgba(245,196,81,.7),inset 0 0 22px rgba(245,196,81,.35);transform:translate(-50%,-50%) scale(0);will-change:transform,opacity}
+  /* a panel lit as the ring passes: a still glow over its edge, faded in and out (the panel itself is not repainted) */
+  .sfx-lit{box-shadow:0 0 0 1px #f5c451,0 0 26px rgba(245,196,81,.5);opacity:0;will-change:opacity}
+  .sfx-glow{transform:translate(-50%,-50%);width:min(96vw,980px);height:min(44vw,400px);border-radius:50%;opacity:0;will-change:transform,opacity;
+    background:radial-gradient(closest-side,rgba(245,196,81,.34),rgba(245,196,81,.14) 55%,rgba(245,196,81,0))}
   /* the whole-screen moment: the room dims, light turns behind the amount, a core blooms, sparks fly */
   .sfx-veil{inset:0;background:#02050b;opacity:0}
-  .sfx-rays{transform:translate(-50%,-50%);width:170vmax;height:170vmax;border-radius:50%;opacity:0;mix-blend-mode:screen;
-    background:repeating-conic-gradient(from 0deg,rgba(255,226,150,0) 0deg 6deg,rgba(255,226,150,.2) 6deg 9deg);
+  .sfx-rays{transform:translate(-50%,-50%);width:170vmax;height:170vmax;border-radius:50%;opacity:0;will-change:transform,opacity;
+    background:repeating-conic-gradient(from 0deg,rgba(255,226,150,0) 0deg 5.2deg,rgba(255,226,150,.2) 6.3deg 8deg,rgba(255,226,150,0) 9deg);
     -webkit-mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.55) 22%,transparent 58%);mask-image:radial-gradient(circle,#000 0,rgba(0,0,0,.55) 22%,transparent 58%)}
-  .sfx-bloom{transform:translate(-50%,-50%);width:74vmin;height:74vmin;border-radius:50%;opacity:0;mix-blend-mode:screen;
+  .sfx-bloom{transform:translate(-50%,-50%);width:74vmin;height:74vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
     background:radial-gradient(circle,rgba(255,252,240,.95) 0,rgba(255,226,150,.6) 16%,rgba(245,196,81,.22) 38%,rgba(245,196,81,0) 66%)}
   .sfx-cv{left:0;top:0;width:100%;height:100%}
   .sfx-big{transform:translate(-50%,-50%);text-align:center;white-space:nowrap;opacity:0;font-family:var(--mono,ui-monospace,monospace);font-variant-numeric:tabular-nums}
   .sfx-big .k{font-size:clamp(11px,2.6vw,15px);letter-spacing:.38em;color:#fff3cf;margin-bottom:.45em;text-shadow:0 0 12px rgba(245,196,81,.9)}
   .sfx-big .v{font-weight:700;line-height:1;color:#ffe9a8;
-    text-shadow:0 0 8px rgba(255,236,170,.9),0 0 34px rgba(245,196,81,.85),0 0 90px rgba(245,196,81,.5),0 2px 2px rgba(0,0,0,.6)}
+    text-shadow:0 0 8px rgba(255,236,170,.9),0 0 30px rgba(245,196,81,.8),0 2px 2px rgba(0,0,0,.6)}
   .sfx-big .p{margin-top:.6em;font-size:clamp(12px,3vw,17px);letter-spacing:.12em;color:var(--sfx-col,#35d6e8);text-shadow:0 0 14px currentColor}
   .fpd-side{display:flex;flex-direction:column;gap:12px;min-width:0}
   /* the catch-up sweep draws on a canvas over the dial; the card beside it says what came in */
@@ -2865,7 +2872,7 @@ function lockScreen(){
 }
 
 /* ---------- config ---------- */
-const BUILD = 'v40.52';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
+const BUILD = 'v40.53';   // bump on every deploy: a fixed stamp cannot reveal a stale cache
 const DEFAULT_IDS = [];   // positions are found from the wallets in config.json; the old fixed list was closed positions
 /* closed positions that moved to a new NFT — migrate stored pins once */
 const BASE_RPCS = [
@@ -2979,7 +2986,18 @@ const state = {
 /* ---------- utilities ---------- */
 const $ = s => document.querySelector(s);
 const el = (tag, cls, html) => { const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; };
-const fmtUsd = (v, dp) => v==null ? '—' : '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:dp??2, maximumFractionDigits:dp??2});
+/* one formatter per number of decimals, made once: toLocaleString builds a new one on every call, and the clock's
+   count-up formats on every frame. The text is the same either way. */
+const USD_FMT=new Map();
+const fmtUsd = (v, dp) => { if(v==null) return '—'; const d=dp??2; let f=USD_FMT.get(d); if(!f){ f=new Intl.NumberFormat('en-US',{minimumFractionDigits:d, maximumFractionDigits:d}); USD_FMT.set(d,f); } return '$'+f.format(Number(v)); };
+/* An always-running canvas draws only while it can be seen: on screen, the tab shown, and the page not covered by the
+   clock's own window (?view=pulse). Off screen it used to draw every frame too, taking frames from the 60-minute clock. */
+const onStage=(()=>{ const seen=new WeakMap(); let io=null;
+  try{ io=new IntersectionObserver(es=>{ for(const e of es) seen.set(e.target, e.isIntersecting); }); }catch(e){}
+  return c=>{ if(!c) return false; if(io && !seen.has(c)){ seen.set(c,true); io.observe(c); }
+    return !document.hidden && seen.get(c)!==false && !document.documentElement.classList.contains('view-pulse'); }; })();
+/* while the clock is in the middle of a sweep, a birth or a big-fee moment, the background sky holds still */
+const FXBUSY={until:0, set(ms){ this.until=Math.max(this.until, Date.now()+ms); }, on(){ return Date.now()<this.until; }};
 const fmtNum = (v, dp=4) => v==null ? '—' : Number(v).toLocaleString('en-US',{maximumFractionDigits:dp});
 const fmtPct = (v, dp=2, sign) => v==null ? '—' : ((sign&&v>0?'+':'')+(v).toFixed(dp)+'%');
 const fmtPrice = p => p==null ? '—' : p>=1000 ? p.toLocaleString('en-US',{maximumFractionDigits:0}) : p>=1 ? p.toFixed(2) : p.toPrecision(4);
@@ -2992,8 +3010,13 @@ const VIEW=new URLSearchParams(location.search).get('view');
 if(VIEW==='pulse'){ document.documentElement.classList.add('view-pulse'); document.title='Fee pulse · 60 min'; }
 if(VIEW==='history'){ document.documentElement.classList.add('view-history'); document.title='Portfolio history'; }
 if(VIEW==='top100'){ document.documentElement.classList.add('view-top100'); document.title='Top 100 fees earned'; }
-const fmtT=(t,withSec=true)=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour12:false,hour:'2-digit',minute:'2-digit',...(withSec?{second:'2-digit'}:{})});
-const tzAbbr=t=>{try{return new Intl.DateTimeFormat('en-GB',{timeZone:TZ,timeZoneName:'short'}).formatToParts(t?new Date(t):new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return 'CET';}};
+/* the time formatters, each made once on first use (the text is the same as toLocaleTimeString's) */
+const TFMT={};
+const tfmt=(k,o)=>TFMT[k]||(TFMT[k]=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,...o}));
+const tfmtOf=(k,o,t)=>{ const d=new Date(t); return isNaN(d)?'Invalid Date':tfmt(k,o).format(d); };
+const fmtT=(t,withSec=true)=>withSec?tfmtOf('hms',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'},t):tfmtOf('hm24',{hour12:false,hour:'2-digit',minute:'2-digit'},t);
+const hhmm=t=>tfmtOf('hm',{hour:'2-digit',minute:'2-digit'},t);
+const tzAbbr=t=>{try{return tfmt('tz',{timeZoneName:'short'}).formatToParts(t?new Date(t):new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return 'CET';}};
 /* Days and months are Budapest's too: the relay keys its ledgers that way, so "today", a month's
    end and every day bar start at 00:00 there. Calendar arithmetic on a date key stays plain UTC
    (a key is a label, not an instant); these turn instants into keys and keys into instants. */
@@ -5651,7 +5674,7 @@ function initSeismoWave(){
     ctx.fillText('● '+seismoLabel, 10, 18);
   }
   function loop(){ const panel=c.closest('.panel');
-    if(!document.hidden && panel && !panel.classList.contains('collapsed')) draw();
+    if(onStage(c) && panel && !panel.classList.contains('collapsed')) draw();
     if(!reduced) requestAnimationFrame(loop); }
   if(reduced){ draw(); } else requestAnimationFrame(loop);
 }
@@ -5907,7 +5930,7 @@ function initFlowMap(){
     });
   }
   function loop(){ const panel=c.closest('.panel');
-    if(!document.hidden && c.isConnected && panel && !panel.classList.contains('collapsed')) draw();
+    if(onStage(c) && c.isConnected && panel && !panel.classList.contains('collapsed')) draw();
     if(!reduced) requestAnimationFrame(loop); }
   if(reduced){ draw(); } else requestAnimationFrame(loop);
 }
@@ -7848,7 +7871,7 @@ function initCosmos(){
   }
   function loop(){
     const panel=c.closest('.panel');
-    if(!document.hidden && panel && !panel.classList.contains('collapsed')) draw();
+    if(onStage(c) && panel && !panel.classList.contains('collapsed')) draw();
     if(!reduced) requestAnimationFrame(loop);
   }
   if(reduced){ draw(); } else requestAnimationFrame(loop);
@@ -11585,7 +11608,7 @@ function feePulseLink24(){
   const n=24, W=300, H=30, gap=2, bw=(W-gap*(n-1))/n;
   const top=Math.max(...S.hours.map(h=>h.usd||0), S.avg||0, 0.01);
   const y=v=>H-Math.max(1.5,v/top*(H-2));
-  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  const hl=hhmm;
   let bars='';
   S.hours.forEach((h,i)=>{ if(h.usd==null) return;
     const cls=h.cur?'fpl-today':(S.avg!=null&&h.usd>S.avg?'fpl-hi':'fpl-lo');
@@ -12245,7 +12268,7 @@ function renderFeePulse60(host){
   host.append(wrap);
   if(!S){ wrap.append(el('div','flow-omit','Needs two ledger readings.')); return; }
   if(!S.segs.length){ wrap.append(el('div','flow-omit','No ledger reading falls inside the last 60 minutes, so there is nothing to show for it yet — the next reading covers it.')); return; }
-  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  const hl=hhmm;
   const mins=t=>Math.max(0,Math.round((S.now-t)/60000));
   const st=el('div','fp-story');
   st.innerHTML='Last 60 minutes <span class="big">'+fmtUsd(S.total,2)+'</span>'
@@ -12315,6 +12338,7 @@ const sfxTier=v=>{ const T=fxBigAt(); return v>=T?3:v>=T/4?2:v>=T/20?1:0; };
 function screenFx(v, from, o={}){
   const tier=sfxTier(v);
   if(document.hidden || !tier) return;
+  FXBUSY.set(tier===3?6200:3200);
   let L=document.getElementById('sfx');
   if(!L){ L=document.createElement('div'); L.id='sfx'; L.setAttribute('aria-hidden','true'); document.body.append(L); }
   const W=innerWidth, H=innerHeight, r=from&&from.getBoundingClientRect?from.getBoundingClientRect():null;
@@ -12327,16 +12351,18 @@ function screenFx(v, from, o={}){
   const GOLD='245,196,81', CYAN='53,214,232';
   const wave=(dur,x=cx,y=cy)=>{
     const far=Math.max(Math.hypot(x,y),Math.hypot(W-x,y),Math.hypot(x,H-y),Math.hypot(W-x,H-y));
-    const ring=add('sfx-ring',{left:x+'px',top:y+'px'});
-    run(ring,[{width:'0px',height:'0px',opacity:1},{width:2*far+'px',height:2*far+'px',opacity:.12}],{duration:dur,easing:'cubic-bezier(.25,.6,.4,1)'});
-    for(const el of document.querySelectorAll('.tile,.panel')){
+    const ring=add('sfx-ring',{left:x+'px',top:y+'px',width:2*far+'px',height:2*far+'px'});
+    run(ring,[{transform:'translate(-50%,-50%) scale(0.01)',opacity:1},{transform:'translate(-50%,-50%) scale(1)',opacity:.12}],{duration:dur,easing:'cubic-bezier(.25,.6,.4,1)'});
+    // each panel the ring reaches lights up: a glow laid over its edge and faded, so the panel is never repainted
+    if(!document.documentElement.classList.contains('view-pulse')) for(const el of document.querySelectorAll('.tile,.panel')){
       const b=el.getBoundingClientRect(); if(b.bottom<0||b.top>H||b.right<0||b.left>W||!b.width) continue;
       const d=Math.hypot(b.left+b.width/2-x,b.top+b.height/2-y), at=dur*Math.pow(Math.min(1,d/far),1.1)*0.85;
-      setTimeout(()=>{ try{ el.animate([{boxShadow:'0 0 0 1px rgba(245,196,81,0)'},{boxShadow:'0 0 0 1px #f5c451, 0 0 26px rgba(245,196,81,.5)',offset:.2},
-        {boxShadow:'0 0 0 1px rgba(245,196,81,0)'}],{duration:2000}); }catch(err){} },at); } };
+      run(add('sfx-lit',{left:b.left+'px',top:b.top+'px',width:b.width+'px',height:b.height+'px'}),[{opacity:0},{opacity:1,offset:.2},{opacity:0}],{duration:2000,delay:at}); } };
   // the whole-screen moment is centred on the screen, not on the dial
   const X=W/2, Y=H*0.42, col=/^#[0-9a-f]{6}$/i.test(o.col||'')?o.col:'#35d6e8';
   const amount=(dur,still)=>{
+    run(add('sfx-glow',{left:X+'px',top:Y+'px'}), still?[{opacity:0},{opacity:1,offset:.12},{opacity:1,offset:.8},{opacity:0}]
+      :[{opacity:0,transform:'translate(-50%,-50%) scale(1.3)'},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.1},{opacity:1,offset:.8,transform:'translate(-50%,-50%) scale(1)'},{opacity:0,transform:'translate(-50%,-50%) scale(.96)'}],{duration:dur});
     const b=add('sfx-big',{left:X+'px',top:Y+'px'}); b.style.setProperty('--sfx-col',col);
     const k=document.createElement('div'), n=document.createElement('div'), p=document.createElement('div');
     k.className='k'; n.className='v'; p.className='p';
@@ -12368,12 +12394,12 @@ function screenFx(v, from, o={}){
   run(add('sfx-bloom',{left:X+'px',top:Y+'px'}),[{opacity:0,transform:'translate(-50%,-50%) scale(.15)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.25)',offset:.12},
     {opacity:.55,transform:'translate(-50%,-50%) scale(1)',offset:.4},{opacity:0,transform:'translate(-50%,-50%) scale(1.1)'}],{duration:2600,easing:'cubic-bezier(.2,.8,.2,1)'});
   // three warm flashes, half a second apart
-  run(add('sfx-flash'),[{opacity:0,offset:0},{opacity:.85,offset:.02},{opacity:0,offset:.08},
-         {opacity:0,offset:.31},{opacity:.7,offset:.33},{opacity:0,offset:.39},
-         {opacity:0,offset:.62},{opacity:.55,offset:.64},{opacity:0,offset:.70},{opacity:0,offset:1}],{duration:1600,easing:'linear'});
+  run(add('sfx-flash'),[{opacity:0,offset:0},{opacity:.8,offset:.03,easing:'ease-out'},{opacity:0,offset:.11},
+         {opacity:0,offset:.31},{opacity:.66,offset:.34,easing:'ease-out'},{opacity:0,offset:.42},
+         {opacity:0,offset:.62},{opacity:.5,offset:.65,easing:'ease-out'},{opacity:0,offset:.73},{opacity:0,offset:1}],{duration:1600,easing:'linear'});
   // sparks: a burst with the first flash and a smaller one with the third, slowing, falling, twinkling out
   { const cv=document.createElement('canvas'), g=cv.getContext&&cv.getContext('2d');
-    if(g){ const dpr=Math.min(2,devicePixelRatio||1); cv.className='sfx-cv'; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); L.append(cv); g.scale(dpr,dpr);
+    if(g){ const dpr=Math.min(1.5,devicePixelRatio||1); cv.className='sfx-cv'; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); L.append(cv); g.scale(dpr,dpr);
       const reach=Math.max(.6,Math.min(1.3,Math.hypot(W,H)/1500)), pal=['255,226,150','245,196,81','255,248,232'], mine=rgbOf(col), P=[];
       const burst=(n,at,k)=>{ for(let i=0;i<n;i++){ const a=Math.random()*6.2832, sp=(240+Math.random()*900)*k*reach;
         P.push({x:X,y:Y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-80*Math.random(),at,life:1.3+Math.random()*1.8,w:1.1+Math.random()*2.4,
@@ -12422,7 +12448,7 @@ function renderFeePulse60m(host){
   wrap.append(strip);
   const tape=strip.querySelector('svg'), todayEl=strip.querySelector('.fpd-today');
   host.append(wrap);
-  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  const hl=hhmm;
   const NS='http://www.w3.org/2000/svg';
   const mk=(t,a,cls,txt)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(cls) e.setAttribute('class',cls); if(txt!=null) e.textContent=txt; return e; };
   const grid=el('div','fpd-grid'); wrap.append(grid);
@@ -12593,7 +12619,10 @@ function renderFeePulse60m(host){
     const ring=svg.querySelector('.fpd-ring'); if(ring){ ring.style.stroke='#f5c451'; tween(1400,p=>{ ring.style.strokeOpacity=String(1-p*.45); }).then(()=>{ ring.style.stroke=''; ring.style.strokeOpacity=''; }); } };
   const goldRain=()=>{ for(let i=0;i<26;i++){ const c=mk('circle',{r:2,fill:'#f5c451',opacity:0}); fx.append(c); const x0=C-70+Math.random()*140, y0=C-120-Math.random()*40;
       tween(900+Math.random()*500,p=>{ const q=ez.inOut(p); c.setAttribute('cx',(x0+(C-x0)*q).toFixed(1)); c.setAttribute('cy',(y0+(C-12-y0)*q).toFixed(1)); c.setAttribute('opacity',(p<.8?1:(1-p)/.2).toFixed(3)); },i*45).then(()=>c.remove()); } };
-  const goldEdge=()=>{ const panel=wrap.closest('.panel')||wrap; try{ panel.animate([{boxShadow:'0 0 0 1px #f5c451, 0 0 0 rgba(245,196,81,0)'},{boxShadow:'0 0 0 1px #f5c451, 0 0 38px rgba(245,196,81,.5)'},{boxShadow:'0 0 0 1px rgba(245,196,81,0), 0 0 0 rgba(245,196,81,0)'}],{duration:3200,easing:'ease-out'}); }catch(err){} };
+  const goldEdge=()=>{ if(document.documentElement.classList.contains('view-pulse')) return; const panel=wrap.closest('.panel')||wrap, b=panel.getBoundingClientRect();
+    let L=document.getElementById('sfx'); if(!L){ L=document.createElement('div'); L.id='sfx'; L.setAttribute('aria-hidden','true'); document.body.append(L); }
+    const o=document.createElement('div'); o.className='sfx-lit'; Object.assign(o.style,{left:b.left+'px',top:b.top+'px',width:b.width+'px',height:b.height+'px',boxShadow:'0 0 0 1px #f5c451,0 0 38px rgba(245,196,81,.5)'}); L.append(o);
+    try{ o.animate([{opacity:.55},{opacity:1,offset:.45},{opacity:0}],{duration:3200,easing:'ease-out',fill:'both'}).onfinish=()=>o.remove(); }catch(err){ o.remove(); } };
   const stream=(x,y,col,{n,dur,orbit})=>Promise.all([...Array(n)].map((_,i)=>(async()=>{
       const c=mk('circle',{r:2.3,fill:lift(col,.45),opacity:0}); fx.append(c);
       const a0=(i/n)*Math.PI*2, side=(i%2?1:-1)*(16+Math.random()*34), qx=(x+C)/2+side, qy=(y+C)/2;
@@ -12640,6 +12669,7 @@ function renderFeePulse60m(host){
      first in a batch, gets a two-second version so the dial never falls behind. */
   const birth=async(e,{compact}={})=>{
     const [x,y]=pt(0,R), col=e.col, usd=e.t.usd, big=D.typical!=null && usd>=D.typical, small=usd<0.5;
+    FXBUSY.set(small||compact?4500:10000);
     try{ document.dispatchEvent(new CustomEvent('kt-fee',{detail:{col, usd}})); }catch(err){}   // LIVE flashes with it while the clock is off screen
     const pool=e.t.pools.length?e.t.pools[0][0]:'pool not recorded', when=hl(e.t.t);
     if(still){ e.glide=1; e.show=1; e.scale=0; screenFx(usd,dw,{col,pool}); await tween(450,p=>{ e.scale=p; }); setTotal(D.target); return; }
@@ -12791,7 +12821,8 @@ function renderFeePulse60m(host){
      gets the screen effect its size calls for. Tap the dial to skip. It waits until the dial is on
      screen, so it is never played to nobody; reduced motion just shows the marks and the card. */
   let sweeping=false, io=null;
-  const fitCv=()=>{ const w=dw.clientWidth||300, dpr=Math.min(2,devicePixelRatio||1); cv.width=Math.round(w*dpr); cv.height=Math.round(w*322/352*dpr);
+  // the canvas's light is soft: 1.5 pixels a point is plenty, and about half the work of 2
+  const fitCv=()=>{ const w=dw.clientWidth||300, dpr=Math.min(1.5,devicePixelRatio||1); cv.width=Math.round(w*dpr); cv.height=Math.round(w*322/352*dpr);
     const k=w/352*dpr; pc.setTransform(k,0,0,k,26*k,10*k); };
   const clearCv=()=>{ pc.save(); pc.setTransform(1,0,0,1,0,0); pc.clearRect(0,0,cv.width,cv.height); pc.restore(); };
   const rgbaOf=(h,a)=>{ const c=rgb(h); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; };
@@ -12822,7 +12853,7 @@ function renderFeePulse60m(host){
     if(sweeping||pulseSeen.catchFrom==null||!wrap.isConnected) return;
     const from=pulseSeen.catchFrom, until=pulseSeen.catchUntil||Date.now(), first=pulseSeen.first; pulseSeen.catchFrom=null; pulseSeen.first=false;
     if(io){ io.disconnect(); io=null; }
-    sweeping=true; birthing=true; D.counting=true;
+    sweeping=true; birthing=true; D.counting=true; FXBUSY.set(7000);
     const t0=Date.now(), all=[...live.values()].filter(e=>e.t&&(t0-e.t.at)/60000<=60), isNew=e=>e.t.at>from&&e.t.at<=until;
     const fresh=all.filter(isNew), top=fresh.reduce((b,e)=>!b||e.t.usd>b.t.usd?e:b,null);
     const done=()=>{ for(const e of all){ e.show=1; e.lit=1; e.glide=1; } D.counting=false; setTotal(D.target); subH.textContent='THIS HOUR';
@@ -12869,8 +12900,10 @@ function renderFeePulse60m(host){
       pc.restore(); };
     let lastT=performance.now();
     // the beam's edge lives in the SVG and is moved, never drawn into the phosphor, so it leaves no spokes
-    const edge=mk('g',{}); edge.append(mk('line',{x1:C,y1:C,x2:C,y2:C-R-14,stroke:'#35d6e8','stroke-width':7,'stroke-opacity':.22,'stroke-linecap':'round'}),
-      mk('line',{x1:C,y1:C,x2:C,y2:C-R-14,stroke:'#e2fdff','stroke-width':1.5,'stroke-linecap':'round'})); fx.append(edge);
+    /* the beam's edge is an HTML layer turned by the compositor, in step with the phosphor's clock (an SVG line here
+       redrew the whole dial on every frame of the sweep) */
+    const edge=el('div','fpd-edge'); edge.setAttribute('aria-hidden','true'); dw.insertBefore(edge,cv);
+    try{ edge.animate([{transform:'translateX(-50%) rotate(0deg)'},{transform:'translateX(-50%) rotate(360deg)'}],{duration:4200,easing:'linear',fill:'forwards'}); }catch(err){}
     await frame(4200,p=>{
       const A=360*p, rad=d=>(d-90)*Math.PI/180, nowT=performance.now(), dt=Math.min(.1,(nowT-lastT)/1000); lastT=nowT;
       pc.save(); pc.beginPath(); pc.arc(C,C,R+30,0,7); pc.clip();
@@ -12881,7 +12914,6 @@ function renderFeePulse60m(host){
       // the beam paints the whole wedge it covered since the last frame, so there are no spokes
       const g=pc.createRadialGradient(C,C,8,C,C,R+14); g.addColorStop(0,'rgba(53,214,232,.05)'); g.addColorStop(.6,'rgba(53,214,232,.16)'); g.addColorStop(1,'rgba(120,235,250,.26)');
       pc.fillStyle=g; pc.beginPath(); pc.moveTo(C,C); pc.arc(C,C,R+14,rad(lastA-.3),rad(A)); pc.closePath(); pc.fill();
-      edge.setAttribute('transform','rotate('+A.toFixed(2)+' '+C+' '+C+')');
       // range rings and bearing lines light up where the beam crosses them
       pc.strokeStyle='rgba(53,214,232,.32)'; pc.lineWidth=1;
       for(const rr of [R*.33,R*.66,R]){ pc.beginPath(); pc.arc(C,C,rr,rad(lastA),rad(A+.6)); pc.stroke(); }
@@ -12914,30 +12946,33 @@ function renderFeePulse60m(host){
      degree a second that is already continuous to the eye, and it costs next to nothing. It stops
      when the dial is replaced or removed, and the browser pauses it while the page is hidden. */
   { let last=0, lblMin=-1;
+    const sa=(n,k,v)=>{ const c=n._a||(n._a={}); if(c[k]!==v){ c[k]=v; n.setAttribute(k,v); } };
+    const ss=(n,k,v)=>{ const c=n._s||(n._s={}); if(c[k]!==v){ c[k]=v; n.style[k]=v; } };
     const turn=ts=>{
       if(!wrap.isConnected) return;
       for(const t of tw.slice()){ const p=(ts-t.t0)/t.dur; if(p<0) continue; t.fn(Math.min(1,p)); if(p>=1){ tw.splice(tw.indexOf(t),1); t.res(); } }
       if(tw.length || birthing || ts-last>=250){ last=ts;
-        nowDot.setAttribute('r',(3.6+(D.pulse?2.2*D.pulse*Math.abs(Math.sin(ts/90)):0)).toFixed(2));
+        sa(nowDot,'r',(3.6+(D.pulse?2.2*D.pulse*Math.abs(Math.sin(ts/90)):0)).toFixed(2));
         const now=Date.now();
         for(const [k,e] of live){
           const m=(now-e.t.at)/60000;
           if(m>60.1){ e.h.remove(); e.d.remove(); e.a.remove(); e.hit.remove(); live.delete(k); const tc=tapeDots.get(k); if(tc){ tc.remove(); tapeDots.delete(k); } if(sel===k){ sel=null; say(null); } continue; }
-          { const tc=tapeDots.get(k); if(tc){ const tw2=tapeW(), ag=Math.max(0,m)*e.glide; tc.setAttribute('cx',(tw2-4-(ag/60)*(tw2-8)).toFixed(1)); tc.style.opacity=(e.show?1:0); } }
+          { const tc=tapeDots.get(k); if(tc){ const tw2=tapeW(), ag=Math.max(0,m)*e.glide; sa(tc,'cx',(tw2-4-(ag/60)*(tw2-8)).toFixed(1)); ss(tc,'opacity',e.show?'1':'0'); } }
           const age=Math.max(0,m);
           const op=age<=45 ? 1-0.3*age/45 : 0.7*Math.pow(Math.max(0,60-age)/15,1.4);   // dims slowly, then fades out
           const fresh=Math.max(0,1-age/6);                                                // 1 when new, gone by six minutes
           const flash=e.flash, r=e.show?e.r*Math.max(0,e.scale):0, pos=age*e.glide;   // held at now until it glides to its age
           let [x,y]=pt(pos,R); if(e.push){ x+=e.push[0]; y+=e.push[1]; }
-          e.d.setAttribute('cx',x); e.d.setAttribute('cy',y); e.d.setAttribute('r',r.toFixed(2));
-          e.hit.setAttribute('cx',x); e.hit.setAttribute('cy',y); e.hit.style.display=e.show?'':'none';
-          e.d.setAttribute('fill',lift(e.col,Math.min(.92,Math.max(0.55*fresh,0.92*flash))));
+          const X=x.toFixed(1), Y=y.toFixed(1);
+          sa(e.d,'cx',X); sa(e.d,'cy',Y); sa(e.d,'r',r.toFixed(2));
+          sa(e.hit,'cx',X); sa(e.hit,'cy',Y); ss(e.hit,'display',e.show?'':'none');
+          sa(e.d,'fill',lift(e.col,Math.round(Math.min(.92,Math.max(0.55*fresh,0.92*flash))*100)/100));
           const lit=0.05+0.95*(e.lit??1);                                                 // dark until the sweep paints it
-          e.d.style.opacity=(e.show?op*lit:0).toFixed(3);
-          e.h.setAttribute('cx',x); e.h.setAttribute('cy',y); e.h.setAttribute('r',(r*(2.2+1.8*fresh+2.2*flash)).toFixed(2));
-          e.h.style.opacity=(e.show?(op*(0.3+0.65*fresh)+0.5*flash)*lit:0).toFixed(3);
-          if(e.lbl && e.show && e.glide>=1 && lit>0.9 && !sweeping){ const [lx,ly]=pt(pos,R-e.r-15); e.a.setAttribute('x',lx); e.a.setAttribute('y',ly+3.5); e.a.style.display=''; e.a.style.opacity=op.toFixed(3); }
-          else e.a.style.display='none';
+          ss(e.d,'opacity',(e.show?op*lit:0).toFixed(2));
+          sa(e.h,'cx',X); sa(e.h,'cy',Y); sa(e.h,'r',(r*(2.2+1.8*fresh+2.2*flash)).toFixed(1));
+          ss(e.h,'opacity',(e.show?(op*(0.3+0.65*fresh)+0.5*flash)*lit:0).toFixed(2));
+          if(e.lbl && e.show && e.glide>=1 && lit>0.9 && !sweeping){ const [lx,ly]=pt(pos,R-e.r-15); sa(e.a,'x',lx.toFixed(1)); sa(e.a,'y',(ly+3.5).toFixed(1)); ss(e.a,'display',''); ss(e.a,'opacity',op.toFixed(2)); }
+          else ss(e.a,'display','none');
         }
         const mn=Math.floor(now/60000);
         if(mn!==lblMin){ lblMin=mn; for(const [m,el2] of tLbls) el2.textContent=hl(now-m*60000); } }
@@ -13102,7 +13137,7 @@ function renderFeePulse24(host){
   host.append(wrap);
   if(!S){ wrap.append(el('div','flow-omit','Needs two ledger readings.')); return; }
   if(!S.hours.some(h=>h.usd!=null)){ wrap.append(el('div','flow-omit','No ledger reading in the last 24 hours.')); return; }
-  const hl=t=>new Date(t).toLocaleTimeString('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
+  const hl=hhmm;
   const hrs=S.hours, have=hrs.filter(h=>h.usd!=null&&!h.cur);
   const best=have.length?have.reduce((a,b)=>b.usd>a.usd?b:a):null;
   const quiet=have.filter(h=>h.usd<0.005).length;
@@ -13637,21 +13672,30 @@ function initSky(){
   };
   resize(); addEventListener('resize',resize);
   const STAR_COL={cyan:[168,224,240], violet:[190,172,255], warm:[240,214,180]};
-  function nebula(x,y,r,rgb,a){
-    const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  function nebula(g2,x,y,r,rgb,a){
+    const g=g2.createRadialGradient(x,y,0,x,y,r);
     g.addColorStop(0,'rgba('+rgb+','+a+')'); g.addColorStop(1,'rgba('+rgb+',0)');
-    ctx.fillStyle=g; ctx.fillRect(x-r,y-r,r*2,r*2);
+    g2.fillStyle=g; g2.fillRect(x-r,y-r,r*2,r*2);
+  }
+  /* the nebulae never move: drawn once for each size of the window, then copied in each frame (four large gradients a
+     frame were most of the sky's cost) */
+  let neb=null, nebW=0, nebH=0;
+  function nebulae(){
+    if(neb && nebW===W && nebH===H) return neb;
+    neb=document.createElement('canvas'); neb.width=nebW=W; neb.height=nebH=H; const g2=neb.getContext('2d');
+    // Andromeda band: a tilted elongated glow across the sky
+    g2.save();
+    g2.translate(W*.72,H*.22); g2.rotate(-.5); g2.scale(2.6,1);
+    nebula(g2,0,0,W*.16,'56,140,170',.10);
+    nebula(g2,W*.02,0,W*.06,'120,190,215',.10);
+    g2.restore();
+    nebula(g2,W*.12,H*.78,W*.30,'110,70,190',.07);
+    nebula(g2,W*.45,H*.45,W*.22,'20,90,120',.05);
+    return neb;
   }
   function draw(){
     ctx.clearRect(0,0,W,H);
-    // Andromeda band: a tilted elongated glow across the sky
-    ctx.save();
-    ctx.translate(W*.72,H*.22); ctx.rotate(-.5); ctx.scale(2.6,1);
-    nebula(0,0,W*.16,'56,140,170',.10);
-    nebula(W*.02,0,W*.06,'120,190,215',.10);
-    ctx.restore();
-    nebula(W*.12,H*.78,W*.30,'110,70,190',.07);
-    nebula(W*.45,H*.45,W*.22,'20,90,120',.05);
+    if(W>0&&H>0) ctx.drawImage(nebulae(),0,0);
     for(const s of stars){
       const a=.30+.70*Math.abs(Math.sin(s.tw+t*s.sp));
       const [r,g,b]=STAR_COL[s.hue];
@@ -13673,7 +13717,8 @@ function initSky(){
   // the sky holds still while the page scrolls: that is when frames are scarcest on a phone
   let last=0, still=0; addEventListener('scroll',()=>{ still=performance.now()+300; },{passive:true});
   function frame(ts){
-    if(document.hidden){ requestAnimationFrame(frame); return; }
+    // hidden, covered by the clock's own window, or while the clock performs: the sky holds still
+    if(document.hidden || document.documentElement.classList.contains('view-pulse') || FXBUSY.on()){ requestAnimationFrame(frame); return; }
     if(ts-last>33 && ts>still){ // ~30fps is plenty for ambience
       t+=.033; last=ts;
       if(Math.random()<.006 && shoots.length<2)
